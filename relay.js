@@ -67,6 +67,8 @@ app.post('/emit', (req, res) => {
     const sizeMB = (metadata.s / (1024 * 1024)).toFixed(2);
     
     DIMENSION_TUNNEL.set(tunnelId, { owner: accountId, metadata, sizeMB });
+    
+    if (!LEDGER_BOOK[accountId]) LEDGER_BOOK[accountId] = { usd: 1000, mb: 0, hmj: 0, asset_history: [], file_history: [] };
     LEDGER_BOOK[accountId].mb += parseFloat(sizeMB);
     LEDGER_BOOK[accountId].file_history.unshift({ type: 'SEND', file: metadata.n, size: sizeMB, tunnel: tunnelId, time: new Date().toLocaleString() });
     res.json({ tunnelId });
@@ -78,6 +80,7 @@ app.post('/summon/:tunnelId', (req, res) => {
     const asset = DIMENSION_TUNNEL.get(tunnelId);
     if (!asset) return res.status(404).json({ error: "터널이 만료되었습니다." });
 
+    if (!LEDGER_BOOK[accountId]) LEDGER_BOOK[accountId] = { usd: 1000, mb: 0, hmj: 0, asset_history: [], file_history: [] };
     LEDGER_BOOK[accountId].mb += parseFloat(asset.sizeMB);
     LEDGER_BOOK[accountId].file_history.unshift({ type: 'RCV', file: asset.metadata.n, size: asset.sizeMB, tunnel: tunnelId, time: new Date().toLocaleString() });
     DIMENSION_TUNNEL.delete(tunnelId);
@@ -113,4 +116,5 @@ app.post('/claim-asset', (req, res) => {
     res.json({ success: true });
 });
 
-app.listen(4000, '0.0.0.0', () => console.log('🔴 MARS BANK ONLINE'));
+const PORT = 4000;
+app.listen(PORT, '0.0.0.0', () => console.log('🔴 MARS BANK V8.0 ONLINE'));
