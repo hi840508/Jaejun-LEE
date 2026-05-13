@@ -77,7 +77,7 @@
             <div class="logo-mars"></div>
             <div class="logo-title">MARS BANK</div>
         </div>
-        <div class="id-badge" onclick="copyId()" title="자격 증명 복사">
+        <div class="id-badge" onclick="copyId()">
             <svg class="svg-icon" style="width:14px; height:14px; margin:0;" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
             <span id="display-id">Loading...</span>
         </div>
@@ -138,14 +138,13 @@
                 <select id="as-type" style="flex:1;"><option value="HMJ">HMJ</option><option value="USD">USD</option></select>
                 <input type="number" id="as-amt" placeholder="Amount" style="flex:2;">
             </div>
-            <input type="text" id="as-key" placeholder="Create Secret Key">
-            <button class="btn-action" onclick="sendAsset()">CREATE TUNNEL</button>
+            <input type="text" id="as-key" placeholder="Create Secret Key (Password)" style="margin-top:10px;">
+            <button class="btn-action" onclick="sendAsset()">CREATE ASSET TICKET</button>
         </div>
 
         <div class="box">
-            <span class="label">CLAIM ASSET</span>
-            <input type="text" id="rcv-tid" placeholder="Tunnel ID">
-            <input type="text" id="rcv-key" placeholder="Secret Key">
+            <span class="label">CLAIM ASSET (SINGLE TICKET)</span>
+            <input type="text" id="rcv-ticket" placeholder="Paste Ticket (e.g. A8F9B-1234)">
             <button class="btn-action btn-success" onclick="claimAsset()">CLAIM ASSET</button>
         </div>
     </div>
@@ -161,15 +160,15 @@
             <div class="compression-info" id="comp-box">
                 <div class="comp-row"><span>Original Size:</span><span id="comp-orig">0 MB</span></div>
                 <div class="comp-row"><span>Mars Dimension Size:</span><span id="comp-new" style="color:var(--text-main);">0 MB</span></div>
-                <div class="comp-ratio">Quantum Compression: ~55%</div>
+                <div class="comp-ratio">Quantum Compression: ~45% Applied</div>
             </div>
 
-            <button class="btn-action" onclick="sendFile()">EMIT DATA TUNNEL</button>
+            <button class="btn-action" onclick="sendFile()">CREATE DATA TICKET</button>
         </div>
 
         <div class="box">
             <span class="label">DOWNLOAD DATA</span>
-            <input type="text" id="f-tid" placeholder="Tunnel ID">
+            <input type="text" id="f-tid" placeholder="Paste Data Ticket">
             <button class="btn-action btn-success" onclick="receiveFile()">SUMMON DATA</button>
         </div>
     </div>
@@ -180,7 +179,7 @@
             <div class="tab active" id="tab-a" onclick="switchLedger('asset')">FINANCE</div>
             <div class="tab" id="tab-f" onclick="switchLedger('file')">DATA</div>
         </div>
-        <div class="box" id="ledger-list" style="padding:0; overflow:hidden;"></div>
+        <div id="ledger-list" style="background:var(--surface); border-radius:20px; overflow:hidden;"></div>
     </div>
 
     <div class="bottom-nav">
@@ -210,7 +209,7 @@
     function copyId() {
         if (navigator.clipboard) {
             navigator.clipboard.writeText(MY_ID);
-            alert("디바이스 자격 증명(ID)이 복사되었습니다.\n" + MY_ID);
+            alert("ID Copied: " + MY_ID);
         }
     }
 
@@ -249,32 +248,45 @@
             <div class="ledger-item">
                 <div><div style="font-weight:700; font-size:14px;">${type==='asset'?h.type:`${h.type} (${h.file})`}</div><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${h.time}</div></div>
                 <div style="font-weight:800; font-size:15px; color:${h.type.includes('RCV')||h.type==='MINT'?'var(--success)':'#fff'}">${h.type.includes('SEND')?'-':'+'}${type==='asset'?h.amount+' '+h.asset : h.size+' MB'}</div>
-            </div>`).join('') || '<div style="padding:40px; text-align:center; color:var(--text-muted); font-size:13px;">내역이 없습니다.</div>';
+            </div>`).join('') || '<div style="padding:40px; text-align:center; color:var(--text-muted); font-size:13px;">No records.</div>';
     }
 
-    // HMJ 대수학 채굴
     async function mint() {
         const res = await fetch('/mint-hmj', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
             body: JSON.stringify({ accountId: MY_ID, A: document.getElementById('m-a').value, B: document.getElementById('m-b').value, x: document.getElementById('m-x').value, y: document.getElementById('m-y').value }) });
         const data = await res.json();
-        if(res.ok) { alert("식 증명 성공! 1.000 HMJ가 발행되었습니다."); document.getElementById('m-y').value=''; go('screen-main'); } else alert(data.error);
+        if(res.ok) { alert("Success! 1.000 HMJ Minted."); document.getElementById('m-y').value=''; go('screen-main'); } else alert(data.error);
     }
 
-    // 자산 전송
+    // UX 개선: 단일 티켓 발급
     async function sendAsset() {
+        const secretKey = document.getElementById('as-key').value;
+        if(!secretKey) return alert("비밀번호를 설정해주세요.");
+        
         const res = await fetch('/transfer-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ senderId: MY_ID, assetType: document.getElementById('as-type').value, amount: document.getElementById('as-amt').value, secretKey: document.getElementById('as-key').value }) });
+            body: JSON.stringify({ senderId: MY_ID, assetType: document.getElementById('as-type').value, amount: document.getElementById('as-amt').value, secretKey: secretKey }) });
         const data = await res.json();
-        if(res.ok) { alert(`터널 생성 완료! ID: ${data.tunnelId}`); go('screen-main'); } else alert(data.error);
+        if(res.ok) { 
+            const ticket = `${data.tunnelId}-${secretKey}`;
+            alert(`자산 티켓이 발급되었습니다.\n수신자에게 아래 티켓 코드를 전달하세요.\n\n[ ${ticket} ]`); 
+            go('screen-main'); 
+        } else alert(data.error);
     }
 
+    // UX 개선: 단일 티켓 파싱
     async function claimAsset() {
+        const ticketInput = document.getElementById('rcv-ticket').value.trim();
+        const parts = ticketInput.split('-');
+        if(parts.length < 2) return alert("잘못된 티켓 형식입니다. (예: A8F9B-1234)");
+
+        const tunnelId = parts[0];
+        const secretKey = parts[1];
+
         const res = await fetch('/claim-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ receiverId: MY_ID, tunnelId: document.getElementById('rcv-tid').value, inputSecretKey: document.getElementById('rcv-key').value }) });
-        if(res.ok) { alert("자산 수령 완료!"); go('screen-main'); } else alert("비밀번호 불일치 또는 만료된 터널입니다.");
+            body: JSON.stringify({ receiverId: MY_ID, tunnelId: tunnelId, inputSecretKey: secretKey }) });
+        if(res.ok) { alert("자산 수령 완료!"); go('screen-main'); } else alert("비밀번호 불일치 또는 만료된 티켓입니다.");
     }
 
-    // 파일 압축 시각화
     function calculateCompression() {
         const file = document.getElementById('f-in').files[0];
         const box = document.getElementById('comp-box');
@@ -286,10 +298,9 @@
         box.style.display = 'block';
     }
 
-    // 파일 전송 (Base64 변환)
-    function sendFile() {
+    async function sendFile() {
         const file = document.getElementById('f-in').files[0];
-        if (!file) return alert("파일을 첨부해 주십시오.");
+        if (!file) return alert("Please select a file.");
         
         const reader = new FileReader();
         reader.onload = async function(e) {
@@ -297,29 +308,48 @@
             const res = await fetch('/emit', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
                 body: JSON.stringify({ accountId: MY_ID, fileData }) });
             const data = await res.json();
-            alert(`데이터 터널 생성 완료! ID: ${data.tunnelId}\n서버에 안전하게 암호화되었습니다.`); 
+            alert(`데이터 티켓 발급 완료!\n수신자에게 아래 티켓 코드를 전달하세요.\n\n[ ${data.tunnelId} ]`); 
             go('screen-main');
         };
         reader.readAsDataURL(file);
     }
 
-    // 파일 수신 (Base64 복원 및 다운로드)
+    // 모바일 크래시 해결: Base64 -> Blob 변환 함수
+    function base64ToBlob(base64, mimeType) {
+        const parts = base64.split(';base64,');
+        const contentType = parts[0].split(':')[1] || mimeType;
+        const raw = window.atob(parts[1]);
+        const rawLength = raw.length;
+        const uInt8Array = new Uint8Array(rawLength);
+        for (let i = 0; i < rawLength; ++i) {
+            uInt8Array[i] = raw.charCodeAt(i);
+        }
+        return new Blob([uInt8Array], { type: contentType });
+    }
+
     async function receiveFile() {
-        const tid = document.getElementById('f-tid').value;
+        const tid = document.getElementById('f-tid').value.trim();
         const res = await fetch(`/summon/${tid}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ accountId: MY_ID }) });
         
         if(res.ok) { 
             const asset = await res.json(); 
-            // Base64 데이터를 원래 파일로 복원하여 다운로드
-            const a = document.createElement("a");
-            a.href = asset.fileData.base64;
-            a.download = asset.fileData.name; 
-            a.click();
             
-            alert(`[${asset.fileData.name}] 수령 완료! 장부에 기록되었습니다.`); 
+            // 모바일 최적화: Blob 객체로 변환하여 안전하게 다운로드 트리거
+            const blob = base64ToBlob(asset.fileData.base64, asset.fileData.type);
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = asset.fileData.name; 
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            alert(`[${asset.fileData.name}] 다운로드 완료!`); 
             go('screen-main'); 
         } else {
-            alert("유효하지 않거나 이미 증발한 터널입니다.");
+            alert("유효하지 않거나 만료된 데이터 티켓입니다.");
         }
     }
 
