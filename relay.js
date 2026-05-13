@@ -3,114 +3,102 @@ const cors = require('cors');
 const path = require('path');
 const app = express();
 
-// 데이터 뱅크 특성상 대용량(3D 모델 등) 처리를 위해 제한 해제
 app.use(cors());
-app.use(express.json({ limit: '2000mb' })); 
+app.use(express.json({ limit: '2000mb' }));
 app.use(express.urlencoded({ limit: '2000mb', extended: true }));
 
-// 기본 경로 접속 시 단말기 화면 제공
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'terminal.html')));
-app.get('/status', (req, res) => res.json({ status: 'ONLINE' }));
 
-// 🧠 휘발성 차원 터널 (원본 데이터 보관)
-const DIMENSION_TUNNEL = new Map();
-// 📒 중앙 영구 장부 (메타데이터 및 잔고 기록)
-const LEDGER_BOOK = {};
+// 🧠 서버 통합 데이터 저장소
+const DIMENSION_TUNNEL = new Map(); // 자산 터널
+const LEDGER_BOOK = {};            // 개인별 장부 (USD, MB, HMJ)
+const USED_KEY_PAIRS = new Set();  // 🔐 영구 등록 방지 블랙리스트
 
 /**
- * [API] 내 계좌 정보 및 이체 내역 조회
- * - 자격 증명(ID)이 없으면 새로 생성
+ * [API] 계좌 동기화 (다중 자산 지원)
  */
 app.get('/account/:accountId', (req, res) => {
     const acc = req.params.accountId;
-    
-    if (!acc || !acc.startsWith('RAY-')) {
-        return res.status(403).json({ error: "Invalid Credential" });
-    }
-
     if (!LEDGER_BOOK[acc]) {
-        LEDGER_BOOK[acc] = { totalEmitted: 0, totalReceived: 0, history: [] };
+        LEDGER_BOOK[acc] = { 
+            usd: 1000, 
+            mb: 0, 
+            hmj: 0, 
+            history: [] 
+        };
     }
-    
-    // 현재 내가 생성했지만 아직 상대방이 수신하지 않은 활성 터널 수 계산
-    let activeTunnels = 0;
-    DIMENSION_TUNNEL.forEach((val) => { if (val.owner === acc) activeTunnels++; });
-    
-    res.json({ ...LEDGER_BOOK[acc], activeTunnels });
+    res.json(LEDGER_BOOK[acc]);
 });
 
 /**
- * [Emitter] 데이터 투영 (송금)
+ * [API] HMJ 자산 생성 (대수학적 식 성립 검증)
  */
-app.post('/emit', (req, res) => {
-    try {
-        const { accountId, matrix, scale, metadata } = req.body;
-        const tunnelId = Math.random().toString(36).substring(2, 12).toUpperCase();
-        const sizeMB = (metadata.s / (1024 * 1024)).toFixed(2);
-        
-        // 터널에 데이터 저장 (소유자 정보 포함)
-        DIMENSION_TUNNEL.set(tunnelId, { 
-            owner: accountId, 
-            matrix, 
-            scale, 
-            metadata, 
-            createdAt: Date.now() 
-        });
-        
-        // 장부에 기록
-        if (!LEDGER_BOOK[accountId]) LEDGER_BOOK[accountId] = { totalEmitted: 0, totalReceived: 0, history: [] };
-        LEDGER_BOOK[accountId].totalEmitted += parseFloat(sizeMB);
-        LEDGER_BOOK[accountId].history.unshift({ 
-            type: 'EMIT (송금)', 
-            tunnel: tunnelId, 
-            file: metadata.n, 
-            size: `${sizeMB} MB`, 
-            time: new Date().toLocaleString('ko-KR')
-        });
+app.post('/mint-hmj', (req, res) => {
+    const { accountId, publicKey, privateKey } = req.body;
+    const keyPairStr = `${publicKey}:${privateKey}`;
 
-        // 10분 후 자동 소멸 (보안)
-        setTimeout(() => {
-            if(DIMENSION_TUNNEL.has(tunnelId)) DIMENSION_TUNNEL.delete(tunnelId);
-        }, 10 * 60 * 1000);
-        
-        res.json({ tunnelId });
-    } catch (e) {
-        res.status(500).json({ error: "투영 실패" });
+    // 1. 중복 사용 검증 (글로벌 블랙리스트)
+    if (USED_KEY_PAIRS.has(keyPairStr)) {
+        return res.status(403).json({ error: "이미 사용된 키 쌍입니다. 영구 등록이 불가능합니다." });
+    }
+
+    // 2. 대수학적 식 성립 검증 (예시: 두 키의 합이 짝수일 때 성립하는 가상의 로직)
+    // PM님이 향후 실제 수식을 이 부분에 구현하시면 됩니다.
+    const isValid = (publicKey.length + privateKey.length) % 2 === 0; 
+
+    if (isValid) {
+        USED_KEY_PAIRS.add(keyPairStr);
+        LEDGER_BOOK[accountId].hmj += 1.000;
+        LEDGER_BOOK[accountId].history.unshift({
+            type: 'MINT',
+            asset: 'HMJ',
+            amount: '1.000',
+            time: new Date().toLocaleString()
+        });
+        res.json({ success: true, balance: LEDGER_BOOK[accountId].hmj });
+    } else {
+        res.status(400).json({ error: "식이 성립하지 않습니다." });
     }
 });
 
 /**
- * [Materializer] 데이터 실체화 (수신 및 증발)
+ * [API] 자산 전송 (송신자 자격으로 터널 생성)
  */
-app.post('/summon/:tunnelId', (req, res) => {
-    const { tunnelId } = req.params;
-    const { accountId } = req.body; // 수신자 자격 증명
+app.post('/transfer-asset', (req, res) => {
+    const { senderId, assetType, amount, privateKey } = req.body;
+    const tunnelId = Math.random().toString(36).substring(2, 12).toUpperCase();
 
-    if (!DIMENSION_TUNNEL.has(tunnelId)) {
-        return res.status(404).json({ error: "터널이 만료되었거나 존재하지 않습니다." });
-    }
-
-    const asset = DIMENSION_TUNNEL.get(tunnelId);
-    const sizeMB = (asset.metadata.s / (1024 * 1024)).toFixed(2);
-
-    // 수신자 장부에 기록
-    if (!LEDGER_BOOK[accountId]) LEDGER_BOOK[accountId] = { totalEmitted: 0, totalReceived: 0, history: [] };
-    LEDGER_BOOK[accountId].totalReceived += parseFloat(sizeMB);
-    LEDGER_BOOK[accountId].history.unshift({ 
-        type: 'RCV (수신)', 
-        tunnel: tunnelId, 
-        file: asset.metadata.n, 
-        size: `${sizeMB} MB`, 
-        time: new Date().toLocaleString('ko-KR')
+    // 터널에 잠시 보관 (상대방이 비밀키를 맞출 때까지)
+    DIMENSION_TUNNEL.set(tunnelId, { 
+        senderId, assetType, amount, privateKey, status: 'PENDING' 
     });
 
-    // 데이터 영구 증발 (RAM에서 삭제)
-    DIMENSION_TUNNEL.delete(tunnelId); 
-    
-    res.json(asset);
+    res.json({ tunnelId });
 });
 
-const PORT = 4000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🏦 RAY ALGEBRAIC BANK V3.5 ONLINE (PORT: 4000)`);
+/**
+ * [API] 자산 수신 (비밀키 입력 시 실제 차감 및 지급)
+ */
+app.post('/claim-asset', (req, res) => {
+    const { receiverId, tunnelId, inputPrivateKey } = req.body;
+    const asset = DIMENSION_TUNNEL.get(tunnelId);
+
+    if (!asset || asset.privateKey !== inputPrivateKey) {
+        return res.status(403).json({ error: "비밀키가 일치하지 않습니다." });
+    }
+
+    // 실제 전송 처리
+    const amount = parseFloat(asset.amount);
+    LEDGER_BOOK[asset.senderId][asset.assetType.toLowerCase()] -= amount;
+    LEDGER_BOOK[receiverId][asset.assetType.toLowerCase()] += amount;
+
+    // 내역 기록
+    const log = { tunnel: tunnelId, amount: amount, time: new Date().toLocaleString() };
+    LEDGER_BOOK[asset.senderId].history.unshift({ ...log, type: 'SEND', asset: asset.assetType });
+    LEDGER_BOOK[receiverId].history.unshift({ ...log, type: 'RCV', asset: asset.assetType });
+
+    DIMENSION_TUNNEL.delete(tunnelId);
+    res.json({ success: true });
 });
+
+app.listen(4000, '0.0.0.0', () => console.log('🏦 RAY GLOBAL BANK ONLINE'));
