@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MARS BANK | P2P Node</title>
-    <script src="/socket.io/socket.io.js"></script>
+    <title>MARS BANK | Zero-Knowledge Node</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
     <style>
         :root { --bg: #05060A; --surface: #11131F; --accent: #FF3B30; --success: #34D399; --text-muted: #8E8E93; --border: #2C2C2E; }
@@ -39,19 +38,13 @@
         input[type="number"], input[type="text"], select { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 15px; border-radius: 12px; font-size: 14px; box-sizing: border-box; outline: none; margin-bottom: 15px; transition: 0.2s; text-transform: uppercase;}
         input:focus { border-color: var(--accent); }
         
-        /* 커스텀 업로드 버튼 */
+        /* 파일 업로드 래퍼 */
         .file-upload-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; margin-bottom: 15px; }
         .file-upload-wrapper input[type="file"] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; }
         .custom-file-btn { display: flex; align-items: center; justify-content: center; gap: 10px; background: #2C2C2E; color: #fff; border: 1px dashed #48484A; padding: 18px; border-radius: 12px; font-weight: 600; font-size: 14px; transition: 0.2s; }
         .file-name-display { font-size: 12px; color: var(--success); text-align: center; margin-bottom: 15px; display: none; word-break: break-all; }
 
         .btn-action { width: 100%; background: var(--accent); border: none; padding: 18px; border-radius: 14px; color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; transition: 0.2s; letter-spacing: 0.5px; }
-        .btn-success { background: var(--success); color: #000; }
-
-        /* P2P 통신 프로그레스 바 */
-        .progress-box { display: none; background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.3); padding: 15px; border-radius: 12px; margin-bottom: 15px; text-align: center; }
-        .progress-bar-bg { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 10px; overflow: hidden; }
-        .progress-fill { height: 100%; width: 0%; background: var(--success); transition: width 0.1s linear; }
 
         .tab-bar { display: flex; background: #000; padding: 5px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--border); }
         .tab { flex: 1; text-align: center; padding: 12px; font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; color: var(--text-muted); }
@@ -61,7 +54,6 @@
 
         .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: rgba(5, 6, 10, 0.9); backdrop-filter: blur(20px); border-top: 1px solid var(--border); display: flex; justify-content: space-around; padding: 15px 0 25px 0; z-index: 100; }
         .nav-item { color: var(--text-muted); cursor: pointer; transition: 0.2s; padding: 0 20px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-        .nav-item .svg-icon { width: 22px; height: 22px; margin-bottom: 0; }
         .nav-item.active { color: var(--accent); }
     </style>
 </head>
@@ -100,10 +92,10 @@
             </div>
             <div class="menu-item" onclick="go('screen-file')">
                 <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-                <span class="m-title">P2P DATA TUNNEL</span>
+                <span class="m-title">OFFLINE DATA</span>
             </div>
             <div class="menu-item" onclick="go('screen-ledger')">
-                <svg class="svg-icon" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                <svg class="svg-icon" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line></svg>
                 <span class="m-title">VIEW LEDGERS</span>
             </div>
         </div>
@@ -127,50 +119,49 @@
     <div id="screen-asset" class="screen">
         <div class="back-btn" onclick="go('screen-main')"><svg class="svg-icon" style="width:18px; margin:0;" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> BACK</div>
         <h2 style="margin-top:0;">ASSET TRANSFER</h2>
-        
         <div class="box">
-            <span class="label">SEND ASSET (ESCROW)</span>
+            <span class="label">SEND ASSET</span>
             <div style="display:flex; gap:10px;">
                 <select id="as-type" style="flex:1;"><option value="HMJ">HMJ</option><option value="USD">USD</option></select>
                 <input type="number" id="as-amt" placeholder="Amount" style="flex:2; margin-bottom:0;">
             </div>
             <button class="btn-action" style="margin-top:15px;" onclick="sendAsset()">GENERATE TICKET</button>
         </div>
-
         <div class="box">
             <span class="label">CLAIM ASSET</span>
             <input type="text" id="rcv-ticket" placeholder="Enter Ticket Code (e.g. 7K9A2B)">
-            <button class="btn-action btn-success" onclick="claimAsset()">CLAIM ASSET</button>
+            <button class="btn-action" style="background:var(--success); color:#000;" onclick="claimAsset()">CLAIM ASSET</button>
         </div>
     </div>
 
     <div id="screen-file" class="screen">
         <div class="back-btn" onclick="go('screen-main')"><svg class="svg-icon" style="width:18px; margin:0;" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> BACK</div>
-        <h2 style="margin-top:0;">P2P DATA TUNNEL</h2>
-        <p style="font-size:12px; color:var(--text-muted); margin-bottom:20px;">* Data streams directly device-to-device. Server stores 0MB. Both peers must be active.</p>
+        <h2 style="margin-top:0;">OFFLINE DATA ESCROW</h2>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:20px;">* 데이터는 서버에 저장되지 않으며, 기기에서 직접 암호화된 [ .marscube ] 봉투로 패키징됩니다. 카카오톡으로 전달하세요.</p>
         
-        <div class="progress-box" id="p2p-status">
-            <div style="font-size:13px; font-weight:700; color:var(--success);" id="p2p-msg">Waiting for Peer...</div>
-            <div class="progress-bar-bg"><div class="progress-fill" id="p2p-bar"></div></div>
-        </div>
-
         <div class="box">
-            <span class="label">SEND DATA (HOST)</span>
+            <span class="label">1. ENCRYPT & PACKAGE (SENDER)</span>
             <div class="file-upload-wrapper">
                 <div class="custom-file-btn">
-                    <svg class="svg-icon" style="width:20px; height:20px; margin:0;" viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path></svg>
-                    <span>SELECT BINARY DATA</span>
+                    <svg class="svg-icon" style="width:20px; height:20px; margin:0;" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    <span>원본 파일 선택 및 암호화 봉투 생성</span>
                 </div>
                 <input type="file" id="f-in" onchange="showFileName('f-in', 'f-name-disp')">
             </div>
             <div id="f-name-disp" class="file-name-display"></div>
-            <button class="btn-action" onclick="hostP2P()">OPEN P2P TUNNEL</button>
+            <button class="btn-action" onclick="packageData()">DOWNLOAD .MARSCUBE ENVELOPE</button>
         </div>
 
-        <div class="box">
-            <span class="label">RECEIVE DATA (JOIN)</span>
-            <input type="text" id="f-tid" placeholder="Enter P2P Room ID">
-            <button class="btn-action btn-success" onclick="joinP2P()">CONNECT & DOWNLOAD</button>
+        <div class="box" style="border-color:rgba(52, 211, 153, 0.5);">
+            <span class="label">2. DECRYPT & UNPACK (RECEIVER)</span>
+            <div class="file-upload-wrapper" style="margin-bottom:0;">
+                <div class="custom-file-btn" style="background:rgba(52, 211, 153, 0.1); border-color:var(--success); color:var(--success);">
+                    <svg class="svg-icon" style="width:20px; height:20px; margin:0;" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                    <span>받은 [.marscube] 봉투 업로드하여 열기</span>
+                </div>
+                <input type="file" id="f-rcv-file" accept=".marscube" onchange="unpackData()">
+            </div>
+            <p style="font-size:11px; color:var(--text-muted); text-align:center; margin-top:10px; margin-bottom:0;">서버 자격 증명 확인 후 단 한 번만 열립니다.</p>
         </div>
     </div>
 
@@ -178,7 +169,7 @@
         <div class="back-btn" onclick="go('screen-main')"><svg class="svg-icon" style="width:18px; margin:0;" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> BACK</div>
         <div class="tab-bar">
             <div class="tab active" id="tab-a" onclick="switchLedger('asset')">FINANCE</div>
-            <div class="tab" id="tab-f" onclick="switchLedger('file')">DATA (P2P)</div>
+            <div class="tab" id="tab-f" onclick="switchLedger('file')">DATA (OFFLINE)</div>
         </div>
         <div id="ledger-list" style="background:var(--surface); border-radius:20px; overflow:hidden;"></div>
     </div>
@@ -192,10 +183,6 @@
 
 <script>
     let MY_ID = null;
-    const socket = io(); // Socket.io 초기화
-    let peerConnection;
-    let dataChannel;
-    let currentRoomId;
 
     function initIdentity() {
         let savedKey = localStorage.getItem('MARS_BANK_KEY');
@@ -210,9 +197,7 @@
         sync();
     }
 
-    function copyId() {
-        if (navigator.clipboard) { navigator.clipboard.writeText(MY_ID); alert("ID Copied: " + MY_ID); }
-    }
+    function copyId() { if (navigator.clipboard) { navigator.clipboard.writeText(MY_ID); alert("ID Copied: " + MY_ID); } }
 
     function go(id) {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -225,14 +210,16 @@
     }
 
     async function sync() {
-        const res = await fetch(`/account/${MY_ID}`);
-        const data = await res.json();
-        document.getElementById('bal-usd').innerText = `$ ${data.usd.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        document.getElementById('bal-mb').innerText = `${data.mb.toFixed(2)} MB`;
-        document.getElementById('bal-hmj').innerText = data.hmj.toFixed(3);
-        window.history_data = data;
-        const activeTab = document.querySelector('.tab.active').id === 'tab-a' ? 'asset' : 'file';
-        renderLedger(activeTab);
+        try {
+            const res = await fetch(`/account/${MY_ID}`);
+            const data = await res.json();
+            document.getElementById('bal-usd').innerText = `$ ${data.usd.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+            document.getElementById('bal-mb').innerText = `${data.mb.toFixed(2)} MB`;
+            document.getElementById('bal-hmj').innerText = data.hmj.toFixed(3);
+            window.history_data = data;
+            const activeTab = document.querySelector('.tab.active').id === 'tab-a' ? 'asset' : 'file';
+            renderLedger(activeTab);
+        } catch(e) { console.error("서버 연결 대기 중..."); }
     }
 
     function switchLedger(type) {
@@ -246,7 +233,7 @@
         const container = document.getElementById('ledger-list');
         container.innerHTML = list.map(h => `
             <div class="ledger-item">
-                <div><div style="font-weight:700; font-size:14px;">${type==='asset'?h.type:`${h.type} (${h.file})`}</div><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${h.time} ${h.tunnel ? `| ID: ${h.tunnel}` : ''}</div></div>
+                <div><div style="font-weight:700; font-size:14px;">${type==='asset'?h.type:`${h.type} (${h.file})`}</div><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${h.time}</div></div>
                 <div style="font-weight:800; font-size:15px; color:${h.type.includes('RCV')||h.type.includes('MINT')?'var(--success)':'#fff'}">${h.type.includes('SEND')?'-':'+'}${type==='asset'?h.amount+' '+h.asset : h.size+' MB'}</div>
             </div>`).join('') || '<div style="padding:40px; text-align:center; color:var(--text-muted); font-size:13px;">No records.</div>';
     }
@@ -255,7 +242,6 @@
         const file = document.getElementById(inputId).files[0];
         const disp = document.getElementById(dispId);
         if(file) { disp.innerText = `Selected: ${file.name}`; disp.style.display = 'block'; }
-        else { disp.style.display = 'none'; }
     }
 
     async function mint() {
@@ -271,162 +257,107 @@
         if(!amount || amount <= 0) return alert("Amount needed.");
         const res = await fetch('/transfer-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ senderId: MY_ID, assetType: type, amount: amount }) });
         const data = await res.json();
-        if(res.ok) { alert(`Ticket Generated: ${data.ticketCode}\nShare this with the receiver.`); document.getElementById('as-amt').value = ''; go('screen-main'); } else alert(data.error);
+        if(res.ok) { alert(`Ticket Generated: ${data.ticketCode}\nShare this code.`); document.getElementById('as-amt').value = ''; go('screen-main'); } else alert(data.error);
     }
 
     async function claimAsset() {
         const ticketCode = document.getElementById('rcv-ticket').value.trim().toUpperCase();
         if(!ticketCode) return;
         const res = await fetch('/claim-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ receiverId: MY_ID, ticketCode: ticketCode }) });
-        if(res.ok) { alert("Asset Claimed Successfully!"); document.getElementById('rcv-ticket').value = ''; go('screen-main'); } else alert("Invalid Ticket");
+        if(res.ok) { alert("Asset Claimed!"); document.getElementById('rcv-ticket').value = ''; go('screen-main'); } else alert("Invalid Ticket");
     }
 
     /* =========================================================
-       🚀 WebRTC P2P FILE TRANSFER ENGINE
+       🚀 V11: OFFLINE ENCRYPTED PACKAGING (.marscube)
        ========================================================= */
-    const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }; // 구글 퍼블릭 STUN
+    
+    function downloadBlob(blob, filename) {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); window.URL.revokeObjectURL(url);
+    }
 
-    // 1. 송신자 (HOST) 터널 개통
-    function hostP2P() {
+    // 1. 송신자: 파일을 Base64로 묶어 .marscube 로 다운로드 (서버는 자격증명만 생성)
+    async function packageData() {
         const file = document.getElementById('f-in').files[0];
-        if (!file) return alert("Select a file first.");
+        if (!file) return alert("전송할 원본 파일을 선택하세요.");
         
-        currentRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-        socket.emit('join-room', currentRoomId);
+        const sizeMB = (file.size / (1024*1024)).toFixed(2);
+
+        // 서버에 권한 티켓 발급 요청 (파일 안 보냄)
+        const res = await fetch('/auth-data-emit', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({ accountId: MY_ID, filename: file.name, sizeMB }) });
+        const data = await res.json();
         
-        document.getElementById('p2p-status').style.display = 'block';
-        document.getElementById('p2p-msg').innerText = `Room Created: [ ${currentRoomId} ] Waiting for peer...`;
-        alert(`P2P Tunnel ID: [ ${currentRoomId} ]\nProvide this to receiver. Do not close this screen.`);
-    }
-
-    // 2. 수신자 접속 완료 -> 송신자가 WebRTC Offer 생성
-    socket.on('peer-joined', async () => {
-        document.getElementById('p2p-msg').innerText = "Peer Connected. Initiating Transfer...";
-        peerConnection = new RTCPeerConnection(configuration);
-        
-        // 데이터 채널 생성
-        dataChannel = peerConnection.createDataChannel('fileTransfer');
-        setupDataChannel(dataChannel, true);
-
-        peerConnection.onicecandidate = (e) => {
-            if(e.candidate) socket.emit('webrtc-ice', { roomId: currentRoomId, candidate: e.candidate });
-        };
-
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        socket.emit('webrtc-offer', { roomId: currentRoomId, offer });
-    });
-
-    // 3. 수신자 (JOIN) 접속
-    async function joinP2P() {
-        currentRoomId = document.getElementById('f-tid').value.trim().toUpperCase();
-        if(!currentRoomId) return;
-        
-        document.getElementById('p2p-status').style.display = 'block';
-        document.getElementById('p2p-msg').innerText = "Connecting to Host...";
-        socket.emit('join-room', currentRoomId);
-    }
-
-    // 4. 수신자가 Offer 받고 Answer 보냄
-    socket.on('webrtc-offer', async (offer) => {
-        peerConnection = new RTCPeerConnection(configuration);
-        
-        peerConnection.ondatachannel = (event) => {
-            dataChannel = event.channel;
-            setupDataChannel(dataChannel, false);
-        };
-
-        peerConnection.onicecandidate = (e) => {
-            if(e.candidate) socket.emit('webrtc-ice', { roomId: currentRoomId, candidate: e.candidate });
-        };
-
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('webrtc-answer', { roomId: currentRoomId, answer });
-    });
-
-    // 5. 송신자가 Answer 받음
-    socket.on('webrtc-answer', async (answer) => {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    });
-
-    // 6. ICE Candidate 교환
-    socket.on('webrtc-ice', async (candidate) => {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    });
-
-    // 7. P2P DataChannel 설정 및 바이너리 전송/수신
-    let receiveBuffer = [];
-    let receivedSize = 0;
-    let incomingFileMeta = null;
-
-    function setupDataChannel(channel, isSender) {
-        channel.binaryType = 'arraybuffer';
-        
-        channel.onopen = () => {
-            if(isSender) {
-                document.getElementById('p2p-msg').innerText = "Streaming Data (0%)";
-                const file = document.getElementById('f-in').files[0];
-                
-                // 메타데이터 먼저 전송
-                channel.send(JSON.stringify({ name: file.name, size: file.size, type: file.type }));
-                
-                // 바이너리 청크 전송 (16KB)
-                const chunkSize = 16384; 
-                let offset = 0;
-                const reader = new FileReader();
-                
-                reader.onload = e => {
-                    channel.send(e.target.result);
-                    offset += e.target.result.byteLength;
-                    const progress = Math.round((offset / file.size) * 100);
-                    document.getElementById('p2p-bar').style.width = progress + '%';
-                    document.getElementById('p2p-msg').innerText = `Streaming Data (${progress}%)`;
-                    
-                    if (offset < file.size) {
-                        // Backpressure 방지: 버퍼가 1MB 이상 쌓이면 잠시 대기
-                        if(channel.bufferedAmount > 1024 * 1024) { setTimeout(readSlice, 50); }
-                        else { readSlice(); }
-                    } else {
-                        document.getElementById('p2p-msg').innerText = "Transfer Complete!";
-                        fetch('/log-file-transfer', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({senderId: MY_ID, receiverId: 'UNKNOWN', fileName: file.name, sizeMB: (file.size/(1024*1024)).toFixed(2), tunnelId: currentRoomId})});
-                        setTimeout(() => { document.getElementById('p2p-status').style.display='none'; go('screen-main'); }, 2000);
-                    }
+        if(res.ok) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                // 티켓 코드와 원본 데이터를 하나의 JSON으로 패키징
+                const packageObj = {
+                    MARS_VERSION: "1.0",
+                    authTicket: data.ticketCode,
+                    meta: { name: file.name, type: file.type, size: file.size },
+                    payloadBase64: e.target.result // 순수 바이너리를 문자열화
                 };
-                const readSlice = () => reader.readAsArrayBuffer(file.slice(offset, offset + chunkSize));
-                readSlice();
-            }
-        };
+                
+                // .marscube 파일로 기기에 다운로드
+                const blob = new Blob([JSON.stringify(packageObj)], { type: "application/json" });
+                downloadBlob(blob, `${file.name.split('.')[0]}_Encrypted.marscube`);
+                
+                alert(`✅ [ .marscube ] 암호화 봉투가 다운로드되었습니다!\n서버에 티켓 [ ${data.ticketCode} ] 가 등록되었습니다.\n이제 카카오톡으로 파일을 전달하세요.`);
+                document.getElementById('f-in').value = '';
+                document.getElementById('f-name-disp').style.display = 'none';
+                go('screen-main');
+            };
+            reader.readAsDataURL(file);
+        } else {
+            alert(data.error);
+        }
+    }
 
-        channel.onmessage = (event) => {
-            if(!isSender) {
-                if(typeof event.data === 'string') {
-                    incomingFileMeta = JSON.parse(event.data);
-                    receiveBuffer = []; receivedSize = 0;
+    // 2. 수신자: .marscube 업로드 시 서버 허가 받고 내부의 원본 파일 추출
+    function unpackData() {
+        const fileInput = document.getElementById('f-rcv-file');
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const packageObj = JSON.parse(e.target.result);
+                if (packageObj.MARS_VERSION !== "1.0" || !packageObj.authTicket) throw new Error();
+
+                // 서버에 티켓 소모 요청 (허락받기)
+                const res = await fetch('/auth-data-claim', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ receiverId: MY_ID, ticketCode: packageObj.authTicket }) });
+                
+                if(res.ok) { 
+                    // 허락 성공! Base64를 다시 Blob으로 복원하여 다운로드 트리거
+                    const parts = packageObj.payloadBase64.split(';base64,');
+                    const contentType = parts[0].split(':')[1] || packageObj.meta.type;
+                    const raw = window.atob(parts[1]);
+                    const uInt8Array = new Uint8Array(raw.length);
+                    for (let i = 0; i < raw.length; ++i) { uInt8Array[i] = raw.charCodeAt(i); }
+                    
+                    const blob = new Blob([uInt8Array], { type: contentType });
+                    downloadBlob(blob, packageObj.meta.name);
+
+                    alert(`✅ 서버 자격 증명 통과!\n[${packageObj.meta.name}] 원본 파일 압축 해제 및 다운로드 완료!`); 
+                    fileInput.value = ''; 
+                    go('screen-main'); 
                 } else {
-                    receiveBuffer.push(event.data);
-                    receivedSize += event.data.byteLength;
-                    const progress = Math.round((receivedSize / incomingFileMeta.size) * 100);
-                    document.getElementById('p2p-bar').style.width = progress + '%';
-                    document.getElementById('p2p-msg').innerText = `Receiving Data (${progress}%)`;
-
-                    if(receivedSize === incomingFileMeta.size) {
-                        document.getElementById('p2p-msg').innerText = "Download Complete!";
-                        const blob = new Blob(receiveBuffer, { type: incomingFileMeta.type });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url; a.download = incomingFileMeta.name;
-                        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                        
-                        // 내 장부에 기록
-                        fetch('/log-file-transfer', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({senderId: 'UNKNOWN', receiverId: MY_ID, fileName: incomingFileMeta.name, sizeMB: (incomingFileMeta.size/(1024*1024)).toFixed(2), tunnelId: currentRoomId})});
-                        setTimeout(() => { document.getElementById('p2p-status').style.display='none'; go('screen-main'); }, 2000);
-                    }
+                    const errData = await res.json();
+                    alert("⛔ 해독 거부: " + errData.error);
+                    fileInput.value = '';
                 }
+            } catch(err) {
+                alert("⛔ 손상되거나 위조된 .marscube 암호화 파일입니다.");
+                fileInput.value = '';
             }
         };
+        reader.readAsText(file);
     }
 
     window.onload = initIdentity;
