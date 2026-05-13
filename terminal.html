@@ -36,14 +36,18 @@
         .back-btn { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-muted); cursor: pointer; margin-bottom: 25px; font-weight: 600; }
         .box { background: var(--surface); padding: 25px; border-radius: 20px; border: 1px solid var(--border); margin-bottom: 20px; }
         
-        input, select { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 15px; border-radius: 12px; font-size: 14px; box-sizing: border-box; outline: none; margin-bottom: 15px; transition: 0.2s; text-transform: uppercase;}
+        input[type="number"], input[type="text"], select { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 15px; border-radius: 12px; font-size: 14px; box-sizing: border-box; outline: none; margin-bottom: 15px; transition: 0.2s; text-transform: uppercase;}
         input:focus { border-color: var(--accent); }
-        input[type="file"] { padding: 12px; font-size: 12px; color: var(--text-muted); text-transform: none; }
-        input[type="file"]::file-selector-button { background: #2C2C2E; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; margin-right: 15px; font-weight: 600; }
         
+        /* 커스텀 파일 업로드 디자인 (마스킹) */
+        .file-upload-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; margin-bottom: 15px; }
+        .file-upload-wrapper input[type="file"] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; }
+        .custom-file-btn { display: flex; align-items: center; justify-content: center; gap: 10px; background: #2C2C2E; color: #fff; border: 1px dashed #48484A; padding: 18px; border-radius: 12px; font-weight: 600; font-size: 14px; transition: 0.2s; text-align: center; }
+        .file-upload-wrapper:hover .custom-file-btn { border-color: var(--accent); color: var(--accent); background: #1C1C1E; }
+        .file-name-display { font-size: 12px; color: var(--success); text-align: center; margin-bottom: 15px; display: none; word-break: break-all; }
+
         .btn-action { width: 100%; background: var(--accent); border: none; padding: 18px; border-radius: 14px; color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; transition: 0.2s; letter-spacing: 0.5px; }
         .btn-action:active { transform: scale(0.98); }
-        .btn-success { background: var(--success); color: #000; }
 
         .tab-bar { display: flex; background: #000; padding: 5px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--border); }
         .tab { flex: 1; text-align: center; padding: 12px; font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; color: var(--text-muted); letter-spacing: 0.5px; }
@@ -126,13 +130,18 @@
                 <select id="as-type" style="flex:1;"><option value="HMJ">HMJ</option><option value="USD">USD</option></select>
                 <input type="number" id="as-amt" placeholder="Amount" style="flex:2; margin-bottom:0;">
             </div>
-            <button class="btn-action" style="margin-top:15px;" onclick="sendAsset()">GENERATE TICKET</button>
+            <button class="btn-action" style="margin-top:15px;" onclick="sendAsset()">GENERATE .MARSKEY</button>
         </div>
 
         <div class="box">
-            <span class="label">CLAIM ASSET</span>
-            <input type="text" id="rcv-ticket" placeholder="Enter Ticket Code (e.g. 7K9A2B)">
-            <button class="btn-action btn-success" onclick="claimAsset()">CLAIM ASSET</button>
+            <span class="label">CLAIM ASSET (UPLOAD .MARSKEY)</span>
+            <div class="file-upload-wrapper" style="margin-bottom:0;">
+                <div class="custom-file-btn">
+                    <svg class="svg-icon" style="width:20px; height:20px; margin:0;" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                    <span>열쇠 파일(.marskey) 선택하여 즉시 수령</span>
+                </div>
+                <input type="file" id="rcv-asset-file" accept=".marskey" onchange="claimAssetFromFile()">
+            </div>
         </div>
     </div>
 
@@ -141,15 +150,27 @@
         <h2 style="margin-top:0;">DATA TUNNEL</h2>
         
         <div class="box">
-            <span class="label">UPLOAD DATA</span>
-            <input type="file" id="f-in">
-            <button class="btn-action" onclick="sendFile()">GENERATE DATA TICKET</button>
+            <span class="label">UPLOAD RAW DATA</span>
+            <div class="file-upload-wrapper">
+                <div class="custom-file-btn">
+                    <svg class="svg-icon" style="width:20px; height:20px; margin:0;" viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path></svg>
+                    <span>전송할 원본 파일 선택</span>
+                </div>
+                <input type="file" id="f-in" onchange="showFileName('f-in', 'f-name-disp')">
+            </div>
+            <div id="f-name-disp" class="file-name-display"></div>
+            <button class="btn-action" onclick="sendFile()">GENERATE .MARSKEY</button>
         </div>
 
         <div class="box">
-            <span class="label">DOWNLOAD DATA</span>
-            <input type="text" id="f-tid" placeholder="Enter Ticket Code">
-            <button class="btn-action btn-success" onclick="receiveFile()">SUMMON DATA</button>
+            <span class="label">DOWNLOAD DATA (UPLOAD .MARSKEY)</span>
+            <div class="file-upload-wrapper" style="margin-bottom:0;">
+                <div class="custom-file-btn">
+                    <svg class="svg-icon" style="width:20px; height:20px; margin:0;" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                    <span>열쇠 파일(.marskey) 선택하여 즉시 다운로드</span>
+                </div>
+                <input type="file" id="f-rcv-file" accept=".marskey" onchange="receiveFileFromFile()">
+            </div>
         </div>
     </div>
 
@@ -225,47 +246,89 @@
         const container = document.getElementById('ledger-list');
         container.innerHTML = list.map(h => `
             <div class="ledger-item">
-                <div><div style="font-weight:700; font-size:14px;">${type==='asset'?h.type:`${h.type} (${h.file})`}</div><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${h.time} ${h.tunnel ? `| TICKET: ${h.tunnel}` : ''}</div></div>
+                <div><div style="font-weight:700; font-size:14px;">${type==='asset'?h.type:`${h.type} (${h.file})`}</div><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${h.time} ${h.tunnel ? `| CODE: ${h.tunnel}` : ''}</div></div>
                 <div style="font-weight:800; font-size:15px; color:${h.type.includes('RCV')||h.type.includes('MINT')?'var(--success)':'#fff'}">${h.type.includes('SEND')?'-':'+'}${type==='asset'?h.amount+' '+h.asset : h.size+' MB'}</div>
-            </div>`).join('') || '<div style="padding:40px; text-align:center; color:var(--text-muted); font-size:13px;">내역이 없습니다. 새 자산을 거래해보세요.</div>';
+            </div>`).join('') || '<div style="padding:40px; text-align:center; color:var(--text-muted); font-size:13px;">No records.</div>';
+    }
+
+    function showFileName(inputId, dispId) {
+        const file = document.getElementById(inputId).files[0];
+        const disp = document.getElementById(dispId);
+        if(file) { disp.innerText = `Selected: ${file.name}`; disp.style.display = 'block'; }
+        else { disp.style.display = 'none'; }
+    }
+
+    // 파일 다운로드 유틸리티 함수 (열쇠 파일 발급용)
+    function downloadKeyFile(filename, textData) {
+        const element = document.createElement('a');
+        element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(textData));
+        element.setAttribute('download', filename);
+        element.style.display = 'none';
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
     }
 
     async function mint() {
         const res = await fetch('/mint-hmj', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
             body: JSON.stringify({ accountId: MY_ID, A: document.getElementById('m-a').value, B: document.getElementById('m-b').value, x: document.getElementById('m-x').value, y: document.getElementById('m-y').value }) });
         const data = await res.json();
-        if(res.ok) { alert("식 증명 성공! 1.000 HMJ가 발행되었습니다."); document.getElementById('m-y').value=''; go('screen-main'); } else alert(data.error);
+        if(res.ok) { alert("Success! 1.000 HMJ Minted."); document.getElementById('m-y').value=''; go('screen-main'); } else alert(data.error);
     }
 
-    // UX 개선: 비밀번호 없는 송금
+    // [자산 송금] -> .marskey 파일 다운로드
     async function sendAsset() {
         const amount = document.getElementById('as-amt').value;
+        const type = document.getElementById('as-type').value;
         if(!amount || amount <= 0) return alert("수량을 입력하세요.");
         
         const res = await fetch('/transfer-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ senderId: MY_ID, assetType: document.getElementById('as-type').value, amount: amount }) });
+            body: JSON.stringify({ senderId: MY_ID, assetType: type, amount: amount }) });
         const data = await res.json();
+        
         if(res.ok) { 
-            alert(`✅ 자산 티켓 발급 완료\n\n수신자에게 아래 6자리 코드를 전달하세요.\n[ ${data.ticketCode} ]`); 
+            // 열쇠 파일 구조 생성
+            const keyData = JSON.stringify({ type: 'MARS_ASSET', code: data.ticketCode, timestamp: new Date().toISOString() });
+            downloadKeyFile(`Asset_${amount}${type}_${data.ticketCode}.marskey`, keyData);
+            
+            alert(`✅ 자산이 안전하게 보관되었습니다.\n다운로드된 [.marskey] 파일을 카카오톡 등으로 수신자에게 전달하세요.`); 
             document.getElementById('as-amt').value = '';
             go('screen-main'); 
         } else alert(data.error);
     }
 
-    // UX 개선: 단일 티켓 코드 수령
-    async function claimAsset() {
-        const ticketCode = document.getElementById('rcv-ticket').value.trim().toUpperCase();
-        if(!ticketCode) return alert("티켓 코드를 입력하세요.");
+    // [자산 수신] -> .marskey 파일 업로드 즉시 처리
+    function claimAssetFromFile() {
+        const fileInput = document.getElementById('rcv-asset-file');
+        const file = fileInput.files[0];
+        if (!file) return;
 
-        const res = await fetch('/claim-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ receiverId: MY_ID, ticketCode: ticketCode }) });
-        if(res.ok) { 
-            alert("✅ 자산 수령이 완료되었습니다!"); 
-            document.getElementById('rcv-ticket').value = '';
-            go('screen-main'); 
-        } else alert("유효하지 않거나 이미 사용된 티켓입니다.");
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const keyData = JSON.parse(e.target.result);
+                if (keyData.type !== 'MARS_ASSET' || !keyData.code) throw new Error("Invalid Key");
+
+                const res = await fetch('/claim-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ receiverId: MY_ID, ticketCode: keyData.code }) });
+                
+                if(res.ok) { 
+                    alert("✅ 자산 수령이 완료되었습니다!"); 
+                    fileInput.value = ''; // 초기화
+                    go('screen-main'); 
+                } else {
+                    alert("유효하지 않거나 이미 사용된 티켓입니다.");
+                    fileInput.value = '';
+                }
+            } catch(err) {
+                alert("잘못된 열쇠 파일입니다.");
+                fileInput.value = '';
+            }
+        };
+        reader.readAsText(file);
     }
 
+    // [파일 업로드] -> .marskey 파일 다운로드
     async function sendFile() {
         const file = document.getElementById('f-in').files[0];
         if (!file) return alert("업로드할 파일을 선택하세요.");
@@ -276,12 +339,20 @@
             const res = await fetch('/emit', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
                 body: JSON.stringify({ accountId: MY_ID, fileData }) });
             const data = await res.json();
-            alert(`✅ 파일 티켓 발급 완료\n\n수신자에게 아래 6자리 코드를 전달하세요.\n[ ${data.tunnelId} ]`); 
+            
+            // 열쇠 파일 구조 생성
+            const keyData = JSON.stringify({ type: 'MARS_DATA', code: data.tunnelId, filename: file.name, timestamp: new Date().toISOString() });
+            downloadKeyFile(`DataTicket_${data.tunnelId}.marskey`, keyData);
+
+            alert(`✅ 원본 데이터가 서버 RAM에 암호화되었습니다.\n다운로드된 [.marskey] 열쇠 파일을 수신자에게 전달하세요.`); 
+            document.getElementById('f-in').value = '';
+            document.getElementById('f-name-disp').style.display = 'none';
             go('screen-main');
         };
         reader.readAsDataURL(file);
     }
 
+    // 모바일 크래시 방지: Base64 -> Blob 변환
     function base64ToBlob(base64, mimeType) {
         const parts = base64.split(';base64,');
         const contentType = parts[0].split(':')[1] || mimeType;
@@ -292,31 +363,46 @@
         return new Blob([uInt8Array], { type: contentType });
     }
 
-    async function receiveFile() {
-        const tid = document.getElementById('f-tid').value.trim().toUpperCase();
-        if(!tid) return alert("티켓 코드를 입력하세요.");
+    // [파일 다운로드] -> .marskey 파일 업로드 즉시 처리
+    function receiveFileFromFile() {
+        const fileInput = document.getElementById('f-rcv-file');
+        const file = fileInput.files[0];
+        if (!file) return;
 
-        const res = await fetch(`/summon/${tid}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ accountId: MY_ID }) });
-        
-        if(res.ok) { 
-            const asset = await res.json(); 
-            const blob = base64ToBlob(asset.fileData.base64, asset.fileData.type);
-            const url = URL.createObjectURL(blob);
-            
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = asset.fileData.name; 
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            alert(`✅ [${asset.fileData.name}] 파일 수령 완료!`); 
-            document.getElementById('f-tid').value = '';
-            go('screen-main'); 
-        } else {
-            alert("유효하지 않거나 이미 만료된 티켓입니다.");
-        }
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const keyData = JSON.parse(e.target.result);
+                if (keyData.type !== 'MARS_DATA' || !keyData.code) throw new Error("Invalid Key");
+
+                const res = await fetch(`/summon/${keyData.code}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ accountId: MY_ID }) });
+                
+                if(res.ok) { 
+                    const asset = await res.json(); 
+                    const blob = base64ToBlob(asset.fileData.base64, asset.fileData.type);
+                    const url = URL.createObjectURL(blob);
+                    
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = asset.fileData.name; 
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    alert(`✅ [${asset.fileData.name}] 파일 수령 완료!`); 
+                    fileInput.value = '';
+                    go('screen-main'); 
+                } else {
+                    alert("유효하지 않거나 이미 만료된 열쇠입니다.");
+                    fileInput.value = '';
+                }
+            } catch(err) {
+                alert("잘못된 데이터 열쇠 파일입니다.");
+                fileInput.value = '';
+            }
+        };
+        reader.readAsText(file);
     }
 
     window.onload = initIdentity;
