@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MARS BANK | Premium Node</title>
+    <title>MARS BANK | P2P Node</title>
+    <script src="/socket.io/socket.io.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
     <style>
         :root { --bg: #05060A; --surface: #11131F; --accent: #FF3B30; --success: #34D399; --text-muted: #8E8E93; --border: #2C2C2E; }
@@ -17,15 +18,14 @@
         .id-badge { background: #1C1C1E; border: 1px solid var(--border); padding: 6px 12px; border-radius: 20px; font-size: 11px; font-family: monospace; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 6px; }
 
         .card-main { background: linear-gradient(135deg, #1C1C1E, #0A0A0B); border: 1px solid var(--border); border-radius: 24px; padding: 30px; margin-bottom: 30px; position: relative; overflow: hidden; }
-        .card-main::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(255, 59, 48, 0.05) 0%, transparent 50%); pointer-events: none; }
         .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; display: block; font-weight: 600; }
         .balance-main { font-size: 40px; font-weight: 800; letter-spacing: -1px; margin-bottom: 25px; color: #fff; }
         .sub-bals { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; border-top: 1px solid var(--border); padding-top: 20px; }
         .val-sub { font-size: 18px; font-weight: 700; color: #E5E5EA; }
 
-        .svg-icon { width: 26px; height: 26px; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; margin-bottom: 12px; }
+        .svg-icon { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; margin-bottom: 12px; }
         .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; }
-        .menu-item { background: var(--surface); border: 1px solid var(--border); padding: 25px 15px; border-radius: 20px; text-align: center; cursor: pointer; transition: 0.2s; color: var(--text-muted); }
+        .menu-item { background: var(--surface); border: 1px solid var(--border); padding: 25px 15px; border-radius: 20px; text-align: center; cursor: pointer; transition: 0.2s; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; }
         .menu-item:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-2px); }
         .m-title { font-size: 13px; font-weight: 700; color: #E5E5EA; }
 
@@ -39,18 +39,22 @@
         input[type="number"], input[type="text"], select { width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 15px; border-radius: 12px; font-size: 14px; box-sizing: border-box; outline: none; margin-bottom: 15px; transition: 0.2s; text-transform: uppercase;}
         input:focus { border-color: var(--accent); }
         
-        /* 커스텀 파일 업로드 디자인 (마스킹) */
+        /* 커스텀 업로드 버튼 */
         .file-upload-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; margin-bottom: 15px; }
         .file-upload-wrapper input[type="file"] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; }
-        .custom-file-btn { display: flex; align-items: center; justify-content: center; gap: 10px; background: #2C2C2E; color: #fff; border: 1px dashed #48484A; padding: 18px; border-radius: 12px; font-weight: 600; font-size: 14px; transition: 0.2s; text-align: center; }
-        .file-upload-wrapper:hover .custom-file-btn { border-color: var(--accent); color: var(--accent); background: #1C1C1E; }
+        .custom-file-btn { display: flex; align-items: center; justify-content: center; gap: 10px; background: #2C2C2E; color: #fff; border: 1px dashed #48484A; padding: 18px; border-radius: 12px; font-weight: 600; font-size: 14px; transition: 0.2s; }
         .file-name-display { font-size: 12px; color: var(--success); text-align: center; margin-bottom: 15px; display: none; word-break: break-all; }
 
         .btn-action { width: 100%; background: var(--accent); border: none; padding: 18px; border-radius: 14px; color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; transition: 0.2s; letter-spacing: 0.5px; }
-        .btn-action:active { transform: scale(0.98); }
+        .btn-success { background: var(--success); color: #000; }
+
+        /* P2P 통신 프로그레스 바 */
+        .progress-box { display: none; background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.3); padding: 15px; border-radius: 12px; margin-bottom: 15px; text-align: center; }
+        .progress-bar-bg { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 0%; background: var(--success); transition: width 0.1s linear; }
 
         .tab-bar { display: flex; background: #000; padding: 5px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--border); }
-        .tab { flex: 1; text-align: center; padding: 12px; font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; color: var(--text-muted); letter-spacing: 0.5px; }
+        .tab { flex: 1; text-align: center; padding: 12px; font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; color: var(--text-muted); }
         .tab.active { background: var(--surface); color: #fff; }
         .ledger-item { display: flex; justify-content: space-between; align-items: center; padding: 18px; border-bottom: 1px solid var(--border); }
         .ledger-item:last-child { border-bottom: none; }
@@ -96,7 +100,7 @@
             </div>
             <div class="menu-item" onclick="go('screen-file')">
                 <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-                <span class="m-title">DATA TUNNEL</span>
+                <span class="m-title">P2P DATA TUNNEL</span>
             </div>
             <div class="menu-item" onclick="go('screen-ledger')">
                 <svg class="svg-icon" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
@@ -107,8 +111,8 @@
 
     <div id="screen-mint" class="screen">
         <div class="back-btn" onclick="go('screen-main')"><svg class="svg-icon" style="width:18px; margin:0;" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> BACK</div>
-        <h2 style="margin-top:0;">HMJ ALGEBRAIC MINTING</h2>
-        <div class="box" style="text-align:center; padding:30px 20px;">
+        <h2 style="margin-top:0;">ALGEBRAIC MINTING</h2>
+        <div class="box" style="text-align:center;">
             <div style="font-size:24px; font-family:serif; color:var(--accent); font-weight:bold; margin-bottom:25px;">y² = x³ + Ax + B</div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                 <input type="number" id="m-a" placeholder="Coef A">
@@ -125,52 +129,48 @@
         <h2 style="margin-top:0;">ASSET TRANSFER</h2>
         
         <div class="box">
-            <span class="label">SEND ASSET</span>
+            <span class="label">SEND ASSET (ESCROW)</span>
             <div style="display:flex; gap:10px;">
                 <select id="as-type" style="flex:1;"><option value="HMJ">HMJ</option><option value="USD">USD</option></select>
                 <input type="number" id="as-amt" placeholder="Amount" style="flex:2; margin-bottom:0;">
             </div>
-            <button class="btn-action" style="margin-top:15px;" onclick="sendAsset()">GENERATE .MARSKEY</button>
+            <button class="btn-action" style="margin-top:15px;" onclick="sendAsset()">GENERATE TICKET</button>
         </div>
 
         <div class="box">
-            <span class="label">CLAIM ASSET (UPLOAD .MARSKEY)</span>
-            <div class="file-upload-wrapper" style="margin-bottom:0;">
-                <div class="custom-file-btn">
-                    <svg class="svg-icon" style="width:20px; height:20px; margin:0;" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-                    <span>열쇠 파일(.marskey) 선택하여 즉시 수령</span>
-                </div>
-                <input type="file" id="rcv-asset-file" accept=".marskey" onchange="claimAssetFromFile()">
-            </div>
+            <span class="label">CLAIM ASSET</span>
+            <input type="text" id="rcv-ticket" placeholder="Enter Ticket Code (e.g. 7K9A2B)">
+            <button class="btn-action btn-success" onclick="claimAsset()">CLAIM ASSET</button>
         </div>
     </div>
 
     <div id="screen-file" class="screen">
         <div class="back-btn" onclick="go('screen-main')"><svg class="svg-icon" style="width:18px; margin:0;" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> BACK</div>
-        <h2 style="margin-top:0;">DATA TUNNEL</h2>
+        <h2 style="margin-top:0;">P2P DATA TUNNEL</h2>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:20px;">* Data streams directly device-to-device. Server stores 0MB. Both peers must be active.</p>
         
+        <div class="progress-box" id="p2p-status">
+            <div style="font-size:13px; font-weight:700; color:var(--success);" id="p2p-msg">Waiting for Peer...</div>
+            <div class="progress-bar-bg"><div class="progress-fill" id="p2p-bar"></div></div>
+        </div>
+
         <div class="box">
-            <span class="label">UPLOAD RAW DATA</span>
+            <span class="label">SEND DATA (HOST)</span>
             <div class="file-upload-wrapper">
                 <div class="custom-file-btn">
                     <svg class="svg-icon" style="width:20px; height:20px; margin:0;" viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path></svg>
-                    <span>전송할 원본 파일 선택</span>
+                    <span>SELECT BINARY DATA</span>
                 </div>
                 <input type="file" id="f-in" onchange="showFileName('f-in', 'f-name-disp')">
             </div>
             <div id="f-name-disp" class="file-name-display"></div>
-            <button class="btn-action" onclick="sendFile()">GENERATE .MARSKEY</button>
+            <button class="btn-action" onclick="hostP2P()">OPEN P2P TUNNEL</button>
         </div>
 
         <div class="box">
-            <span class="label">DOWNLOAD DATA (UPLOAD .MARSKEY)</span>
-            <div class="file-upload-wrapper" style="margin-bottom:0;">
-                <div class="custom-file-btn">
-                    <svg class="svg-icon" style="width:20px; height:20px; margin:0;" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-                    <span>열쇠 파일(.marskey) 선택하여 즉시 다운로드</span>
-                </div>
-                <input type="file" id="f-rcv-file" accept=".marskey" onchange="receiveFileFromFile()">
-            </div>
+            <span class="label">RECEIVE DATA (JOIN)</span>
+            <input type="text" id="f-tid" placeholder="Enter P2P Room ID">
+            <button class="btn-action btn-success" onclick="joinP2P()">CONNECT & DOWNLOAD</button>
         </div>
     </div>
 
@@ -178,7 +178,7 @@
         <div class="back-btn" onclick="go('screen-main')"><svg class="svg-icon" style="width:18px; margin:0;" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> BACK</div>
         <div class="tab-bar">
             <div class="tab active" id="tab-a" onclick="switchLedger('asset')">FINANCE</div>
-            <div class="tab" id="tab-f" onclick="switchLedger('file')">DATA</div>
+            <div class="tab" id="tab-f" onclick="switchLedger('file')">DATA (P2P)</div>
         </div>
         <div id="ledger-list" style="background:var(--surface); border-radius:20px; overflow:hidden;"></div>
     </div>
@@ -192,6 +192,10 @@
 
 <script>
     let MY_ID = null;
+    const socket = io(); // Socket.io 초기화
+    let peerConnection;
+    let dataChannel;
+    let currentRoomId;
 
     function initIdentity() {
         let savedKey = localStorage.getItem('MARS_BANK_KEY');
@@ -207,10 +211,7 @@
     }
 
     function copyId() {
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(MY_ID);
-            alert("ID Copied: " + MY_ID);
-        }
+        if (navigator.clipboard) { navigator.clipboard.writeText(MY_ID); alert("ID Copied: " + MY_ID); }
     }
 
     function go(id) {
@@ -229,7 +230,6 @@
         document.getElementById('bal-usd').innerText = `$ ${data.usd.toLocaleString(undefined, {minimumFractionDigits:2})}`;
         document.getElementById('bal-mb').innerText = `${data.mb.toFixed(2)} MB`;
         document.getElementById('bal-hmj').innerText = data.hmj.toFixed(3);
-        
         window.history_data = data;
         const activeTab = document.querySelector('.tab.active').id === 'tab-a' ? 'asset' : 'file';
         renderLedger(activeTab);
@@ -246,7 +246,7 @@
         const container = document.getElementById('ledger-list');
         container.innerHTML = list.map(h => `
             <div class="ledger-item">
-                <div><div style="font-weight:700; font-size:14px;">${type==='asset'?h.type:`${h.type} (${h.file})`}</div><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${h.time} ${h.tunnel ? `| CODE: ${h.tunnel}` : ''}</div></div>
+                <div><div style="font-weight:700; font-size:14px;">${type==='asset'?h.type:`${h.type} (${h.file})`}</div><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${h.time} ${h.tunnel ? `| ID: ${h.tunnel}` : ''}</div></div>
                 <div style="font-weight:800; font-size:15px; color:${h.type.includes('RCV')||h.type.includes('MINT')?'var(--success)':'#fff'}">${h.type.includes('SEND')?'-':'+'}${type==='asset'?h.amount+' '+h.asset : h.size+' MB'}</div>
             </div>`).join('') || '<div style="padding:40px; text-align:center; color:var(--text-muted); font-size:13px;">No records.</div>';
     }
@@ -258,151 +258,175 @@
         else { disp.style.display = 'none'; }
     }
 
-    // 파일 다운로드 유틸리티 함수 (열쇠 파일 발급용)
-    function downloadKeyFile(filename, textData) {
-        const element = document.createElement('a');
-        element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(textData));
-        element.setAttribute('download', filename);
-        element.style.display = 'none';
-        document.body.appendChild(element);
-        element.click();
-        document.body.removeChild(element);
-    }
-
     async function mint() {
         const res = await fetch('/mint-hmj', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
             body: JSON.stringify({ accountId: MY_ID, A: document.getElementById('m-a').value, B: document.getElementById('m-b').value, x: document.getElementById('m-x').value, y: document.getElementById('m-y').value }) });
         const data = await res.json();
-        if(res.ok) { alert("Success! 1.000 HMJ Minted."); document.getElementById('m-y').value=''; go('screen-main'); } else alert(data.error);
+        if(res.ok) { alert("Success! 1.000 HMJ Minted."); go('screen-main'); } else alert(data.error);
     }
 
-    // [자산 송금] -> .marskey 파일 다운로드
     async function sendAsset() {
         const amount = document.getElementById('as-amt').value;
         const type = document.getElementById('as-type').value;
-        if(!amount || amount <= 0) return alert("수량을 입력하세요.");
-        
-        const res = await fetch('/transfer-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ senderId: MY_ID, assetType: type, amount: amount }) });
+        if(!amount || amount <= 0) return alert("Amount needed.");
+        const res = await fetch('/transfer-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ senderId: MY_ID, assetType: type, amount: amount }) });
         const data = await res.json();
-        
-        if(res.ok) { 
-            // 열쇠 파일 구조 생성
-            const keyData = JSON.stringify({ type: 'MARS_ASSET', code: data.ticketCode, timestamp: new Date().toISOString() });
-            downloadKeyFile(`Asset_${amount}${type}_${data.ticketCode}.marskey`, keyData);
-            
-            alert(`✅ 자산이 안전하게 보관되었습니다.\n다운로드된 [.marskey] 파일을 카카오톡 등으로 수신자에게 전달하세요.`); 
-            document.getElementById('as-amt').value = '';
-            go('screen-main'); 
-        } else alert(data.error);
+        if(res.ok) { alert(`Ticket Generated: ${data.ticketCode}\nShare this with the receiver.`); document.getElementById('as-amt').value = ''; go('screen-main'); } else alert(data.error);
     }
 
-    // [자산 수신] -> .marskey 파일 업로드 즉시 처리
-    function claimAssetFromFile() {
-        const fileInput = document.getElementById('rcv-asset-file');
-        const file = fileInput.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-            try {
-                const keyData = JSON.parse(e.target.result);
-                if (keyData.type !== 'MARS_ASSET' || !keyData.code) throw new Error("Invalid Key");
-
-                const res = await fetch('/claim-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
-                    body: JSON.stringify({ receiverId: MY_ID, ticketCode: keyData.code }) });
-                
-                if(res.ok) { 
-                    alert("✅ 자산 수령이 완료되었습니다!"); 
-                    fileInput.value = ''; // 초기화
-                    go('screen-main'); 
-                } else {
-                    alert("유효하지 않거나 이미 사용된 티켓입니다.");
-                    fileInput.value = '';
-                }
-            } catch(err) {
-                alert("잘못된 열쇠 파일입니다.");
-                fileInput.value = '';
-            }
-        };
-        reader.readAsText(file);
+    async function claimAsset() {
+        const ticketCode = document.getElementById('rcv-ticket').value.trim().toUpperCase();
+        if(!ticketCode) return;
+        const res = await fetch('/claim-asset', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ receiverId: MY_ID, ticketCode: ticketCode }) });
+        if(res.ok) { alert("Asset Claimed Successfully!"); document.getElementById('rcv-ticket').value = ''; go('screen-main'); } else alert("Invalid Ticket");
     }
 
-    // [파일 업로드] -> .marskey 파일 다운로드
-    async function sendFile() {
+    /* =========================================================
+       🚀 WebRTC P2P FILE TRANSFER ENGINE
+       ========================================================= */
+    const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }; // 구글 퍼블릭 STUN
+
+    // 1. 송신자 (HOST) 터널 개통
+    function hostP2P() {
         const file = document.getElementById('f-in').files[0];
-        if (!file) return alert("업로드할 파일을 선택하세요.");
+        if (!file) return alert("Select a file first.");
         
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-            const fileData = { name: file.name, type: file.type, size: file.size, base64: e.target.result };
-            const res = await fetch('/emit', { method: 'POST', headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify({ accountId: MY_ID, fileData }) });
-            const data = await res.json();
-            
-            // 열쇠 파일 구조 생성
-            const keyData = JSON.stringify({ type: 'MARS_DATA', code: data.tunnelId, filename: file.name, timestamp: new Date().toISOString() });
-            downloadKeyFile(`DataTicket_${data.tunnelId}.marskey`, keyData);
+        currentRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+        socket.emit('join-room', currentRoomId);
+        
+        document.getElementById('p2p-status').style.display = 'block';
+        document.getElementById('p2p-msg').innerText = `Room Created: [ ${currentRoomId} ] Waiting for peer...`;
+        alert(`P2P Tunnel ID: [ ${currentRoomId} ]\nProvide this to receiver. Do not close this screen.`);
+    }
 
-            alert(`✅ 원본 데이터가 서버 RAM에 암호화되었습니다.\n다운로드된 [.marskey] 열쇠 파일을 수신자에게 전달하세요.`); 
-            document.getElementById('f-in').value = '';
-            document.getElementById('f-name-disp').style.display = 'none';
-            go('screen-main');
+    // 2. 수신자 접속 완료 -> 송신자가 WebRTC Offer 생성
+    socket.on('peer-joined', async () => {
+        document.getElementById('p2p-msg').innerText = "Peer Connected. Initiating Transfer...";
+        peerConnection = new RTCPeerConnection(configuration);
+        
+        // 데이터 채널 생성
+        dataChannel = peerConnection.createDataChannel('fileTransfer');
+        setupDataChannel(dataChannel, true);
+
+        peerConnection.onicecandidate = (e) => {
+            if(e.candidate) socket.emit('webrtc-ice', { roomId: currentRoomId, candidate: e.candidate });
         };
-        reader.readAsDataURL(file);
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('webrtc-offer', { roomId: currentRoomId, offer });
+    });
+
+    // 3. 수신자 (JOIN) 접속
+    async function joinP2P() {
+        currentRoomId = document.getElementById('f-tid').value.trim().toUpperCase();
+        if(!currentRoomId) return;
+        
+        document.getElementById('p2p-status').style.display = 'block';
+        document.getElementById('p2p-msg').innerText = "Connecting to Host...";
+        socket.emit('join-room', currentRoomId);
     }
 
-    // 모바일 크래시 방지: Base64 -> Blob 변환
-    function base64ToBlob(base64, mimeType) {
-        const parts = base64.split(';base64,');
-        const contentType = parts[0].split(':')[1] || mimeType;
-        const raw = window.atob(parts[1]);
-        const rawLength = raw.length;
-        const uInt8Array = new Uint8Array(rawLength);
-        for (let i = 0; i < rawLength; ++i) { uInt8Array[i] = raw.charCodeAt(i); }
-        return new Blob([uInt8Array], { type: contentType });
-    }
+    // 4. 수신자가 Offer 받고 Answer 보냄
+    socket.on('webrtc-offer', async (offer) => {
+        peerConnection = new RTCPeerConnection(configuration);
+        
+        peerConnection.ondatachannel = (event) => {
+            dataChannel = event.channel;
+            setupDataChannel(dataChannel, false);
+        };
 
-    // [파일 다운로드] -> .marskey 파일 업로드 즉시 처리
-    function receiveFileFromFile() {
-        const fileInput = document.getElementById('f-rcv-file');
-        const file = fileInput.files[0];
-        if (!file) return;
+        peerConnection.onicecandidate = (e) => {
+            if(e.candidate) socket.emit('webrtc-ice', { roomId: currentRoomId, candidate: e.candidate });
+        };
 
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-            try {
-                const keyData = JSON.parse(e.target.result);
-                if (keyData.type !== 'MARS_DATA' || !keyData.code) throw new Error("Invalid Key");
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('webrtc-answer', { roomId: currentRoomId, answer });
+    });
 
-                const res = await fetch(`/summon/${keyData.code}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ accountId: MY_ID }) });
+    // 5. 송신자가 Answer 받음
+    socket.on('webrtc-answer', async (answer) => {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    // 6. ICE Candidate 교환
+    socket.on('webrtc-ice', async (candidate) => {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+
+    // 7. P2P DataChannel 설정 및 바이너리 전송/수신
+    let receiveBuffer = [];
+    let receivedSize = 0;
+    let incomingFileMeta = null;
+
+    function setupDataChannel(channel, isSender) {
+        channel.binaryType = 'arraybuffer';
+        
+        channel.onopen = () => {
+            if(isSender) {
+                document.getElementById('p2p-msg').innerText = "Streaming Data (0%)";
+                const file = document.getElementById('f-in').files[0];
                 
-                if(res.ok) { 
-                    const asset = await res.json(); 
-                    const blob = base64ToBlob(asset.fileData.base64, asset.fileData.type);
-                    const url = URL.createObjectURL(blob);
+                // 메타데이터 먼저 전송
+                channel.send(JSON.stringify({ name: file.name, size: file.size, type: file.type }));
+                
+                // 바이너리 청크 전송 (16KB)
+                const chunkSize = 16384; 
+                let offset = 0;
+                const reader = new FileReader();
+                
+                reader.onload = e => {
+                    channel.send(e.target.result);
+                    offset += e.target.result.byteLength;
+                    const progress = Math.round((offset / file.size) * 100);
+                    document.getElementById('p2p-bar').style.width = progress + '%';
+                    document.getElementById('p2p-msg').innerText = `Streaming Data (${progress}%)`;
                     
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = asset.fileData.name; 
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    
-                    alert(`✅ [${asset.fileData.name}] 파일 수령 완료!`); 
-                    fileInput.value = '';
-                    go('screen-main'); 
-                } else {
-                    alert("유효하지 않거나 이미 만료된 열쇠입니다.");
-                    fileInput.value = '';
-                }
-            } catch(err) {
-                alert("잘못된 데이터 열쇠 파일입니다.");
-                fileInput.value = '';
+                    if (offset < file.size) {
+                        // Backpressure 방지: 버퍼가 1MB 이상 쌓이면 잠시 대기
+                        if(channel.bufferedAmount > 1024 * 1024) { setTimeout(readSlice, 50); }
+                        else { readSlice(); }
+                    } else {
+                        document.getElementById('p2p-msg').innerText = "Transfer Complete!";
+                        fetch('/log-file-transfer', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({senderId: MY_ID, receiverId: 'UNKNOWN', fileName: file.name, sizeMB: (file.size/(1024*1024)).toFixed(2), tunnelId: currentRoomId})});
+                        setTimeout(() => { document.getElementById('p2p-status').style.display='none'; go('screen-main'); }, 2000);
+                    }
+                };
+                const readSlice = () => reader.readAsArrayBuffer(file.slice(offset, offset + chunkSize));
+                readSlice();
             }
         };
-        reader.readAsText(file);
+
+        channel.onmessage = (event) => {
+            if(!isSender) {
+                if(typeof event.data === 'string') {
+                    incomingFileMeta = JSON.parse(event.data);
+                    receiveBuffer = []; receivedSize = 0;
+                } else {
+                    receiveBuffer.push(event.data);
+                    receivedSize += event.data.byteLength;
+                    const progress = Math.round((receivedSize / incomingFileMeta.size) * 100);
+                    document.getElementById('p2p-bar').style.width = progress + '%';
+                    document.getElementById('p2p-msg').innerText = `Receiving Data (${progress}%)`;
+
+                    if(receivedSize === incomingFileMeta.size) {
+                        document.getElementById('p2p-msg').innerText = "Download Complete!";
+                        const blob = new Blob(receiveBuffer, { type: incomingFileMeta.type });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url; a.download = incomingFileMeta.name;
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        
+                        // 내 장부에 기록
+                        fetch('/log-file-transfer', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({senderId: 'UNKNOWN', receiverId: MY_ID, fileName: incomingFileMeta.name, sizeMB: (incomingFileMeta.size/(1024*1024)).toFixed(2), tunnelId: currentRoomId})});
+                        setTimeout(() => { document.getElementById('p2p-status').style.display='none'; go('screen-main'); }, 2000);
+                    }
+                }
+            }
+        };
     }
 
     window.onload = initIdentity;
