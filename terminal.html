@@ -3,86 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OYP Platform | MARS-1</title>
+    <title>OYP Premium Node | MARS-1</title>
     <script src="/socket.io/socket.io.js"></script>
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
-    <script src="https://unpkg.com/cornerstone-core@2.3.0/dist/cornerstone.min.js"></script>
-    <script src="https://unpkg.com/dicom-parser@1.8.13/dist/dicomParser.min.js"></script>
-    <script src="https://unpkg.com/cornerstone-wado-image-loader@4.1.5/dist/cornerstoneWADOImageLoader.bundle.min.js"></script>
-
+    
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        :root { --bg: #09090b; --panel: #18181b; --primary: #3b82f6; --accent: #10b981; --text: #f8fafc; --border: #27272a; }
+        :root { --bg: #09090b; --panel: #18181b; --primary: #3b82f6; --accent: #10b981; --text: #f8fafc; --text-dim: #94a3b8; --border: #27272a; }
         body { font-family: 'Pretendard', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
         
         /* Login Overlay */
-        #login-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:9999; display:flex; justify-content:center; align-items:center; }
+        #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; display: flex; justify-content: center; align-items: center; }
         .login-box { background: var(--panel); padding: 40px; border-radius: 12px; border: 1px solid var(--primary); text-align: center; width: 320px; box-shadow: 0 10px 30px rgba(59,130,246,0.3); }
-        .login-box input { width: 100%; padding: 12px; margin: 10px 0; background: #000; border: 1px solid var(--border); color: white; border-radius: 6px; outline:none; }
-        .login-box button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .login-box input { width: 100%; padding: 12px; margin: 10px 0; background: #000; border: 1px solid var(--border); color: white; border-radius: 6px; box-sizing: border-box; outline:none; }
+        .login-box button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; font-size:15px; }
 
-        /* Layout */
-        .sidebar { width: 220px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-        .brand { padding: 20px; font-size: 20px; font-weight: 900; color: var(--primary); border-bottom: 1px solid var(--border); letter-spacing: 1px; }
-        .nav-item { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid var(--border); color: #94a3b8; font-weight: bold; transition: 0.2s; }
+        /* Sidebar & Main */
+        .sidebar { width: 240px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .brand { padding: 20px; font-size: 22px; font-weight: 900; color: var(--primary); border-bottom: 1px solid var(--border); letter-spacing: 1px; }
+        .nav-item { padding: 16px 20px; cursor: pointer; border-bottom: 1px solid var(--border); color: var(--text-dim); font-weight: 700; transition: 0.2s; }
         .nav-item.active { background: rgba(59,130,246,0.1); color: var(--primary); border-right: 4px solid var(--primary); }
         
-        .main-content { flex: 1; display: flex; flex-direction: column; background: #000; position: relative; }
-        .top-bar { height: 60px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; justify-content: space-between; flex-shrink: 0; }
+        .main-content { flex: 1; display: flex; flex-direction: column; background: #000; min-width:0; }
+        .top-bar { height: 65px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; justify-content: space-between; flex-shrink: 0; }
         
-        .view-section { display: none; padding: 20px; flex: 1; overflow-y: auto; }
+        .view-section { display: none; padding: 25px; flex: 1; overflow-y: auto; }
         .view-section.active { display: block; animation: fadeIn 0.3s; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; transform:translateY(10px); } to { opacity: 1; transform:translateY(0); } }
 
-        /* UI Elements */
-        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-        .card h3 { margin-top:0; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-        .btn { background: var(--primary); color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; transition:0.2s; }
-        .btn:hover { filter: brightness(1.1); }
+        /* Cards & Forms */
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 25px; margin-bottom: 20px; }
+        .card h3 { margin-top:0; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom:15px; font-size:16px; }
+        .btn { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; transition:0.2s; font-size:14px; }
+        .btn:hover { filter: brightness(1.1); transform:translateY(-1px); }
         .btn.accent { background: var(--accent); }
-        input[type="file"], input[type="text"], input[type="number"] { background: #000; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 6px; width: 100%; box-sizing: border-box; margin-bottom: 15px; }
+        input[type="text"], input[type="number"], input[type="file"], select { background: #000; border: 1px solid var(--border); color: white; padding: 12px; border-radius: 8px; width: 100%; box-sizing: border-box; margin-bottom: 15px; outline:none; }
 
         /* Right Panel (Comm/Stream) */
-        .comm-panel { width: 320px; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
-        .video-box { height: 240px; background: #111; border-bottom: 1px solid var(--border); position: relative; }
+        .comm-panel { width: 340px; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+        .video-box { height: 260px; background: #111; border-bottom: 1px solid var(--border); position: relative; display:flex; align-items:center; justify-content:center; }
         .video-box iframe { width:100%; height:100%; border:none; display:none; }
         .chat-box { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
-        .chat-msg { background: #27272a; padding: 10px; border-radius: 8px; line-height: 1.4; }
-        .chat-msg.me { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.5); align-self: flex-end; }
-        .chat-input { padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 5px; }
+        .chat-msg { background: #27272a; padding: 10px 14px; border-radius: 12px; line-height: 1.4; max-width:85%; }
+        .chat-msg.me { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.4); align-self: flex-end; color:#bfdbfe; }
+        .chat-input { padding: 15px; border-top: 1px solid var(--border); display: flex; gap: 8px; background:#000;}
 
         /* Viewer Container */
-        #renderContainer { width: 100%; height: 500px; background: #111; border-radius: 8px; overflow: hidden; position: relative; border: 1px solid var(--border); }
+        #renderContainer { width: 100%; height: 500px; background: #050505; border-radius: 12px; overflow: hidden; position: relative; border: 1px solid var(--border); box-shadow: inset 0 0 50px rgba(0,0,0,0.8); }
     </style>
 </head>
 <body>
 
 <div id="login-overlay">
     <div class="login-box">
-        <h2 style="color:var(--primary); margin-top:0;">OYP NODE LOGIN</h2>
+        <h2 style="color:var(--primary); margin-top:0; letter-spacing:1px;">OYP PLATFORM</h2>
         <input type="text" id="loginId" placeholder="아이디 (Wallet ID)">
-        <input type="password" id="loginKey" placeholder="마스터 암호키 (d)">
-        <button onclick="login()">네트워크 접속</button>
+        <input type="password" id="loginKey" placeholder="마스터 암호키 숫자입력 (d)">
+        <button onclick="login()">결제망 및 데이터 네트워크 접속</button>
     </div>
 </div>
 
 <div class="sidebar">
-    <div class="brand">OYP PLATFORM</div>
+    <div class="brand">OYP NODE</div>
     <div class="nav-item active" onclick="switchTab('manage')">📁 데이터 관리 (Upload)</div>
     <div class="nav-item" onclick="switchTab('view')">👁️ 데이터 보기 (Viewer)</div>
     <div class="nav-item" onclick="switchTab('trade')">🤝 데이터 거래 (Market)</div>
-    <div class="nav-item" onclick="switchTab('asset')">💸 자산 관리 (Ledger)</div>
+    <div class="nav-item" onclick="switchTab('asset')">💸 자산 및 송금 (Ledger)</div>
 </div>
 
 <div class="main-content">
     <div class="top-bar">
-        <strong id="header-user">접속 대기중...</strong>
-        <div style="display:flex; gap:15px; font-weight:bold;">
+        <strong id="header-user" style="font-size:18px;">접속 대기중...</strong>
+        <div style="display:flex; gap:20px; font-weight:900; font-size:16px;">
             <span style="color:var(--accent);">💎 <span id="bal-hmj">0</span> HMJ</span>
-            <span style="color:#F59E0B;">💵 <span id="bal-usd">0</span> USD</span>
+            <span style="color:#F59E0B;">💵 $<span id="bal-usd">0</span></span>
         </div>
     </div>
 
@@ -91,21 +87,22 @@
             <h3>데이터 대수기하학적 암호화 및 등록</h3>
             <input type="file" id="uploadFile">
             <button class="btn" onclick="encryptAndUpload()">MARS-1 암호화 업로드</button>
-            <p style="font-size:12px; color:var(--text-dim); margin-top:10px;">* 데이터는 브라우저 단에서 위상 압축 처리 후 클라우드에 백색소음 상태로 저장됩니다.</p>
+            <p style="font-size:12px; color:var(--text-dim); margin-top:12px; line-height:1.5;">* 파일은 브라우저에서 동적 타원곡선 계수(Ad, Bd)로 변환된 후 백색소음 형태로 클라우드에 안전하게 저장됩니다.</p>
         </div>
         <div class="card">
             <h3>모바일 Web HTML 패키징</h3>
-            <button class="btn accent" onclick="packageToHTML()">선택한 데이터를 HTML 앱으로 내보내기</button>
+            <p style="font-size:13px; color:var(--text-dim); margin-bottom:15px;">업로드된 암호화 데이터를 단일 HTML로 묶어 모바일 환경이나 오프라인에서 즉시 열람하도록 내보냅니다.</p>
+            <button class="btn accent" onclick="packageToHTML()">HTML 번들 앱 다운로드</button>
         </div>
     </div>
 
     <div id="tab-view" class="view-section">
-        <div class="card" style="display: flex; gap: 10px; margin-bottom: 10px; padding: 10px;">
-            <select id="myFileList" style="padding: 10px; background: #000; color: white; border: 1px solid var(--border); border-radius: 6px; flex: 1; outline:none;"></select>
-            <button class="btn" onclick="loadAndRenderData()">선택 파일 렌더링</button>
+        <div class="card" style="display: flex; gap: 15px; margin-bottom: 20px; padding: 15px; background:var(--panel);">
+            <select id="myFileList" style="flex: 1; margin:0; font-size:14px;"></select>
+            <button class="btn" style="white-space:nowrap;" onclick="loadAndRenderData()">O(1) 검증 및 렌더링</button>
         </div>
         <div id="renderContainer">
-            <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:var(--text-dim);">상단에서 파일을 선택하여 로드하세요.</div>
+            <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:var(--text-dim); font-size:14px;">상단에서 소유권을 가진 파일을 선택하여 로드하세요.</div>
         </div>
     </div>
 
@@ -113,21 +110,36 @@
         <div class="card">
             <h3>내 데이터 마켓에 등록</h3>
             <div style="display:flex; gap:10px;">
-                <input type="text" id="tradeFileId" placeholder="판매할 파일 ID (위 관리 탭 참조)" style="flex:2;">
-                <input type="number" id="tradePrice" placeholder="판매 가격 (HMJ)" style="flex:1;">
-                <button class="btn accent" onclick="listForSale()">등록</button>
+                <select id="tradeFileSelect" style="flex:2; margin:0;"></select>
+                <input type="number" id="tradePrice" placeholder="판매 가격 (HMJ)" style="flex:1; margin:0;">
+                <button class="btn accent" style="white-space:nowrap;" onclick="listForSale()">마켓에 등록</button>
             </div>
         </div>
         <div class="card">
-            <h3>Global Data Market</h3>
+            <h3>🌐 Global Data Market</h3>
             <div id="market-list"></div>
         </div>
     </div>
 
     <div id="tab-asset" class="view-section">
         <div class="card">
-            <h3>HMJ 토큰 및 자산 내역</h3>
-            <div id="ledger-history" style="font-size:13px; color:var(--text-dim); line-height: 1.6;"></div>
+            <h3>자산 송금 (Ticket 발급)</h3>
+            <div style="display:flex; gap:10px;">
+                <select id="sendType" style="flex:1; margin:0;"><option value="HMJ">HMJ</option><option value="USD">USD</option></select>
+                <input type="number" id="sendAmt" placeholder="수량" style="flex:2; margin:0;">
+                <button class="btn" style="white-space:nowrap;" onclick="sendAsset()">티켓 발급</button>
+            </div>
+        </div>
+        <div class="card">
+            <h3>자산 입금 (Ticket 수취)</h3>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="rcvTicket" placeholder="전달받은 수표 티켓 번호 입력" style="flex:1; margin:0;">
+                <button class="btn accent" style="white-space:nowrap;" onclick="claimAsset()">입금 확인</button>
+            </div>
+        </div>
+        <div class="card">
+            <h3>장부 기록 (Ledger History)</h3>
+            <div id="ledger-history" style="font-size:13px; color:var(--text-dim); line-height: 1.6; max-height:250px; overflow-y:auto;"></div>
         </div>
     </div>
 </div>
@@ -135,43 +147,37 @@
 <div class="comm-panel">
     <div class="video-box" id="videoBox">
         <iframe id="jitsiFrame" allow="camera; microphone; fullscreen; display-capture"></iframe>
-        <button class="btn" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);" onclick="startStream()">🎥 실시간 화상/스트리밍 연결</button>
+        <button class="btn" id="btnStartVideo" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); box-shadow:0 10px 20px rgba(0,0,0,0.5);" onclick="startStream()">🎥 화상 스트리밍 연결</button>
     </div>
     <div class="chat-box" id="chatArea">
-        <div style="color:var(--text-dim); text-align:center;">채팅 및 파일 다이렉트 전송 영역</div>
+        <div style="color:var(--text-dim); text-align:center; margin-top:20px;">네트워크 통신망이 활성화되었습니다.</div>
     </div>
     <div class="chat-input">
         <input type="text" id="chatMsg" placeholder="메시지 입력..." style="margin:0; border-radius:20px;" onkeypress="if(event.key==='Enter') sendChat()">
-        <button class="btn" style="border-radius:20px;" onclick="sendChat()">전송</button>
+        <button class="btn" style="border-radius:20px; padding:0 20px;" onclick="sendChat()">전송</button>
     </div>
 </div>
 
 <script>
-    // --- 시스템 전역 변수 ---
     let MY_ID = '';
     let MY_KEY = 0; // 마스터 암호키(d)
     const socket = io();
-    const ROOM_ID = 'OYP_GLOBAL_ROOM';
 
-    // --- 1. 로그인 및 초기화 ---
+    // --- 1. 인증 및 장부 동기화 ---
     async function login() {
         MY_ID = document.getElementById('loginId').value.trim();
         MY_KEY = parseInt(document.getElementById('loginKey').value.trim());
-        if (!MY_ID || isNaN(MY_KEY)) return alert("아이디와 숫자 암호키를 입력하세요.");
+        if (!MY_ID || isNaN(MY_KEY)) return alert("아이디와 숫자로 된 암호키를 입력하세요.");
         
-        const res = await fetch('/api/login', {
-            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ accountId: MY_ID })
-        });
-        const data = await res.json();
-        if (data.success) {
-            document.getElementById('login-overlay').style.display = 'none';
-            document.getElementById('header-user').innerText = `접속자: ${MY_ID}`;
-            updateDashboard(data.account);
-            refreshMyFiles();
-            refreshMarket();
-            
-            socket.emit('join_room', ROOM_ID);
-        }
+        const res = await fetch(`/account/${MY_ID}`);
+        const acc = await res.json();
+        
+        document.getElementById('login-overlay').style.display = 'none';
+        document.getElementById('header-user').innerText = `ID: ${MY_ID}`;
+        updateDashboard(acc);
+        refreshMyFiles();
+        refreshMarket();
+        socket.emit('join_network', MY_ID);
     }
 
     function switchTab(tabId) {
@@ -182,19 +188,41 @@
     }
 
     function updateDashboard(acc) {
-        document.getElementById('bal-hmj').innerText = acc.hmj;
-        document.getElementById('bal-usd').innerText = acc.usd;
+        document.getElementById('bal-hmj').innerText = acc.hmj.toFixed(3);
+        document.getElementById('bal-usd').innerText = acc.usd.toLocaleString();
         document.getElementById('ledger-history').innerHTML = acc.history.map(h => 
-            `<div style="border-bottom:1px solid #333; padding:8px 0;">[${h.time}] <span style="color:var(--primary)">${h.type}</span>: ${h.detail}</div>`
+            `<div style="border-bottom:1px solid #333; padding:10px 0;">[${h.time}] <b style="color:var(--primary)">${h.type}</b>: ${h.detail}</div>`
         ).join('');
     }
 
-    // --- 2. 암호화 업로드 (MARS-1 모방) ---
+    async function syncData() {
+        const res = await fetch(`/account/${MY_ID}`);
+        updateDashboard(await res.json());
+        refreshMyFiles();
+        refreshMarket();
+    }
+
+    // --- 2. 자산 송금/입금 ---
+    async function sendAsset() {
+        const type = document.getElementById('sendType').value;
+        const amt = document.getElementById('sendAmt').value;
+        const res = await fetch('/transfer-asset', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ senderId: MY_ID, assetType: type, amount: amt }) });
+        const data = await res.json();
+        if(res.ok) { alert(`티켓 발급 완료: [ ${data.ticketCode} ]\n채팅창을 통해 전달하세요.`); syncData(); } else alert(data.error);
+    }
+
+    async function claimAsset() {
+        const ticket = document.getElementById('rcvTicket').value.trim();
+        const res = await fetch('/claim-asset', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ receiverId: MY_ID, ticketCode: ticket }) });
+        if(res.ok) { alert("자산 수취가 완료되었습니다!"); syncData(); } else alert("유효하지 않은 티켓입니다.");
+    }
+
+    // --- 3. 암호화 업로드 ---
     async function encryptAndUpload() {
         const file = document.getElementById('uploadFile').files[0];
         if(!file) return alert("파일을 선택하세요.");
         
-        // 브라우저 단에서 타원곡선 계수(Ad, Bd) 생성 시뮬레이션
+        // 브라우저 단에서 타원곡선 계수(Ad, Bd) 생성 
         const A0 = 5, B0 = 7;
         const Ad = A0 + MY_KEY;
         const Bd = B0 - (MY_KEY * file.name.length);
@@ -212,22 +240,71 @@
         
         if(data.success) {
             alert(`업로드 성공. 백색소음으로 안전하게 저장되었습니다.\n고유 ID: ${data.fileId}`);
-            refreshMyFiles();
-            login(); // 장부 갱신
+            syncData();
         }
     }
 
     async function refreshMyFiles() {
         const res = await fetch(`/api/data/myfiles/${MY_ID}`);
-        const files = await res.json();
-        const select = document.getElementById('myFileList');
-        select.innerHTML = '<option value="">렌더링할 파일을 선택하세요</option>';
-        files.forEach(f => {
-            select.innerHTML += `<option value="${f.filepath}" data-ad="${f.ad_key}" data-bd="${f.bd_key}">${f.filename} (${f.sizeMB}MB) - ID: ${f.fileId}</option>`;
+        const ObjectFiles = await res.json();
+        
+        const viewSelect = document.getElementById('myFileList');
+        const tradeSelect = document.getElementById('tradeFileSelect');
+        viewSelect.innerHTML = '<option value="">렌더링할 파일을 선택하세요</option>';
+        tradeSelect.innerHTML = '<option value="">판매할 파일을 선택하세요</option>';
+        
+        ObjectFiles.forEach(f => {
+            const html = `<option value="${f.filepath}" data-ad="${f.Ad}" data-bd="${f.Bd}" data-id="${f.fileId}">${f.filename} (${f.sizeMB}MB)</option>`;
+            viewSelect.innerHTML += html;
+            tradeSelect.innerHTML += html;
         });
     }
 
-    // --- 3. 뷰어 렌더링 (Three.js / Cornerstone) ---
+    // --- 4. 데이터 마켓 ---
+    async function listForSale() {
+        const select = document.getElementById('tradeFileSelect');
+        const fileId = select.options[select.selectedIndex].getAttribute('data-id');
+        const price = parseFloat(document.getElementById('tradePrice').value);
+        if(!fileId || isNaN(price)) return alert("파일과 가격을 입력하세요.");
+
+        const res = await fetch('/api/trade/list', {
+            method: 'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ sellerId: MY_ID, fileId, priceHMJ: price })
+        });
+        if((await res.json()).success) { alert("마켓에 등록되었습니다."); syncData(); }
+    }
+
+    async function refreshMarket() {
+        const res = await fetch('/api/trade/market');
+        const trades = await res.json();
+        const list = document.getElementById('market-list');
+        list.innerHTML = trades.map(t => `
+            <div style="border:1px solid var(--border); padding:15px; margin-bottom:10px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; background:#111;">
+                <div>
+                    <div style="font-weight:bold; color:var(--primary); font-size:14px; margin-bottom:4px;">${t.filename}</div>
+                    <div style="font-size:11px; color:var(--text-dim);">Seller ID: ${t.sellerId}</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-weight:900; color:var(--accent); margin-bottom:8px; font-size:15px;">${t.priceHMJ} HMJ</div>
+                    <button class="btn accent" style="padding:8px 12px; font-size:12px;" onclick="buyData('${t.tradeId}')">스마트 컨트랙트 체결</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function buyData(tradeId) {
+        const res = await fetch('/api/trade/buy', {
+            method: 'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ buyerId: MY_ID, tradeId })
+        });
+        const data = await res.json();
+        if(data.success) {
+            alert("스마트 컨트랙트 체결 완료. 소유권이 이전되었습니다.");
+            syncData();
+        } else { alert(data.error); }
+    }
+
+    // --- 5. 뷰어 렌더링 (O(1) 검증 및 Three.js) ---
     function loadAndRenderData() {
         const select = document.getElementById('myFileList');
         const filepath = select.value;
@@ -235,7 +312,6 @@
 
         const opt = select.options[select.selectedIndex];
         const Ad = parseFloat(opt.getAttribute('data-ad'));
-        const Bd = parseFloat(opt.getAttribute('data-bd'));
         const filename = opt.text.split(' ')[0].toLowerCase();
 
         // O(1) 역산 검증
@@ -246,10 +322,9 @@
         }
 
         const container = document.getElementById('renderContainer');
-        container.innerHTML = ''; // 초기화
+        container.innerHTML = ''; 
 
-        if (filename.endsWith('.stl')) {
-            // Three.js 렌더링
+        if (filename.match(/\.(stl|obj|ply)$/i)) {
             const scene = new THREE.Scene();
             const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 1000);
             camera.position.z = 200;
@@ -269,77 +344,28 @@
                 function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
                 animate();
             });
-        } else if (filename.endsWith('.dcm')) {
-            // Cornerstone 렌더링
-            cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
-            cornerstone.enable(container);
-            cornerstone.loadImage('wadouri:' + filepath).then((image) => {
-                cornerstone.displayImage(container, image);
-            });
         } else {
             container.innerHTML = `<img src="${filepath}" style="width:100%; height:100%; object-fit:contain;">`;
         }
     }
 
-    // --- 4. 데이터 거래 마켓 ---
-    async function listForSale() {
-        const fileId = document.getElementById('tradeFileId').value.trim();
-        const price = parseFloat(document.getElementById('tradePrice').value);
-        if(!fileId || isNaN(price)) return;
-
-        const res = await fetch('/api/trade/list', {
-            method: 'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ sellerId: MY_ID, fileId, priceHMJ: price })
-        });
-        if((await res.json()).success) { alert("마켓에 등록되었습니다."); refreshMarket(); }
-    }
-
-    async function refreshMarket() {
-        const res = await fetch('/api/trade/market');
-        const trades = await res.json();
-        const list = document.getElementById('market-list');
-        list.innerHTML = trades.map(t => `
-            <div style="border:1px solid var(--border); padding:15px; margin-bottom:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <div style="font-weight:bold; color:var(--primary);">${t.filename}</div>
-                    <div style="font-size:12px; color:var(--text-dim);">Seller: ${t.sellerId}</div>
-                </div>
-                <div style="text-align:right;">
-                    <div style="font-weight:bold; color:var(--accent); margin-bottom:5px;">${t.priceHMJ} HMJ</div>
-                    <button class="btn accent" style="padding:6px 12px; font-size:12px;" onclick="buyData('${t.tradeId}')">결제 및 권한획득</button>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    async function buyData(tradeId) {
-        const res = await fetch('/api/trade/buy', {
-            method: 'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ buyerId: MY_ID, tradeId })
-        });
-        const data = await res.json();
-        if(data.success) {
-            alert("스마트 컨트랙트 체결 완료. 데이터 보기 탭에서 렌더링 가능합니다.");
-            login(); refreshMarket(); refreshMyFiles();
-        } else { alert(data.error); }
-    }
-
-    // --- 5. 화상채팅 및 실시간 통신 (Jitsi + Socket.io) ---
+    // --- 6. 화상채팅 및 실시간 통신 (Jitsi + Socket.io) ---
     function startStream() {
+        document.getElementById('btnStartVideo').style.display = 'none';
         const frame = document.getElementById('jitsiFrame');
         frame.style.display = 'block';
-        frame.src = `https://meet.jit.si/OYP_Secure_Stream_${Date.now()}`;
+        frame.src = `https://meet.jit.si/MARS_Secure_Stream_${Date.now()}`;
     }
 
     function sendChat() {
         const msg = document.getElementById('chatMsg').value;
         if(msg) {
-            socket.emit('send_message', { roomId: ROOM_ID, sender: MY_ID, text: msg });
+            socket.emit('send_chat', { sender: MY_ID, text: msg });
             document.getElementById('chatMsg').value = '';
         }
     }
 
-    socket.on('receive_message', (data) => {
+    socket.on('receive_chat', (data) => {
         const isMe = data.sender === MY_ID;
         document.getElementById('chatArea').innerHTML += `
             <div class="chat-msg ${isMe ? 'me' : ''}">
@@ -350,8 +376,11 @@
         document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
     });
 
+    // --- 7. 패키징 ---
     function packageToHTML() {
-        alert("선택된 파일과 뷰어 엔진이 포함된 '단일 Standalone HTML' 파일을 생성하여 데스크톱/모바일에 다운로드합니다. (서버 연결 불필요)");
+        const select = document.getElementById('myFileList');
+        if(select.options.length <= 1) return alert("보유한 파일이 없습니다.");
+        alert("선택된 파일과 뷰어 엔진이 포함된 '단일 HTML 오프라인 뷰어'가 생성되어 다운로드됩니다.");
     }
 </script>
 </body>
