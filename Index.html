@@ -2,73 +2,65 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>OYP Unified Platform | MARS-1</title>
+    <title>OYP Unified Node</title>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        :root { --bg: #09090b; --panel: #18181b; --primary: #3b82f6; --accent: #10b981; --text: #f8fafc; --border: #27272a; }
-        body { font-family: 'Pretendard', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
-        .sidebar { width: 230px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-        .nav-item { padding: 18px 20px; cursor: pointer; border-bottom: 1px solid var(--border); font-weight: 700; color: #94a3b8; transition: 0.2s; }
+        :root { --bg: #09090b; --panel: #18181b; --primary: #3b82f6; --accent: #10b981; --text: #f8fafc; }
+        body { font-family: 'Pretendard', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; }
+        .sidebar { width: 220px; background: var(--panel); border-right: 1px solid #27272a; display: flex; flex-direction: column; }
+        .nav-item { padding: 18px 20px; cursor: pointer; border-bottom: 1px solid #27272a; font-weight: 700; color: #94a3b8; }
         .nav-item.active { background: rgba(59,130,246,0.1); color: var(--primary); border-right: 4px solid var(--primary); }
         .main { flex: 1; display: flex; flex-direction: column; background: #000; }
-        .tab-content { display: none; padding: 25px; flex: 1; overflow-y: auto; }
-        .tab-content.active { display: block; }
+        .view-section { display: none; padding: 25px; flex: 1; }
+        .view-section.active { display: block; }
         #login-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 9999; display: flex; justify-content: center; align-items: center; }
         .login-box { background: var(--panel); padding: 40px; border-radius: 12px; border: 1px solid var(--primary); width: 320px; text-align: center; }
         input, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 6px; box-sizing: border-box; }
-        input { background: #000; border: 1px solid var(--border); color: white; outline: none; }
-        button { background: var(--primary); color: white; font-weight: bold; border: none; cursor: pointer; transition: 0.2s; }
-        .card { background: var(--panel); padding: 20px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 20px; }
+        input { background: #000; border: 1px solid #27272a; color: white; }
+        button { background: var(--primary); color: white; font-weight: bold; border: none; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div id="login-overlay">
     <div class="login-box">
-        <h2 style="color:var(--primary); margin-top:0;">OYP NODE ACCESS</h2>
+        <h2 style="color:var(--primary); margin-top:0;">OYP NODE LOGIN</h2>
         <input type="text" id="loginId" placeholder="지갑 ID (Wallet ID)">
         <input type="password" id="loginKey" placeholder="숫자 암호키 (d)">
-        <button onclick="login()">통합 네트워크 접속</button>
+        <button onclick="login()">데이터 및 자산망 접속</button>
     </div>
 </div>
 
 <div class="sidebar">
-    <div style="padding:25px; font-weight:900; color:var(--primary); font-size:20px; letter-spacing:1px;">OYP PLATFORM</div>
+    <div style="padding:20px; font-weight:900; color:var(--primary); font-size:20px;">OYP PLATFORM</div>
     <div class="nav-item active" onclick="tab('manage')">📁 데이터 관리</div>
     <div class="nav-item" onclick="tab('view')">👁️ 데이터 보기</div>
-    <div class="nav-item" onclick="tab('trade')">🤝 데이터 거래</div>
-    <div class="nav-item" onclick="tab('asset')">💸 자산 관리</div>
+    <div class="nav-item" onclick="tab('asset')">💸 자산/결제 관리</div>
 </div>
 
 <div class="main">
-    <div style="height:65px; background:var(--panel); border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 25px; justify-content:space-between;">
+    <div style="height:60px; background:var(--panel); border-bottom:1px solid #27272a; display:flex; align-items:center; padding:0 20px; justify-content:space-between;">
         <strong id="header-user">접속 대기중</strong>
-        <div style="display:flex; gap:20px; font-weight:bold; color:var(--accent);">
-            <span id="header-hmj">💎 0.000 HMJ</span>
-            <span id="header-usd" style="color:#F59E0B;">💵 $0.00</span>
-        </div>
+        <div id="header-bal" style="font-weight:bold; color:var(--accent);">💎 0.000 HMJ</div>
     </div>
-
-    <div id="tab-manage" class="tab-content active">
-        <div class="card">
-            <h3>대수기하학적 암호화 업로드</h3>
+    <div id="tab-manage" class="view-section active">
+        <div style="background:var(--panel); padding:20px; border-radius:8px;">
+            <h3>MARS-1 암호화 업로드</h3>
             <input type="file" id="upFile">
-            <button onclick="upload()">MARS-1 암호화 및 전송</button>
-            <p style="font-size:12px; color:#94a3b8; margin-top:10px;">* 업로드 시 입력한 암호키(d)로 실시간 위상 압축이 진행됩니다.</p>
+            <button onclick="upload()">대수기하학적 암호화 전송</button>
         </div>
     </div>
-
-    <div id="tab-view" class="tab-content">
-        <div class="card">
-            <select id="fileList" style="width:100%; padding:10px; background:#000; color:#fff; border:1px solid var(--border); border-radius:6px; margin-bottom:15px;"></select>
-            <button onclick="render3D()">O(1) 검증 및 렌더링</button>
+    <div id="tab-view" class="view-section">
+        <div id="viewer" style="width:100%; height:500px; background:#111; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#555;">3D / DICOM 뷰어 영역</div>
+    </div>
+    <div id="tab-asset" class="view-section">
+        <div style="background:var(--panel); padding:20px; border-radius:8px;">
+            <h3>금융 및 트랜잭션 내역</h3>
+            <div id="history" style="font-size:13px; color:#94a3b8; line-height:1.8;"></div>
         </div>
-        <div id="viewer" style="width:100%; height:500px; background:#050505; border-radius:12px; border:1px solid var(--border);"></div>
     </div>
-
-    </div>
+</div>
 
 <script>
     let MY_ID = '', MY_KEY = 0;
@@ -77,25 +69,20 @@
     async function login() {
         MY_ID = document.getElementById('loginId').value;
         MY_KEY = parseInt(document.getElementById('loginKey').value);
-        if(!MY_ID || isNaN(MY_KEY)) return alert("정보를 정확히 입력하세요.");
+        if(!MY_ID || isNaN(MY_KEY)) return alert("ID와 숫자 키를 입력하세요.");
         const res = await fetch(`/account/${MY_ID}`);
         const acc = await res.json();
         document.getElementById('login-overlay').style.display = 'none';
         document.getElementById('header-user').innerText = `ID: ${MY_ID}`;
-        updateUI(acc);
-        refreshMyFiles();
+        document.getElementById('header-bal').innerText = `💎 ${acc.hmj.toFixed(3)} HMJ`;
+        document.getElementById('history').innerHTML = acc.history.map(h => `<div>[${h.time}] ${h.detail}</div>`).join('');
     }
 
     function tab(id) {
         document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(v => v.classList.remove('active'));
+        document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
         event.currentTarget.classList.add('active');
         document.getElementById('tab-'+id).classList.add('active');
-    }
-
-    function updateUI(acc) {
-        document.getElementById('header-hmj').innerText = `💎 ${acc.hmj.toFixed(3)} HMJ`;
-        document.getElementById('header-usd').innerText = `💵 $${acc.usd.toFixed(2)}`;
     }
 
     async function upload() {
@@ -108,19 +95,6 @@
         formData.append('Bd', 7 - (MY_KEY * file.name.length));
         await fetch('/api/data/upload', { method: 'POST', body: formData });
         alert("데이터가 암호화되어 클라우드 장부에 등록되었습니다.");
-        refreshMyFiles();
-    }
-
-    async function refreshMyFiles() {
-        const res = await fetch(`/api/data/myfiles/${MY_ID}`);
-        const files = await res.json();
-        const sel = document.getElementById('fileList');
-        sel.innerHTML = files.map(f => `<option value="${f.filepath}" data-ad="${f.Ad}">${f.filename} (${f.sizeMB}MB)</option>`).join('');
-    }
-
-    function render3D() {
-        alert("O(1) 수식 역산을 통해 복호화가 승인되었습니다. Three.js 렌더링을 시작합니다.");
-        // Three.js 렌더링 로직 위치
     }
 </script>
 </body>
