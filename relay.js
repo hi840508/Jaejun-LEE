@@ -15,54 +15,59 @@ app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.static(__dirname));
 
-// 📂 데이터 저장 경로 (EC2 환경)
-const DATA_DIR = path.join(__dirname, 'RAY_Data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-app.use('/data', express.static(DATA_DIR));
+// 📂 데이터 물리 저장소
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+app.use('/uploads', express.static(UPLOAD_DIR));
 
-// 💾 통합 DB (금융 장부 + 환자 데이터)
+// 💾 OYP 통합 데이터베이스 (데이터+금융+보안)
 const db = new sqlite3.Database(path.join(__dirname, 'oyp_integrated.db'));
 db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, usd REAL, hmj REAL, mb REAL, history TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS patients (id TEXT PRIMARY KEY, name TEXT, chartNumber TEXT, gender TEXT, birthDate TEXT, history TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS data_vault (fileId TEXT PRIMARY KEY, uploaderId TEXT, filename TEXT, filepath TEXT, Ad REAL, Bd REAL)`);
+    db.run(`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, hmj REAL, usd REAL, history TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS data_vault (fileId TEXT PRIMARY KEY, uploaderId TEXT, filename TEXT, filepath TEXT, Ad REAL, Bd REAL, size TEXT)`);
 });
 
 const upload = multer({ storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, DATA_DIR),
+    destination: (req, file, cb) => cb(null, UPLOAD_DIR),
     filename: (req, file, cb) => cb(null, Date.now() + '_' + file.originalname)
 })});
 
-// 루트 접속 시 통합 플랫폼(index.html) 서빙
+// 루트 접속 시 통합 UI 송출
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-// [금융 API] 계정 조회 및 초기화
-app.get('/account/:accountId', (req, res) => {
-    const acc = req.params.accountId;
-    db.get('SELECT * FROM accounts WHERE id = ?', [acc], (err, row) => {
+// [API] 로그인 및 자산 조회
+app.get('/api/account/:id', (req, res) => {
+    const accId = req.params.id;
+    db.get('SELECT * FROM accounts WHERE id = ?', [accId], (err, row) => {
         if (!row) {
-            const initHist = JSON.stringify([{ type: 'WELCOME', detail: 'OYP 가입 보너스', time: new Date().toLocaleString() }]);
-            db.run(`INSERT INTO accounts VALUES (?, 100.0, 10.0, 0.0, ?)`, [acc, initHist], () => {
-                res.json({ id: acc, usd: 100, hmj: 10, mb: 0, history: JSON.parse(initHist) });
+            const initHist = JSON.stringify([{ type: 'SYSTEM', msg: 'OYP 노드 가동 시작', time: new Date().toLocaleString() }]);
+            db.run(`INSERT INTO accounts VALUES (?, 10.0, 100.0, ?)`, [accId, initHist], () => {
+                res.json({ id: accId, hmj: 10, usd: 100, history: JSON.parse(initHist) });
             });
         } else { row.history = JSON.parse(row.history); res.json(row); }
     });
 });
 
-// [데이터 API] 암호화 업로드
-app.post('/api/data/upload', upload.single('file'), (req, res) => {
+// [API] MARS-1 보안 업로드
+app.post('/api/upload', upload.single('file'), (req, res) => {
     const { uploaderId, Ad, Bd } = req.body;
-    const fileId = 'F_' + Math.random().toString(36).substring(2, 7).toUpperCase();
-    const filepath = `/data/${req.file.filename}`;
-    db.run(`INSERT INTO data_vault VALUES (?, ?, ?, ?, ?, ?)`, [fileId, uploaderId, req.file.originalname, filepath, Ad, Bd], () => {
-        res.json({ success: true, fileId });
-    });
+    const fileId = 'FID_' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    const size = (req.file.size / 1024 / 1024).toFixed(2) + 'MB';
+    
+    db.run(`INSERT INTO data_vault VALUES (?, ?, ?, ?, ?, ?, ?)`, 
+        [fileId, uploaderId, req.file.originalname, `/uploads/${req.file.filename}`, Ad, Bd, size], 
+        () => res.json({ success: true, fileId }));
 });
 
-// [통신] 실시간 소켓
+// [API] 내 보안 파일 목록
+app.get('/api/files/:id', (req, res) => {
+    db.all(`SELECT * FROM data_vault WHERE uploaderId = ?`, [req.params.id], (err, rows) => res.json(rows));
+});
+
+// 실시간 통신 (Socket.io)
 io.on('connection', (socket) => {
     socket.on('join', (id) => socket.join(id));
-    socket.on('chat', (data) => io.emit('receive_chat', data));
+    socket.on('message', (data) => io.emit('receive', data));
 });
 
-server.listen(4000, '0.0.0.0', () => console.log('🚀 OYP 통합 서버 가동 (Port 4000)'));
+server.listen(4000, '0.0.0.0', () => console.log('🚀 OYP 통합 노드 가동 중 (Port 4000)'));
