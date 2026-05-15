@@ -1,94 +1,136 @@
 const express = require('express');
 const cors = require('cors');
+const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+const http = require('http');
+const { Server } = require('socket.io');
+
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
+
+const PORT = process.env.PORT || 4000;
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.static(__dirname));
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'terminal.html')));
+// AWS 환경에 맞춘 상대 경로 데이터 저장소 (서버 내부에 저장)
+const DATA_DIR = path.join(__dirname, 'RAY_Cloud_Data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+app.use('/data', express.static(DATA_DIR));
 
-// 🧠 서버 장부 및 자격 증명소
-const DATA_TICKETS = new Map(); 
-const LEDGER_BOOK = {};             
-const ESCROW_TUNNEL = new Map();
-const USED_POINTS = new Set();
+// 💾 SQLite DB 설정 (금융 장부 + 데이터 마켓 통합)
+const dbPath = path.join(__dirname, 'oqp_platform.db');
+const db = new sqlite3.Database(dbPath);
 
-app.get('/account/:accountId', (req, res) => {
-    const acc = req.params.accountId;
-    if (!LEDGER_BOOK[acc]) {
-        LEDGER_BOOK[acc] = { usd: 1, mb: 0, hmj: 1, asset_history: [
-            { type: 'WELCOME', asset: 'USD', amount: '1.00', time: new Date().toLocaleString() },
-            { type: 'WELCOME', asset: 'HMJ', amount: '1.000', time: new Date().toLocaleString() }
-        ], file_history: [] };
-    }
-    res.json(LEDGER_BOOK[acc]);
+db.serialize(() => {
+    // 유저 지갑 및 자산 장부
+    db.run(`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, usd REAL, hmj REAL, mb REAL, history TEXT)`);
+    // 암호화된 파일 금고
+    db.run(`CREATE TABLE IF NOT EXISTS data_vault (fileId TEXT PRIMARY KEY, uploaderId TEXT, filename TEXT, sizeMB REAL, filepath TEXT, ad_key REAL, bd_key REAL, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+    // 데이터 거래 마켓
+    db.run(`CREATE TABLE IF NOT EXISTS trade_market (tradeId TEXT PRIMARY KEY, sellerId TEXT, fileId TEXT, priceHMJ REAL, status TEXT, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+    // 소유권(접근 권한) 맵핑
+    db.run(`CREATE TABLE IF NOT EXISTS file_ownership (fileId TEXT, ownerId TEXT, PRIMARY KEY (fileId, ownerId))`);
 });
 
-// [HMJ 채굴]
-app.post('/mint-hmj', (req, res) => {
-    const { accountId, A, B, x, y } = req.body;
-    const pointId = `${A}:${B}:${x}:${y}`;
-    if (USED_POINTS.has(pointId)) return res.status(403).json({ error: "이미 사용된 좌표입니다." });
-    
-    if (Math.pow(parseInt(y), 2) === Math.pow(parseInt(x), 3) + (parseInt(A) * parseInt(x)) + parseInt(B)) {
-        USED_POINTS.add(pointId);
-        LEDGER_BOOK[accountId].hmj += 1.000;
-        LEDGER_BOOK[accountId].asset_history.unshift({ type: 'MINT', asset: 'HMJ', amount: '1.000', time: new Date().toLocaleString() });
-        res.json({ success: true, balance: LEDGER_BOOK[accountId].hmj });
-    } else {
-        res.status(400).json({ error: "수식이 성립하지 않습니다." });
-    }
+// 파일 업로드 설정 (Multer)
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, DATA_DIR),
+    filename: (req, file, cb) => cb(null, Date.now() + '_' + file.originalname.replace(/[\\/:*?"<>|]/g, '_'))
+});
+const upload = multer({ storage: storage });
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+// --- [1] 통합 로그인 및 지갑 초기화 ---
+app.post('/api/login', (req, res) => {
+    const { accountId } = req.body;
+    db.get('SELECT * FROM accounts WHERE id = ?', [accountId], (err, row) => {
+        if (!row) {
+            const initHistory = JSON.stringify([{ type: 'WELCOME', detail: '계정 생성 보너스', time: new Date().toLocaleString() }]);
+            db.run(`INSERT INTO accounts (id, usd, hmj, mb, history) VALUES (?, 100, 10, 0, ?)`, [accountId, initHistory], () => {
+                res.json({ success: true, account: { id: accountId, usd: 100, hmj: 10, mb: 0, history: JSON.parse(initHistory) } });
+            });
+        } else {
+            row.history = JSON.parse(row.history);
+            res.json({ success: true, account: row });
+        }
+    });
 });
 
-// [자산 송수신]
-app.post('/transfer-asset', (req, res) => {
-    const { senderId, assetType, amount } = req.body;
-    const typeLower = assetType.toLowerCase();
-    if (!LEDGER_BOOK[senderId] || LEDGER_BOOK[senderId][typeLower] < parseFloat(amount)) return res.status(400).json({ error: "잔고가 부족합니다." });
-    
-    const ticketCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    LEDGER_BOOK[senderId][typeLower] -= parseFloat(amount);
-    LEDGER_BOOK[senderId].asset_history.unshift({ type: 'SEND', asset: assetType, amount: parseFloat(amount), tunnel: ticketCode, time: new Date().toLocaleString() });
-    ESCROW_TUNNEL.set(ticketCode, { assetType, amount: parseFloat(amount), senderId });
-    res.json({ ticketCode });
+// --- [2] 암호화 데이터 등록 (데이터 관리) ---
+app.post('/api/data/upload', upload.single('file'), (req, res) => {
+    const { uploaderId, Ad, Bd } = req.body;
+    const fileId = 'FILE_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    const sizeMB = (req.file.size / (1024 * 1024)).toFixed(2);
+    const filepath = `/data/${req.file.filename}`;
+
+    db.serialize(() => {
+        db.run(`INSERT INTO data_vault (fileId, uploaderId, filename, sizeMB, filepath, ad_key, bd_key) VALUES (?, ?, ?, ?, ?, ?, ?)`, 
+            [fileId, uploaderId, req.file.originalname, sizeMB, filepath, Ad, Bd]);
+        db.run(`INSERT INTO file_ownership (fileId, ownerId) VALUES (?, ?)`, [fileId, uploaderId]);
+        db.run(`UPDATE accounts SET mb = mb + ? WHERE id = ?`, [sizeMB, uploaderId], () => {
+            res.json({ success: true, fileId, filepath });
+        });
+    });
 });
 
-app.post('/claim-asset', (req, res) => {
-    const { receiverId, ticketCode } = req.body;
-    const asset = ESCROW_TUNNEL.get(ticketCode);
-    if (!asset) return res.status(403).json({ error: "유효하지 않은 티켓입니다." });
-    
-    LEDGER_BOOK[receiverId][asset.assetType.toLowerCase()] += asset.amount;
-    LEDGER_BOOK[receiverId].asset_history.unshift({ type: 'RCV', asset: asset.assetType, amount: asset.amount, tunnel: ticketCode, time: new Date().toLocaleString() });
-    ESCROW_TUNNEL.delete(ticketCode);
-    res.json({ success: true, asset });
+// --- [3] 내 소유 데이터 조회 (데이터 보기) ---
+app.get('/api/data/myfiles/:accountId', (req, res) => {
+    const query = `
+        SELECT v.fileId, v.filename, v.filepath, v.sizeMB, v.ad_key, v.bd_key 
+        FROM data_vault v JOIN file_ownership o ON v.fileId = o.fileId 
+        WHERE o.ownerId = ? ORDER BY v.createdAt DESC
+    `;
+    db.all(query, [req.params.accountId], (err, rows) => res.json(rows || []));
 });
 
-// [오프라인 데이터 티켓 발급 및 파기]
-app.post('/auth-data-emit', (req, res) => {
-    const { accountId, filename, sizeMB } = req.body;
-    const ticketCode = Math.random().toString(36).substring(2, 10).toUpperCase();
-    
-    DATA_TICKETS.set(ticketCode, { senderId: accountId, filename, sizeMB, isUsed: false });
-    LEDGER_BOOK[accountId].mb += parseFloat(sizeMB);
-    LEDGER_BOOK[accountId].file_history.unshift({ type: 'ENCRYPT', file: filename, size: sizeMB, tunnel: ticketCode, time: new Date().toLocaleString() });
-    
-    res.json({ ticketCode });
+// --- [4] 데이터 마켓 등록 ---
+app.post('/api/trade/list', (req, res) => {
+    const { sellerId, fileId, priceHMJ } = req.body;
+    const tradeId = 'TRD_' + Date.now();
+    db.run(`INSERT INTO trade_market (tradeId, sellerId, fileId, priceHMJ, status) VALUES (?, ?, ?, ?, 'OPEN')`, 
+        [tradeId, sellerId, fileId, priceHMJ], () => res.json({ success: true, tradeId })
+    );
 });
 
-app.post('/auth-data-claim', (req, res) => {
-    const { receiverId, ticketCode } = req.body;
-    const ticket = DATA_TICKETS.get(ticketCode);
-    
-    if (!ticket) return res.status(404).json({ error: "등록되지 않은 자격 증명입니다." });
-    if (ticket.isUsed) return res.status(403).json({ error: "영구적으로 잠긴(파기된) 파일입니다." });
-
-    ticket.isUsed = true; // 1회용 파기
-    LEDGER_BOOK[receiverId].mb += parseFloat(ticket.sizeMB);
-    LEDGER_BOOK[receiverId].file_history.unshift({ type: 'DECRYPT', file: ticket.filename, size: ticket.sizeMB, tunnel: ticketCode, time: new Date().toLocaleString() });
-    
-    res.json({ success: true });
+// --- [5] 마켓 조회 및 구매 (스마트 컨트랙트) ---
+app.get('/api/trade/market', (req, res) => {
+    const query = `SELECT t.*, v.filename FROM trade_market t JOIN data_vault v ON t.fileId = v.fileId WHERE t.status = 'OPEN' ORDER BY t.createdAt DESC`;
+    db.all(query, [], (err, rows) => res.json(rows || []));
 });
 
-app.listen(4000, '0.0.0.0', () => console.log('🔴 MARS BANK V12.0 ONLINE'));
+app.post('/api/trade/buy', (req, res) => {
+    const { buyerId, tradeId } = req.body;
+    db.get(`SELECT * FROM trade_market WHERE tradeId = ? AND status = 'OPEN'`, [tradeId], (err, trade) => {
+        if (!trade) return res.status(400).json({ error: "유효하지 않은 거래입니다." });
+        if (trade.sellerId === buyerId) return res.status(400).json({ error: "본인의 데이터입니다." });
+
+        db.get(`SELECT hmj FROM accounts WHERE id = ?`, [buyerId], (err, buyer) => {
+            if (buyer.hmj < trade.priceHMJ) return res.status(400).json({ error: "HMJ 잔고가 부족합니다." });
+
+            db.serialize(() => {
+                // 자산 이동
+                db.run(`UPDATE accounts SET hmj = hmj - ? WHERE id = ?`, [trade.priceHMJ, buyerId]);
+                db.run(`UPDATE accounts SET hmj = hmj + ? WHERE id = ?`, [trade.priceHMJ, trade.sellerId]);
+                // 소유권(열람 권한) 부여
+                db.run(`INSERT OR IGNORE INTO file_ownership (fileId, ownerId) VALUES (?, ?)`, [trade.fileId, buyerId]);
+                // 마켓 상태 변경
+                db.run(`UPDATE trade_market SET status = 'CLOSED' WHERE tradeId = ?`, [tradeId]);
+                res.json({ success: true, fileId: trade.fileId });
+            });
+        });
+    });
+});
+
+// --- [6] Socket.io 화상채팅 및 실시간 통신 ---
+io.on('connection', (socket) => {
+    socket.on('join_room', (roomId) => socket.join(roomId));
+    socket.on('send_message', (data) => io.to(data.roomId).emit('receive_message', data));
+});
+
+server.listen(PORT, '0.0.0.0', () => console.log(`🚀 MARS-1 AWS Server Running on Port ${PORT}`));
