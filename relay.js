@@ -21,8 +21,8 @@ app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" }, transports: ['websocket', 'polling'] });
 
-// ★ [포트 전격 교체] 4000번의 모든 충돌을 우회하기 위해 5000번 포트로 변경합니다.
-const PORT = 5000;
+// ★ AWS 방화벽이 열려있는 4000번 포트로 안전하게 복귀합니다.
+const PORT = 4000;
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -36,8 +36,8 @@ app.use('/uploads', express.static(UPLOAD_DIR, {
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
-// 완전히 독립된 고유 DB 파일명을 사용하여 자가 치유를 완료합니다.
-const db = new sqlite3.Database(path.join(__dirname, 'commerce_clean_v5.db'));
+// 완전히 독립된 최신 고유 DB 파일명으로 충돌을 원천 차단합니다.
+const db = new sqlite3.Database(path.join(__dirname, 'commerce_absolute_v6.db'));
 
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER)`);
