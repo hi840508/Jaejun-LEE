@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Meta Commerce Platform</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
@@ -30,7 +29,6 @@
         .btn:hover { transform: translateY(-1px); opacity: 0.9;}
         .btn-outline { background: #fff; color: #4f46e5; border: 1px solid #4f46e5; }
         .btn-secondary { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
-        .btn-danger { background: #ef4444; }
         
         .tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 25px; overflow-x: auto; scrollbar-width: none;}
         .tab { padding: 12px 20px; cursor: pointer; color: var(--text-sub); border-bottom: 3px solid transparent; transition: 0.2s; font-weight: bold; white-space: nowrap; font-size: 14px;}
@@ -87,6 +85,10 @@
             <h2 style="text-align: center; color: #1f2937;">Platform Sign In</h2>
             <div class="input-group"><label>이름 (Name)</label><input type="text" id="login-name"></div>
             <div class="input-group"><label>비밀번호 (Password)</label><input type="password" id="login-password"></div>
+            <div style="border-top: 1px dashed var(--border-color); margin: 25px 0 15px;"></div>
+            <p style="font-size: 12px; color: #6366f1; font-weight: bold; margin-bottom: 10px;">신규 가입자 전용 정산 원장 스펙</p>
+            <div class="input-group"><label>은행명 (Bank)</label><input type="text" id="login-bank" placeholder="예: 신한은행"></div>
+            <div class="input-group"><label>계좌번호 (Account)</label><input type="text" id="login-account" placeholder="예: 110-123-456789"></div>
             <button class="btn" style="margin-top: 10px;" onclick="login()">접속하기</button>
         </div>
 
@@ -118,24 +120,9 @@
                     <div class="grid-2col">
                         <div style="border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; background: #fff;">
                             <h3 style="font-size: 16px; color: #059669; margin-bottom: 15px;">다이렉트 송금 (P2P)</h3>
-                            <div class="input-group">
-                                <label>받는 사람 (이름)</label>
-                                <input type="text" id="p2p-target" placeholder="수신자 이름">
-                            </div>
-                            <div class="input-group">
-                                <label>송금 금액 (KRW)</label>
-                                <input type="number" id="p2p-amount" placeholder="보낼 금액">
-                            </div>
+                            <div class="input-group"><label>받는 사람 (이름)</label><input type="text" id="p2p-target" placeholder="수신자 이름"></div>
+                            <div class="input-group"><label>송금 금액 (KRW)</label><input type="number" id="p2p-amount" placeholder="보낼 금액"></div>
                             <button class="btn btn-secondary" style="background:#10b981; color:#fff; border:none; margin-top: 10px;" onclick="p2pTransfer()">즉시 송금</button>
-                        </div>
-                        
-                        <div style="border: 1px solid #fca5a5; padding: 25px; border-radius: 12px; background: #fffcfc;">
-                            <h3 style="font-size: 16px; color: #ef4444; margin-bottom: 15px;">자산 출금 신청</h3>
-                            <div class="input-group">
-                                <label>출금할 금액 (KRW)</label>
-                                <input type="number" id="withdraw-amount" placeholder="금액 입력">
-                            </div>
-                            <button class="btn btn-danger" style="margin-top: 10px;" onclick="requestWithdraw()">관리자에게 출금 신청서 전송</button>
                         </div>
                     </div>
 
@@ -143,10 +130,7 @@
                         <h3 style="font-size: 16px; color: #4f46e5; margin-bottom: 15px;">QR 수표 통화 시스템</h3>
                         <div class="grid-2col">
                             <div style="padding-right: 20px; border-right: 1px solid #e2e8f0;">
-                                <div class="input-group">
-                                    <label>수표 발행 금액 (KRW)</label>
-                                    <input type="number" id="check-amount" placeholder="발행 금액">
-                                </div>
+                                <div class="input-group"><label>수표 발행 금액 (KRW)</label><input type="number" id="check-amount" placeholder="발행 금액"></div>
                                 <button class="btn" style="background:#a9c2e3; color:#000;" onclick="issueCheck()">QR 수표 발행</button>
                                 <div id="qr-display" style="margin-top: 15px; text-align: center; display:none;">
                                     <canvas id="qr-canvas"></canvas>
@@ -158,17 +142,13 @@
                                     <label style="margin-bottom: 15px;">받은 QR 수표 스캔 (충전)</label>
                                     <input type="file" id="check-upload" accept="image/*" style="display: none;" onchange="readQRCheck(event)">
                                     <button class="btn" style="background:#374151; color:#fff;" onclick="document.getElementById('check-upload').click()">+ QR 수표 이미지 첨부 및 충전</button>
-                                    <div style="font-size: 11px; color: #64748b; margin-top: 15px;">QR코드가 포함된 캡처 이미지를 첨부하면 즉시 충전됩니다.</div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <div id="tab-my-store" class="tab-content">
-                    <h3 style="margin-bottom: 0;">내 상점 관리</h3>
-                    <div class="market-grid" id="my-store-grid"></div>
-                </div>
+                <div id="tab-my-store" class="tab-content"><h3 style="margin-bottom: 0;">내 상점 관리</h3><div class="market-grid" id="my-store-grid"></div></div>
 
                 <div id="tab-store" class="tab-content">
                     <div class="grid-2col">
@@ -205,10 +185,7 @@
                     <div class="market-grid" id="market-grid"></div>
                 </div>
                 
-                <div id="tab-stores-list" class="tab-content">
-                    <h3 style="margin-bottom: 0;">파트너 상점 목록</h3>
-                    <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 15px;" id="stores-list-container"></div>
-                </div>
+                <div id="tab-stores-list" class="tab-content"><h3 style="margin-bottom: 0;">파트너 상점 목록</h3><div style="display: flex; flex-direction: column; gap: 15px; margin-top: 15px;" id="stores-list-container"></div></div>
 
                 <div id="tab-history" class="tab-content">
                     <div class="table-wrapper">
@@ -273,12 +250,15 @@
         async function login() {
             const name = document.getElementById('login-name').value.trim();
             const password = document.getElementById('login-password').value.trim();
+            const bank = document.getElementById('login-bank') ? document.getElementById('login-bank').value.trim() : '등록은행';
+            const account = document.getElementById('login-account') ? document.getElementById('login-account').value.trim() : '000-000';
+            
             if(!name || !password) return showToast("이름과 비밀번호를 입력하세요.");
 
             try {
                 const res = await fetch(`${API_URL}/api/auth`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, password, bank: '등록은행', account: '000-000' })
+                    body: JSON.stringify({ name, password, bank, account })
                 });
                 const data = await res.json();
                 if(!res.ok) return showToast(data.error);
@@ -293,7 +273,7 @@
                 document.getElementById('workspace-section').style.display = 'block';
                 document.getElementById('display-name').innerText = data.name;
                 updateUserBalance();
-            } catch(e) { showToast("서버 접속 오류"); }
+            } catch(e) { showToast("네트워크 또는 DB 연결 오류가 발생했습니다."); }
         }
 
         async function updateUserBalance() {
@@ -313,11 +293,9 @@
             } catch(e) {}
         }
 
-        // --- 송금 (P2P) 시스템 ---
         async function p2pTransfer() {
             const target = document.getElementById('p2p-target').value.trim();
             const amount = parseInt(document.getElementById('p2p-amount').value);
-            
             if(!target || isNaN(amount) || amount <= 0) return showToast("수신자와 금액을 확인하세요.");
             if(amount > currentUser.balance) return showToast("잔액이 부족합니다.");
 
@@ -328,14 +306,13 @@
                 });
                 const data = await res.json();
                 if(res.ok) {
-                    showToast(`[${target}] 님에게 ${amount.toLocaleString()}원 즉시 송금 완료!`);
+                    showToast(`[${target}] 님에게 ${amount.toLocaleString()}원 송금 완료!`);
                     document.getElementById('p2p-amount').value = ''; document.getElementById('p2p-target').value = '';
                     updateUserBalance(); switchTab('history');
                 } else showToast(data.error);
             } catch(e) { showToast("통신 오류"); }
         }
 
-        // --- QR 수표 시스템 ---
         async function issueCheck() {
             const amount = parseInt(document.getElementById('check-amount').value);
             if(isNaN(amount) || amount <= 0) return showToast("금액을 정확히 입력하세요.");
@@ -375,9 +352,8 @@
                     ctx.drawImage(img, 0, 0, img.width, img.height);
                     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                     const code = jsQR(imageData.data, imageData.width, imageData.height);
-                    
                     if(code) redeemCheck(code.data);
-                    else showToast("이미지에서 유효한 QR 코드를 찾을 수 없습니다.");
+                    else showToast("유효한 QR 코드를 찾을 수 없습니다.");
                 };
                 img.src = e.target.result;
             };
@@ -392,7 +368,7 @@
                 });
                 const data = await res.json();
                 if(res.ok) {
-                    showToast(`수표 인식 성공! ${data.amount.toLocaleString()}원이 충전되었습니다.`);
+                    showToast(`수표 충전 성공! ${data.amount.toLocaleString()}원이 지급되었습니다.`);
                     updateUserBalance(); switchTab('history');
                 } else showToast(data.error);
             } catch(e) { showToast("통신 오류"); }
@@ -492,9 +468,7 @@
             } catch(e) {}
         }
 
-        function searchStore(storeName) {
-            switchTab('market'); document.getElementById('market-search').value = storeName; loadMarketplace();
-        }
+        function searchStore(storeName) { switchTab('market'); document.getElementById('market-search').value = storeName; loadMarketplace(); }
 
         function createProductCard(p, history, showSeller = true) {
             const isMine = p.seller === currentUser.name;
@@ -502,7 +476,6 @@
             const hasAccess = isMine || isPurchased;
 
             let actionBtns = '';
-            // 고도화: 1분 미리보기 모드와 완전 획득 렌더링 버튼 분리
             if (hasAccess) {
                 actionBtns = `<button class="btn" style="background: #374151; box-shadow:none; margin-bottom: 8px;" onclick="openPreviewModal('${p.name}', '${p.filePath}', '${p.type}', false)">▶ 무제한 스트리밍</button>`;
             } else {
@@ -572,7 +545,6 @@
             }
         }
 
-        // 고도화: 구매 이력, P2P 송금, 수표 발행이 모두 단일 원장에 출력되도록 정렬 통합
         async function loadHistory() {
             try {
                 const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`);
@@ -635,7 +607,6 @@
             chatBody.scrollTop = chatBody.scrollHeight;
         }
 
-        // 고도화: 미리보기 제한 1분 타이머 + 파일별 뷰어(동영상, 문서, DICOM, 3D) 자동 연동 분기
         function openPreviewModal(productName, filePath, type, isPreviewOnly) {
             clearInterval(previewTimerInterval);
             document.getElementById('preview-modal').style.display = 'flex';
@@ -663,10 +634,8 @@
             if (type === 'physical' || lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif')) {
                 viewer.innerHTML = `<img src="${fileUrl}" style="max-width: 100%; max-height: 100%; object-fit: contain;">`;
             } else if (lowerName.endsWith('.mp4') || lowerName.endsWith('.webm') || lowerName.endsWith('.mov')) {
-                // 동영상 스트리밍
                 viewer.innerHTML = `<video src="${fileUrl}" controls autoplay style="max-width: 100%; max-height: 100%; background: #000;"></video>`;
             } else if (lowerName.endsWith('.pdf')) {
-                // 문서 렌더링
                 viewer.innerHTML = `<iframe src="${fileUrl}" style="width: 100%; height: 100%; border: none; background:#fff;"></iframe>`;
             } else if (lowerName.endsWith('.stl')) {
                 const canvasId = 'three-canvas';
@@ -684,7 +653,7 @@
         function closePreviewModal() {
             clearInterval(previewTimerInterval);
             document.getElementById('preview-modal').style.display = 'none';
-            document.getElementById('universal-viewer').innerHTML = ''; // 동영상 소리 재생 강제 중단 처리
+            document.getElementById('universal-viewer').innerHTML = ''; 
         }
 
         function initThreeJSViewer(elementId, fileUrl) {
