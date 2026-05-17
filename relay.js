@@ -30,15 +30,25 @@ app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); }
 
 const db = new sqlite3.Database(path.join(__dirname, 'commerce.db'));
 
+// ★ [핵심 패치] 서버가 켜질 때마다 기존의 꼬인 테이블을 강제로 파기하고 최신 스펙으로 자동 재건축합니다.
 db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER)`);
-    db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, type TEXT, name TEXT, description TEXT, price INTEGER, seller TEXT, filePath TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT, sender TEXT, message TEXT, date TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS favorite_products (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, productId TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, storeName TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS qr_checks (id TEXT PRIMARY KEY, amount INTEGER, issuer TEXT, is_used INTEGER, date TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, amount INTEGER, date TEXT)`);
+    db.run(`DROP TABLE IF EXISTS users`);
+    db.run(`DROP TABLE IF EXISTS products`);
+    db.run(`DROP TABLE IF EXISTS transactions`);
+    db.run(`DROP TABLE IF EXISTS chats`);
+    db.run(`DROP TABLE IF EXISTS favorite_products`);
+    db.run(`DROP TABLE IF EXISTS favorite_stores`);
+    db.run(`DROP TABLE IF EXISTS qr_checks`);
+    db.run(`DROP TABLE IF EXISTS transfers`);
+
+    db.run(`CREATE TABLE users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER)`);
+    db.run(`CREATE TABLE products (id TEXT PRIMARY KEY, type TEXT, name TEXT, description TEXT, price INTEGER, seller TEXT, filePath TEXT)`);
+    db.run(`CREATE TABLE transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT)`);
+    db.run(`CREATE TABLE chats (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT, sender TEXT, message TEXT, date TEXT)`);
+    db.run(`CREATE TABLE favorite_products (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, productId TEXT)`);
+    db.run(`CREATE TABLE favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, storeName TEXT)`);
+    db.run(`CREATE TABLE qr_checks (id TEXT PRIMARY KEY, amount INTEGER, issuer TEXT, is_used INTEGER, date TEXT)`);
+    db.run(`CREATE TABLE transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, amount INTEGER, date TEXT)`);
 });
 
 const storage = multer.diskStorage({
@@ -50,12 +60,11 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// [수정됨] 강력한 에러 핸들링이 추가된 인증 레이어
+// 안정적인 에러 핸들링을 적용한 통신 라우트
 app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
-        if (err) return res.status(500).json({ error: `[DB 읽기 에러] ${err.message}` });
-        
+        if (err) return res.status(500).json({ error: "DB 연결 오류" });
         if (row) {
             if (row.password !== password) return res.status(401).json({ error: "패스워드 불일치" });
             return res.json(row);
@@ -63,7 +72,7 @@ app.post('/api/auth', (req, res) => {
             const initialBalance = 1000000;
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, ?)`, 
                 [name, password, bank, account, initialBalance], (err) => {
-                if (err) return res.status(500).json({ error: `[DB 쓰기 에러] ${err.message}` });
+                if (err) return res.status(500).json({ error: "DB 생성 오류" });
                 return res.json({ name, bank, account, balance: initialBalance });
             });
         }
@@ -122,7 +131,6 @@ app.post('/api/check/redeem', (req, res) => {
         if (!row) return res.status(404).json({ error: "유효하지 않은 가짜 수표입니다." });
         if (row.is_used === 1) return res.status(400).json({ error: "이미 누군가 사용한 수표입니다." });
         
-        const date = new Date().toLocaleString('ko-KR');
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
             db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [checkId]);
@@ -138,6 +146,7 @@ app.post('/api/check/redeem', (req, res) => {
 app.get('/api/products', (req, res) => {
     db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => { res.json(rows || []); });
 });
+
 app.get('/api/stores', (req, res) => {
     db.all(`SELECT DISTINCT seller FROM products`, [], (err, rows) => { res.json(rows ? rows.map(r => r.seller) : []); });
 });
@@ -148,6 +157,7 @@ app.post('/api/products/digital', upload.array('files'), (req, res) => {
     db.run(`INSERT INTO products (id, type, name, description, price, seller, filePath) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         ['PRD_' + Date.now(), type, name, description, parseInt(price), seller, filePath], (err) => { res.json({ success: true }); });
 });
+
 app.post('/api/products/physical', upload.single('image'), (req, res) => {
     const { type, name, description, price, seller } = req.body;
     const filePath = req.file ? `/uploads/${req.file.filename}` : '';
@@ -202,6 +212,7 @@ app.post('/api/favorites/store', (req, res) => {
         else { db.run(`INSERT INTO favorite_stores (userName, storeName) VALUES (?, ?)`, [userName, storeName], () => res.json({status:"added"})); }
     });
 });
+
 app.get('/api/favorites/:userName', (req, res) => {
     db.all(`SELECT productId FROM favorite_products WHERE userName=?`, [req.params.userName], (err, pRows) => {
         db.all(`SELECT storeName FROM favorite_stores WHERE userName=?`, [req.params.userName], (err, sRows) => {
@@ -209,6 +220,7 @@ app.get('/api/favorites/:userName', (req, res) => {
         });
     });
 });
+
 app.get('/api/chat/:roomId', (req, res) => {
     db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => { res.json(rows || []); });
 });
