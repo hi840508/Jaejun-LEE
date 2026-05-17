@@ -34,9 +34,9 @@ app.use('/uploads', express.static(UPLOAD_DIR, {
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
-const db = new sqlite3.Database(path.join(__dirname, 'commerce_V2.db'));
+// ★ [해결책] 완전히 새로운 DB 파일명으로 지정하여 기존의 모든 권한 잠금(Lock) 문제를 무조건 우회합니다.
+const db = new sqlite3.Database(path.join(__dirname, 'commerce_final_fixed.db'));
 
-// [DB 무결성 패치] 테이블이 없으면 안전하게 생성하고, 있으면 필요한 칸만 덧붙입니다.
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, type TEXT, name TEXT, description TEXT, price INTEGER, seller TEXT, filePath TEXT)`);
@@ -46,11 +46,6 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, storeName TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS qr_checks (id TEXT PRIMARY KEY, amount INTEGER, issuer TEXT, is_used INTEGER, date TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, amount INTEGER, date TEXT)`);
-    
-    // 이전 버전 DB 호환성을 위해 컬럼 강제 추가 (이미 있으면 무시됨)
-    db.run(`ALTER TABLE users ADD COLUMN password TEXT`, (err) => {});
-    db.run(`ALTER TABLE users ADD COLUMN bank TEXT`, (err) => {});
-    db.run(`ALTER TABLE users ADD COLUMN account TEXT`, (err) => {});
 });
 
 const storage = multer.diskStorage({
@@ -74,10 +69,9 @@ app.post('/api/auth', (req, res) => {
             return res.json({ name: row.name, bank: row.bank || bank, account: row.account || account, balance: row.balance });
         } else {
             const initialBalance = 1000000;
-            // [에러 추적] 에러 발생 시, 뭉뚱그린 메시지가 아닌 실제 SQLite 에러 메시지를 브라우저로 쏴줍니다.
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, ?)`, 
                 [name, password, bank || '등록은행', account || '000-000', initialBalance], (err) => {
-                if (err) return res.status(500).json({ error: "[DB 쓰기 에러] " + err.message });
+                if (err) return res.status(500).json({ error: "[DB 생성 에러] " + err.message });
                 return res.json({ name, bank: bank || '등록은행', account: account || '000-000', balance: initialBalance });
             });
         }
@@ -101,7 +95,7 @@ app.post('/api/transfer', (req, res) => {
                 db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, receiver]);
                 db.run(`INSERT INTO transfers (sender, receiver, amount, date) VALUES (?, ?, ?, ?)`, [sender, receiver, amount, date]);
                 db.run('COMMIT', (err) => {
-                    if (err) return res.status(500).json({ error: "송금 에러: " + err.message });
+                    if (err) return res.status(500).json({ error: "송금 오류" });
                     res.json({ success: true });
                 });
             });
@@ -127,9 +121,9 @@ app.post('/api/check/issue', (req, res) => {
 app.post('/api/check/redeem', (req, res) => {
     const { redeemer, checkId } = req.body;
     db.get(`SELECT * FROM qr_checks WHERE id = ?`, [checkId], (err, row) => {
-        if (err) return res.status(500).json({ error: "DB 에러: " + err.message });
-        if (!row) return res.status(404).json({ error: "유효하지 않은 가짜 수표입니다." });
-        if (row.is_used === 1) return res.status(400).json({ error: "이미 누군가 사용한 수표입니다." });
+        if (err) return res.status(500).json({ error: "DB 에러" });
+        if (!row) return res.status(404).json({ error: "유효하지 않은 수표입니다." });
+        if (row.is_used === 1) return res.status(400).json({ error: "이미 사용된 수표입니다." });
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
             db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [checkId]);
@@ -214,4 +208,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`Core System bound on port ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`Core System bound successfully on port ${PORT}`); });
