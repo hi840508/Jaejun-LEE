@@ -7,12 +7,11 @@
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         :root {
-            --bg-main: #f3f4f6; /* 연한 회색 배경 */
+            --bg-main: #f3f4f6; /* 연한 회색 */
             --panel-bg: #ffffff;
             --text-main: #1f2937;
             --text-sub: #6b7280;
             --border-color: #e5e7eb;
-            /* 파란색 - 보라색 그라데이션 */
             --gradient-primary: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
             --gradient-hover: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
         }
@@ -53,27 +52,28 @@
         .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; max-height: 600px; overflow-y: auto; padding-right: 5px; }
         .product-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; background: #fff; display: flex; flex-direction: column; transition: 0.3s; }
         .product-card:hover { border-color: #818cf8; box-shadow: 0 8px 24px rgba(99, 102, 241, 0.08); transform: translateY(-2px); }
-        .product-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: #1e293b; }
+        .product-title { font-size: 16px; font-weight: bold; margin-bottom: 8px; color: #1e293b; }
         .product-price { font-size: 18px; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 900; margin-bottom: 12px; }
         .product-desc { font-size: 13px; color: var(--text-sub); margin-bottom: 20px; flex-grow: 1; line-height: 1.5; word-break: keep-all; }
         
         .header-bar { display: flex; justify-content: space-between; width: 100%; align-items: center; padding-bottom: 20px; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid var(--border-color); margin-bottom: 20px;}
         
-        /* 파일 탐색 박스 (버그 수정됨) */
+        /* 파일 선택 리스트 */
         .file-list-box { border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; height: 100px; overflow-y: auto; background: #f8fafc; font-size: 13px; margin-bottom: 15px;}
         .file-item { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; cursor: pointer; color: #4f46e5; font-weight: 500; }
         .file-item:last-child { border-bottom: none; }
         
-        /* 거래 내역 테이블 */
+        /* 거래 내역 테이블 (모바일 대응) */
+        .table-wrapper { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; }
         .history-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 600px; }
         .history-table th, .history-table td { padding: 14px 12px; border-bottom: 1px solid var(--border-color); text-align: left; }
         .history-table th { background: #f8fafc; font-weight: 600; color: var(--text-sub); }
         
-        /* 채팅 서랍 */
-        .chat-drawer { position: fixed; right: -420px; top: 0; width: 400px; max-width: 100%; height: 100vh; background: #fff; box-shadow: -5px 0 25px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 1000; display: flex; flex-direction: column; }
+        /* 채팅 서랍 (모바일은 100% 가득 참) */
+        .chat-drawer { position: fixed; right: -450px; top: 0; width: 400px; max-width: 100%; height: 100vh; background: #fff; box-shadow: -5px 0 25px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 1000; display: flex; flex-direction: column; }
         .chat-drawer.open { right: 0; }
         .chat-header { padding: 20px; background: var(--gradient-primary); color: white; display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
-        .chat-close { cursor: pointer; font-size: 24px; line-height: 1; }
+        .chat-close { cursor: pointer; font-size: 24px; line-height: 1; padding: 0 10px;}
         .chat-body { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafc; }
         .msg-bubble { max-width: 80%; padding: 12px 16px; border-radius: 12px; font-size: 13px; line-height: 1.4; word-break: break-all; }
         .msg-me { background: #e0e7ff; color: #1e3a8a; align-self: flex-end; border-bottom-right-radius: 4px; border: 1px solid #c7d2fe; }
@@ -82,7 +82,10 @@
         .msg-date { font-size: 10px; color: #94a3b8; text-align: right; margin-top: 6px; }
         .chat-input-area { padding: 15px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; background: #fff; }
         .chat-input-area input { flex: 1; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; outline: none; font-size: 14px;}
-        .chat-input-area input:focus { border-color: #6366f1; }
+        
+        /* 토스트 알림 */
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; color: #fff; padding: 12px 24px; border-radius: 30px; font-size: 13px; z-index: 2000; opacity: 0; transition: 0.3s; pointer-events: none;}
+        .toast.show { opacity: 1; bottom: 40px; }
     </style>
 </head>
 <body>
@@ -91,11 +94,11 @@
         
         <div class="panel" id="login-section" style="max-width: 450px; margin: 20px auto; width: 100%;">
             <h2 style="text-align: center; color: #1f2937; font-size: 22px; margin-bottom: 5px;">Platform Sign In</h2>
-            <p style="text-align: center; color: var(--text-sub); font-size: 13px; margin-bottom: 30px;">최초 접속 시 기재한 정보로 가입이 진행됩니다.</p>
+            <p style="text-align: center; color: var(--text-sub); font-size: 13px; margin-bottom: 30px;">기존 회원은 비밀번호 확인 후 접속됩니다.<br>최초 접속 시 기재한 정보로 가입이 진행됩니다.</p>
             
             <div class="input-group">
                 <label>이름 (Name)</label>
-                <input type="text" id="login-name" placeholder="사용자 이름">
+                <input type="text" id="login-name" placeholder="이름 입력">
             </div>
             <div class="input-group">
                 <label>비밀번호 (Password)</label>
@@ -103,7 +106,7 @@
             </div>
             
             <div style="border-top: 1px dashed var(--border-color); margin: 25px 0 15px;"></div>
-            <p style="font-size: 12px; color: #6366f1; font-weight: bold; margin-bottom: 10px;">신규 가입자 추가 정보 (기존 회원은 비워두셔도 됩니다)</p>
+            <p style="font-size: 12px; color: #6366f1; font-weight: bold; margin-bottom: 10px;">신규 가입자 뱅킹 정보 (기존 회원은 비워두셔도 됩니다)</p>
             
             <div class="input-group">
                 <label>은행명 (Bank)</label>
@@ -120,24 +123,24 @@
             <div class="panel">
                 <div class="header-bar">
                     <h1 style="margin: 0; font-size: 22px;">Meta Commerce</h1>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <span style="font-weight: 600; font-size: 14px; margin-right: 10px;"><span id="display-name" style="color: #6366f1;"></span> 님 접속중</span>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <span style="font-weight: 600; font-size: 14px; margin-right: 10px;"><span id="display-name" style="color: #6366f1;"></span> 님</span>
                         <button id="btn-admin" class="btn btn-outline" style="display: none; width: auto; padding: 8px 16px; font-size: 13px;" onclick="showAdminPage()">Admin Panel</button>
                         <button class="btn btn-secondary" style="width: auto; padding: 8px 16px; font-size: 13px;" onclick="location.reload()">로그아웃</button>
                     </div>
                 </div>
 
                 <div class="tabs">
-                    <div class="tab active" onclick="switchTab('wallet')">내 지갑 (Wallet)</div>
-                    <div class="tab" onclick="switchTab('store')">자산 등록 (Registration)</div>
-                    <div class="tab" onclick="switchTab('market')">마켓플레이스 (Market)</div>
-                    <div class="tab" onclick="switchTab('history')">거래 내역 (Transactions)</div>
+                    <div class="tab active" onclick="switchTab('wallet')">내 지갑</div>
+                    <div class="tab" onclick="switchTab('store')">자산 등록</div>
+                    <div class="tab" onclick="switchTab('market')">마켓플레이스</div>
+                    <div class="tab" onclick="switchTab('history')">거래 내역</div>
                 </div>
 
                 <div id="tab-wallet" class="tab-content active">
                     <div style="background: #f8fafc; border-radius: 12px; padding: 40px 20px; text-align: center; border: 1px solid var(--border-color);">
                         <div style="font-size: 14px; font-weight: bold; color: var(--text-sub); margin-bottom: 10px;">연동 계좌: <span id="display-bank"></span> <span id="display-account"></span></div>
-                        <div style="font-size: 44px; font-weight: 800; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -1px;"><span id="display-balance">0</span> KRW</div>
+                        <div style="font-size: 44px; font-weight: 800; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -1px; word-break: break-all;"><span id="display-balance">0</span> KRW</div>
                     </div>
                 </div>
 
@@ -146,7 +149,7 @@
                         <div style="border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; background: #fff;">
                             <h3 style="font-size: 16px;">디지털 파일 등록</h3>
                             <div class="input-group">
-                                <label>등록할 파일 선택</label>
+                                <label>등록할 파일 (복수 선택 가능)</label>
                                 <input type="file" id="file-input" multiple style="display: none;" onchange="handleFileSelect(event)">
                                 <button class="btn btn-secondary" style="margin-bottom: 5px; color: #4f46e5; border-color: #c7d2fe;" onclick="document.getElementById('file-input').click()">PC에서 파일 찾아보기</button>
                                 
@@ -193,16 +196,16 @@
 
                 <div id="tab-history" class="tab-content">
                     <div class="input-group">
-                        <input type="text" id="history-search" placeholder="상품명 또는 거래 대상 이름으로 검색..." onkeyup="loadHistory()">
+                        <input type="text" id="history-search" placeholder="상품명 또는 거래 파트너 검색..." onkeyup="loadHistory()">
                     </div>
-                    <div style="overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+                    <div class="table-wrapper">
                         <table class="history-table">
                             <thead>
                                 <tr>
                                     <th>거래 일시</th>
                                     <th>유형</th>
                                     <th>상품 정보</th>
-                                    <th>거래 파트너</th>
+                                    <th>파트너</th>
                                     <th>금액 (KRW)</th>
                                 </tr>
                             </thead>
@@ -233,15 +236,16 @@
         </div>
         <div class="chat-body" id="chat-body"></div>
         <div class="chat-input-area">
-            <input type="text" id="chat-input" placeholder="메시지 입력 후 엔터..." onkeypress="if(event.keyCode===13) sendMessage()">
+            <input type="text" id="chat-input" placeholder="메시지 입력 후 전송..." onkeypress="if(event.keyCode===13) sendMessage()">
             <button class="btn" style="width: auto; margin: 0; padding: 10px 24px;" onclick="sendMessage()">전송</button>
         </div>
     </div>
+    
+    <div class="toast" id="toast">알림 메시지</div>
 
     <script>
-        // 중요: AWS 배포 시 아래 로컬 호스트 주소를 AWS IP(또는 도메인)로 수정하세요.
-        // 예: const API_URL = 'http://13.123.45.67:4000';
-        const API_URL = 'http://54.180.125.166:4000/'; 
+        // ⭐ 중요: 서버 배포 시 여기 IP 주소를 EC2 IP 주소(예: http://54.180.125.166:4000)로 덮어쓰세요!
+        const API_URL = 'http://54.180.125.166:4000'; 
         const socket = io(API_URL);
         
         let currentUser = null;
@@ -249,9 +253,12 @@
         let currentChatProduct = null;
         let selectedLocalFile = null;
 
-        // 알림 기능
-        function showMessage(msg) {
-            alert(msg);
+        // 토스트 알림 함수
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
         // 탭 제어
@@ -265,14 +272,14 @@
             if(id === 'history') loadHistory();
         }
 
-        // 로그인 로직
+        // 로그인 로직 (비밀번호 검증 등)
         async function login() {
             const name = document.getElementById('login-name').value.trim();
             const password = document.getElementById('login-password').value.trim();
             const bank = document.getElementById('login-bank').value.trim();
             const account = document.getElementById('login-account').value.trim();
             
-            if(!name || !password) return showMessage("이름과 비밀번호를 입력해주세요.");
+            if(!name || !password) return showToast("이름과 비밀번호를 입력해주세요.");
 
             try {
                 const res = await fetch(`${API_URL}/api/auth`, {
@@ -284,7 +291,7 @@
                 const data = await res.json();
                 
                 if(!res.ok) {
-                    return showMessage(data.error);
+                    return showToast(data.error);
                 }
                 
                 currentUser = data;
@@ -299,7 +306,7 @@
                 if(data.name === '이재준') {
                     document.getElementById('btn-admin').style.display = 'block';
                 }
-            } catch(e) { showMessage("서버 연결 실패. Node.js 백엔드가 켜져 있는지 확인하세요."); }
+            } catch(e) { showToast("서버 연결 실패. Node.js 백엔드를 먼저 실행하세요."); }
         }
 
         // 어드민 제어
@@ -358,9 +365,9 @@
             formData.append('seller', currentUser.name);
 
             if (type === 'file') {
-                if(!selectedLocalFile) return showMessage("목록에서 판매할 파일을 클릭하여 선택해주세요.");
+                if(!selectedLocalFile) return showToast("목록에서 판매할 파일을 클릭하여 선택해주세요.");
                 const price = document.getElementById('file-price').value;
-                if(!price) return showMessage("판매 금액을 입력하세요.");
+                if(!price) return showToast("판매 금액을 입력하세요.");
 
                 formData.append('file', selectedLocalFile);
                 formData.append('name', document.getElementById('file-name').value || selectedLocalFile.name);
@@ -370,7 +377,7 @@
                 const name = document.getElementById('prod-name').value;
                 const price = document.getElementById('prod-price').value;
                 const desc = document.getElementById('prod-desc').value;
-                if(!name || !price) return showMessage("상품명과 가격을 입력하세요.");
+                if(!name || !price) return showToast("상품명과 가격을 입력하세요.");
 
                 formData.append('name', name);
                 formData.append('price', price);
@@ -380,7 +387,7 @@
             try {
                 const res = await fetch(`${API_URL}/api/products`, { method: 'POST', body: formData });
                 if(res.ok) {
-                    showMessage("상품이 마켓에 등록되었습니다.");
+                    showToast("상품이 마켓에 등록되었습니다.");
                     document.getElementById('file-name').value = '';
                     document.getElementById('file-price').value = '';
                     document.getElementById('prod-name').value = '';
@@ -390,9 +397,9 @@
                     selectedLocalFile = null;
                     switchTab('market');
                 } else {
-                    showMessage("등록 중 서버 오류가 발생했습니다.");
+                    showToast("등록 중 서버 오류가 발생했습니다.");
                 }
-            } catch(e) { showMessage("통신 오류 발생"); }
+            } catch(e) { showToast("통신 오류 발생"); }
         }
 
         // 마켓플레이스
@@ -448,7 +455,7 @@
 
         // 구매
         async function buyProduct(id, name, price, seller) {
-            if (currentUser.balance < price) return showMessage("잔액이 부족합니다. 지갑을 확인하세요.");
+            if (currentUser.balance < price) return showToast("잔액이 부족합니다. 지갑을 확인하세요.");
             if (confirm(`[${name}] 상품을 ${price.toLocaleString()}원에 구매하시겠습니까?\n거래 완료 시 금액이 즉시 차감됩니다.`)) {
                 try {
                     const res = await fetch(`${API_URL}/api/buy`, {
@@ -458,11 +465,11 @@
                     });
                     const data = await res.json();
                     if(data.success) {
-                        showMessage("거래가 완료되었습니다.");
+                        showToast("거래가 완료되었습니다.");
                         updateUserBalance();
                         switchTab('history'); 
-                    } else showMessage(data.error);
-                } catch(e) { showMessage("서버 통신 오류"); }
+                    } else showToast(data.error);
+                } catch(e) { showToast("서버 통신 오류"); }
             }
         }
 
