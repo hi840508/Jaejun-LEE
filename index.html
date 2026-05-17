@@ -1,3 +1,4 @@
+cat << 'EOF' > /home/ubuntu/ray-bank-new/index.html
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -218,7 +219,8 @@
         cornerstoneWADOImageLoader.external.dicomParser = dicomParser;
         cornerstoneWADOImageLoader.configure({ useWebWorkers: false });
 
-        const API_URL = window.location.protocol + '//' + window.location.hostname + (window.location.port ? ':' + window.location.port : '');
+        // ★ [핵심 해결] 브라우저가 자동으로 https 업그레이드 조각을 붙이는 현상을 막기 위해 http 프로토콜을 명시적으로 고정합니다.
+        const API_URL = 'http://' + window.location.hostname + (window.location.port ? ':' + window.location.port : '');
         let socket = null; let currentUser = null; let currentChatRoom = null; 
         let selectedLocalFiles = []; let selectedPhysicalImg = null;
         let favoriteProducts = []; let favoriteStores = []; let previewTimerInterval = null;
@@ -240,20 +242,12 @@
         }
 
         async function login() {
-            // 고유 ID를 통해 브라우저 오작동(중복 HTML) 100% 방지
-            const nameEl = document.getElementById('ray-login-name');
-            const passEl = document.getElementById('ray-login-password');
-            const bankEl = document.getElementById('ray-login-bank');
-            const accEl = document.getElementById('ray-login-account');
-
-            if(!nameEl || !passEl) return showToast("프론트엔드 오류: 입력창을 찾을 수 없습니다.");
-
-            const name = nameEl.value.trim();
-            const password = passEl.value.trim();
-            const bank = bankEl && bankEl.value.trim() !== '' ? bankEl.value.trim() : '등록은행';
-            const account = accEl && accEl.value.trim() !== '' ? accEl.value.trim() : '000-000';
+            const name = document.getElementById('ray-login-name').value.trim();
+            const password = document.getElementById('ray-login-password').value.trim();
+            const bank = document.getElementById('ray-login-bank').value.trim() || '등록은행';
+            const account = document.getElementById('ray-login-account').value.trim() || '000-000';
             
-            if(!name || !password) return showToast("[프론트엔드 알림] 이름과 비밀번호를 반드시 입력하세요.");
+            if(!name || !password) return showToast("이름과 비밀번호를 입력하세요.");
 
             try {
                 const res = await fetch(`${API_URL}/api/auth`, {
@@ -273,7 +267,9 @@
                 document.getElementById('workspace-section').style.display = 'block';
                 document.getElementById('display-name').innerText = data.name;
                 updateUserBalance();
-            } catch(e) { showToast("네트워크 또는 DB 연결 오류가 발생했습니다."); }
+            } catch(e) { 
+                showToast("[클린프론트 에러] 서버 연결 실패: " + e.message); 
+            }
         }
 
         async function updateUserBalance() {
@@ -683,3 +679,4 @@
     </script>
 </body>
 </html>
+EOF
