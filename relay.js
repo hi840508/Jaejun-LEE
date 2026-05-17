@@ -9,7 +9,6 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-// CORS 허용 (클라이언트가 어디서 접속하든 소켓 통신 가능)
 const io = new Server(server, { cors: { origin: "*" } });
 
 const PORT = 4000;
@@ -17,30 +16,27 @@ const PORT = 4000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(__dirname));
 
-// 업로드 폴더 세팅
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// SQLite 데이터베이스 초기화
+// SQLite DB 세팅
 const db = new sqlite3.Database(path.join(__dirname, 'commerce.db'));
 
 db.serialize(() => {
-    // 유저 테이블 (비밀번호 추가)
+    // 비밀번호 컬럼 추가 (보안 강화)
     db.run(`CREATE TABLE IF NOT EXISTS users (
         name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER
     )`);
-    // 상품 테이블
     db.run(`CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY, type TEXT, name TEXT, description TEXT, price INTEGER, seller TEXT, filePath TEXT
     )`);
-    // 거래 내역 테이블
     db.run(`CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT
     )`);
-    // 채팅 기록 테이블 (상품/방 단위)
     db.run(`CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         roomId TEXT, sender TEXT, message TEXT, date TEXT
@@ -53,13 +49,14 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// --- [API] 인증 시스템 ---
+// --- [API] 회원가입 및 로그인 ---
 app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
-        if (err) return res.status(500).json({ error: "Database error" });
+        if (err) return res.status(500).json({ error: "DB 에러 발생" });
+        
         if (row) {
-            // 기존 유저 비밀번호 검증
+            // 이미 존재하는 유저 -> 비밀번호 검증
             if (row.password !== password) {
                 return res.status(401).json({ error: "비밀번호가 일치하지 않습니다." });
             }
@@ -67,7 +64,7 @@ app.post('/api/auth', (req, res) => {
         } else {
             // 신규 가입
             if (!bank || !account || !password) {
-                return res.status(400).json({ error: "신규 가입 시 은행과 계좌번호, 비밀번호를 모두 입력해야 합니다." });
+                return res.status(400).json({ error: "신규 가입 시 모든 정보를 입력해야 합니다." });
             }
             const initialBalance = 1000000;
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, ?)`, 
@@ -85,7 +82,7 @@ app.get('/api/users/:name', (req, res) => {
     });
 });
 
-// --- [API] 상품 및 거래 ---
+// --- [API] 상품/거래 ---
 app.get('/api/products', (req, res) => {
     db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => {
         res.json(rows || []);
@@ -131,28 +128,24 @@ app.get('/api/transactions/:name', (req, res) => {
     });
 });
 
-// --- [API] 채팅 내역 불러오기 ---
+// --- [API] 채팅 내역 ---
 app.get('/api/chat/:roomId', (req, res) => {
     db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => {
         res.json(rows || []);
     });
 });
 
-// --- [소켓] 상품별 실시간 채팅 ---
+// --- [소켓] 실시간 채팅 ---
 io.on('connection', (socket) => {
-    socket.on('join_room', (roomId) => {
-        socket.join(roomId);
-    });
+    socket.on('join_room', (roomId) => socket.join(roomId));
 
     socket.on('send_message', (data) => {
         const date = new Date().toLocaleString('ko-KR');
         db.run(`INSERT INTO chats (roomId, sender, message, date) VALUES (?, ?, ?, ?)`,
             [data.roomId, data.sender, data.message, date], (err) => {
-                if (!err) {
-                    io.to(data.roomId).emit('receive_message', { ...data, date });
-                }
+                if (!err) io.to(data.roomId).emit('receive_message', { ...data, date });
             });
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`Backend Server Running on Port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`));
