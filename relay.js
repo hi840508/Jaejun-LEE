@@ -9,41 +9,41 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
+// CORS 허용 (클라이언트가 어디서 접속하든 소켓 통신 가능)
 const io = new Server(server, { cors: { origin: "*" } });
 
-const PORT = process.env.PORT || 4000;
+const PORT = 4000;
 
 app.use(cors());
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// 정적 파일 서빙 및 업로드 폴더 설정
-app.use(express.static(__dirname));
+// 업로드 폴더 세팅
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// DB 초기화
+// SQLite 데이터베이스 초기화
 const db = new sqlite3.Database(path.join(__dirname, 'commerce.db'));
 
 db.serialize(() => {
-    // 사용자 테이블 (비밀번호 및 은행 정보 분리)
+    // 유저 테이블 (비밀번호 추가)
     db.run(`CREATE TABLE IF NOT EXISTS users (
         name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER
     )`);
     // 상품 테이블
     db.run(`CREATE TABLE IF NOT EXISTS products (
-        id TEXT PRIMARY KEY, type TEXT, name TEXT, desc TEXT, price INTEGER, seller TEXT, filePath TEXT
+        id TEXT PRIMARY KEY, type TEXT, name TEXT, description TEXT, price INTEGER, seller TEXT, filePath TEXT
     )`);
     // 거래 내역 테이블
     db.run(`CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT, buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT
+        buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT
     )`);
-    // 채팅 테이블 (상품별 대화 내역)
+    // 채팅 기록 테이블 (상품/방 단위)
     db.run(`CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        roomId TEXT, productId TEXT, sender TEXT, message TEXT, date TEXT
+        roomId TEXT, sender TEXT, message TEXT, date TEXT
     )`);
 });
 
@@ -53,23 +53,23 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// --- [API] 인증 및 지갑 ---
-app.post('/api/login', (req, res) => {
+// --- [API] 인증 시스템 ---
+app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) return res.status(500).json({ error: "Database error" });
         if (row) {
-            // 기존 유저 로그인 검증
+            // 기존 유저 비밀번호 검증
             if (row.password !== password) {
                 return res.status(401).json({ error: "비밀번호가 일치하지 않습니다." });
             }
             res.json(row);
         } else {
             // 신규 가입
-            if (!bank || !account) {
-                return res.status(400).json({ error: "신규 가입 시 은행과 계좌번호를 모두 입력해야 합니다." });
+            if (!bank || !account || !password) {
+                return res.status(400).json({ error: "신규 가입 시 은행과 계좌번호, 비밀번호를 모두 입력해야 합니다." });
             }
-            const initialBalance = 1000000; // 가입 축하금
+            const initialBalance = 1000000;
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, ?)`, 
                 [name, password, bank, account, initialBalance], (err) => {
                 if (err) return res.status(500).json({ error: err.message });
@@ -93,11 +93,11 @@ app.get('/api/products', (req, res) => {
 });
 
 app.post('/api/products', upload.single('file'), (req, res) => {
-    const { id, type, name, desc, price, seller } = req.body;
+    const { id, type, name, description, price, seller } = req.body;
     const filePath = req.file ? `/uploads/${req.file.filename}` : '';
     
-    db.run(`INSERT INTO products (id, type, name, desc, price, seller, filePath) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, type, name, desc, parseInt(price), seller, filePath], (err) => {
+    db.run(`INSERT INTO products (id, type, name, description, price, seller, filePath) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, type, name, description, parseInt(price), seller, filePath], (err) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: true });
     });
@@ -114,7 +114,7 @@ app.post('/api/buy', (req, res) => {
             db.run('BEGIN TRANSACTION');
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
-            db.run(`INSERT INTO transactions (type, buyer, seller, productName, amount, date) VALUES ('buy', ?, ?, ?, ?, ?)`,
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`,
                 [buyer, seller, productName, amount, date]);
             db.run('COMMIT', (err) => {
                 if (err) return res.status(500).json({ success: false, error: err.message });
@@ -138,7 +138,7 @@ app.get('/api/chat/:roomId', (req, res) => {
     });
 });
 
-// --- [Socket] 실시간 채팅 ---
+// --- [소켓] 상품별 실시간 채팅 ---
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => {
         socket.join(roomId);
@@ -146,8 +146,8 @@ io.on('connection', (socket) => {
 
     socket.on('send_message', (data) => {
         const date = new Date().toLocaleString('ko-KR');
-        db.run(`INSERT INTO chats (roomId, productId, sender, message, date) VALUES (?, ?, ?, ?, ?)`,
-            [data.roomId, data.productId, data.sender, data.message, date], (err) => {
+        db.run(`INSERT INTO chats (roomId, sender, message, date) VALUES (?, ?, ?, ?)`,
+            [data.roomId, data.sender, data.message, date], (err) => {
                 if (!err) {
                     io.to(data.roomId).emit('receive_message', { ...data, date });
                 }
