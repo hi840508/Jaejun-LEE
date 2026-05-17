@@ -8,48 +8,38 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const app = express();
-
-// 1. 글로벌 CORS 프로토콜 정격 개방 (브라우저 Mixed Content 보호 정책 우회)
-app.use(cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
-}));
-
+app.use(cors({ origin: "*", methods: ["GET", "POST", "PUT", "DELETE"], allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"] }));
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
-// 2. HTTP 네이티브 인스턴스 명시적 생성 (바인딩 충돌 차단)
 const server = http.createServer(app);
-
-// 3. 웹소켓 독립 엔진 주입 및 폴링 덤프 트래킹 가동
-const io = new Server(server, { 
-    cors: { 
-        origin: "*", 
-        methods: ["GET", "POST"] 
-    },
-    transports: ['websocket', 'polling'] // HTTP 타임아웃 발생 시 폴링 엔진으로 동적 세션 유지
-});
-
+const io = new Server(server, { cors: { origin: "*" }, transports: ['websocket', 'polling'] });
 const PORT = 4000;
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-app.use('/uploads', express.static(UPLOAD_DIR));
 
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.use('/uploads', express.static(UPLOAD_DIR, {
+    setHeaders: (res, path, stat) => {
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
+}));
+
+app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
 const db = new sqlite3.Database(path.join(__dirname, 'commerce.db'));
 
+// 고도화: P2P 송금(transfers) 및 QR 수표(qr_checks) 원장 테이블 신설
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, type TEXT, name TEXT, description TEXT, price INTEGER, seller TEXT, filePath TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT, sender TEXT, message TEXT, date TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, productId TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS withdraws (id TEXT PRIMARY KEY, name TEXT, account TEXT, amount INTEGER, date TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS favorite_products (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, productId TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, storeName TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS qr_checks (id TEXT PRIMARY KEY, amount INTEGER, issuer TEXT, is_used INTEGER, date TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, amount INTEGER, date TEXT)`);
 });
 
 const storage = multer.diskStorage({
@@ -59,23 +49,18 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + '_' + safeName);
     }
 });
-// 고도화: 단일 파일(single)이 아니라 폴더 하위 멀티 파일을 수집 및 바인딩하도록 multer 인터페이스 개방
 const upload = multer({ storage });
 
-// --- [API] 뱅킹 및 인증 레이어 ---
 app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
-        if (err) return res.status(500).json({ error: "DB 에러" });
         if (row) {
             if (row.password !== password) return res.status(401).json({ error: "패스워드 불일치" });
             return res.json(row);
         } else {
-            if (!bank || !account || !password) return res.status(400).json({ error: "인증 명세 누락" });
             const initialBalance = 1000000;
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, ?)`, 
                 [name, password, bank, account, initialBalance], (err) => {
-                if (err) return res.status(500).json({ error: err.message });
                 return res.json({ name, bank, account, balance: initialBalance });
             });
         }
@@ -86,75 +71,88 @@ app.get('/api/users/:name', (req, res) => {
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.params.name], (err, row) => { res.json(row || { balance: 0 }); });
 });
 
-// --- [API] 관리자(어드민) 전용 기능 ---
-app.post('/api/admin/deposit', (req, res) => {
-    const { targetName, amount } = req.body;
-    db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, targetName], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        if (this.changes === 0) return res.status(404).json({ error: "존재하지 않는 유저입니다." });
-        res.json({ success: true });
-    });
-});
-
-app.post('/api/withdraw', (req, res) => {
-    const { id, name, account, amount, date } = req.body;
-    db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, name], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        db.run(`INSERT INTO withdraws (id, name, account, amount, date) VALUES (?, ?, ?, ?, ?)`,
-            [id, name, account, amount, date], (err) => {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true });
+// --- P2P 송금 백엔드 시스템 ---
+app.post('/api/transfer', (req, res) => {
+    const { sender, receiver, amount } = req.body;
+    db.get(`SELECT balance FROM users WHERE name = ?`, [sender], (err, senderRow) => {
+        if (!senderRow || senderRow.balance < amount) return res.status(400).json({ error: "잔액 부족" });
+        db.get(`SELECT * FROM users WHERE name = ?`, [receiver], (err, receiverRow) => {
+            if (!receiverRow) return res.status(404).json({ error: "존재하지 않는 수신자입니다." });
+            const date = new Date().toLocaleString('ko-KR');
+            
+            db.serialize(() => {
+                db.run('BEGIN TRANSACTION');
+                db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, sender]);
+                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, receiver]);
+                db.run(`INSERT INTO transfers (sender, receiver, amount, date) VALUES (?, ?, ?, ?)`, [sender, receiver, amount, date]);
+                db.run('COMMIT', (err) => {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({ success: true });
+                });
+            });
         });
     });
 });
 
-app.get('/api/admin/withdraws', (req, res) => {
-    db.all(`SELECT * FROM withdraws ORDER BY date ASC`, [], (err, rows) => { res.json(rows || []); });
-});
-
-app.post('/api/admin/withdraw/approve', (req, res) => {
-    const { id } = req.body;
-    db.run(`DELETE FROM withdraws WHERE id = ?`, [id], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
+// --- QR 수표 백엔드 시스템 ---
+app.post('/api/check/issue', (req, res) => {
+    const { issuer, amount } = req.body;
+    db.get(`SELECT balance FROM users WHERE name = ?`, [issuer], (err, row) => {
+        if (!row || row.balance < amount) return res.status(400).json({ error: "잔액이 부족합니다." });
+        const checkId = 'QRCHK_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+        const date = new Date().toLocaleString('ko-KR');
+        
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, issuer]);
+            db.run(`INSERT INTO qr_checks (id, amount, issuer, is_used, date) VALUES (?, ?, ?, 0, ?)`, [checkId, amount, issuer, date]);
+            db.run('COMMIT', (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true, checkId });
+            });
+        });
     });
 });
 
-// --- [API] 상점 즐겨찾기 ---
-app.post('/api/favorites', (req, res) => {
-    const { userName, productId } = req.body;
-    db.get(`SELECT * FROM favorites WHERE userName=? AND productId=?`, [userName, productId], (err, row) => {
-        if(row) {
-            db.run(`DELETE FROM favorites WHERE userName=? AND productId=?`, [userName, productId], () => res.json({status:"removed"}));
-        } else {
-            db.run(`INSERT INTO favorites (userName, productId) VALUES (?, ?)`, [userName, productId], () => res.json({status:"added"}));
-        }
+app.post('/api/check/redeem', (req, res) => {
+    const { redeemer, checkId } = req.body;
+    db.get(`SELECT * FROM qr_checks WHERE id = ?`, [checkId], (err, row) => {
+        if (err) return res.status(500).json({ error: "DB 연결 에러" });
+        if (!row) return res.status(404).json({ error: "유효하지 않은 가짜 수표입니다." });
+        if (row.is_used === 1) return res.status(400).json({ error: "이미 누군가 사용한 수표입니다." });
+        
+        const date = new Date().toLocaleString('ko-KR');
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [checkId]);
+            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [row.amount, redeemer]);
+            // 충전 이력을 수표 테이블과 별개로 관리하거나 트랜잭션 종료
+            db.run('COMMIT', (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true, amount: row.amount });
+            });
+        });
     });
 });
 
-app.get('/api/favorites/:userName', (req, res) => {
-    db.all(`SELECT productId FROM favorites WHERE userName=?`, [req.params.userName], (err, rows) => {
-        res.json(rows ? rows.map(r => r.productId) : []);
-    });
-});
-
-// --- [API] 자산 등록 및 마켓 라우터 ---
 app.get('/api/products', (req, res) => {
     db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => { res.json(rows || []); });
 });
+app.get('/api/stores', (req, res) => {
+    db.all(`SELECT DISTINCT seller FROM products`, [], (err, rows) => { res.json(rows ? rows.map(r => r.seller) : []); });
+});
 
-// 고도화: 폴더 통째 업로드 스트림 배열(array)을 안정적으로 수신 바인딩하도록 인프라 변경
-app.post('/api/products', upload.array('files'), (req, res) => {
-    const { id, type, name, description, price, seller } = req.body;
-    
-    // 폴더 내부의 첫 번째 메인 자산 파일을 스트리밍 기준 경로로 선정
+app.post('/api/products/digital', upload.array('files'), (req, res) => {
+    const { type, name, description, price, seller } = req.body;
     const filePath = req.files && req.files.length > 0 ? `/uploads/${req.files[0].filename}` : '';
-    
     db.run(`INSERT INTO products (id, type, name, description, price, seller, filePath) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, type, name, description, parseInt(price), seller, filePath], (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true, filePath });
-    });
+        ['PRD_' + Date.now(), type, name, description, parseInt(price), seller, filePath], (err) => { res.json({ success: true }); });
+});
+app.post('/api/products/physical', upload.single('image'), (req, res) => {
+    const { type, name, description, price, seller } = req.body;
+    const filePath = req.file ? `/uploads/${req.file.filename}` : '';
+    db.run(`INSERT INTO products (id, type, name, description, price, seller, filePath) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ['PRD_' + Date.now(), type, name, description, parseInt(price), seller, filePath], (err) => { res.json({ success: true }); });
 });
 
 app.post('/api/buy', (req, res) => {
@@ -162,53 +160,67 @@ app.post('/api/buy', (req, res) => {
     const date = new Date().toLocaleString('ko-KR');
     db.get(`SELECT balance FROM users WHERE name = ?`, [buyer], (err, row) => {
         if (!row || row.balance < amount) return res.status(400).json({ error: "자산 한도 초과" });
-        db.get(`SELECT filePath FROM products WHERE id = ?`, [productId], (err, prod) => {
-            const fileLink = prod ? prod.filePath : '';
-            db.serialize(() => {
-                db.run('BEGIN TRANSACTION');
-                db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
-                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
-                db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [buyer, seller, productName, amount, date]);
-                db.run('COMMIT', (err) => {
-                    if (err) return res.status(500).json({ error: err.message });
-                    res.json({ success: true, fileLink });
-                });
-            });
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
+            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [buyer, seller, productName, amount, date]);
+            db.run('COMMIT', (err) => { res.json({ success: true }); });
         });
     });
 });
 
-app.get('/api/transactions/:name', (req, res) => {
-    db.all(`SELECT * FROM transactions WHERE buyer = ? OR seller = ? ORDER BY id DESC`, [req.params.name, req.params.name], (err, rows) => { res.json(rows || []); });
+// 고도화: 자산 거래내역 + 송금내역 + 수표 발행내역을 시간순으로 자동 병합 (단일 원장 뷰어)
+app.get('/api/transactions/:name', async (req, res) => {
+    const name = req.params.name;
+    try {
+        const transactions = await new Promise((resolve) => {
+            db.all(`SELECT * FROM transactions WHERE buyer = ? OR seller = ?`, [name, name], (err, rows) => { resolve(rows || []); });
+        });
+        const transfers = await new Promise((resolve) => {
+            db.all(`SELECT * FROM transfers WHERE sender = ? OR receiver = ?`, [name, name], (err, rows) => { resolve(rows || []); });
+        });
+        const qrChecks = await new Promise((resolve) => {
+            db.all(`SELECT * FROM qr_checks WHERE issuer = ?`, [name], (err, rows) => { resolve(rows || []); });
+        });
+        
+        const history = [];
+        transactions.forEach(r => history.push({ type: 'asset', date: r.date, buyer: r.buyer, seller: r.seller, productName: r.productName, amount: r.amount }));
+        transfers.forEach(r => history.push({ type: 'transfer', date: r.date, sender: r.sender, receiver: r.receiver, amount: r.amount }));
+        qrChecks.forEach(r => history.push({ type: 'check_issue', date: r.date, amount: r.amount }));
+        
+        // 최신순 렌더링을 위한 Timestamp 정렬
+        history.sort((a, b) => new Date(b.date) - new Date(a.date));
+        res.json(history);
+    } catch(e) {
+        res.status(500).json([]);
+    }
 });
 
-app.get('/api/chat/:roomId', (req, res) => {
-    db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => {
-        if (err) return res.status(500).json([]);
-        res.json(rows || []);
+app.post('/api/favorites/store', (req, res) => {
+    const { userName, storeName } = req.body;
+    db.get(`SELECT * FROM favorite_stores WHERE userName=? AND storeName=?`, [userName, storeName], (err, row) => {
+        if(row) { db.run(`DELETE FROM favorite_stores WHERE userName=? AND storeName=?`, [userName, storeName], () => res.json({status:"removed"})); } 
+        else { db.run(`INSERT INTO favorite_stores (userName, storeName) VALUES (?, ?)`, [userName, storeName], () => res.json({status:"added"})); }
     });
 });
+app.get('/api/favorites/:userName', (req, res) => {
+    db.all(`SELECT productId FROM favorite_products WHERE userName=?`, [req.params.userName], (err, pRows) => {
+        db.all(`SELECT storeName FROM favorite_stores WHERE userName=?`, [req.params.userName], (err, sRows) => {
+            res.json({ products: pRows ? pRows.map(r => r.productId) : [], stores: sRows ? sRows.map(r => r.storeName) : [] });
+        });
+    });
+});
+app.get('/api/chat/:roomId', (req, res) => {
+    db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => { res.json(rows || []); });
+});
 
-// 실시간 패킷 정렬 레이어 및 소켓 커넥션
 io.on('connection', (socket) => {
-    socket.join('global_room');
     socket.on('join_room', (roomId) => { socket.join(roomId); });
-    
     socket.on('send_message', (data) => {
         const date = new Date().toLocaleString('ko-KR');
-        // 버그 해결 완료 픽스: 컬럼은 4개(roomId, sender, message, date)인데 물음표가 3개였던 오류를 (?, ?, ?, ?)로 전격 교정 완료
-        db.run(`INSERT INTO chats (roomId, sender, message, date) VALUES (?, ?, ?, ?)`,
-            [data.roomId, data.sender, data.message, date], (err) => {
-                if (!err) {
-                    io.to(data.roomId).emit('receive_message', { ...data, date });
-                } else {
-                    console.error("채팅 메시지 원장 기입 실패:", err);
-                }
-            });
+        db.run(`INSERT INTO chats (roomId, sender, message, date) VALUES (?, ?, ?, ?)`, [data.roomId, data.sender, data.message, date], () => { io.to(data.roomId).emit('receive_message', { ...data, date }); });
     });
 });
 
-// 정격 서버 리슨 개시
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[REAL PRODUCTION] Core System bound successfully on port ${PORT}`);
-});
+server.listen(PORT, '0.0.0.0', () => { console.log(`Core System bound on port ${PORT}`); });
