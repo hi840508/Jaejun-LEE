@@ -34,7 +34,7 @@ app.use('/uploads', express.static(UPLOAD_DIR, {
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
-const db = new sqlite3.Database(path.join(__dirname, 'commerce.db'));
+const db = new sqlite3.Database(path.join(__dirname, 'commerce_V2.db'));
 
 // [DB 무결성 패치] 테이블이 없으면 안전하게 생성하고, 있으면 필요한 칸만 덧붙입니다.
 db.serialize(() => {
