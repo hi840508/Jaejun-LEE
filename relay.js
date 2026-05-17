@@ -9,23 +9,30 @@ const { Server } = require('socket.io');
 
 const app = express();
 
-// 1. 엔터프라이즈 레벨 CORS 커널 완전 개방
+// 1. 글로벌 CORS 프로토콜 정격 개방 (브라우저 Mixed Content 보호 정책 우회)
 app.use(cors({
     origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
 }));
 
-app.use(express.json({ limit: '1000mb' }));
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ extended: true, limit: '500mb' }));
+
+// 2. HTTP 네이티브 인스턴스 명시적 생성 (바인딩 충돌 차단)
 const server = http.createServer(app);
 
-// 2. 소켓 웹 엔진 정격 인프라 맵핑
+// 3. 웹소켓 독립 엔진 주입 및 폴링 덤프 트래킹 가동
 const io = new Server(server, { 
-    cors: { origin: "*", methods: ["GET", "POST"] },
-    transports: ['websocket', 'polling']
+    cors: { 
+        origin: "*", 
+        methods: ["GET", "POST"] 
+    },
+    transports: ['websocket', 'polling'] // HTTP 타임아웃 발생 시 폴링 엔진으로 동적 세션 유지
 });
 
 const PORT = 4000;
+
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -38,6 +45,7 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT, sender TEXT, message TEXT, date TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, productId TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS withdraws (id TEXT PRIMARY KEY, name TEXT, account TEXT, amount INTEGER, date TEXT)`);
 });
 
 const storage = multer.diskStorage({
@@ -49,7 +57,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// --- [API] 크립토 뱅킹 및 인증 레이어 ---
+// --- [API] 뱅킹 및 인증 레이어 ---
 app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
@@ -73,7 +81,41 @@ app.get('/api/users/:name', (req, res) => {
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.params.name], (err, row) => { res.json(row || { balance: 0 }); });
 });
 
-// --- [API] 상점 즐겨찾기 엔진 ---
+// --- [API] 관리자(어드민) 전용 기능 ---
+app.post('/api/admin/deposit', (req, res) => {
+    const { targetName, amount } = req.body;
+    db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, targetName], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        if (this.changes === 0) return res.status(404).json({ error: "존재하지 않는 유저입니다." });
+        res.json({ success: true });
+    });
+});
+
+app.post('/api/withdraw', (req, res) => {
+    const { id, name, account, amount, date } = req.body;
+    db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, name], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        db.run(`INSERT INTO withdraws (id, name, account, amount, date) VALUES (?, ?, ?, ?, ?)`,
+            [id, name, account, amount, date], (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+        });
+    });
+});
+
+app.get('/api/admin/withdraws', (req, res) => {
+    db.all(`SELECT * FROM withdraws ORDER BY date ASC`, [], (err, rows) => { res.json(rows || []); });
+});
+
+app.post('/api/admin/withdraw/approve', (req, res) => {
+    const { id } = req.body;
+    db.run(`DELETE FROM withdraws WHERE id = ?`, [id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+// --- [API] 상점 즐겨찾기 ---
 app.post('/api/favorites', (req, res) => {
     const { userName, productId } = req.body;
     db.get(`SELECT * FROM favorites WHERE userName=? AND productId=?`, [userName, productId], (err, row) => {
@@ -91,7 +133,7 @@ app.get('/api/favorites/:userName', (req, res) => {
     });
 });
 
-// --- [API] 무역 자산 마운트 라우터 ---
+// --- [API] 자산 등록 및 마켓 라우터 ---
 app.get('/api/products', (req, res) => {
     db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => { res.json(rows || []); });
 });
@@ -109,16 +151,19 @@ app.post('/api/products', upload.single('file'), (req, res) => {
 app.post('/api/buy', (req, res) => {
     const { buyer, seller, productId, productName, amount } = req.body;
     const date = new Date().toLocaleString('ko-KR');
-    db.get(`SELECT filePath FROM products WHERE id = ?`, [productId], (err, prod) => {
-        const fileLink = prod ? prod.filePath : '';
-        db.serialize(() => {
-            db.run('BEGIN TRANSACTION');
-            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
-            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [buyer, seller, productName, amount, date]);
-            db.run('COMMIT', (err) => {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true, fileLink });
+    db.get(`SELECT balance FROM users WHERE name = ?`, [buyer], (err, row) => {
+        if (!row || row.balance < amount) return res.status(400).json({ error: "자산 한도 초과" });
+        db.get(`SELECT filePath FROM products WHERE id = ?`, [productId], (err, prod) => {
+            const fileLink = prod ? prod.filePath : '';
+            db.serialize(() => {
+                db.run('BEGIN TRANSACTION');
+                db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
+                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
+                db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [buyer, seller, productName, amount, date]);
+                db.run('COMMIT', (err) => {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({ success: true, fileLink });
+                });
             });
         });
     });
@@ -128,9 +173,10 @@ app.get('/api/transactions/:name', (req, res) => {
     db.all(`SELECT * FROM transactions WHERE buyer = ? OR seller = ? ORDER BY id DESC`, [req.params.name, req.params.name], (err, rows) => { res.json(rows || []); });
 });
 
-// --- [API] 1:1 세널 독립 디코더 라우터 ---
+// 진성 고정 마스터 라우터 (404 예외 완벽 제거)
 app.get('/api/chat/:roomId', (req, res) => {
     db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => {
+        if (err) return res.status(500).json([]);
         res.json(rows || []);
     });
 });
@@ -149,6 +195,7 @@ io.on('connection', (socket) => {
     });
 });
 
+// 정격 서버 리슨 개시
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Core Integration Base Engine Stabilized. Port ${PORT}`);
+    console.log(`[REAL PRODUCTION] Core System bound successfully on port ${PORT}`);
 });
