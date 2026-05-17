@@ -37,6 +37,11 @@ const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
+// ★ [추가] 브라우저 최초 접속 시 상단의 index.html 화면을 띄워주는 코드
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 const db = new sqlite3.Database(path.join(__dirname, 'commerce.db'));
 
 db.serialize(() => {
@@ -173,7 +178,6 @@ app.get('/api/transactions/:name', (req, res) => {
     db.all(`SELECT * FROM transactions WHERE buyer = ? OR seller = ? ORDER BY id DESC`, [req.params.name, req.params.name], (err, rows) => { res.json(rows || []); });
 });
 
-// 진성 고정 마스터 라우터 (404 예외 완벽 제거)
 app.get('/api/chat/:roomId', (req, res) => {
     db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => {
         if (err) return res.status(500).json([]);
@@ -186,7 +190,7 @@ io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     socket.on('send_message', (data) => {
         const date = new Date().toLocaleString('ko-KR');
-        db.run(`INSERT INTO chats (roomId, sender, message, date) VALUES (?, ?, ?, ?)`,
+        db.run(`INSERT INTO chats (roomId, sender, message, date) VALUES (?, ?, ?)`,
             [data.roomId, data.sender, data.message, date], (err) => {
                 if (!err) {
                     io.to(data.roomId).emit('receive_message', { ...data, date });
