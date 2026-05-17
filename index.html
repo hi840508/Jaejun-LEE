@@ -214,14 +214,20 @@
     <div class="toast" id="toast">알림 메시지</div>
 
     <script>
-        cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
-        cornerstoneWADOImageLoader.external.dicomParser = dicomParser;
-        cornerstoneWADOImageLoader.configure({ useWebWorkers: false });
-
+        // ★ [방어 레이어 추가] 핵심 변수인 API_URL의 선언과 초기화를 스크립트 최상단으로 올려 차단 현상을 완벽 차단합니다.
         const API_URL = 'http://' + window.location.hostname + (window.location.port ? ':' + window.location.port : '');
         let socket = null; let currentUser = null; let currentChatRoom = null; 
         let selectedLocalFiles = []; let selectedPhysicalImg = null;
         let favoriteProducts = []; let favoriteStores = []; let previewTimerInterval = null;
+
+        // ★ [방어 레이어 추가] 의료용 뷰어 라이브러리가 로드에 실패하더라도 로그인 기능은 무조건 작동하도록 try-catch 예외 격리막을 설치합니다.
+        try {
+            cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
+            cornerstoneWADOImageLoader.external.dicomParser = dicomParser;
+            cornerstoneWADOImageLoader.configure({ useWebWorkers: false });
+        } catch (libraryLoadError) {
+            console.warn("[시스템 안내] 의료용 확장 렌더러 일부 레이어가 유휴 상태입니다. (메인 가입 오퍼레이션은 정상 유지)", libraryLoadError);
+        }
 
         function showToast(msg) {
             const toast = document.getElementById('toast'); toast.innerText = msg;
