@@ -16,9 +16,9 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
-app.use(express.static(__dirname));
 
-// 업로드 폴더 생성
+// 정적 파일 서빙 및 업로드 폴더 설정
+app.use(express.static(__dirname));
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -27,9 +27,9 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 const db = new sqlite3.Database(path.join(__dirname, 'commerce.db'));
 
 db.serialize(() => {
-    // 사용자 테이블
+    // 사용자 테이블 (비밀번호 및 은행 정보 분리)
     db.run(`CREATE TABLE IF NOT EXISTS users (
-        name TEXT PRIMARY KEY, account TEXT, balance INTEGER
+        name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER
     )`);
     // 상품 테이블
     db.run(`CREATE TABLE IF NOT EXISTS products (
@@ -40,14 +40,13 @@ db.serialize(() => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT, buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT
     )`);
-    // 채팅 테이블 (상품 단위)
+    // 채팅 테이블 (상품별 대화 내역)
     db.run(`CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         roomId TEXT, productId TEXT, sender TEXT, message TEXT, date TEXT
     )`);
 });
 
-// 파일 업로드 설정
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, UPLOAD_DIR),
     filename: (req, file, cb) => cb(null, Date.now() + '_' + file.originalname)
@@ -56,25 +55,32 @@ const upload = multer({ storage });
 
 // --- [API] 인증 및 지갑 ---
 app.post('/api/login', (req, res) => {
-    const { name, account } = req.body;
+    const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (row) {
-            // 기존 유저
+            // 기존 유저 로그인 검증
+            if (row.password !== password) {
+                return res.status(401).json({ error: "비밀번호가 일치하지 않습니다." });
+            }
             res.json(row);
         } else {
-            // 신규 가입 (기본 잔액 1,000,000원 지급)
-            const initialBalance = 1000000;
-            db.run(`INSERT INTO users (name, account, balance) VALUES (?, ?, ?)`, [name, account, initialBalance], (err) => {
+            // 신규 가입
+            if (!bank || !account) {
+                return res.status(400).json({ error: "신규 가입 시 은행과 계좌번호를 모두 입력해야 합니다." });
+            }
+            const initialBalance = 1000000; // 가입 축하금
+            db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, ?)`, 
+                [name, password, bank, account, initialBalance], (err) => {
                 if (err) return res.status(500).json({ error: err.message });
-                res.json({ name, account, balance: initialBalance });
+                res.json({ name, bank, account, balance: initialBalance });
             });
         }
     });
 });
 
 app.get('/api/users/:name', (req, res) => {
-    db.get(`SELECT * FROM users WHERE name = ?`, [req.params.name], (err, row) => {
+    db.get(`SELECT balance FROM users WHERE name = ?`, [req.params.name], (err, row) => {
         res.json(row || { balance: 0 });
     });
 });
@@ -101,15 +107,19 @@ app.post('/api/buy', (req, res) => {
     const { buyer, seller, productId, productName, amount } = req.body;
     const date = new Date().toLocaleString('ko-KR');
 
-    db.serialize(() => {
-        db.run('BEGIN TRANSACTION');
-        db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
-        db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
-        db.run(`INSERT INTO transactions (type, buyer, seller, productName, amount, date) VALUES ('buy', ?, ?, ?, ?, ?)`,
-            [buyer, seller, productName, amount, date]);
-        db.run('COMMIT', (err) => {
-            if (err) return res.status(500).json({ success: false, error: err.message });
-            res.json({ success: true });
+    db.get(`SELECT balance FROM users WHERE name = ?`, [buyer], (err, row) => {
+        if (!row || row.balance < amount) return res.status(400).json({ success: false, error: "잔액이 부족합니다." });
+
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
+            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
+            db.run(`INSERT INTO transactions (type, buyer, seller, productName, amount, date) VALUES ('buy', ?, ?, ?, ?, ?)`,
+                [buyer, seller, productName, amount, date]);
+            db.run('COMMIT', (err) => {
+                if (err) return res.status(500).json({ success: false, error: err.message });
+                res.json({ success: true });
+            });
         });
     });
 });
@@ -128,7 +138,7 @@ app.get('/api/chat/:roomId', (req, res) => {
     });
 });
 
-// --- [소켓] 실시간 채팅 ---
+// --- [Socket] 실시간 채팅 ---
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => {
         socket.join(roomId);
@@ -136,15 +146,13 @@ io.on('connection', (socket) => {
 
     socket.on('send_message', (data) => {
         const date = new Date().toLocaleString('ko-KR');
-        // DB 저장
         db.run(`INSERT INTO chats (roomId, productId, sender, message, date) VALUES (?, ?, ?, ?, ?)`,
             [data.roomId, data.productId, data.sender, data.message, date], (err) => {
                 if (!err) {
-                    // 방에 있는 인원에게 브로드캐스트
                     io.to(data.roomId).emit('receive_message', { ...data, date });
                 }
             });
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`));
+server.listen(PORT, '0.0.0.0', () => console.log(`Backend Server Running on Port ${PORT}`));
