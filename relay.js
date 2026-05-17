@@ -12,7 +12,7 @@ app.use(cors({ origin: "*", methods: ["GET", "POST", "PUT", "DELETE"], allowedHe
 app.use(express.json({ limit: '500mb' }));
 app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-        return res.status(400).json({ error: "잘못된 네트워크 패킷입니다." });
+        return res.status(400).json({ error: "잘못된 네트워크 패킷" });
     }
     next();
 });
@@ -20,8 +20,6 @@ app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" }, transports: ['websocket', 'polling'] });
-
-// ★ AWS 방화벽이 열려있는 4000번 포트로 안전하게 복귀합니다.
 const PORT = 4000;
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
@@ -36,8 +34,8 @@ app.use('/uploads', express.static(UPLOAD_DIR, {
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
-// 완전히 독립된 최신 고유 DB 파일명으로 충돌을 원천 차단합니다.
-const db = new sqlite3.Database(path.join(__dirname, 'commerce_absolute_v6.db'));
+// 깃허브 전용 신규 무결성 데이터베이스 파일 개설
+const db = new sqlite3.Database(path.join(__dirname, 'commerce_github_clean.db'));
 
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER)`);
@@ -61,10 +59,10 @@ const upload = multer({ storage });
 
 app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
-    if (!name || !password) return res.status(400).json({ error: "이름과 비밀번호가 누락되었습니다." });
+    if (!name || !password) return res.status(400).json({ error: "[GitHub 백엔드] 인증 명세 누락" });
 
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
-        if (err) return res.status(500).json({ error: "[DB 검색 에러] " + err.message });
+        if (err) return res.status(500).json({ error: "[원장 조회 장애] " + err.message });
         
         if (row) {
             if (row.password && row.password !== password) return res.status(401).json({ error: "패스워드 불일치" });
@@ -73,7 +71,7 @@ app.post('/api/auth', (req, res) => {
             const initialBalance = 1000000;
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, ?)`, 
                 [name, password, bank || '등록은행', account || '000-000', initialBalance], (err) => {
-                if (err) return res.status(500).json({ error: "[DB 생성 에러] " + err.message });
+                if (err) return res.status(500).json({ error: "[원장 등록 장애] " + err.message });
                 return res.json({ name, bank: bank || '등록은행', account: account || '000-000', balance: initialBalance });
             });
         }
@@ -210,4 +208,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`Core System bound successfully on port ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`[GITHUB SYSTEM V1] BIND COMPLETE ON PORT ${PORT}`); });
