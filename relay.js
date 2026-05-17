@@ -37,7 +37,6 @@ const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// ★ [추가] 브라우저 최초 접속 시 상단의 index.html 화면을 띄워주는 코드
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -60,6 +59,7 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + '_' + safeName);
     }
 });
+// 고도화: 단일 파일(single)이 아니라 폴더 하위 멀티 파일을 수집 및 바인딩하도록 multer 인터페이스 개방
 const upload = multer({ storage });
 
 // --- [API] 뱅킹 및 인증 레이어 ---
@@ -143,9 +143,13 @@ app.get('/api/products', (req, res) => {
     db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => { res.json(rows || []); });
 });
 
-app.post('/api/products', upload.single('file'), (req, res) => {
+// 고도화: 폴더 통째 업로드 스트림 배열(array)을 안정적으로 수신 바인딩하도록 인프라 변경
+app.post('/api/products', upload.array('files'), (req, res) => {
     const { id, type, name, description, price, seller } = req.body;
-    const filePath = req.file ? `/uploads/${req.file.filename}` : '';
+    
+    // 폴더 내부의 첫 번째 메인 자산 파일을 스트리밍 기준 경로로 선정
+    const filePath = req.files && req.files.length > 0 ? `/uploads/${req.files[0].filename}` : '';
+    
     db.run(`INSERT INTO products (id, type, name, description, price, seller, filePath) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [id, type, name, description, parseInt(price), seller, filePath], (err) => {
             if (err) return res.status(500).json({ error: err.message });
@@ -185,15 +189,20 @@ app.get('/api/chat/:roomId', (req, res) => {
     });
 });
 
-// 실시간 패킷 정렬 레이어
+// 실시간 패킷 정렬 레이어 및 소켓 커넥션
 io.on('connection', (socket) => {
+    socket.join('global_room');
     socket.on('join_room', (roomId) => { socket.join(roomId); });
+    
     socket.on('send_message', (data) => {
         const date = new Date().toLocaleString('ko-KR');
-        db.run(`INSERT INTO chats (roomId, sender, message, date) VALUES (?, ?, ?)`,
+        // 버그 해결 완료 픽스: 컬럼은 4개(roomId, sender, message, date)인데 물음표가 3개였던 오류를 (?, ?, ?, ?)로 전격 교정 완료
+        db.run(`INSERT INTO chats (roomId, sender, message, date) VALUES (?, ?, ?, ?)`,
             [data.roomId, data.sender, data.message, date], (err) => {
                 if (!err) {
                     io.to(data.roomId).emit('receive_message', { ...data, date });
+                } else {
+                    console.error("채팅 메시지 원장 기입 실패:", err);
                 }
             });
     });
