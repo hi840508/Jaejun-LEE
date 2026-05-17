@@ -9,8 +9,6 @@ const { Server } = require('socket.io');
 
 const app = express();
 app.use(cors({ origin: "*", methods: ["GET", "POST", "PUT", "DELETE"], allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"] }));
-
-// [방어 코드] 잘못된 JSON 데이터가 들어와도 서버가 죽지 않도록 방어하는 미들웨어
 app.use(express.json({ limit: '500mb' }));
 app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
@@ -36,10 +34,10 @@ app.use('/uploads', express.static(UPLOAD_DIR, {
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
-// [DB 자가치유 스크립트] 파일 삭제 없이 알아서 누락된 구조를 추가합니다.
 const db = new sqlite3.Database(path.join(__dirname, 'commerce.db'));
+
+// [DB 무결성 패치] 테이블이 없으면 안전하게 생성하고, 있으면 필요한 칸만 덧붙입니다.
 db.serialize(() => {
-    // 1. 기본 뼈대 창설
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, type TEXT, name TEXT, description TEXT, price INTEGER, seller TEXT, filePath TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT)`);
@@ -49,7 +47,7 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS qr_checks (id TEXT PRIMARY KEY, amount INTEGER, issuer TEXT, is_used INTEGER, date TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, amount INTEGER, date TEXT)`);
     
-    // 2. 구버전 DB일 경우 누락된 컬럼(password, bank, account) 자동 업데이트 (에러 무시)
+    // 이전 버전 DB 호환성을 위해 컬럼 강제 추가 (이미 있으면 무시됨)
     db.run(`ALTER TABLE users ADD COLUMN password TEXT`, (err) => {});
     db.run(`ALTER TABLE users ADD COLUMN bank TEXT`, (err) => {});
     db.run(`ALTER TABLE users ADD COLUMN account TEXT`, (err) => {});
@@ -69,16 +67,17 @@ app.post('/api/auth', (req, res) => {
     if (!name || !password) return res.status(400).json({ error: "이름과 비밀번호가 누락되었습니다." });
 
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
-        if (err) return res.status(500).json({ error: "DB 동기화 에러. 잠시 후 다시 시도하세요." });
+        if (err) return res.status(500).json({ error: "[DB 검색 에러] " + err.message });
+        
         if (row) {
-            // 구버전 계정 호환성 유지
             if (row.password && row.password !== password) return res.status(401).json({ error: "패스워드 불일치" });
             return res.json({ name: row.name, bank: row.bank || bank, account: row.account || account, balance: row.balance });
         } else {
             const initialBalance = 1000000;
+            // [에러 추적] 에러 발생 시, 뭉뚱그린 메시지가 아닌 실제 SQLite 에러 메시지를 브라우저로 쏴줍니다.
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, ?)`, 
                 [name, password, bank || '등록은행', account || '000-000', initialBalance], (err) => {
-                if (err) return res.status(500).json({ error: "계정 생성 중 오류가 발생했습니다." });
+                if (err) return res.status(500).json({ error: "[DB 쓰기 에러] " + err.message });
                 return res.json({ name, bank: bank || '등록은행', account: account || '000-000', balance: initialBalance });
             });
         }
@@ -102,7 +101,7 @@ app.post('/api/transfer', (req, res) => {
                 db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, receiver]);
                 db.run(`INSERT INTO transfers (sender, receiver, amount, date) VALUES (?, ?, ?, ?)`, [sender, receiver, amount, date]);
                 db.run('COMMIT', (err) => {
-                    if (err) return res.status(500).json({ error: "송금 처리 실패" });
+                    if (err) return res.status(500).json({ error: "송금 에러: " + err.message });
                     res.json({ success: true });
                 });
             });
@@ -128,7 +127,7 @@ app.post('/api/check/issue', (req, res) => {
 app.post('/api/check/redeem', (req, res) => {
     const { redeemer, checkId } = req.body;
     db.get(`SELECT * FROM qr_checks WHERE id = ?`, [checkId], (err, row) => {
-        if (err) return res.status(500).json({ error: "DB 연결 에러" });
+        if (err) return res.status(500).json({ error: "DB 에러: " + err.message });
         if (!row) return res.status(404).json({ error: "유효하지 않은 가짜 수표입니다." });
         if (row.is_used === 1) return res.status(400).json({ error: "이미 누군가 사용한 수표입니다." });
         db.serialize(() => {
