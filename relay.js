@@ -11,7 +11,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
@@ -42,7 +42,7 @@ db.serialize(() => {
 // 📁 파일 업로드 설정 (카테고리별 저장)
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const patientName = decodeURIComponent(req.headers['x-patient-name']);
+        const patientName = decodeURIComponent(req.headers['x-patient-name'] || 'Guest');
         const modality = decodeURIComponent(req.headers['x-target-modality'] || 'Files');
         const dir = path.join(BASE_DATA_DIR, patientName, modality);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -55,15 +55,12 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // --- [API] 환자 관리 ---
-
-// 전체 환자 목록 가져오기
 app.get('/api/patients', (req, res) => {
     db.all("SELECT * FROM patients", [], (err, rows) => {
         res.json(rows || []);
     });
 });
 
-// 신규 환자 등록
 app.post('/api/patients', (req, res) => {
     const p = req.body;
     db.run(`INSERT INTO patients (id, name, chartNumber, gender, birthDate) VALUES (?, ?, ?, ?, ?)`,
@@ -73,7 +70,6 @@ app.post('/api/patients', (req, res) => {
     });
 });
 
-// 환자 정보 수정 (진료 기록 포함)
 app.put('/api/patients/:id', (req, res) => {
     const p = req.body;
     db.run(`UPDATE patients SET name=?, chartNumber=?, gender=?, birthDate=?, history=?, diagData=? WHERE id=?`,
@@ -83,8 +79,6 @@ app.put('/api/patients/:id', (req, res) => {
 });
 
 // --- [API] 영상 및 파일 관리 ---
-
-// 특정 환자의 모든 영상 스캔 (폴더 구조 기반)
 app.get('/api/patients/:name/images', (req, res) => {
     const patientName = req.params.name;
     const patientDir = path.join(BASE_DATA_DIR, patientName);
@@ -112,13 +106,11 @@ app.get('/api/patients/:name/images', (req, res) => {
     res.json(allFiles);
 });
 
-// 파일 업로드
 app.post('/api/upload', upload.single('file'), (req, res) => {
     io.emit('new_image_added', { patientId: req.headers['x-patient-id'] });
     res.json({ success: true });
 });
 
-// 파일 탐색 (공유 폴더용)
 app.post('/api/explore', (req, res) => {
     const targetPath = req.body.targetPath || BASE_DATA_DIR;
     if (!fs.existsSync(targetPath)) return res.json({ entries: [] });
@@ -130,12 +122,31 @@ app.post('/api/explore', (req, res) => {
     res.json({ entries });
 });
 
-// --- [실시간 통신] ---
+// --- ⭐ [실시간 통신] 웹소켓 채팅 라우팅 ---
 io.on('connection', (socket) => {
-    socket.on('join_room', (roomId) => socket.join(roomId));
+    console.log(`사용자 접속: ${socket.id}`);
+
+    // 특정 방 입장
+    socket.on('join_room', (roomId) => {
+        socket.join(roomId);
+        console.log(`${socket.id} 가 방 [${roomId}] 에 입장했습니다.`);
+    });
+    
+    // 특정 방에서 나가기
+    socket.on('leave_room', (roomId) => {
+        socket.leave(roomId);
+        console.log(`${socket.id} 가 방 [${roomId}] 에서 나갔습니다.`);
+    });
+
+    // P2P 메시지 릴레이 전송
     socket.on('send_message', (data) => {
+        // 나를 제외한 방 안에 있는 모두에게 메시지 브로드캐스트
         socket.to(data.roomId).emit('receive_message', data);
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`사용자 연결 해제: ${socket.id}`);
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`🚀 OYP Real-Engine Running on Port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`🚀 OYP Commerce & Chat Server Running on Port ${PORT}`));
