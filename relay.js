@@ -30,7 +30,6 @@ app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); }
 
 const db = new sqlite3.Database(path.join(__dirname, 'commerce.db'));
 
-// 고도화: P2P 송금(transfers) 및 QR 수표(qr_checks) 원장 테이블 신설
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, type TEXT, name TEXT, description TEXT, price INTEGER, seller TEXT, filePath TEXT)`);
@@ -51,9 +50,12 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+// [수정됨] 강력한 에러 핸들링이 추가된 인증 레이어
 app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
+        if (err) return res.status(500).json({ error: `[DB 읽기 에러] ${err.message}` });
+        
         if (row) {
             if (row.password !== password) return res.status(401).json({ error: "패스워드 불일치" });
             return res.json(row);
@@ -61,6 +63,7 @@ app.post('/api/auth', (req, res) => {
             const initialBalance = 1000000;
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, ?)`, 
                 [name, password, bank, account, initialBalance], (err) => {
+                if (err) return res.status(500).json({ error: `[DB 쓰기 에러] ${err.message}` });
                 return res.json({ name, bank, account, balance: initialBalance });
             });
         }
@@ -71,7 +74,6 @@ app.get('/api/users/:name', (req, res) => {
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.params.name], (err, row) => { res.json(row || { balance: 0 }); });
 });
 
-// --- P2P 송금 백엔드 시스템 ---
 app.post('/api/transfer', (req, res) => {
     const { sender, receiver, amount } = req.body;
     db.get(`SELECT balance FROM users WHERE name = ?`, [sender], (err, senderRow) => {
@@ -94,7 +96,6 @@ app.post('/api/transfer', (req, res) => {
     });
 });
 
-// --- QR 수표 백엔드 시스템 ---
 app.post('/api/check/issue', (req, res) => {
     const { issuer, amount } = req.body;
     db.get(`SELECT balance FROM users WHERE name = ?`, [issuer], (err, row) => {
@@ -126,7 +127,6 @@ app.post('/api/check/redeem', (req, res) => {
             db.run('BEGIN TRANSACTION');
             db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [checkId]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [row.amount, redeemer]);
-            // 충전 이력을 수표 테이블과 별개로 관리하거나 트랜잭션 종료
             db.run('COMMIT', (err) => {
                 if (err) return res.status(500).json({ error: err.message });
                 res.json({ success: true, amount: row.amount });
@@ -170,7 +170,6 @@ app.post('/api/buy', (req, res) => {
     });
 });
 
-// 고도화: 자산 거래내역 + 송금내역 + 수표 발행내역을 시간순으로 자동 병합 (단일 원장 뷰어)
 app.get('/api/transactions/:name', async (req, res) => {
     const name = req.params.name;
     try {
@@ -189,7 +188,6 @@ app.get('/api/transactions/:name', async (req, res) => {
         transfers.forEach(r => history.push({ type: 'transfer', date: r.date, sender: r.sender, receiver: r.receiver, amount: r.amount }));
         qrChecks.forEach(r => history.push({ type: 'check_issue', date: r.date, amount: r.amount }));
         
-        // 최신순 렌더링을 위한 Timestamp 정렬
         history.sort((a, b) => new Date(b.date) - new Date(a.date));
         res.json(history);
     } catch(e) {
