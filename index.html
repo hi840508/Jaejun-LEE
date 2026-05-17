@@ -4,15 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Meta Commerce Platform</title>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         :root {
-            --bg-main: #f3f4f6; /* 연한 회색 배경 */
+            --bg-main: #f3f4f6;
             --panel-bg: #ffffff;
             --text-main: #1f2937;
             --text-sub: #6b7280;
             --border-color: #e5e7eb;
-            /* 파란색 - 보라색 그라데이션 */
             --gradient-primary: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
             --gradient-hover: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
         }
@@ -24,13 +22,11 @@
         .panel { background: var(--panel-bg); padding: 30px; border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
         h1, h2, h3 { margin-top: 0; color: var(--text-main); }
         
-        /* 폼 요소 */
         .input-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
         .input-group label { font-size: 13px; font-weight: bold; color: var(--text-sub); }
         .input-group input, .input-group textarea { padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: #f8fafc; font-size: 14px; outline: none; transition: border 0.2s; }
         .input-group input:focus, .input-group textarea:focus { border-color: #7c3aed; background: #fff; }
         
-        /* 버튼 */
         .btn { background: var(--gradient-primary); color: #fff; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 14px; width: 100%; box-shadow: 0 4px 10px rgba(124, 58, 237, 0.2); }
         .btn:hover { background: var(--gradient-hover); transform: translateY(-1px); box-shadow: 0 6px 15px rgba(124, 58, 237, 0.3); }
         .btn-outline { background: #fff; color: #4f46e5; border: 1px solid #4f46e5; box-shadow: none; }
@@ -38,7 +34,6 @@
         .btn-secondary { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; box-shadow: none; }
         .btn-secondary:hover { background: #e2e8f0; }
 
-        /* 탭 구조 */
         .tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 25px; overflow-x: auto; scrollbar-width: none; }
         .tabs::-webkit-scrollbar { display: none; }
         .tab { padding: 12px 25px; cursor: pointer; color: var(--text-sub); border-bottom: 3px solid transparent; transition: 0.2s; font-weight: bold; margin-bottom: -2px; white-space: nowrap; }
@@ -46,31 +41,27 @@
         .tab-content { display: none; flex-direction: column; gap: 20px; }
         .tab-content.active { display: flex; }
 
-        /* 그리드 및 카드 */
         .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         @media (max-width: 768px) { .grid-2col { grid-template-columns: 1fr; } }
         
         .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; max-height: 600px; overflow-y: auto; padding-right: 5px; }
         .product-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; background: #fff; display: flex; flex-direction: column; transition: 0.3s; }
         .product-card:hover { border-color: #818cf8; box-shadow: 0 8px 24px rgba(99, 102, 241, 0.08); transform: translateY(-2px); }
-        .product-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: #1e293b; }
+        .product-title { font-size: 16px; font-weight: bold; margin-bottom: 8px; color: #1e293b; }
         .product-price { font-size: 18px; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 900; margin-bottom: 12px; }
         .product-desc { font-size: 13px; color: var(--text-sub); margin-bottom: 20px; flex-grow: 1; line-height: 1.5; word-break: keep-all; }
         
         .header-bar { display: flex; justify-content: space-between; width: 100%; align-items: center; padding-bottom: 20px; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid var(--border-color); margin-bottom: 20px;}
         
-        /* 파일 탐색 박스 (버그 수정됨) */
         .file-list-box { border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; height: 100px; overflow-y: auto; background: #f8fafc; font-size: 13px; margin-bottom: 15px;}
         .file-item { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; cursor: pointer; color: #4f46e5; font-weight: 500; }
         .file-item:last-child { border-bottom: none; }
         
-        /* 거래 내역 테이블 */
         .table-wrapper { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; }
         .history-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 600px; }
         .history-table th, .history-table td { padding: 14px 12px; border-bottom: 1px solid var(--border-color); text-align: left; }
         .history-table th { background: #f8fafc; font-weight: 600; color: var(--text-sub); }
         
-        /* 채팅 서랍 */
         .chat-drawer { position: fixed; right: -420px; top: 0; width: 400px; max-width: 100%; height: 100vh; background: #fff; box-shadow: -5px 0 25px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 1000; display: flex; flex-direction: column; }
         .chat-drawer.open { right: 0; }
         .chat-header { padding: 20px; background: var(--gradient-primary); color: white; display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
@@ -84,7 +75,6 @@
         .chat-input-area { padding: 15px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; background: #fff; }
         .chat-input-area input { flex: 1; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; outline: none; font-size: 14px;}
         
-        /* 토스트 알림 */
         .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; color: #fff; padding: 12px 24px; border-radius: 30px; font-size: 13px; z-index: 2000; opacity: 0; transition: 0.3s; pointer-events: none;}
         .toast.show { opacity: 1; bottom: 40px; }
     </style>
@@ -98,13 +88,8 @@
             <p style="text-align: center; color: var(--text-sub); font-size: 13px; margin-bottom: 30px;">기존 회원은 비밀번호 확인 후 접속됩니다.<br>최초 접속 시 기재한 정보로 가입이 진행됩니다.</p>
             
             <div class="input-group">
-                <label>서버 주소 (IP 또는 도메인)</label>
-                <input type="text" id="server-url" placeholder="예: http://54.180.125.166:4000" value="http://54.180.125.166:4000">
-            </div>
-
-            <div class="input-group">
                 <label>이름 (Name)</label>
-                <input type="text" id="login-name" placeholder="사용자 이름">
+                <input type="text" id="login-name" placeholder="이름 입력">
             </div>
             <div class="input-group">
                 <label>비밀번호 (Password)</label>
@@ -202,7 +187,7 @@
 
                 <div id="tab-history" class="tab-content">
                     <div class="input-group">
-                        <input type="text" id="history-search" placeholder="상품명 또는 거래 파트너 검색..." onkeyup="loadHistory()">
+                        <input type="text" id="history-search" placeholder="상품명 또는 거래 대상 이름으로 검색..." onkeyup="loadHistory()">
                     </div>
                     <div class="table-wrapper">
                         <table class="history-table">
@@ -229,7 +214,11 @@
             </div>
             <div style="background: #f8fafc; padding: 40px; border-radius: 8px; border: 1px solid var(--border-color); text-align: center; color: var(--text-sub);">
                 <div style="font-size: 24px; font-weight: bold; color: #1f2937; margin-bottom: 10px;">System Administrator</div>
-                이재준 관리자 전용 서버 모니터링 영역입니다.<br>현재 백엔드(Node.js) 및 SQLite 트랜잭션이 정상 작동 중입니다.
+                이재준 관리자 전용 서버 모니터링 영역입니다.<br>
+                <div style="margin-top: 20px; font-size: 14px; text-align: left; background: #fff; padding: 15px; border-radius: 8px;">
+                    <div style="font-weight: bold; margin-bottom: 5px;">현재 등록된 유저 현황</div>
+                    <pre id="admin-users" style="margin: 0;"></pre>
+                </div>
             </div>
         </div>
 
@@ -250,15 +239,23 @@
     <div class="toast" id="toast">알림 메시지</div>
 
     <script>
-        // 전역 변수 설정
-        let API_URL = ''; 
-        let socket = null;
+        // 서버 연결 없이 작동하는 로컬 스토리지 기반 가상 DB 시스템
+        const LocalDB = {
+            get(key) { return JSON.parse(localStorage.getItem('commerce_' + key)) || []; },
+            set(key, val) { localStorage.setItem('commerce_' + key, JSON.stringify(val)); }
+        };
+
+        // 데이터 초기화
+        if (!localStorage.getItem('commerce_users')) LocalDB.set('users', []);
+        if (!localStorage.getItem('commerce_products')) LocalDB.set('products', []);
+        if (!localStorage.getItem('commerce_transactions')) LocalDB.set('transactions', []);
+        if (!localStorage.getItem('commerce_chats')) LocalDB.set('chats', []);
+
         let currentUser = null;
         let currentChatRoom = null;
-        let currentChatProduct = null;
         let selectedLocalFile = null;
 
-        // 토스트 알림 띄우기 함수
+        // 토스트 알림
         function showToast(msg) {
             const toast = document.getElementById('toast');
             toast.innerText = msg;
@@ -266,90 +263,72 @@
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        // 탭 메뉴 전환 함수
+        // 탭 제어
         function switchTab(id) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
-            const clickedTab = document.querySelector(`.tab[onclick="switchTab('${id}')"]`);
-            if(clickedTab) clickedTab.classList.add('active');
-            
-            const targetContent = document.getElementById(`tab-${id}`);
-            if(targetContent) targetContent.classList.add('active');
+            document.querySelector(`.tab[onclick="switchTab('${id}')"]`).classList.add('active');
+            document.getElementById(`tab-${id}`).classList.add('active');
 
             if(id === 'market') loadMarketplace();
             if(id === 'history') loadHistory();
         }
 
-        // 로그인 로직
-        async function login() {
-            API_URL = document.getElementById('server-url').value.trim();
+        // 로그인 (가상 DB 연동)
+        function login() {
             const name = document.getElementById('login-name').value.trim();
             const password = document.getElementById('login-password').value.trim();
             const bank = document.getElementById('login-bank').value.trim();
             const account = document.getElementById('login-account').value.trim();
             
-            if(!API_URL) return showToast("서버 주소를 입력해주세요.");
             if(!name || !password) return showToast("이름과 비밀번호를 입력해주세요.");
 
-            try {
-                const res = await fetch(`${API_URL}/api/auth`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, password, bank, account })
-                });
-                
-                const data = await res.json();
-                
-                if(!res.ok) {
-                    return showToast(data.error || "인증 실패");
-                }
-                
-                // 로그인 성공 후 소켓 연결 (동적으로 URL 할당)
-                if (!socket) {
-                    socket = io(API_URL, { transports: ['websocket', 'polling'] });
-                    socket.on('receive_message', handleReceiveMessage);
-                }
+            const users = LocalDB.get('users');
+            let user = users.find(u => u.name === name);
 
-                currentUser = data;
-                document.getElementById('login-section').style.display = 'none';
-                document.getElementById('workspace-section').style.display = 'block';
-                
-                document.getElementById('display-name').innerText = data.name;
-                document.getElementById('display-bank').innerText = data.bank;
-                document.getElementById('display-account').innerText = data.account;
-                document.getElementById('display-balance').innerText = data.balance.toLocaleString();
+            if (user) {
+                if (user.password !== password) return showToast("비밀번호가 일치하지 않습니다.");
+            } else {
+                if (!bank || !account) return showToast("신규 가입 시 은행명과 계좌번호를 모두 입력해주세요.");
+                user = { name, password, bank, account, balance: 1000000 };
+                users.push(user);
+                LocalDB.set('users', users);
+            }
 
-                if(data.name === '이재준') {
-                    document.getElementById('btn-admin').style.display = 'block';
-                }
-            } catch(e) { 
-                console.error(e);
-                showToast(`서버 연결 실패 (${API_URL}). Node.js 백엔드를 다시 확인하세요.`); 
+            currentUser = user;
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('workspace-section').style.display = 'block';
+            
+            document.getElementById('display-name').innerText = user.name;
+            document.getElementById('display-bank').innerText = user.bank;
+            document.getElementById('display-account').innerText = user.account;
+            updateUserBalance();
+
+            if(user.name === '이재준') {
+                document.getElementById('btn-admin').style.display = 'block';
             }
         }
 
-        // 어드민 제어
         function showAdminPage() {
             document.getElementById('workspace-section').style.display = 'none';
             document.getElementById('admin-section').style.display = 'block';
+            const users = LocalDB.get('users');
+            document.getElementById('admin-users').innerText = JSON.stringify(users.map(u => ({이름: u.name, 잔액: u.balance})), null, 2);
         }
+
         function hideAdminPage() {
             document.getElementById('admin-section').style.display = 'none';
             document.getElementById('workspace-section').style.display = 'block';
         }
 
-        // 지갑 갱신
-        async function updateUserBalance() {
-            try {
-                const res = await fetch(`${API_URL}/api/users/${currentUser.name}`);
-                const data = await res.json();
-                currentUser.balance = data.balance;
-                document.getElementById('display-balance').innerText = data.balance.toLocaleString();
-            } catch(e){}
+        function updateUserBalance() {
+            const users = LocalDB.get('users');
+            const user = users.find(u => u.name === currentUser.name);
+            currentUser.balance = user.balance;
+            document.getElementById('display-balance').innerText = user.balance.toLocaleString();
         }
 
-        // 파일 선택 UI 처리
+        // 파일 선택
         function handleFileSelect(event) {
             const files = event.target.files;
             const listBox = document.getElementById('file-list');
@@ -377,173 +356,159 @@
             });
         }
 
-        // 자산 등록 처리
-        async function registerProduct(type) {
-            const formData = new FormData();
-            formData.append('id', 'PRD_' + Date.now());
-            formData.append('type', type);
-            formData.append('seller', currentUser.name);
-
+        // 상품 등록 (가상 DB 연동)
+        function registerProduct(type) {
+            let name, price, desc;
+            
             if (type === 'file') {
                 if(!selectedLocalFile) return showToast("목록에서 판매할 파일을 클릭하여 선택해주세요.");
-                const price = document.getElementById('file-price').value;
-                if(!price) return showToast("판매 금액을 입력하세요.");
-
-                formData.append('file', selectedLocalFile);
-                formData.append('name', document.getElementById('file-name').value || selectedLocalFile.name);
-                formData.append('price', price);
-                formData.append('description', '디지털 파일 자산');
+                price = document.getElementById('file-price').value;
+                name = document.getElementById('file-name').value || selectedLocalFile.name;
+                desc = '디지털 파일 자산';
             } else {
-                const name = document.getElementById('prod-name').value;
-                const price = document.getElementById('prod-price').value;
-                const desc = document.getElementById('prod-desc').value;
-                if(!name || !price) return showToast("상품명과 가격을 입력하세요.");
-
-                formData.append('name', name);
-                formData.append('price', price);
-                formData.append('description', desc);
+                name = document.getElementById('prod-name').value;
+                price = document.getElementById('prod-price').value;
+                desc = document.getElementById('prod-desc').value;
             }
 
-            try {
-                const res = await fetch(`${API_URL}/api/products`, { method: 'POST', body: formData });
-                if(res.ok) {
-                    showToast("상품이 마켓에 등록되었습니다.");
-                    document.getElementById('file-name').value = '';
-                    document.getElementById('file-price').value = '';
-                    document.getElementById('prod-name').value = '';
-                    document.getElementById('prod-price').value = '';
-                    document.getElementById('prod-desc').value = '';
-                    document.getElementById('file-list').innerHTML = '<div style="text-align: center; color: #94a3b8; margin-top: 30px;">버튼을 눌러 파일을 선택하세요.</div>';
-                    selectedLocalFile = null;
-                    switchTab('market');
-                } else {
-                    showToast("등록 중 서버 오류가 발생했습니다.");
-                }
-            } catch(e) { showToast("통신 오류 발생"); }
+            if(!name || !price) return showToast("상품명과 판매 금액을 모두 기재하세요.");
+
+            const products = LocalDB.get('products');
+            products.push({
+                id: 'PRD_' + Date.now(), type, name, description: desc, price: parseInt(price), seller: currentUser.name
+            });
+            LocalDB.set('products', products);
+
+            showToast("상품이 마켓에 등록되었습니다.");
+            document.getElementById('file-name').value = '';
+            document.getElementById('file-price').value = '';
+            document.getElementById('prod-name').value = '';
+            document.getElementById('prod-price').value = '';
+            document.getElementById('prod-desc').value = '';
+            document.getElementById('file-list').innerHTML = '<div style="text-align: center; color: #94a3b8; margin-top: 30px;">버튼을 눌러 파일을 선택하세요.</div>';
+            selectedLocalFile = null;
+            switchTab('market');
         }
 
-        // 마켓플레이스 로딩
-        async function loadMarketplace() {
-            try {
-                const res = await fetch(`${API_URL}/api/products`);
-                let products = await res.json();
-                const query = document.getElementById('market-search').value.toLowerCase();
+        // 마켓플레이스 렌더링
+        function loadMarketplace() {
+            const query = document.getElementById('market-search').value.toLowerCase();
+            let products = LocalDB.get('products');
+            
+            if(query) {
+                products = products.filter(p => p.name.toLowerCase().includes(query) || p.description.toLowerCase().includes(query));
+            }
+
+            const grid = document.getElementById('market-grid');
+            grid.innerHTML = '';
+
+            if(products.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding:40px; color:#94a3b8;">등록된 상품이 없습니다.</div>';
+                return;
+            }
+
+            // 최신 상품이 위에 오도록 정렬
+            products.reverse().forEach(p => {
+                const isMine = p.seller === currentUser.name;
+                let btnHtml = '';
                 
-                if(query) {
-                    products = products.filter(p => p.name.toLowerCase().includes(query) || p.description.toLowerCase().includes(query));
-                }
-
-                const grid = document.getElementById('market-grid');
-                grid.innerHTML = '';
-
-                if(products.length === 0) {
-                    grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding:40px; color:#94a3b8;">등록된 상품이 없습니다.</div>';
-                    return;
-                }
-
-                products.forEach(p => {
-                    const isMine = p.seller === currentUser.name;
-                    let btnHtml = '';
-                    
-                    if (isMine) {
-                        btnHtml = `
-                            <button class="btn btn-outline" style="margin-bottom: 8px;" onclick="openChat('${p.id}', '${p.name}', '${p.seller}')">이 상품의 대화 보기</button>
-                            <button class="btn btn-secondary" disabled>내 등록 상품</button>
-                        `;
-                    } else {
-                        btnHtml = `
-                            <button class="btn btn-outline" style="margin-bottom: 8px;" onclick="openChat('${p.id}', '${p.name}', '${p.seller}')">판매자와 협상 채팅</button>
-                            <button class="btn" onclick="buyProduct('${p.id}', '${p.name}', ${p.price}, '${p.seller}')">자산 구매</button>
-                        `;
-                    }
-
-                    const tag = p.type === 'file' ? '디지털 파일' : '실물 상품';
-
-                    grid.innerHTML += `
-                        <div class="product-card">
-                            <div style="font-size: 12px; color: #6366f1; font-weight: bold; margin-bottom: 8px;">${tag}</div>
-                            <div class="product-title">${p.name}</div>
-                            <div class="product-price">${p.price.toLocaleString()} KRW</div>
-                            <div class="product-desc">${p.description}</div>
-                            <div style="font-size: 12px; color: #64748b; margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 10px;">판매자: <b>${p.seller}</b></div>
-                            <div style="margin-top: auto;">${btnHtml}</div>
-                        </div>
+                if (isMine) {
+                    btnHtml = `
+                        <button class="btn btn-outline" style="margin-bottom: 8px;" onclick="openChat('${p.id}', '${p.name}', '${p.seller}')">이 상품의 대화 보기</button>
+                        <button class="btn btn-secondary" disabled>내가 등록한 상품</button>
                     `;
-                });
-            } catch(e) {}
+                } else {
+                    btnHtml = `
+                        <button class="btn btn-outline" style="margin-bottom: 8px;" onclick="openChat('${p.id}', '${p.name}', '${p.seller}')">판매자와 협상 채팅</button>
+                        <button class="btn" onclick="buyProduct('${p.id}', '${p.name}', ${p.price}, '${p.seller}')">자산 구매</button>
+                    `;
+                }
+
+                const tag = p.type === 'file' ? '디지털 파일' : '실물 상품';
+
+                grid.innerHTML += `
+                    <div class="product-card">
+                        <div style="font-size: 12px; color: #6366f1; font-weight: bold; margin-bottom: 8px;">${tag}</div>
+                        <div class="product-title">${p.name}</div>
+                        <div class="product-price">${p.price.toLocaleString()} KRW</div>
+                        <div class="product-desc">${p.description}</div>
+                        <div style="font-size: 12px; color: #64748b; margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 10px;">판매자: <b>${p.seller}</b></div>
+                        <div style="margin-top: auto;">${btnHtml}</div>
+                    </div>
+                `;
+            });
         }
 
         // 구매
-        async function buyProduct(id, name, price, seller) {
+        function buyProduct(id, name, price, seller) {
             if (currentUser.balance < price) return showToast("잔액이 부족합니다. 지갑을 확인하세요.");
-            if (confirm(`[${name}] 상품을 ${price.toLocaleString()}원에 구매하시겠습니까?\n거래 완료 시 금액이 즉시 차감됩니다.`)) {
-                try {
-                    const res = await fetch(`${API_URL}/api/buy`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ buyer: currentUser.name, seller, productId: id, productName: name, amount: price })
-                    });
-                    const data = await res.json();
-                    if(data.success) {
-                        showToast("거래가 완료되었습니다.");
-                        updateUserBalance();
-                        switchTab('history'); 
-                    } else showToast(data.error);
-                } catch(e) { showToast("서버 통신 오류"); }
-            }
+            if (!confirm(`[${name}] 상품을 ${price.toLocaleString()}원에 구매하시겠습니까?\n거래 완료 시 금액이 즉시 차감됩니다.`)) return;
+
+            const users = LocalDB.get('users');
+            const buyerObj = users.find(u => u.name === currentUser.name);
+            const sellerObj = users.find(u => u.name === seller);
+
+            buyerObj.balance -= price;
+            sellerObj.balance += price;
+            LocalDB.set('users', users);
+
+            const transactions = LocalDB.get('transactions');
+            transactions.push({
+                id: Date.now(), buyer: currentUser.name, seller, productName: name, amount: price, date: new Date().toLocaleString('ko-KR')
+            });
+            LocalDB.set('transactions', transactions);
+
+            showToast("성공적으로 구매가 완료되었습니다.");
+            updateUserBalance();
+            switchTab('history');
         }
 
         // 거래 내역
-        async function loadHistory() {
-            try {
-                const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`);
-                let history = await res.json();
-                const query = document.getElementById('history-search').value.toLowerCase();
-                
-                if(query) {
-                    history = history.filter(h => h.productName.toLowerCase().includes(query) || h.buyer.toLowerCase().includes(query) || h.seller.toLowerCase().includes(query));
-                }
+        function loadHistory() {
+            const query = document.getElementById('history-search').value.toLowerCase();
+            let history = LocalDB.get('transactions').filter(h => h.buyer === currentUser.name || h.seller === currentUser.name);
+            
+            if(query) {
+                history = history.filter(h => h.productName.toLowerCase().includes(query) || h.buyer.toLowerCase().includes(query) || h.seller.toLowerCase().includes(query));
+            }
 
-                const tbody = document.getElementById('history-body');
-                tbody.innerHTML = '';
+            const tbody = document.getElementById('history-body');
+            tbody.innerHTML = '';
 
-                if(history.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding: 30px;">거래 내역이 존재하지 않습니다.</td></tr>';
-                    return;
-                }
+            if(history.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding: 30px;">거래 내역이 존재하지 않습니다.</td></tr>';
+                return;
+            }
 
-                history.forEach(h => {
-                    const isBuyer = h.buyer === currentUser.name;
-                    const typeHtml = isBuyer 
-                        ? '<span style="color: #e11d48; font-weight:bold; background: #ffe4e6; padding: 4px 8px; border-radius: 4px;">구매 (지출)</span>' 
-                        : '<span style="color: #059669; font-weight:bold; background: #d1fae5; padding: 4px 8px; border-radius: 4px;">판매 (수입)</span>';
-                    const counterParty = isBuyer ? h.seller : h.buyer;
-                    const amountPrefix = isBuyer ? '-' : '+';
-                    const amountColor = isBuyer ? '#e11d48' : '#059669';
+            history.reverse().forEach(h => {
+                const isBuyer = h.buyer === currentUser.name;
+                const typeHtml = isBuyer 
+                    ? '<span style="color: #e11d48; font-weight:bold; background: #ffe4e6; padding: 4px 8px; border-radius: 4px;">구매 (지출)</span>' 
+                    : '<span style="color: #059669; font-weight:bold; background: #d1fae5; padding: 4px 8px; border-radius: 4px;">판매 (수입)</span>';
+                const counterParty = isBuyer ? h.seller : h.buyer;
+                const amountPrefix = isBuyer ? '-' : '+';
+                const amountColor = isBuyer ? '#e11d48' : '#059669';
 
-                    tbody.innerHTML += `
-                        <tr>
-                            <td style="color: #64748b;">${h.date}</td>
-                            <td>${typeHtml}</td>
-                            <td style="font-weight: 600; color: #1f2937;">${h.productName}</td>
-                            <td>${counterParty}</td>
-                            <td style="font-weight: bold; color: ${amountColor};">${amountPrefix} ${h.amount.toLocaleString()}</td>
-                        </tr>
-                    `;
-                });
-            } catch(e) {}
+                tbody.innerHTML += `
+                    <tr>
+                        <td style="color: #64748b;">${h.date}</td>
+                        <td>${typeHtml}</td>
+                        <td style="font-weight: 600; color: #1f2937;">${h.productName}</td>
+                        <td>${counterParty}</td>
+                        <td style="font-weight: bold; color: ${amountColor};">${amountPrefix} ${h.amount.toLocaleString()}</td>
+                    </tr>
+                `;
+            });
         }
 
-        // --- 상품별 채팅 ---
+        // 상품별 채팅 (서버 없이 LocalStorage로 구현)
         function openChat(productId, productName, sellerName) {
-            currentChatProduct = productId;
             const participants = [currentUser.name, sellerName].sort().join('_');
             currentChatRoom = `room_${productId}_${participants}`;
 
             document.getElementById('chat-title').innerText = `${productName}`;
             document.getElementById('chat-drawer').classList.add('open');
             
-            socket.emit('join_room', currentChatRoom);
             loadChatHistory();
         }
 
@@ -552,22 +517,15 @@
             currentChatRoom = null;
         }
 
-        async function loadChatHistory() {
-            try {
-                const res = await fetch(`${API_URL}/api/chat/${currentChatRoom}`);
-                if (!res.ok) throw new Error("채팅 기록을 찾을 수 없습니다.");
-                
-                const messages = await res.json();
-                const chatBody = document.getElementById('chat-body');
-                chatBody.innerHTML = '';
-                
-                if(messages.length === 0) {
-                    chatBody.innerHTML = '<div style="text-align:center; color:#94a3b8; font-size:12px; margin-top:20px;">대화 기록이 없습니다. 자유롭게 문의하세요.</div>';
-                } else {
-                    messages.forEach(m => appendMessage(m.sender, m.message, m.date));
-                }
-            } catch(e) { 
-                console.log(e);
+        function loadChatHistory() {
+            const messages = LocalDB.get('chats').filter(c => c.roomId === currentChatRoom);
+            const chatBody = document.getElementById('chat-body');
+            chatBody.innerHTML = '';
+            
+            if(messages.length === 0) {
+                chatBody.innerHTML = '<div style="text-align:center; color:#94a3b8; font-size:12px; margin-top:20px;">대화 기록이 없습니다. 자유롭게 문의하세요.</div>';
+            } else {
+                messages.forEach(m => appendMessage(m.sender, m.message, m.date));
             }
         }
 
@@ -576,34 +534,21 @@
             const msg = input.value.trim();
             if(!msg || !currentChatRoom) return;
 
-            const data = {
-                roomId: currentChatRoom,
-                productId: currentChatProduct,
-                sender: currentUser.name,
-                message: msg
-            };
-
-            socket.emit('send_message', data);
-            
             const date = new Date().toLocaleString('ko-KR');
+            
+            const chats = LocalDB.get('chats');
+            chats.push({ roomId: currentChatRoom, sender: currentUser.name, message: msg, date });
+            LocalDB.set('chats', chats);
+
+            const emptyState = document.querySelector('#chat-body div[style*="text-align:center"]');
+            if(emptyState) emptyState.remove();
+
             appendMessage(currentUser.name, msg, date);
             input.value = '';
         }
 
-        function handleReceiveMessage(data) {
-            if(data.roomId === currentChatRoom && data.sender !== currentUser.name) {
-                const emptyState = document.querySelector('#chat-body div[style*="text-align:center"]');
-                if(emptyState) emptyState.remove();
-
-                appendMessage(data.sender, data.message, data.date);
-            }
-        }
-
         function appendMessage(sender, text, date) {
             const chatBody = document.getElementById('chat-body');
-            const emptyState = chatBody.querySelector('div[style*="text-align:center"]');
-            if(emptyState) emptyState.remove();
-
             const isMe = sender === currentUser.name;
             const bubbleClass = isMe ? 'msg-me' : 'msg-other';
             const senderName = isMe ? '나' : sender;
