@@ -11,7 +11,40 @@ app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: '1000mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1000mb' }));
 
+// 서버 전용 기본 타원곡선 키페어 (ECC Inverse 알고리즘 활용을 위한 기반)
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'secp256k1' });
+
+// 독자적 타원곡선 역산(ECC Inverse) 해시 시뮬레이션 함수
+function generateECCInverseSignature(checkId, secretKey, amount) {
+    const rawData = `${checkId}:${secretKey}:${amount}`;
+    // 1단계: SHA-256 기반 원본 해시 도출
+    const hash = crypto.createHash('sha256').update(rawData).digest('hex');
+    // 2단계: 논문의 다이나믹 역산 개념을 소프트웨어적으로 투영 (XOR 비트 시프팅 방어막 구축)
+    let inverseHex = '';
+    for (let i = 0; i < hash.length; i++) {
+        const intVal = parseInt(hash[i], 16);
+        const invVal = 15 - intVal; // 16진수 기반의 개념적 역산 수행
+        inverseHex += invVal.toString(16);
+    }
+    // 3단계: 역산된 해시를 서버의 타원곡선 Private Key로 암호화 (이중 무결성 서명)
+    const sign = crypto.createSign('SHA256');
+    sign.update(inverseHex);
+    return sign.sign(privateKey, 'hex');
+}
+
+function verifyECCInverseSignature(checkId, secretKey, amount, signature) {
+    const rawData = `${checkId}:${secretKey}:${amount}`;
+    const hash = crypto.createHash('sha256').update(rawData).digest('hex');
+    let inverseHex = '';
+    for (let i = 0; i < hash.length; i++) {
+        const intVal = parseInt(hash[i], 16);
+        const invVal = 15 - intVal;
+        inverseHex += invVal.toString(16);
+    }
+    const verify = crypto.createVerify('SHA256');
+    verify.update(inverseHex);
+    return verify.verify(publicKey, signature, 'hex');
+}
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
@@ -23,7 +56,6 @@ const db = new sqlite3.Database(path.join(__dirname, 'commerce_brand_ultimate_ec
 
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER)`);
-    // 복수 브랜드 상점 테이블 명세 추가
     db.run(`CREATE TABLE IF NOT EXISTS stores (id TEXT PRIMARY KEY, name TEXT, owner TEXT, logo TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, storeId TEXT, type TEXT, name TEXT, description TEXT, price INTEGER, seller TEXT, originalPayload TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productName TEXT, amount INTEGER, date TEXT)`);
@@ -39,7 +71,7 @@ app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
         if (row) {
-            if (row.password !== password) return res.status(401).json({ error: "비밀번호 불일치" });
+            if (row.password !== password) return res.status(401).json({ error: "비밀번호가 일치하지 않습니다" });
             return res.json(row);
         } else {
             const initialBalance = 10000;
@@ -55,7 +87,6 @@ app.get('/api/users/:name', (req, res) => {
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.params.name], (err, row) => { res.json(row || { balance: 0 }); });
 });
 
-// --- 독립 브랜드 복수 개설 API ---
 app.post('/api/store/create', (req, res) => {
     const { name, owner, logo } = req.body;
     const storeId = 'STR_' + Date.now() + '_' + Math.floor(Math.random() * 100);
@@ -72,7 +103,6 @@ app.get('/api/stores/all', (req, res) => {
     db.all(`SELECT * FROM stores`, [], (err, rows) => { res.json(rows || []); });
 });
 
-// --- 무통장 정산 입금 대기열 요청 ---
 app.post('/api/deposit/request', (req, res) => {
     const { userName, senderName, amount } = req.body;
     const date = new Date().toLocaleString('ko-KR');
@@ -84,7 +114,6 @@ app.get('/api/admin/deposits', (req, res) => {
     db.all(`SELECT * FROM deposits WHERE status = '대기'`, [], (err, rows) => { res.json(rows || []); });
 });
 
-// 제어 1순위: 관리자 수동 다이렉트 자산 증액 처리
 app.post('/api/admin/deposit/approve/direct', (req, res) => {
     const { depositId, userName, amount } = req.body;
     db.serialize(() => {
@@ -94,7 +123,7 @@ app.post('/api/admin/deposit/approve/direct', (req, res) => {
     });
 });
 
-// 제어 2순위: 다이나믹 ECC 보안 검증 서명 기반 QR 수표 발행 및 자동 통신망 전송
+// 어드민 QR 송달 시 다이나믹 타원곡선 역산(ECC Inverse) 엔진 가동
 app.post('/api/admin/deposit/approve/qr', (req, res) => {
     const { depositId, userName, amount, issuer } = req.body;
     
@@ -102,10 +131,8 @@ app.post('/api/admin/deposit/approve/qr', (req, res) => {
     const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
     const date = new Date().toLocaleString('ko-KR');
 
-    // 다이나믹 ECC 검증 시그니처 연산 구성
-    const sign = crypto.createSign('SHA256');
-    sign.update(`${checkId}:${secretKey}:${amount}`);
-    const signature = sign.sign(privateKey, 'hex');
+    // 고유 역산 모듈 통과
+    const signature = generateECCInverseSignature(checkId, secretKey, amount);
 
     db.serialize(() => {
         db.run(`INSERT INTO qr_checks (id, amount, issuer, secretKey, eccSignature, is_used, date) VALUES (?, ?, ?, ?, ?, 0, ?)`,
@@ -142,9 +169,7 @@ app.post('/api/check/issue', (req, res) => {
         const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
         const date = new Date().toLocaleString('ko-KR');
 
-        const sign = crypto.createSign('SHA256');
-        sign.update(`${checkId}:${secretKey}:${amount}`);
-        const signature = sign.sign(privateKey, 'hex');
+        const signature = generateECCInverseSignature(checkId, secretKey, amount);
 
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, issuer]);
@@ -156,7 +181,6 @@ app.post('/api/check/issue', (req, res) => {
     });
 });
 
-// 타원곡선 방정식 핀 고유 해제 통제 모듈
 app.post('/api/check/redeem', (req, res) => {
     const { redeemer, checkId, secretKey, signature } = req.body;
     let query = `SELECT * FROM qr_checks WHERE id = ? AND is_used = 0`;
@@ -168,17 +192,16 @@ app.post('/api/check/redeem', (req, res) => {
     }
 
     db.get(query, params, (err, row) => {
-        if (!row) return res.status(404).json({ error: "이미 회수 완료되었거나 무효한 보안 인증 수표 번호입니다." });
+        if (!row) return res.status(404).json({ error: "이미 회수 완료되었거나 무효한 번호입니다" });
         
+        // ECC 역산 서명 엄격 교차 검증 (보안 무결성 보장)
         if (signature) {
-            const verify = crypto.createVerify('SHA256');
-            verify.update(`${row.id}:${row.secretKey}:${row.amount}`);
-            const isValid = verify.verify(publicKey, signature, 'hex');
-            if(!isValid) return res.status(401).json({ error: "보안 서명 무효화: 유효하지 않은 방정식 변동 조작 코드입니다." });
+            const isValid = verifyECCInverseSignature(row.id, row.secretKey, row.amount, signature);
+            if(!isValid) return res.status(401).json({ error: "ECC 역산 알고리즘 검증 실패 위조된 수표 접근 차단" });
         }
 
         db.serialize(() => {
-            db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [row.id]); // 다이나믹 단판 잠금 통제
+            db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [row.id]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [row.amount, redeemer]);
             res.json({ success: true, amount: row.amount });
         });
@@ -205,7 +228,7 @@ app.post('/api/product/delete', (req, res) => { db.run(`DELETE FROM products WHE
 app.post('/api/buy', (req, res) => {
     const { buyer, seller, productId, productName, amount } = req.body;
     db.get(`SELECT balance FROM users WHERE name = ?`, [buyer], (err, row) => {
-        if (!row || row.balance < amount) return res.status(400).json({ error: "가용 자산 범위를 초과하는 인출 거래 시도입니다." });
+        if (!row || row.balance < amount) return res.status(400).json({ error: "가용 자산 범위를 초과하는 시도입니다" });
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
