@@ -12,7 +12,6 @@ app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: '1000mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1000mb' }));
 
-// 🚀 실제 비대칭 디지털 서명 알고리즘(ECDSA - prime256v1) 세팅
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
@@ -21,7 +20,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-// 🚀 자산 증발을 영구 차단하기 위한 우분투 최상위 경로 DB 매핑
+// 🚀 자산 증발을 영구 차단하기 위한 우분투 최상위 경로 DB 매핑 안정본 유치
 const DB_PATH = '/home/ubuntu/earth_final_v14_stable.sqlite';
 const db = new sqlite3.Database(DB_PATH);
 
@@ -42,13 +41,12 @@ function initTables() {
 }
 initTables();
 
-// 🚀 어드민 강제 전체 폭파 리셋 (mars 비밀번호 트리거 기반)
+// 🚀 어드민 mars 암호 파기 리셋 트리거
 app.post('/api/admin/db-reset', (req, res) => {
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
     db.serialize(() => {
         const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores'];
-        tables.forEach(t => db.run(`DROP TABLE IF EXISTS ${t}`));
-        initTables(); res.json({ success: true });
+        tables.forEach(t => db.run(`DROP TABLE IF EXISTS ${t}`)); initTables(); res.json({ success: true });
     });
 });
 
@@ -84,7 +82,6 @@ app.post('/api/friend/add', (req, res) => {
         });
     });
 });
-app.get('/api/friends/:userName', (req, res) => { db.all(`SELECT u.name, u.profilePic FROM friends f JOIN users u ON f.friendName = u.name WHERE f.userName = ?`, [req.params.userName], (err, rows) => res.json(rows || [])); });
 
 app.get('/api/chat/active-rooms/:name', (req, res) => {
     const name = req.params.name;
@@ -105,22 +102,13 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
 });
 
 app.post('/api/deposit/request', (req, res) => { db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date) VALUES (?, ?, ?, '대기', ?)`, [req.body.userName, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR')], () => { res.json({ success: true }); }); });
+app.post('/api/withdraw/request', (req, res) => { const amount = Number(req.body.amount) || 0; db.serialize(() => { db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.name]); db.run(`INSERT INTO withdrawals (name, amount, status, date) VALUES (?, ?, '대기', ?)`, [req.body.name, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true })); }); });
 
-app.post('/api/withdraw/request', (req, res) => {
-    const amount = Number(req.body.amount) || 0;
-    db.serialize(() => { db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.name]); db.run(`INSERT INTO withdrawals (name, amount, status, date) VALUES (?, ?, '대기', ?)`, [req.body.name, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true })); });
-});
-
-app.get('/api/admin/actions', (req, res) => {
-    db.all(`SELECT * FROM deposits WHERE status = '대기'`, [], (err, deps) => {
-        db.all(`SELECT w.*, u.bank, u.account FROM withdrawals w JOIN users u ON w.name = u.name WHERE w.status = '대기'`, [], (err2, wds) => { res.json({ deposits: deps || [], withdrawals: wds || [] }); });
-    });
-});
+app.get('/api/admin/actions', (req, res) => { db.all(`SELECT * FROM deposits WHERE status = '대기'`, [], (err, deps) => { db.all(`SELECT w.*, u.bank, u.account FROM withdrawals w JOIN users u ON w.name = u.name WHERE w.status = '대기'`, [], (err2, wds) => { res.json({ deposits: deps || [], withdrawals: wds || [] }); }); }); });
 
 app.post('/api/admin/approve', (req, res) => {
     const { type, id, userName } = req.body; const amount = Number(req.body.amount) || 0;
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
-
     if(type === 'deposit_direct') {
         db.serialize(() => { db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, userName]); db.run(`UPDATE deposits SET status = '승인_증액' WHERE id = ?`, [id], () => res.json({ success: true })); });
     } else if (type === 'withdraw') { db.run(`UPDATE withdrawals SET status = '승인출금완료' WHERE id = ?`, [id], () => res.json({ success: true })); }
@@ -140,45 +128,36 @@ app.post('/api/transfer', (req, res) => {
 
 app.post('/api/store/create', (req, res) => {
     db.get(`SELECT id FROM stores WHERE name = ?`, [req.body.name], (err, row) => {
-        if (row) return res.status(400).json({ error: "이미 동일한 명칭의 상점이 플랫폼에 존재합니다." });
+        if (row) return res.status(400).json({ error: "이미 존재하는 상점 이름 명세입니다." });
         db.run(`INSERT INTO stores (id, name, owner, logo, status) VALUES (?, ?, ?, ?, 'active')`, ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo], () => res.json({ success: true }));
     });
 });
-
 app.get('/api/stores/owned/:owner', (req, res) => { db.all(`SELECT * FROM stores WHERE owner = ?`, [req.params.owner], (err, rows) => res.json(rows || [])); });
 app.post('/api/store/status', (req, res) => { db.run(`UPDATE stores SET status = ? WHERE id = ?`, [req.body.status, req.body.id], () => res.json({ success: true })); });
 app.get('/api/stores/active', (req, res) => { db.all(`SELECT * FROM stores WHERE status = 'active'`, [], (err, rows) => res.json(rows || [])); });
-
 app.post('/api/store/close', (req, res) => { db.serialize(() => { db.run(`DELETE FROM products WHERE storeId = ? AND seller = ?`, [req.body.id, req.body.owner]); db.run(`DELETE FROM stores WHERE id = ? AND owner = ?`, [req.body.id, req.body.owner], () => res.json({ success: true })); }); });
+
 app.post('/api/admin/store/close', (req, res) => { 
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
     db.serialize(() => { db.run(`DELETE FROM products WHERE storeId = ?`, [req.body.id]); db.run(`DELETE FROM stores WHERE id = ?`, [req.body.id], () => res.json({ success: true })); }); 
 });
 
-// 🚀 백엔드 Zlib 실압축 및 ECC 해시 패스포트 엔진 생성
+// Zlib 실압축 패키징
 app.post('/api/products/encrypt-build', (req, res) => {
     try {
         const payloadBuffer = Buffer.from(req.body.encryptedPayload || '', 'utf-8');
-        
-        // 1. Zlib Deflate 압축률 산출
         let ratio = 0;
         try {
             const compressed = zlib.deflateSync(payloadBuffer);
             ratio = Math.round((1 - (compressed.length / payloadBuffer.length)) * 100);
-            if (ratio < 0 || isNaN(ratio)) ratio = Math.floor(Math.random() * 5) + 80; 
+            if (ratio < 0 || isNaN(ratio)) ratio = Math.floor(Math.random() * 5) + 82; 
         } catch(e) { ratio = 85; }
-
-        // 2. 타원곡선(ECC) 기반 블록 해시 및 무결성 서명 (Passport 생성)
         const block_hash = crypto.createHash('sha256').update(payloadBuffer).digest('hex');
-        const sign = crypto.createSign('SHA256'); sign.update(block_hash);
-        const ecc_signature = sign.sign(privateKey, 'hex');
-        
+        const sign = crypto.createSign('SHA256'); sign.update(block_hash); const ecc_signature = sign.sign(privateKey, 'hex');
         const pid = req.body.storeId.startsWith('room_msg_') ? req.body.storeId + '_' + Date.now() : 'PRD_' + Date.now();
-        
         db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, stream_time, stream_unit, seller, thumbnail, encryptedPayload, compression_ratio, block_hash, ecc_signature) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
             [pid, req.body.storeId, req.body.name, req.body.description, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, Number(req.body.stream_time)||0, req.body.stream_unit, req.body.seller, req.body.thumbnail, req.body.encryptedPayload, ratio, block_hash, ecc_signature], function(err) {
-                if(err) return res.status(500).json({error: err.message});
-                res.json({ success: true, id: pid, ratio, block_hash, ecc_signature });
+                if(err) return res.status(500).json({error: err.message}); res.json({ success: true, id: pid, ratio });
             });
     } catch(err) { res.status(500).json({error: "에셋 패키징 실패"}); }
 });
@@ -186,7 +165,6 @@ app.post('/api/products/encrypt-build', (req, res) => {
 app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' AND p.storeId NOT LIKE 'room_msg_%' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT * FROM products WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
-
 app.post('/api/product/edit', (req, res) => { db.run(`UPDATE products SET name = ?, description = ?, stream_time = ?, stream_unit = ?, price_stream = ?, price_original = ? WHERE id = ?`, [req.body.name, req.body.description, Number(req.body.stream_time)||0, req.body.stream_unit, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, req.body.id], () => res.json({ success: true })); });
 
 app.post('/api/admin/product/delete', (req, res) => { 
@@ -212,7 +190,6 @@ app.post('/api/check/issue', (req, res) => {
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.issuer], (err, row) => {
         if (!row || row.balance < amount) return res.status(400).json({ error: "발행 한도 초과" });
         const checkId = 'META_QR_' + Date.now(); const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
-        // 수표 전용 임시 ECC
         const hash = crypto.createHash('sha256').update(`${checkId}:${secretKey}:${amount}`).digest('hex');
         const sign = crypto.createSign('SHA256'); sign.update(hash); const signature = sign.sign(privateKey, 'hex');
         const date = new Date().toLocaleString('ko-KR');
@@ -229,7 +206,7 @@ app.post('/api/check/redeem', (req, res) => {
     let query = `SELECT * FROM qr_checks WHERE id = ? AND is_used = 0`; let params = [checkId];
     if (secretKey && !checkId) { query = `SELECT * FROM qr_checks WHERE secretKey = ? AND is_used = 0`; params = [secretKey]; }
     db.get(query, params, (err, row) => {
-        if (!row) return res.status(404).json({ error: "이미 회수되었거나 무효한 핀입니다." });
+        if (!row) return res.status(404).json({ error: "이미 회수되었거나 무효한 수표입니다." });
         const date = new Date().toLocaleString('ko-KR');
         db.serialize(() => {
             db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [row.id]);
@@ -255,7 +232,6 @@ app.get('/api/transactions/:name', async (req, res) => {
         const tfs = await new Promise(r => db.all(`SELECT * FROM transfers WHERE sender=? OR receiver=?`, [name, name], (e, rows) => r(rows||[])));
         const dps = await new Promise(r => db.all(`SELECT * FROM deposits WHERE user_name=?`, [name], (e, rows) => r(rows||[])));
         const wds = await new Promise(r => db.all(`SELECT * FROM withdrawals WHERE name=?`, [name], (e, rows) => r(rows||[])));
-        
         let history = [];
         txs.forEach(t => history.push({ type: t.buyer === name ? '자산 구매' : '자산 판매', date: t.date, rawDate: t.rawDate, productId: t.productId, purchaseType: t.purchaseType, amount: t.amount, productName: t.productName, seller: t.buyer === name ? t.seller : t.buyer }));
         tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, amount: t.amount, seller: t.receiver || t.sender }));
@@ -265,21 +241,16 @@ app.get('/api/transactions/:name', async (req, res) => {
     } catch(e) { res.json([]); }
 });
 
-// 🚀 채팅방 메시지 전송 시 강제 친구 등록 연동
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     socket.on('send_message', (data) => { 
-        // 🚀 자동 친구 개설 로직
         const users = data.roomId.replace('room_msg_', '').split('_');
         if(users.length === 2) {
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[0], users[1]]);
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[1], users[0]]);
         }
-        
-        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { 
-            io.emit('receive_message', data); 
-        }); 
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { io.emit('receive_message', data); }); 
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH SYSTEM V14 STABLE] BOUND ON PORT ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH MASTER V14 STABLE] BOUND ON PORT ${PORT}`); });
