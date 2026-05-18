@@ -11,15 +11,18 @@ app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: '1000mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1000mb' }));
 
-// 모든 Linux 배포판에서 100% 호환되는 타원곡선
+// 모든 Linux 배포판에서 100% 호환되는 타원곡선 규격 (NIST prime256v1)
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 
+// 독자적 타원곡선 역산(ECC Inverse) 해시 엔진
 function generateECCInverseSignature(checkId, secretKey, amount) {
     try {
         const rawData = `${checkId}:${secretKey}:${amount}`;
         const hash = crypto.createHash('sha256').update(rawData).digest('hex');
         let inverseHex = '';
-        for (let i = 0; i < hash.length; i++) { inverseHex += (15 - parseInt(hash[i], 16)).toString(16); }
+        for (let i = 0; i < hash.length; i++) {
+            inverseHex += (15 - parseInt(hash[i], 16)).toString(16);
+        }
         const sign = crypto.createSign('SHA256'); sign.update(inverseHex);
         return sign.sign(privateKey, 'hex');
     } catch (e) { return ''; }
@@ -41,7 +44,8 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-const db = new sqlite3.Database(path.join(__dirname, 'commerce_final_release.db'));
+// 🚀 데이터베이스 파일명 변경: Mars Platform
+const db = new sqlite3.Database(path.join(__dirname, 'mars_platform_final.db'));
 
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT)`);
@@ -62,7 +66,7 @@ app.post('/api/auth', (req, res) => {
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (row) {
-            if (row.password !== password) return res.status(401).json({ error: "비밀번호 오류" });
+            if (row.password !== password) return res.status(401).json({ error: "비밀번호 자격 오류" });
             return res.json(row);
         } else {
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, 10000)`, [name, password, bank, account], () => {
@@ -141,7 +145,7 @@ app.post('/api/admin/approve', (req, res) => {
 app.post('/api/transfer', (req, res) => {
     const amount = Number(req.body.amount);
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.sender], (err, sRow) => {
-        if (!sRow || sRow.balance < amount) return res.status(400).json({ error: "가용 자산이 부족합니다." });
+        if (!sRow || sRow.balance < amount) return res.status(400).json({ error: "원장 가용 자산 부족" });
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.sender]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.receiver]);
@@ -153,15 +157,14 @@ app.post('/api/transfer', (req, res) => {
 app.post('/api/check/issue', (req, res) => {
     const amount = Number(req.body.amount);
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.issuer], (err, row) => {
-        if (!row || row.balance < amount) return res.status(400).json({ error: "발행 한도를 초과했습니다." });
+        if (!row || row.balance < amount) return res.status(400).json({ error: "원장 발행 한도 초과" });
         const checkId = 'META_QR_' + Date.now(); const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
         const date = new Date().toLocaleString('ko-KR');
         const signature = generateECCInverseSignature(checkId, secretKey, amount);
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.issuer]);
             db.run(`INSERT INTO qr_checks (id, amount, issuer, secretKey, eccSignature, is_used, date) VALUES (?, ?, ?, ?, ?, 0, ?)`, [checkId, amount, req.body.issuer, secretKey, signature, date]);
-            // 거래내역 (수표 발행) 명세 반영
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [req.body.issuer, '시스템(QR)', '보안 수표 발행', amount, date], () => {
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [req.body.issuer, 'Mars(Root)', '보안 수표 발행', amount, date], () => {
                 res.json({ success: true, checkId, secretKey, signature });
             });
         });
@@ -175,13 +178,12 @@ app.post('/api/check/redeem', (req, res) => {
 
     db.get(query, params, (err, row) => {
         if (!row) return res.status(404).json({ error: "이미 회수되었거나 무효한 핀(PIN)입니다." });
-        if (signature && !verifyECCInverseSignature(row.id, row.secretKey, row.amount, signature)) return res.status(401).json({ error: "ECC 역산 증명 실패 (위조)" });
+        if (signature && !verifyECCInverseSignature(row.id, row.secretKey, row.amount, signature)) return res.status(401).json({ error: "ECC 무결성 인증 실패 (위조 위협)" });
         const date = new Date().toLocaleString('ko-KR');
         db.serialize(() => {
             db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [row.id]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [row.amount, redeemer]);
-            // 거래내역 (수표 충전) 명세 반영
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, ['시스템(QR)', redeemer, '보안 수표 충전', row.amount, date], () => {
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, ['Mars(Root)', redeemer, '보안 수표 충전', row.amount, date], () => {
                 res.json({ success: true, amount: row.amount });
             });
         });
@@ -196,8 +198,9 @@ app.post('/api/store/status', (req, res) => { db.run(`UPDATE stores SET status =
 app.get('/api/stores/active', (req, res) => { db.all(`SELECT * FROM stores WHERE status = 'active'`, [], (err, rows) => res.json(rows || [])); });
 
 app.post('/api/products/encrypt-build', (req, res) => {
+    const price = Number(req.body.price);
     db.run(`INSERT INTO products (id, storeId, type, name, description, price, seller, thumbnail, encryptedPayload) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?)`, 
-        ['PRD_' + Date.now(), req.body.storeId, req.body.name, req.body.description, Number(req.body.price), req.body.seller, req.body.thumbnail, req.body.encryptedPayload], () => res.json({ success: true }));
+        ['PRD_' + Date.now(), req.body.storeId, req.body.name, req.body.description, price, req.body.seller, req.body.thumbnail, req.body.encryptedPayload], () => res.json({ success: true }));
 });
 app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); });
@@ -209,7 +212,7 @@ app.post('/api/product/delete', (req, res) => { db.run(`DELETE FROM products WHE
 app.post('/api/buy', (req, res) => {
     const amount = Number(req.body.amount);
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.buyer], (err, row) => {
-        if (!row || row.balance < amount) return res.status(400).json({ error: "잔액이 부족합니다." });
+        if (!row || row.balance < amount) return res.status(400).json({ error: "원장 자산 잔액 부족" });
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.buyer]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.seller]);
@@ -238,17 +241,21 @@ app.get('/api/transactions/:name', async (req, res) => {
         let history = [];
         txs.forEach(t => history.push({ type: t.buyer === name ? '자산 구매' : '자산 판매', date: t.date, amount: t.amount, productName: t.productName, seller: t.seller }));
         tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, amount: t.amount, seller: t.receiver || t.sender }));
-        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, amount: d.amount, seller: '어드민 (승인대기)' }));
-        wds.forEach(w => history.push({ type: `출금 집행 (${w.status})`, date: w.date, amount: w.amount, seller: '지정 등록 계좌' }));
-        history.sort((a,b) => new Date(b.date) - new Date(a.date)); res.json(history);
+        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, amount: d.amount, seller: 'Mars(Root)' }));
+        wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, amount: w.amount, seller: '지정 등록 계좌' }));
+        
+        history.sort((a,b) => new Date(b.date) - new Date(a.date)); 
+        res.json(history);
     } catch(e) { res.json([]); }
 });
 
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     socket.on('send_message', (data) => { 
-        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { io.to(data.roomId).emit('receive_message', data); }); 
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { 
+            io.to(data.roomId).emit('receive_message', data); 
+        }); 
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`[GITHUB SYSTEM V5 PERFECT] BOUND ON PORT ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`[MARS SYSTEM PERFECT] BOUND ON PORT ${PORT}`); });
