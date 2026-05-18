@@ -8,72 +8,90 @@
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
-        /* 🌍 Earth Theme: 딥블루 기반 우주/지구 테마 */
+        /* 🌍 Earth Theme & Mobile Responsive */
         :root { --bg-main: #020617; --panel-bg: #0f172a; --text-main: #f8fafc; --text-sub: #94a3b8; --primary: #3b82f6; --primary-hover: #2563eb; --border-color: #1e293b; --success: #10b981; --danger: #ef4444; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg-main); color: var(--text-main); padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        body { font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg-main); color: var(--text-main); padding: 20px; display: flex; flex-direction: column; align-items: center; -webkit-overflow-scrolling: touch; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
         .container { width: 100%; max-width: 1200px; display: flex; flex-direction: column; gap: 20px; }
         .panel { background: var(--panel-bg); padding: 25px; border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 20px rgba(0,0,0,0.5); margin-bottom: 10px; }
         .input-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 15px; }
         .input-group label { font-size: 13px; font-weight: 600; color: var(--text-sub); }
-        .input-group input, .input-group textarea, .input-group select { padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; font-size: 14px; color: #fff; outline: none; }
+        .input-group input, .input-group textarea, .input-group select { padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; font-size: 14px; color: #fff; outline: none; }
         .input-group input:focus, .input-group textarea:focus { border-color: var(--primary); }
         .btn { background: var(--primary); color: #fff; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 14px; text-align: center; }
         .btn:hover { background: var(--primary-hover); }
         .btn-danger { background: var(--danger); } .btn-danger:hover { background: #dc2626; }
         .btn-success { background: var(--success); } .btn-success:hover { background: #059669; }
         .btn-secondary { background: #475569; } .btn-secondary:hover { background: #334155; }
-        .tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 20px; gap: 5px; overflow-x: auto; }
-        .tab { padding: 12px 18px; cursor: pointer; color: var(--text-sub); border-bottom: 3px solid transparent; transition: 0.2s; font-weight: 600; white-space: nowrap; }
+        
+        .tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 20px; gap: 5px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .tab { padding: 12px 18px; cursor: pointer; color: var(--text-sub); border-bottom: 3px solid transparent; transition: 0.2s; font-weight: 600; white-space: nowrap; position: relative; }
         .tab.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
+        .tab-badge { position: absolute; top: 2px; right: 2px; background: var(--danger); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; display: none; }
+        
         .tab-content { display: none; flex-direction: column; gap: 20px; }
         .tab-content.active { display: flex; }
         .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        @media (max-width: 768px) { .grid-2col { grid-template-columns: 1fr; } }
-        .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-        .product-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 15px; background: #1e293b; display: flex; flex-direction: column; box-shadow: 0 4px 6px rgba(0,0,0,0.2); gap: 10px; }
+        @media (max-width: 768px) { .grid-2col { grid-template-columns: 1fr; } .messenger-layout { flex-direction: column; height: auto; } .friend-list-area { width: 100%; border-right: none; border-bottom: 1px solid var(--border-color); max-height: 250px; } .chat-area { height: 500px; } }
         
-        /* 🚀 썸네일 엔진 UI (직관적 데이터 확인) */
-        .thumb-preview-box { width: 100%; height: 160px; background: #0f172a; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #334155; position: relative;}
-        .thumb-preview-box img, .thumb-preview-box video { width: 100%; height: 100%; object-fit: cover; }
-        .thumb-overlay { position: absolute; bottom: 5px; right: 5px; background: rgba(0,0,0,0.7); color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #334155;}
+        /* RAYCloud 형태의 갤러리 UI */
+        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
+        .image-card { background: #111827; border-radius: 8px; border: 2px solid transparent; overflow: hidden; position: relative; display: flex; flex-direction: column; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .image-card.selected { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.3); }
+        .image-preview { width: 100%; height: 140px; background: #0f172a; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; cursor: pointer; border-bottom: 1px solid #1e293b; }
+        .image-preview img { width: 100%; height: 100%; object-fit: contain; }
+        .image-info { padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+        .check-circle { position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 4px; background: rgba(255,255,255,0.9); display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 14px; font-weight: bold; border: 1px solid #94a3b8; z-index: 10; cursor: pointer; }
+        .image-card.selected .check-circle { background: var(--primary); color: #fff; border-color: var(--primary); }
         
-        .profile-pic { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: #334155; border: 1px solid #475569; display: inline-block; vertical-align: middle; cursor: pointer; }
+        /* Dropzone */
+        .dropzone { border: 2px dashed #3b82f6; border-radius: 12px; padding: 40px 20px; text-align: center; background: rgba(59, 130, 246, 0.05); color: #94a3b8; transition: 0.2s; cursor: pointer; margin-bottom: 20px; }
+        .dropzone.dragover { background: rgba(59, 130, 246, 0.15); border-color: #60a5fa; color: #fff; }
+
+        .profile-pic { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; background: #334155; border: 2px solid #475569; display: inline-block; vertical-align: middle; cursor: pointer; transition: 0.2s; }
+        .profile-pic:hover { border-color: var(--primary); }
         .history-table { width: 100%; border-collapse: collapse; font-size: 13px; color: #cbd5e1; }
         .history-table th, .history-table td { padding: 12px; border-bottom: 1px solid var(--border-color); text-align: left; }
         .history-table th { background: #1e293b; color: #94a3b8; }
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 30px; font-size: 13px; font-weight:bold; z-index: 3000; opacity: 0; transition: 0.3s; pointer-events: none; box-shadow: 0 5px 15px rgba(0,0,0,0.3);}
+        
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 30px; font-size: 13px; font-weight:bold; z-index: 5000; opacity: 0; transition: 0.3s; pointer-events: none; box-shadow: 0 5px 15px rgba(0,0,0,0.3);}
         .toast.show { opacity: 1; bottom: 40px; }
         
-        /* 💬 카카오톡 스타일 메신저 레이아웃 & 알림 배지 */
-        .messenger-layout { display: flex; height: 75vh; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: #1e293b; }
+        /* 메신저 레이아웃 */
+        .messenger-layout { display: flex; height: 75vh; min-height: 500px; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: #1e293b; }
         .friend-list-area { width: 320px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; background: #0f172a; }
         .chat-area { flex: 1; display: flex; flex-direction: column; background: #020617; position: relative; }
         .friend-item { padding: 15px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; cursor: pointer; transition: 0.2s; position: relative; }
         .friend-item:hover, .friend-item.active { background: #1e293b; }
-        
-        /* 🚀 핵심: 읽지 않은 메시지 뱃지 처리 */
         .unread-badge { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); background: var(--danger); color: white; font-size: 11px; font-weight: bold; padding: 2px 7px; border-radius: 10px; display: none; }
         
         .chat-header { padding: 15px 20px; border-bottom: 1px solid var(--border-color); font-weight: bold; background: #0f172a; display: flex; justify-content: space-between; align-items: center; }
         .chat-body { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
         .chat-input-area { padding: 10px 15px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; background: #0f172a; align-items: center; }
         .chat-input-area input { flex: 1; padding: 12px; border-radius: 20px; border: 1px solid #334155; background: #1e293b; color: #fff; outline: none; }
-        .msg-row { display: flex; gap: 10px; max-width: 75%; }
+        .msg-row { display: flex; gap: 10px; max-width: 85%; }
         .msg-me { align-self: flex-end; flex-direction: row-reverse; }
         .msg-other { align-self: flex-start; }
         .msg-bubble { padding: 10px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.4; word-break: break-all; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
         .msg-me .msg-bubble { background: var(--primary); color: #fff; border-top-right-radius: 4px; }
         .msg-other .msg-bubble { background: #1e293b; border: 1px solid #334155; color: #fff; border-top-left-radius: 4px; }
         
-        /* 🚀 팝업 메뉴 (채팅방 안에서 즉각 QR 발행/송금 처리) */
         .chat-action-menu { display: none; position: absolute; bottom: 70px; left: 15px; background: #1e293b; border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; box-shadow: 0 5px 25px rgba(0,0,0,0.6); z-index: 100; flex-direction: column; gap: 10px; width: 240px; }
         .chat-action-menu h5 { margin: 0; font-size: 13px; border-bottom: 1px solid #334155; padding-bottom: 5px; }
         .chat-action-menu input { padding: 8px; font-size: 12px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: white; width: 100%; margin-bottom: 5px;}
         
         .earth-logo { width: 35px; height: 35px; margin-right: 10px; vertical-align: middle; fill: #3b82f6; }
-        .editable-field { padding: 4px 6px; border: 1px dashed transparent; border-radius: 4px; transition: 0.2s; min-height: 24px; }
+        .editable-field { padding: 4px 6px; border: 1px dashed transparent; border-radius: 4px; transition: 0.2s; min-height: 24px; color:#fff; font-size:14px; }
         .editable-field.editing { border-color: var(--primary); background: #0f172a; outline: none; cursor: text; }
+        
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 3000; justify-content: center; align-items: center; }
+        .modal-content { background: var(--panel-bg); padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; border: 1px solid var(--border-color); box-shadow: 0 10px 30px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 15px; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; font-size: 18px; font-weight: bold; color: white; }
     </style>
 </head>
 <body>
@@ -83,11 +101,24 @@
                 <svg class="earth-logo" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
                 Earth 플랫폼
             </h2>
-            <div class="input-group"><label>이름 (Name)</label><input type="text" id="ray-login-name" value="이재준"></div>
-            <div class="input-group"><label>비밀번호</label><input type="password" id="ray-login-password" value="1234"></div>
-            <div class="input-group"><label>정산 은행</label><input type="text" id="ray-login-bank" value="우리은행"></div>
-            <div class="input-group"><label>정산 계좌번호</label><input type="text" id="ray-login-account" value="1002338118610"></div>
-            <button class="btn" style="width: 100%;" onclick="login()">보안 인증 접속</button>
+            
+            <div id="login-step-1">
+                <div class="input-group"><label>이름 (ID)</label><input type="text" id="login-name" placeholder="이름을 입력하세요"></div>
+                <div class="input-group"><label>비밀번호</label><input type="password" id="login-password" placeholder="비밀번호"></div>
+                <button class="btn" style="width: 100%; margin-top:10px;" onclick="verifyUser()">다음 / 로그인</button>
+            </div>
+            
+            <div id="login-step-2" style="display: none;">
+                <div style="background:#1e293b; padding:10px; border-radius:8px; margin-bottom:15px; font-size:12px; color:#94a3b8;">
+                    환영합니다! 신규 가입을 위해 출금받으실 계좌 정보를 입력해 주세요.<br><strong style="color:var(--success);">가입 축하금 10,000 KRW가 즉시 지급됩니다.</strong>
+                </div>
+                <div class="input-group"><label>정산 은행명</label><input type="text" id="login-bank" placeholder="예: 국민은행"></div>
+                <div class="input-group"><label>정산 계좌번호</label><input type="text" id="login-account" placeholder="예: 1234-567-890"></div>
+                <div style="display:flex; gap:10px; margin-top:10px;">
+                    <button class="btn btn-secondary" style="flex:1;" onclick="document.getElementById('login-step-2').style.display='none'; document.getElementById('login-step-1').style.display='block';">뒤로</button>
+                    <button class="btn btn-success" style="flex:2;" onclick="registerUser()">가입 완료 및 접속</button>
+                </div>
+            </div>
         </div>
 
         <div id="workspace-section" style="display: none;">
@@ -98,11 +129,10 @@
                     <span id="admin-indicator" style="display:none; background: var(--danger); color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-left: 10px; font-weight: bold;">Root</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <label title="프로필 사진 변경">
-                        <img id="my-profile-pic" class="profile-pic" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23475569'/></svg>">
-                        <input type="file" style="display:none;" accept="image/*" onchange="uploadProfilePic(event)">
-                    </label>
-                    <span style="font-weight: bold; color:#fff;"><span id="display-name" style="color: var(--primary);"></span> 님</span>
+                    <div style="display:flex; align-items:center; gap:8px; cursor:pointer; background:#1e293b; padding:4px 12px; border-radius:20px; border:1px solid #334155; transition:0.2s;" onclick="openProfileModal()" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='#334155'">
+                        <img id="my-profile-pic" class="profile-pic" style="width:30px; height:30px;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23475569'/></svg>">
+                        <span style="font-weight: bold; color:#fff; font-size:13px;"><span id="display-name" style="color: var(--primary);"></span> 님</span>
+                    </div>
                     <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="location.reload()">로그아웃</button>
                 </div>
             </div>
@@ -111,7 +141,9 @@
                 <div class="tab active" onclick="switchTab('wallet')">내 지갑</div>
                 <div class="tab" onclick="switchTab('my-store')">내 상점</div>
                 <div class="tab" onclick="switchTab('market')">마켓</div>
-                <div class="tab" onclick="switchTab('messenger')">메신저</div>
+                <div class="tab" onclick="switchTab('messenger')">
+                    메신저 <span id="main-tab-badge" class="tab-badge">0</span>
+                </div>
                 <div class="tab" onclick="switchTab('history')">거래내역</div>
             </div>
 
@@ -126,18 +158,39 @@
                         <h3 style="color:var(--success); margin-bottom: 10px;">무통장 증액 신청</h3>
                         <div style="background:#022c22; border: 1px solid var(--success); padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size:13px; color:#d1fae5; line-height: 1.6;">
                             <strong style="color:var(--success); font-size:14px;">[우리은행] 1002-338-118610 (이재준)</strong><br>
-                            입금 후 아래 폼에 금액을 입력하여 신청하시면 잔액이 증액됩니다.
+                            위 공식 계좌로 입금하신 후 금액을 적어 신청해 주십시오. 관리자 대조 후 즉시 자동 증액됩니다.
                         </div>
-                        <div class="input-group"><input type="number" id="deposit-amount" placeholder="송금하신 금액 (원)"></div>
-                        <button class="btn btn-success" style="width:100%;" onclick="requestDeposit()">입금 확인 신청</button>
+                        <div class="input-group"><input type="number" id="deposit-amount" placeholder="실제 송금하신 금액 (원)"></div>
+                        <button class="btn btn-success" style="width:100%;" onclick="requestDeposit()">입금 내역 확인 및 증액 신청</button>
                     </div>
                     <div class="panel">
-                        <h3 style="color:var(--danger); margin-bottom: 10px;">가입 계좌 출금 신청</h3>
+                        <h3 style="color:var(--danger); margin-bottom: 10px;">등록 계좌 출금 신청</h3>
                         <div style="background:#450a0a; border: 1px solid var(--danger); padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size:13px; color:#fee2e2; line-height: 1.6;">
-                            가입 시 등록하신 본인 명의 계좌로 안전하게 정산액이 이체됩니다.
+                            가입 시 등록하신 본인 명의 계좌로 안전하게 정산액이 이체됩니다.<br>
+                            <strong style="color:#f87171; font-size:14px; display:block; margin-top:8px;" id="withdraw-account-info">계좌 정보 로딩중...</strong>
                         </div>
                         <div class="input-group"><input type="number" id="withdraw-amount" placeholder="보유 잔액 내 출금 금액 (원)"></div>
-                        <button class="btn btn-danger" style="width:100%; margin-top:auto;" onclick="requestWithdrawal()">가입 계좌 출금 신청</button>
+                        <button class="btn btn-danger" style="width:100%; margin-top:auto;" onclick="requestWithdrawal()">등록 계좌로 출금 신청</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>ECC 역산 보안 수표 생성 (오프라인 공유용)</h3>
+                    <div class="grid-2col">
+                        <div>
+                            <div class="input-group"><input type="number" id="wallet-check-amount" placeholder="발행할 금액 설정 (원)"></div>
+                            <button class="btn" style="width: 100%; background:#8b5cf6;" onclick="issueWalletCheck()">보안 QR 수표 이미지 생성</button>
+                            <div id="wallet-qr-output" style="margin-top: 15px; display: none; text-align: center; border: 2px dashed #8b5cf6; padding: 15px; border-radius: 8px;">
+                                <canvas id="wallet-qr-canvas"></canvas>
+                                <div style="margin-top: 5px; font-weight: bold; color: #ef4444;">보안 핀키: <span id="wallet-check-key"></span></div>
+                                <button class="btn btn-secondary" style="font-size:12px; padding:6px 12px; margin-top:10px;" onclick="downloadWalletQR()">이미지 기기에 저장</button>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="input-group"><label>받은 QR 수표 이미지 스캔</label><input type="file" id="wallet-check-file" accept="image/*" onchange="redeemWalletQRFile(event)"></div>
+                            <div class="input-group"><label>또는 핀키 번호 수동 입력</label><input type="text" id="wallet-check-input" placeholder="보안키 6자리"></div>
+                            <button class="btn" style="width: 100%; background:#475569;" onclick="redeemWalletQRKey()">역산 검증 및 내 지갑으로 충전</button>
+                        </div>
                     </div>
                 </div>
 
@@ -145,7 +198,7 @@
                     <h3 style="color: var(--success);">[Root Admin] 전체 회원 입출금 승인 원장</h3>
                     <div style="overflow-x: auto; margin-top: 10px;">
                         <table class="history-table">
-                            <thead><tr><th>유형</th><th>고객명</th><th>금액</th><th>승인 제어</th></tr></thead>
+                            <thead><tr><th>유형</th><th>고객명/정보</th><th>금액</th><th>승인 제어</th></tr></thead>
                             <tbody id="admin-action-tbody"></tbody>
                         </table>
                     </div>
@@ -156,7 +209,7 @@
                 <div class="grid-2col">
                     <div class="panel">
                         <h3>신규 브랜드 상점 개설</h3>
-                        <div class="input-group"><input type="text" id="new-brand-name" placeholder="상점명을 입력하세요"></div>
+                        <div class="input-group"><input type="text" id="new-brand-name" placeholder="새 상점 명칭을 입력하세요"></div>
                         <button class="btn" onclick="registerNewBrandStore()">독립 브랜드 개설</button>
                     </div>
                     <div class="panel">
@@ -166,35 +219,27 @@
                 </div>
 
                 <div class="panel">
-                    <h3>상품 생성 및 즉시 출하</h3>
-                    <div class="grid-2col" style="margin-bottom:15px;">
-                        <div class="input-group">
-                            <select id="target-brand-selector"><option value="">상점을 선택하세요</option></select>
-                        </div>
-                        <div class="input-group">
-                            <input type="file" id="folder-picker" webkitdirectory directory multiple onchange="inspectFolderFiles(event)" style="display: none;">
-                            <button class="btn" onclick="document.getElementById('folder-picker').click()">PC 파일/폴더 선택 (즉시 렌더링)</button>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                        <h3>출시 자산 갤러리 및 배포</h3>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <select id="target-brand-selector" style="padding:8px; border-radius:6px; background:#1e293b; color:#fff; border:1px solid #334155; outline:none;"><option value="">출하 대상 상점 선택</option></select>
+                            <input type="file" id="file-picker" multiple onchange="handleFilesSelected(event.target.files)" style="display:none;">
+                            <button class="btn btn-secondary" style="padding:8px 15px; font-size:13px;" onclick="document.getElementById('file-picker').click()">파일 직접 선택</button>
                         </div>
                     </div>
-
-                    <div id="folder-inspect-zone" style="display: none;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <h4>출하 대기 목록 (<span id="inspect-count">0</span>)</h4>
-                            <button class="btn btn-success" onclick="batchRegisterProducts()">일괄 암호화 배포</button>
-                        </div>
-                        <div style="overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px;">
-                            <table class="history-table">
-                                <thead><tr><th width="40"><input type="checkbox" id="th-check-all" checked onchange="toggleAllInspectChecks(this)"></th><th width="100">초고속 썸네일</th><th>파일명</th><th width="140">배포 가격</th><th width="80">제어</th></tr></thead>
-                                <tbody id="folder-inspect-tbody"></tbody>
-                            </table>
-                        </div>
+                    
+                    <div id="my-store-dropzone" class="dropzone">
+                        <div style="font-size:30px; margin-bottom:10px;">📂</div>
+                        여기로 원본 데이터(이미지, PDF, MP4, HTML 등)를 드래그 앤 드롭 하세요.<br>자동으로 썸네일이 추출되며 자산이 암호화되어 등록됩니다.
                     </div>
-                </div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #1e293b; padding-bottom:10px;">
+                        <span style="font-size:12px; color:var(--text-sub);">※ 상품의 텍스트나 가격을 클릭하여 즉시 인라인으로 수정하세요.</span>
+                        <button class="btn" style="background:#8b5cf6; padding:8px 15px; font-size:13px;" onclick="bundleToHTMLAndShare()">🔗 선택 항목 단일 HTML 병합 및 채팅 전송</button>
+                    </div>
 
-                <div class="panel">
-                    <h3>전체 출시 자산 원장 (인라인 수정 지원)</h3>
-                    <p style="font-size:12px; color:var(--text-sub); margin-bottom:15px;">※ [수정] 버튼을 누른 후, 텍스트나 가격을 클릭하여 직접 타이핑하고 [저장]을 누르세요.</p>
-                    <div class="market-grid" id="my-store-grid"></div>
+                    <div class="gallery-grid" id="my-store-grid">
+                        </div>
                 </div>
             </div>
 
@@ -208,21 +253,20 @@
                     <div style="margin-top: 15px;" id="partner-fav-zone"></div>
                 </div>
                 <div class="input-group" style="margin-top: 10px;"><input type="text" id="market-search" placeholder="자산명, 설명, 판매자 검색..." onkeyup="loadMarketplace()"></div>
-                <div class="market-grid" id="market-grid"></div>
+                <div class="gallery-grid" id="market-grid"></div>
             </div>
 
             <div id="tab-messenger" class="tab-content">
                 <div class="messenger-layout">
                     <div class="friend-list-area">
                         <div style="padding: 15px; border-bottom: 1px solid var(--border-color);">
-                            <h3 style="margin-bottom: 10px; font-size:16px;">친구 목록</h3>
+                            <h3 style="margin-bottom: 10px; font-size:16px;">친구 및 채널</h3>
                             <div style="display:flex; gap:5px;">
-                                <input type="text" id="friend-search-input" placeholder="이름 추가..." style="flex:1; padding:8px; border-radius:6px; border:1px solid #334155; background:#1e293b; color:#fff;">
+                                <input type="text" id="friend-search-input" placeholder="정확한 이름 추가..." style="flex:1; padding:8px; border-radius:6px; border:1px solid #334155; background:#1e293b; color:#fff;">
                                 <button class="btn" style="padding:8px;" onclick="addFriend()">추가</button>
                             </div>
-                            <button class="btn btn-secondary" style="width:100%; margin-top:10px; padding:6px; font-size:12px;" onclick="generateInviteLink()">내 자동 초대 링크 복사</button>
                         </div>
-                        <div id="friend-list-container" style="flex:1; overflow-y:auto;"></div>
+                        <div id="friend-list-container" style="flex:1; overflow-y:auto; -webkit-overflow-scrolling: touch;"></div>
                     </div>
                     
                     <div class="chat-area" id="main-chat-area" style="display:none;">
@@ -230,7 +274,7 @@
                             <span id="active-chat-title">채팅방</span>
                             <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="closeMainChat()">나가기</button>
                         </div>
-                        <div class="chat-body" id="main-chat-body"></div>
+                        <div class="chat-body" id="main-chat-body" style="-webkit-overflow-scrolling: touch;"></div>
                         
                         <div class="chat-action-menu" id="chat-action-menu">
                             <h5 style="color:var(--success);">💰 간편 송금</h5>
@@ -239,17 +283,17 @@
                             
                             <h5 style="color:var(--primary); margin-top:15px;">🎫 QR 수표 발행 전송</h5>
                             <input type="number" id="chat-check-amount" placeholder="수표 발행액 (원)">
-                            <button class="btn" style="padding:6px; font-size:12px;" onclick="sendQRCheckInChat()">수표 생성 및 전송</button>
+                            <button class="btn" style="padding:6px; font-size:12px;" onclick="sendQRCheckInChat()">수표 생성 및 채팅방 전송</button>
                         </div>
 
                         <div class="chat-input-area">
-                            <button class="btn btn-secondary" style="border-radius:50%; width:40px; height:40px; padding:0; display:flex; align-items:center; justify-content:center; font-size:20px;" onclick="toggleActionMenu()">+</button>
-                            <input type="text" id="main-chat-input" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendMainMessage()" style="flex:1; padding:12px; border-radius:8px; border:1px solid #334155; background:#1e293b; color:#fff;">
-                            <button class="btn" onclick="sendMainMessage()">전송</button>
+                            <button class="btn btn-secondary" style="border-radius:50%; width:40px; height:40px; padding:0; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0;" onclick="toggleActionMenu()">+</button>
+                            <input type="text" id="main-chat-input" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendMainMessage()">
+                            <button class="btn" onclick="sendMainMessage()" style="flex-shrink:0;">전송</button>
                         </div>
                     </div>
-                    <div id="empty-chat-area" style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--text-sub);">
-                        좌측에서 대화할 상대를 선택하세요.
+                    <div id="empty-chat-area" style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--text-sub); text-align:center; padding:20px; line-height:1.5;">
+                        좌측에서 대화할 대상을 선택하세요.
                     </div>
                 </div>
             </div>
@@ -257,7 +301,7 @@
             <div id="tab-history" class="tab-content">
                 <div class="panel">
                     <h3>트랜잭션 자금 변동 원장</h3>
-                    <div style="overflow-x:auto; margin-top: 15px;">
+                    <div style="overflow-x:auto; margin-top: 15px; -webkit-overflow-scrolling: touch;">
                         <table class="history-table">
                             <thead><tr><th>일시</th><th>종류</th><th>상세 내역</th><th>상대방</th><th>변동 금액</th></tr></thead>
                             <tbody id="history-body"></tbody>
@@ -268,16 +312,34 @@
         </div>
     </div>
 
-    <div style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 2000; justify-content: center; align-items: center;" id="universal-modal">
-        <div style="background: var(--panel-bg); padding: 20px; border-radius: 12px; width: 95%; max-width: 900px; height: 85vh; display: flex; flex-direction: column; gap: 15px; border:1px solid var(--primary);">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
-                <h3 id="modal-product-title" style="color:#fff;">다이나믹 암호 역산 렌더러</h3>
-                <span style="font-size: 28px; font-weight: bold; cursor: pointer; color: var(--danger);" onclick="closeModal()">&times;</span>
+    <div class="modal-overlay" id="profile-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>계정 정보 설정</span>
+                <span class="close-btn" onclick="closeModal('profile-modal')">&times;</span>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:20px;">
+                <img id="modal-profile-pic" class="profile-pic" style="width:80px; height:80px;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23475569'/></svg>">
+                <input type="file" id="modal-pic-upload" accept="image/*" style="display:none;" onchange="previewProfilePic(event)">
+                <button class="btn btn-secondary" style="padding:6px 12px; font-size:12px;" onclick="document.getElementById('modal-pic-upload').click()">사진 변경</button>
+            </div>
+            <div class="input-group"><label>이름 (수정 불가)</label><input type="text" id="modal-name" readonly style="background:#0f172a; color:#94a3b8;"></div>
+            <div class="input-group"><label>정산 은행명</label><input type="text" id="modal-bank"></div>
+            <div class="input-group"><label>정산 계좌번호</label><input type="text" id="modal-account"></div>
+            <button class="btn btn-success" style="width:100%; margin-top:10px;" onclick="saveProfile()">저장하기</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="universal-modal">
+        <div class="modal-content" style="width: 95%; max-width: 900px; height: 85vh; border:1px solid var(--primary); justify-content: flex-start;">
+            <div class="modal-header" style="flex-shrink:0;">
+                <span id="modal-product-title">다이나믹 암호 역산 렌더러</span>
+                <span class="close-btn" style="color:var(--danger);" onclick="closeUniversalModal()">&times;</span>
             </div>
             <div id="modal-viewer-display" style="flex: 1; background: #000; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; color: white; position: relative;">
                 </div>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 12px; color: var(--text-sub);">Earth 메모리 기반 실시간 역산 스트리밍 가동 완료</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top:15px; flex-shrink:0;">
+                <span style="font-size: 12px; color: var(--text-sub);">Earth 메모리 기반 실시간 역산 스트리밍 구동</span>
                 <button class="btn" style="background:var(--primary);" id="btn-download-original">원본 규격 파일 다운로드</button>
             </div>
         </div>
@@ -287,11 +349,10 @@
 
     <script>
         const API_URL = 'http://' + window.location.hostname + ':4000';
-        let socket = null, currentUser = null, scannedFiles = [];
+        let socket = null, currentUser = null;
         let activeChatFriend = null, currentChatRoomId = null;
-        
-        // 🚀 안 읽은 메시지 배지 관리 객체
         let unreadCounts = {}; 
+        let tempProfilePicBase64 = null;
 
         // --- 🚀 프론트엔드 다이나믹 역산 ---
         function localECCInverseProcess(encryptedData) {
@@ -299,15 +360,13 @@
             for (let i = 0; i < encryptedData.length; i += 10000) {
                 let chunk = encryptedData.substring(i, i + 10000);
                 let decChunk = '';
-                for(let j=0; j < chunk.length; j++) {
-                    decChunk += String.fromCharCode(chunk.charCodeAt(j) ^ 42);
-                }
+                for(let j=0; j < chunk.length; j++) decChunk += String.fromCharCode(chunk.charCodeAt(j) ^ 42);
                 result += decChunk;
             }
             return result;
         }
 
-        // --- 🚀 썸네일 증발 해결: 파일/비디오 자동 추출 엔진 ---
+        // --- 🚀 초고속 썸네일 & 비디오 프레임 추출 ---
         function generateThumbnail(file) {
             return new Promise((resolve) => {
                 const ext = file.name.split('.').pop().toLowerCase();
@@ -321,8 +380,7 @@
                         const img = new Image();
                         img.onload = () => {
                             let w = img.width, h = img.height;
-                            let ratio = Math.min(300/w, 200/h);
-                            w *= ratio; h *= ratio;
+                            let ratio = Math.min(300/w, 200/h); w *= ratio; h *= ratio;
                             ctx.fillStyle = "#0f172a"; ctx.fillRect(0,0,300,200);
                             ctx.drawImage(img, (300-w)/2, (200-h)/2, w, h);
                             resolve(canvas.toDataURL('image/jpeg', 0.8)); 
@@ -330,100 +388,162 @@
                         img.src = e.target.result;
                     };
                     reader.readAsDataURL(file);
-                } else {
-                    // 비디오 및 특수 파일 아이콘 드로잉
-                    let color = "#3b82f6"; let text = ext.toUpperCase();
-                    if(file.type.startsWith('video/') || ['mp4','webm','mov'].includes(ext)) { color = "#ef4444"; text = "VIDEO"; }
-                    if(ext === 'html') color = "#f97316";
-                    if(ext === 'dcm') color = "#10b981";
-                    
-                    ctx.fillStyle = "#1e293b"; ctx.fillRect(0, 0, 300, 200);
-                    ctx.fillStyle = color; ctx.font = "bold 40px sans-serif";
-                    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-                    ctx.fillText(text, 150, 90);
-                    ctx.font = "14px sans-serif"; ctx.fillStyle = "#94a3b8";
-                    ctx.fillText("SECURE DATA", 150, 140);
-                    resolve(canvas.toDataURL('image/jpeg', 0.8));
+                } 
+                else if (file.type.startsWith('video/') || ['mp4','webm','mov'].includes(ext)) {
+                    const video = document.createElement('video');
+                    video.preload = 'metadata'; video.muted = true;
+                    video.src = URL.createObjectURL(file);
+                    video.onloadeddata = () => { video.currentTime = 1; }; 
+                    video.onseeked = () => {
+                        let w = video.videoWidth, h = video.videoHeight;
+                        let ratio = Math.min(300/w, 200/h); w *= ratio; h *= ratio;
+                        ctx.fillStyle = "#0f172a"; ctx.fillRect(0,0,300,200);
+                        ctx.drawImage(video, (300-w)/2, (200-h)/2, w, h);
+                        ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.beginPath(); ctx.arc(150,100,25,0,2*Math.PI); ctx.fill();
+                        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(140,85); ctx.lineTo(165,100); ctx.lineTo(140,115); ctx.fill();
+                        resolve(canvas.toDataURL('image/jpeg', 0.8));
+                    };
+                    video.onerror = () => resolve(drawGenericIcon(ctx, ext.toUpperCase(), "#ef4444"));
+                } 
+                else {
+                    let color = "#3b82f6";
+                    if(ext === 'html') color = "#f97316"; if(ext === 'dcm') color = "#10b981"; if(ext === 'pdf') color = "#ef4444";
+                    resolve(drawGenericIcon(ctx, ext.toUpperCase(), color));
                 }
             });
         }
+        
+        function drawGenericIcon(ctx, text, color) {
+            ctx.fillStyle = "#1e293b"; ctx.fillRect(0, 0, 300, 200);
+            ctx.fillStyle = color; ctx.font = "bold 40px sans-serif";
+            ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, 150, 90);
+            ctx.font = "14px sans-serif"; ctx.fillStyle = "#94a3b8"; ctx.fillText("SECURE DATA", 150, 140);
+            return ctx.canvas.toDataURL('image/jpeg', 0.8);
+        }
 
+        // --- 유틸 ---
         function showToast(msg) {
             const t = document.getElementById('toast'); t.innerText = msg;
             t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000);
         }
+        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
         function switchTab(id) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            const matchedTab = document.querySelector(`.tab[onclick="switchTab('${id}')"]`);
-            if(matchedTab) matchedTab.classList.add('active');
+            document.querySelector(`.tab[onclick="switchTab('${id}')"]`).classList.add('active');
             document.getElementById(`tab-${id}`).classList.add('active');
             
             if(id === 'market') { loadMarketplace(); searchPartnerStores(); }
             if(id === 'my-store') { loadMyStore(); loadMyBrandStores(); }
             if(id === 'history') loadHistory();
-            if(id === 'messenger') loadFriendList();
+            if(id === 'messenger') { loadFriendList(); updateTabBadge(); }
             if(id === 'wallet') { updateUserBalance(); if(currentUser && currentUser.name === '이재준') loadAdminActions(); }
         }
 
-        async function login() {
-            const name = document.getElementById('ray-login-name').value.trim();
-            const password = document.getElementById('ray-login-password').value.trim();
-            const bank = document.getElementById('ray-login-bank').value.trim();
-            const account = document.getElementById('ray-login-account').value.trim();
-            if(!name || !password) return showToast("인증 명세 누락");
+        // --- 🚀 로그인 & 가입 시스템 ---
+        async function verifyUser() {
+            const name = document.getElementById('login-name').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+            if(!name || !password) return showToast("이름과 비밀번호를 입력하세요.");
 
             try {
-                const res = await fetch(`${API_URL}/api/auth`, {
+                const res = await fetch(`${API_URL}/api/auth/verify`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, password })
+                });
+                const data = await res.json();
+                
+                if (data.exists) {
+                    if(res.ok) loginSuccess(data.user);
+                    else showToast(data.error);
+                } else {
+                    document.getElementById('login-step-1').style.display = 'none';
+                    document.getElementById('login-step-2').style.display = 'block';
+                }
+            } catch(e) { showToast("서버 연결 실패."); }
+        }
+
+        async function registerUser() {
+            const name = document.getElementById('login-name').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+            const bank = document.getElementById('login-bank').value.trim();
+            const account = document.getElementById('login-account').value.trim();
+            if(!bank || !account) return showToast("은행명과 계좌번호를 기재해 주세요.");
+
+            try {
+                const res = await fetch(`${API_URL}/api/auth/register`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, password, bank, account })
                 });
                 const data = await res.json();
-                if(!res.ok) return showToast(data.error);
-
-                currentUser = data;
-                document.getElementById('login-section').style.display = 'none';
-                document.getElementById('workspace-section').style.display = 'block';
-                document.getElementById('display-name').innerText = data.name;
-                if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
-
-                if(data.name === '이재준') {
-                    document.getElementById('admin-indicator').style.display = 'inline-block';
-                    document.getElementById('admin-deposit-panel').style.display = 'block';
-                }
-
-                socket = io(API_URL, { transports: ['websocket', 'polling'] });
-                socket.on('receive_message', handleReceiveMessage);
-                
-                const urlParams = new URLSearchParams(window.location.search);
-                const inviteName = urlParams.get('invite');
-                if(inviteName && inviteName !== data.name) {
-                    await fetch(`${API_URL}/api/friend/add`, {
-                        method: 'POST', headers: {'Content-Type':'application/json'},
-                        body: JSON.stringify({ userName: data.name, friendName: inviteName })
-                    });
-                    showToast(`${inviteName} 님과 자동 친구 등록되었습니다.`);
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                }
-                
-                updateUserBalance(); switchTab('wallet');
-            } catch(e) { showToast("통신 서버 연결 실패. 서버 가동 상태를 확인하세요."); }
+                if(res.ok) loginSuccess(data); else showToast(data.error);
+            } catch(e) { showToast("서버 연결 실패."); }
         }
 
-        async function uploadProfilePic(event) {
-            const file = event.target.files[0]; if(!file) return;
+        function loginSuccess(data) {
+            currentUser = data;
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('workspace-section').style.display = 'block';
+            document.getElementById('display-name').innerText = data.name;
+            if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
+            
+            // 🚀 출금 계좌 상시 표시
+            const accInfo = document.getElementById('withdraw-account-info');
+            if(accInfo) accInfo.innerText = `[${data.bank}] ${data.account}`;
+
+            if(data.name === '이재준') {
+                document.getElementById('admin-indicator').style.display = 'inline-block';
+                document.getElementById('admin-deposit-panel').style.display = 'block';
+            }
+
+            socket = io(API_URL, { transports: ['websocket', 'polling'] });
+            socket.on('receive_message', handleReceiveMessage);
+            
+            updateUserBalance(); switchTab('wallet');
+        }
+
+        // --- 🚀 프로필 수정 시스템 ---
+        function openProfileModal() {
+            if(!currentUser) return;
+            document.getElementById('modal-name').value = currentUser.name;
+            document.getElementById('modal-bank').value = currentUser.bank || '';
+            document.getElementById('modal-account').value = currentUser.account || '';
+            document.getElementById('modal-profile-pic').src = currentUser.profilePic || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23475569'/></svg>";
+            tempProfilePicBase64 = currentUser.profilePic;
+            openModal('profile-modal');
+        }
+
+        function previewProfilePic(e) {
+            const file = e.target.files[0]; if(!file) return;
             const reader = new FileReader();
-            reader.onload = async function(e) {
-                const base64 = e.target.result;
-                document.getElementById('my-profile-pic').src = base64;
-                await fetch(`${API_URL}/api/user/profile`, {
-                    method: 'POST', headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify({ name: currentUser.name, profilePic: base64 })
-                });
-                showToast("프로필 업데이트 완료");
+            reader.onload = function(evt) {
+                tempProfilePicBase64 = evt.target.result;
+                document.getElementById('modal-profile-pic').src = tempProfilePicBase64;
             };
             reader.readAsDataURL(file);
+        }
+
+        async function saveProfile() {
+            const bank = document.getElementById('modal-bank').value.trim();
+            const account = document.getElementById('modal-account').value.trim();
+            if(!bank || !account) return showToast("은행과 계좌번호를 입력하세요.");
+
+            try {
+                const res = await fetch(`${API_URL}/api/user/update`, {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ name: currentUser.name, bank, account, profilePic: tempProfilePicBase64 })
+                });
+                if(res.ok) {
+                    currentUser.bank = bank; currentUser.account = account; currentUser.profilePic = tempProfilePicBase64;
+                    if(tempProfilePicBase64) document.getElementById('my-profile-pic').src = tempProfilePicBase64;
+                    const accInfo = document.getElementById('withdraw-account-info');
+                    if(accInfo) accInfo.innerText = `[${bank}] ${account}`;
+                    showToast("계정 정보가 성공적으로 저장되었습니다.");
+                    closeModal('profile-modal');
+                }
+            } catch(e) { showToast("통신 에러"); }
         }
 
         async function updateUserBalance() {
@@ -437,6 +557,7 @@
             } catch(e){}
         }
 
+        // --- 입출금 ---
         async function requestDeposit() {
             const amount = parseInt(document.getElementById('deposit-amount').value, 10);
             if(isNaN(amount) || amount <= 0) return showToast("정확한 금액을 기재해 주세요.");
@@ -468,14 +589,12 @@
                 const res = await fetch(`${API_URL}/api/admin/actions`);
                 const data = await res.json();
                 const tbody = document.getElementById('admin-action-tbody');
-                if(data.deposits.length === 0 && data.withdrawals.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4">대기 중인 요청이 없습니다.</td></tr>'; return;
-                }
+                if(data.deposits.length === 0 && data.withdrawals.length === 0) { tbody.innerHTML = '<tr><td colspan="4">대기 중인 요청이 없습니다.</td></tr>'; return; }
                 let htmlBuffer = '';
                 data.deposits.forEach(r => {
                     htmlBuffer += `<tr>
                         <td><span style="background:var(--success); color:#fff; padding:4px 8px; border-radius:12px; font-size:11px;">입금신청</span></td>
-                        <td><b>${r.user_name}</b></td>
+                        <td><b style="color:#fff;">${r.user_name}</b></td>
                         <td><b style="color:var(--success);">${Number(r.amount).toLocaleString()}원</b></td>
                         <td><button class="btn btn-success" style="padding:4px 8px;font-size:12px;" onclick="approveAction('deposit_direct', ${r.id}, '${r.user_name}', ${r.amount})">즉시 증액</button></td>
                     </tr>`;
@@ -483,7 +602,7 @@
                 data.withdrawals.forEach(r => {
                     htmlBuffer += `<tr>
                         <td><span style="background:var(--danger); color:#fff; padding:4px 8px; border-radius:12px; font-size:11px;">출금요청</span></td>
-                        <td><b>${r.name}</b><br><span style="font-size:11px;color:gray;">${r.bank} ${r.account}</span></td>
+                        <td><b style="color:#fff;">${r.name}</b><br><span style="font-size:11px;color:gray;">${r.bank} ${r.account}</span></td>
                         <td><b style="color:var(--danger);">${Number(r.amount).toLocaleString()}원</b></td>
                         <td><button class="btn btn-danger" style="padding:4px 8px;font-size:12px;" onclick="approveAction('withdraw', ${r.id}, '${r.name}', ${r.amount})">출금 승인</button></td>
                     </tr>`;
@@ -502,23 +621,89 @@
             } catch(e){}
         }
 
-        function registerNewBrandStore() {
-            const storeName = document.getElementById('new-brand-name').value.trim();
-            const logoFile = document.getElementById('new-brand-logo').files[0]; 
-            if(!storeName) return showToast("상점 명칭을 기재해 주십시오.");
-
-            if(logoFile) {
-                const reader = new FileReader();
-                reader.onload = async function(e) { await sendBrandStorePayload(storeName, e.target.result); };
-                reader.readAsDataURL(logoFile);
-            } else { sendBrandStorePayload(storeName, ''); }
+        // --- 지갑 내 수표 시스템 ---
+        async function issueWalletCheck() {
+            const amount = parseInt(document.getElementById('wallet-check-amount').value, 10);
+            if(isNaN(amount) || amount <= 0) return showToast("발행 금액 오류");
+            
+            try {
+                const res = await fetch(`${API_URL}/api/check/issue`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ issuer: currentUser.name, amount })
+                });
+                const data = await res.json();
+                if(res.ok) {
+                    const canvas = document.getElementById('wallet-qr-canvas');
+                    const qrData = `[META_QR]${data.checkId}|${data.secretKey}|${data.signature}`;
+                    QRCode.toCanvas(canvas, qrData, { width: 180 }, (err) => {
+                        if(!err) {
+                            document.getElementById('wallet-qr-output').style.display = 'block';
+                            document.getElementById('wallet-check-key').innerText = data.secretKey;
+                            document.getElementById('wallet-check-amount').value = '';
+                            showToast("보안 수표 발행 완료"); updateUserBalance();
+                        }
+                    });
+                } else showToast(data.error);
+            } catch(e){}
         }
 
-        async function sendBrandStorePayload(name, logoBase64) {
+        function downloadWalletQR() {
+            const canvas = document.getElementById('wallet-qr-canvas');
+            const a = document.createElement('a'); a.href = canvas.toDataURL("image/png"); a.download = `ECC_CHECK_${Date.now()}.png`; a.click();
+        }
+
+        async function redeemWalletQRKey() {
+            const secretKey = document.getElementById('wallet-check-input').value.trim();
+            if(!secretKey) return showToast("핀키를 입력하세요.");
+            await executeRedeem({ secretKey });
+        }
+
+        function redeemWalletQRFile(event) {
+            const file = event.target.files[0]; if(!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas'); canvas.width = img.width; canvas.height = img.height;
+                    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, img.width, img.height);
+                    const code = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, img.width, img.height);
+                    if(code && code.data.startsWith('[META_QR]')) {
+                        const parsed = code.data.replace('[META_QR]', '').split('|');
+                        executeRedeem({ checkId: parsed[0], secretKey: parsed[1], signature: parsed[2] });
+                    } else showToast("유효한 QR 수표 이미지가 아닙니다.");
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function executeRedeem(payload) {
+            try {
+                const res = await fetch(`${API_URL}/api/check/redeem`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ redeemer: currentUser.name, ...payload })
+                });
+                const data = await res.json();
+                if(res.ok) {
+                    showToast(`수표 충전 완료: +${Number(data.amount).toLocaleString()} KRW`);
+                    document.getElementById('wallet-check-input').value = '';
+                    updateUserBalance(); switchTab('history');
+                } else showToast(data.error);
+            } catch(e){}
+        }
+
+        // --- 🚀 내 상점 브랜드 관리 ---
+        function registerNewBrandStore() {
+            const storeName = document.getElementById('new-brand-name').value.trim();
+            if(!storeName) return showToast("상점 명칭을 기재해 주십시오.");
+            sendBrandStorePayload(storeName);
+        }
+
+        async function sendBrandStorePayload(name) {
             try {
                 const res = await fetch(`${API_URL}/api/store/create`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, owner: currentUser.name, logo: logoBase64 })
+                    body: JSON.stringify({ name, owner: currentUser.name })
                 });
                 if(res.ok) { showToast("상점 개설 완료"); document.getElementById('new-brand-name').value = ''; loadMyBrandStores(); }
             } catch(e){}
@@ -535,16 +720,13 @@
                     listZone.innerHTML = '<div style="color:gray; font-size:13px;">개설된 상점이 없습니다.</div>';
                     selector.innerHTML = '<option value="">상점 선택</option>'; return;
                 }
-                let listHtml = ''; let selectHtml = '<option value="">상점 선택</option>';
+                let listHtml = ''; let selectHtml = '<option value="">출하 대상 상점 선택</option>';
                 stores.forEach(st => {
-                    let logoHtml = `<span style="font-size:11px; color:gray;">N/A</span>`;
-                    if(st.logo) { logoHtml = `<img src="${st.logo}">`; }
                     const badgeClass = st.status === 'active' ? 'status-active' : 'status-hidden';
                     const badgeText = st.status === 'active' ? '공개중' : '숨김';
                     listHtml += `
-                        <div style="display:flex; align-items:center; gap:15px; border:1px solid var(--border-color); padding:10px; border-radius:8px; background:#1e293b;">
-                            <div class="brand-logo-circle">${logoHtml}</div>
-                            <div style="flex:1; color:#fff;"><b>${st.name}</b> <span class="status-badge ${badgeClass}">${badgeText}</span></div>
+                        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; border-radius:8px; background:#1e293b; border:1px solid #334155;">
+                            <div style="color:#fff;"><b>${st.name}</b> <span class="status-badge ${badgeClass}">${badgeText}</span></div>
                             <button class="btn btn-secondary" style="padding:6px; font-size:12px;" onclick="toggleBrandStatus('${st.id}', '${st.status}')">상태 변경</button>
                         </div>`;
                     selectHtml += `<option value="${st.id}">${st.name}</option>`;
@@ -559,61 +741,31 @@
             loadMyBrandStores();
         }
 
-        // --- 🚀 파일 연동 & 썸네일 고속 추출 ---
-        async function inspectFolderFiles(event) {
-            const files = event.target.files;
+        // --- 🚀 내 상점 파일 D&D 및 스캔 로직 ---
+        const dropzone = document.getElementById('my-store-dropzone');
+        dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', e => { e.preventDefault(); dropzone.classList.remove('dragover'); });
+        dropzone.addEventListener('drop', e => {
+            e.preventDefault(); dropzone.classList.remove('dragover');
+            if(e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFilesSelected(e.dataTransfer.files);
+            }
+        });
+
+        async function handleFilesSelected(files) {
             scannedFiles = Array.from(files);
-            const tbody = document.getElementById('folder-inspect-tbody');
             if(scannedFiles.length === 0) return;
-            document.getElementById('folder-inspect-zone').style.display = 'block';
-            document.getElementById('inspect-count').innerText = scannedFiles.length;
-
-            let htmlBuffer = '';
-            for(let idx=0; idx<scannedFiles.length; idx++) {
-                const file = scannedFiles[idx];
-                const thumbData = await generateThumbnail(file); 
-                htmlBuffer += `
-                    <tr id="inspect-row-${idx}">
-                        <td><input type="checkbox" class="inspect-row-check" data-idx="${idx}" checked></td>
-                        <td><div class="thumb-preview-box" style="height:60px; width:90px; margin:0; border:none;"><img src="${thumbData}" style="object-fit:contain;"></div></td>
-                        <td style="color:#fff;"><b style="font-size:12px;">${file.name}</b></td>
-                        <td><div class="input-group" style="margin:0;"><input type="number" class="inspect-row-price" value="10000" style="padding:6px;"></div></td>
-                        <td><button class="btn" style="padding:6px; font-size:12px;" onclick="individualRegister(${idx})">배포</button></td>
-                    </tr>`;
-            }
-            tbody.innerHTML = htmlBuffer;
-        }
-
-        function toggleAllInspectChecks(master) { document.querySelectorAll('.inspect-row-check').forEach(ck => ck.checked = master.checked); }
-
-        async function individualRegister(idx) {
             const storeId = document.getElementById('target-brand-selector').value;
-            if(!storeId) return showToast("상점을 선택하세요.");
-            const file = scannedFiles[idx];
-            const row = document.getElementById(`inspect-row-${idx}`);
-            const price = parseInt(row.querySelector('.inspect-row-price').value, 10);
+            if(!storeId) return showToast("출하할 대상 상점을 상단에서 먼저 선택하세요!");
             
-            await uploadProductToServer(file, price, storeId);
-            row.style.background = "rgba(16, 185, 129, 0.2)"; row.querySelector('button').disabled = true; row.querySelector('button').innerText = "완료";
+            showToast(`자동 암호화 및 썸네일 추출 작업 중...`);
+            for(let i=0; i<scannedFiles.length; i++) {
+                const file = scannedFiles[i];
+                await uploadProductToServer(file, 10000, storeId); // 기본가 10000원
+            }
+            showToast("모든 파일이 자산으로 변환되어 상점에 등록되었습니다.");
             loadMyStore();
-        }
-
-        async function batchRegisterProducts() {
-            const storeId = document.getElementById('target-brand-selector').value;
-            if(!storeId) return showToast("출하 상점을 선택하세요.");
-            const checks = document.querySelectorAll('.inspect-row-check:checked');
-            if(checks.length === 0) return showToast("자산을 지정하십시오.");
-            
-            showToast(`암호화 변환 로직 처리 중...`);
-            for(let ck of checks) {
-                const idx = parseInt(ck.getAttribute('data-idx'));
-                const row = document.getElementById(`inspect-row-${idx}`);
-                if(row.querySelector('button').disabled) continue;
-                const price = parseInt(row.querySelector('.inspect-row-price').value, 10);
-                await uploadProductToServer(scannedFiles[idx], price, storeId);
-                row.style.background = "rgba(16, 185, 129, 0.2)"; row.querySelector('button').disabled = true; row.querySelector('button').innerText = "완료";
-            }
-            showToast("일괄 배포가 완결되었습니다."); loadMyStore(); switchTab('my-store');
+            document.getElementById('file-picker').value = '';
         }
 
         function uploadProductToServer(file, price, storeId) {
@@ -621,17 +773,13 @@
                 const reader = new FileReader();
                 reader.onload = async function(e) {
                     const rawBase64 = e.target.result;
-                    // 데이터/헤더 분리 암호화 (블랙스크린 파괴 방지 핵심)
-                    const parts = rawBase64.split(',');
-                    const header = parts[0] + ',';
-                    const dataPart = parts[1];
+                    const parts = rawBase64.split(','); const header = parts[0] + ','; const dataPart = parts[1];
                     const encodedData = localECCInverseProcess(dataPart);
                     const finalEncryptedPayload = header + encodedData;
-
                     const thumbBase64 = await generateThumbnail(file); 
                     
                     try {
-                        const res = await fetch(`${API_URL}/api/products/encrypt-build`, {
+                        await fetch(`${API_URL}/api/products/encrypt-build`, {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ 
                                 name: file.name, price: isNaN(price)?0:price, 
@@ -639,42 +787,117 @@
                                 thumbnail: thumbBase64, encryptedPayload: finalEncryptedPayload, description: ''
                             })
                         });
-                        resolve(await res.json());
-                    } catch(err){ resolve(null); }
+                        resolve(true);
+                    } catch(err){ resolve(false); }
                 };
                 reader.readAsDataURL(file);
             });
         }
 
-        // --- 🚀 인라인 텍스트 수정 (상점 관리) ---
+        // --- 🚀 내 상점 갤러리 UI 및 인라인 수정 ---
         async function loadMyStore() {
             try {
                 const res = await fetch(`${API_URL}/api/products`);
                 let prods = await res.json() || [];
                 prods = prods.filter(p => p.seller === currentUser.name);
                 const grid = document.getElementById('my-store-grid'); 
-                if(prods.length === 0) { grid.innerHTML = '<div style="color:gray; font-size:13px;">등록된 자산이 없습니다.</div>'; return; }
+                if(prods.length === 0) { grid.innerHTML = '<div style="color:gray; font-size:13px; grid-column:1/-1;">드래그 앤 드롭으로 파일을 등록하세요.</div>'; return; }
                 
                 let htmlBuffer = '';
                 prods.forEach(p => {
                     htmlBuffer += `
-                        <div class="product-card" id="card-${p.id}">
-                            <div class="thumb-preview-box"><img src="${p.thumbnail}" style="object-fit:contain;"></div>
-                            <div style="font-size:11px;color:var(--text-sub);">상점 ID: ${p.storeId}</div>
-                            <div id="name-${p.id}" class="editable-field" style="font-weight:bold; font-size:15px; color:#fff;" contenteditable="false">${p.name}</div>
-                            <div id="desc-${p.id}" class="editable-field" style="font-size:12px; color:#94a3b8; min-height:20px;" contenteditable="false">${p.description || '상품 설명이 없습니다.'}</div>
-                            <div style="color:var(--primary); font-weight:bold; margin-top:5px; margin-bottom:5px;">
-                                <span id="price-${p.id}" class="editable-field" contenteditable="false">${p.price}</span> KRW
-                            </div>
-                            <div style="display:flex; gap:5px; margin-top:auto;">
-                                <button class="btn" id="btn-edit-${p.id}" style="flex:1; padding:8px; font-size:13px;" onclick="toggleEditMode('${p.id}')">수정</button>
-                                <button class="btn btn-danger" style="flex:1; padding:8px; font-size:13px;" onclick="deleteProduct('${p.id}')">삭제</button>
+                        <div class="image-card" id="card-${p.id}">
+                            <div class="check-circle" onclick="toggleProductSelect('${p.id}', this)"></div>
+                            <div class="image-preview" onclick="openUniversalViewer('${p.id}')"><img src="${p.thumbnail}" style="object-fit:contain;"></div>
+                            <div class="image-info">
+                                <div style="font-size:11px;color:var(--text-sub);">상점 ID: ${p.storeId}</div>
+                                <div id="name-${p.id}" class="editable-field" style="font-weight:bold; font-size:14px; color:#fff;" contenteditable="false">${p.name}</div>
+                                <div id="desc-${p.id}" class="editable-field" style="font-size:12px; color:#94a3b8; min-height:20px;" contenteditable="false">${p.description || '상품 설명 추가...'}</div>
+                                <div style="color:var(--primary); font-weight:bold;">
+                                    <span id="price-${p.id}" class="editable-field" contenteditable="false">${p.price}</span> KRW
+                                </div>
+                                <div style="display:flex; gap:5px; margin-top:5px;">
+                                    <button class="btn" id="btn-edit-${p.id}" style="flex:1; padding:6px; font-size:12px;" onclick="toggleEditMode('${p.id}')">수정</button>
+                                    <button class="btn btn-danger" style="flex:1; padding:6px; font-size:12px;" onclick="deleteProduct('${p.id}')">삭제</button>
+                                </div>
                             </div>
                         </div>`;
                 });
                 grid.innerHTML = htmlBuffer;
             } catch(e){}
         }
+
+        // 체크박스 선택 로직
+        window.selectedProductsForBundle = new Set();
+        window.toggleProductSelect = function(id, el) {
+            if(window.selectedProductsForBundle.has(id)) {
+                window.selectedProductsForBundle.delete(id);
+                el.innerText = ''; el.parentElement.classList.remove('selected');
+            } else {
+                window.selectedProductsForBundle.add(id);
+                el.innerText = '✔'; el.parentElement.classList.add('selected');
+            }
+        };
+
+        // 🚀 다중 파일 병합 HTML 전송 로직
+        window.bundleToHTMLAndShare = async function() {
+            if(window.selectedProductsForBundle.size === 0) return showToast("병합할 항목을 선택하세요.");
+            if(!currentChatRoomId) {
+                showToast("먼저 채팅방을 생성하거나 열어주세요!");
+                switchTab('messenger');
+                return;
+            }
+            showToast("선택된 파일들을 하나의 HTML 파일로 병합 중입니다...");
+            
+            try {
+                const res = await fetch(`${API_URL}/api/products`);
+                const allProds = await res.json();
+                const selectedProds = allProds.filter(p => window.selectedProductsForBundle.has(p.id));
+                
+                let mergedHtml = `<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Earth Asset Bundle</title></head><body style='background:#0f172a; color:white; font-family:sans-serif; padding:20px; text-align:center;'>`;
+                mergedHtml += `<h2 style='color:#3b82f6;'>Earth Bundle Data (${selectedProds.length} items)</h2><hr style='border:1px solid #1e293b; margin-bottom:20px;'>`;
+                
+                for(let p of selectedProds) {
+                    mergedHtml += `<div style='background:#1e293b; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #334155;'>`;
+                    mergedHtml += `<h3 style='margin-top:0;'>${p.name}</h3>`;
+                    // 복호화 스크립트 블록
+                    mergedHtml += `<div id="v_${p.id}">Loading...</div>`;
+                    mergedHtml += `<script>
+                        (function(){
+                            const pData = "${p.encryptedPayload.replace(/"/g, '\\"')}";
+                            const parts = pData.split(','); const header = parts[0] + ','; const body = parts[1];
+                            let dec = ''; for(let i=0; i<body.length; i+=10000) { let chunk=body.substring(i,i+10000); for(let j=0;j<chunk.length;j++) dec+=String.fromCharCode(chunk.charCodeAt(j)^42); }
+                            const finalUrl = header + dec;
+                            const container = document.getElementById("v_${p.id}");
+                            if("${p.name}".match(/\\.(png|jpg|jpeg|gif|webp)$/i)) { container.innerHTML = '<img src="'+finalUrl+'" style="max-width:100%; border-radius:4px;">'; }
+                            else { container.innerHTML = '<a href="'+finalUrl+'" download="${p.name}" style="color:#10b981; text-decoration:none; font-weight:bold; border:1px solid #10b981; padding:8px 16px; border-radius:4px; display:inline-block;">데이터 다운로드</a>'; }
+                        })();
+                    <\/script>`;
+                    mergedHtml += `</div>`;
+                }
+                mergedHtml += `</body></html>`;
+                
+                // Blob을 Base64 DataURL로 변환하여 채팅으로 쏘기
+                const blob = new Blob([mergedHtml], { type: 'text/html' });
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const htmlDataUrl = e.target.result;
+                    const msgHtml = `
+                        <div style="background:#1e293b; border:1px solid var(--primary); padding:15px; border-radius:8px; text-align:center;">
+                            <div style="font-size:30px; margin-bottom:5px;">📦</div>
+                            <div style="font-size:12px; font-weight:bold; margin-bottom:10px;">다중 에셋 병합 HTML (${selectedProds.length}개)</div>
+                            <a href="${htmlDataUrl}" download="Earth_Bundle_${Date.now()}.html" style="background:var(--success); color:#fff; text-decoration:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; display:inline-block;">HTML 다운로드 (오프라인 뷰어)</a>
+                        </div>`;
+                    socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: currentUser.profilePic, message: msgHtml });
+                    appendMainMessage(currentUser.name, msgHtml, currentUser.profilePic);
+                    showToast("채팅방으로 HTML 묶음 파일 전송 완료!");
+                    
+                    window.selectedProductsForBundle.clear();
+                    loadMyStore();
+                };
+                reader.readAsDataURL(blob);
+            } catch(e){}
+        };
 
         window.toggleEditMode = async (id) => {
             const btn = document.getElementById(`btn-edit-${id}`);
@@ -687,7 +910,7 @@
                 [nameEl, descEl, priceEl].forEach(el => { el.contentEditable = "true"; el.classList.add('editing'); });
                 nameEl.focus();
             } else {
-                btn.innerText = '수정'; btn.style.background = 'var(--primary)';
+                btn.innerText = '수정'; btn.style.background = 'var(--warning)';
                 [nameEl, descEl, priceEl].forEach(el => { el.contentEditable = "false"; el.classList.remove('editing'); });
                 const newName = nameEl.innerText.trim();
                 const newDesc = descEl.innerText.trim();
@@ -707,17 +930,15 @@
             showToast("삭제 완료"); loadMyStore();
         }
 
-        // --- 마켓 (결제 및 렌더링/다운로드 자동 갱신) ---
+        // --- 🚀 마켓 ---
         async function searchPartnerStores() {
             try {
                 const res = await fetch(`${API_URL}/api/stores/active`); const stores = await res.json() || [];
                 const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`); const favs = await favRes.json() || [];
                 const zone = document.getElementById('partner-fav-zone');
                 const query = document.getElementById('partner-search-input').value.toLowerCase();
-                
                 let filtered = stores.filter(st => st.owner !== currentUser.name);
                 if(query) filtered = filtered.filter(st => st.name.toLowerCase().includes(query));
-
                 if(filtered.length === 0) { zone.innerHTML = '<span style="font-size:12px; color:gray;">검색 조건에 맞는 상점이 없습니다.</span>'; return; }
 
                 let htmlBuffer = '';
@@ -746,31 +967,28 @@
 
                 const histRes = await fetch(`${API_URL}/api/transactions/${currentUser.name}`); const history = await histRes.json() || [];
                 const grid = document.getElementById('market-grid');
-                if(prods.length === 0) { grid.innerHTML = '<div style="color:gray; font-size:13px;">가용 자산 풀이 비어있습니다.</div>'; return; }
+                if(prods.length === 0) { grid.innerHTML = '<div style="color:gray; font-size:13px; grid-column:1/-1;">가용 자산 풀이 비어있습니다.</div>'; return; }
 
                 let htmlBuffer = '';
                 prods.forEach(p => {
                     const isMine = p.seller === currentUser.name;
-                    // 🚀 결제 여부 즉각 판별 로직
                     const isBought = history.some(h => h.buyer === currentUser.name && h.productName === p.name);
-                    
-                    let actionBtn = '';
-                    if (isMine || isBought) {
-                        actionBtn = `<button class="btn btn-success" onclick="openUniversalViewer('${p.id}')">▶ 로컬 역산 렌더링 열기</button>`;
-                    } else {
-                        actionBtn = `<button class="btn" onclick="buyAsset('${p.id}', '${p.name}', ${p.price}, '${p.seller}')">💳 자산 구매 (${Number(p.price).toLocaleString()}원)</button>`;
-                    }
+                    let actionBtn = isMine || isBought ? 
+                        `<button class="btn btn-success" onclick="openUniversalViewer('${p.id}')">▶ 로컬 역산 렌더링 열기</button>` : 
+                        `<button class="btn" onclick="buyAsset('${p.id}', '${p.name}', ${p.price}, '${p.seller}')">💳 자산 구매 (${Number(p.price).toLocaleString()}원)</button>`;
 
                     htmlBuffer += `
-                        <div class="product-card">
-                            <div class="thumb-preview-box"><img src="${p.thumbnail}" style="object-fit:contain;"></div>
-                            <div style="font-size:11px;color:var(--text-sub);">판매자: <b>${p.seller}</b></div>
-                            <h4 style="font-size:15px; margin-bottom:0; color:#fff;">${p.name}</h4>
-                            <div style="font-size:12px; color:#94a3b8; margin-bottom:5px; flex-grow:1; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${p.description || ''}</div>
-                            <p style="font-weight:bold; color:var(--primary); font-size:16px;">${Number(p.price).toLocaleString()} KRW</p>
-                            <div style="margin-top:auto; display:flex; flex-direction:column; gap:5px;">
-                                ${!isMine ? `<button class="btn btn-secondary" style="padding:8px; font-size:12px;" onclick="openMessengerChat('${p.seller}')">판매자와 1:1 대화</button>` : ''}
-                                ${actionBtn}
+                        <div class="image-card">
+                            <div class="image-preview" onclick="${isMine||isBought ? `openUniversalViewer('${p.id}')` : `showToast('구매 후 열람할 수 있습니다.')`}"><img src="${p.thumbnail}" style="object-fit:contain;"></div>
+                            <div class="image-info">
+                                <div style="font-size:11px;color:var(--text-sub);">판매자: <b>${p.seller}</b></div>
+                                <h4 style="font-size:14px; margin:0; color:#fff; word-break:break-all;">${p.name}</h4>
+                                <div style="font-size:12px; color:#94a3b8; margin:5px 0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:30px;">${p.description || ''}</div>
+                                <p style="font-weight:bold; color:var(--primary); font-size:15px;">${Number(p.price).toLocaleString()} KRW</p>
+                                <div style="display:flex; flex-direction:column; gap:5px; margin-top:5px;">
+                                    ${!isMine ? `<button class="btn btn-outline" style="background:transparent; color:var(--primary); border:1px solid var(--primary); padding:6px; font-size:12px;" onclick="openMessengerChat('${p.seller}')">판매자와 1:1 대화</button>` : ''}
+                                    ${actionBtn}
+                                </div>
                             </div>
                         </div>`;
                 });
@@ -781,11 +999,11 @@
         async function buyAsset(id, name, price, seller) {
             if(!confirm(`해당 데이터 권리를 획득하시겠습니까?`)) return;
             const res = await fetch(`${API_URL}/api/buy`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ buyer: currentUser.name, seller, productId: id, productName: name, amount: price }) });
-            if(res.ok) { showToast("결제 완료. 렌더링/다운로드 권한이 부여되었습니다."); loadMarketplace(); updateUserBalance(); switchTab('history'); } 
+            if(res.ok) { showToast("결제 완료. 스트리밍 권한이 획득되었습니다."); loadMarketplace(); updateUserBalance(); switchTab('history'); } 
             else { const d = await res.json(); showToast(d.error); }
         }
 
-        // --- 🚀 암호화 스트리밍 렌더러 (블랙스크린 영구 해결, 압축.html 엔진 이식) ---
+        // --- 🚀 암호화 스트리밍 렌더러 (블랙스크린 방어 및 UI 통일) ---
         async function openUniversalViewer(id) {
             try {
                 const res = await fetch(`${API_URL}/api/product/detail/${id}`); 
@@ -798,8 +1016,7 @@
                 setTimeout(async () => {
                     try {
                         const parts = p.encryptedPayload.split(',');
-                        const header = parts[0] + ',';
-                        const dataPart = parts[1];
+                        const header = parts[0] + ','; const dataPart = parts[1];
                         const decryptedData = localECCInverseProcess(dataPart); 
                         const finalDataUrl = header + decryptedData;
 
@@ -812,26 +1029,31 @@
                         } else if (['pdf'].includes(ext) || header.includes('application/pdf')) {
                             display.innerHTML = `<iframe src="${finalDataUrl}" style="width:100%; height:100%; border:none; background:#fff;"></iframe>`;
                         } else {
-                            // HTML 등 기타 파일 지원
                             display.innerHTML = `<div style="text-align:center;"><br><span style="font-size:50px;">📄</span><br><br><b style="color:white; font-size:18px;">${p.name}</b><br><br>보안 데이터 해제 완료 (아래 버튼으로 다운로드하여 열람하세요)</div>`;
                         }
 
                         document.getElementById('btn-download-original').onclick = function() {
                             const link = document.createElement('a'); link.href = finalDataUrl; link.download = p.name; link.click();
-                            showToast("원본 데이터 파일이 성공적으로 저장되었습니다.");
+                            showToast("원본 데이터 파일이 기기에 저장되었습니다.");
                         };
                     } catch(err) { display.innerHTML = `<div style="color:var(--danger); font-weight:bold;">역산 렌더링 오류 발생</div>`; }
                 }, 100); 
             } catch(e){ showToast("데이터 로드 실패"); }
         }
 
-        function closeModal() { 
-            // 🚀 모달을 닫을 때 DOM 내부를 완벽히 비워서 브라우저 메모리 부하와 블랙스크린 원천 차단
+        function closeUniversalModal() { 
             document.getElementById('modal-viewer-display').innerHTML = ''; 
             document.getElementById('universal-modal').style.display = 'none'; 
         }
 
-        // --- 🚀 카카오톡 스타일 소셜 메신저망 및 배지 로직 ---
+        // --- 🚀 소셜 메신저 및 배지 로직 ---
+        function updateTabBadge() {
+            let total = 0; for(let k in unreadCounts) total += unreadCounts[k];
+            const badge = document.getElementById('main-tab-badge');
+            if(total > 0) { badge.innerText = total; badge.style.display = 'inline-block'; } 
+            else { badge.style.display = 'none'; }
+        }
+
         function generateInviteLink() {
             const link = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(currentUser.name)}`;
             navigator.clipboard.writeText(link).then(() => showToast("초대 링크 주소가 복사되었습니다."));
@@ -841,7 +1063,7 @@
             const friendName = document.getElementById('friend-search-input').value.trim();
             if(!friendName || friendName === currentUser.name) return;
             const res = await fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName }) });
-            if(res.ok) { showToast("친구 매칭 완료"); document.getElementById('friend-search-input').value=''; loadFriendList(); }
+            if(res.ok) { showToast("친구 등록 완료"); document.getElementById('friend-search-input').value=''; loadFriendList(); }
             else { const d = await res.json(); showToast(d.error); }
         }
 
@@ -865,25 +1087,18 @@
                 const room = `room_msg_${[currentUser.name, f.name].sort().join('_')}`;
                 const badge = unreadCounts[room] ? `<div class="unread-badge" style="display:block;">${unreadCounts[room]}</div>` : `<div class="unread-badge"></div>`;
                 const picHtml = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`;
-                container.innerHTML += `
-                    <div class="friend-item ${activeChatFriend === f.name ? 'active' : ''}" onclick="openMessengerChat('${f.name}')">
-                        ${picHtml}
-                        <div><b style="color:#fff;">${f.name}</b></div>
-                        ${badge}
-                    </div>`;
+                container.innerHTML += `<div class="friend-item ${activeChatFriend === f.name ? 'active' : ''}" onclick="openMessengerChat('${f.name}')">${picHtml}<div><b style="color:#fff;">${f.name}</b></div>${badge}</div>`;
             });
+            updateTabBadge();
         }
 
         function openMessengerChat(friendName) {
-            switchTab('messenger'); // 탭 강제 전환
             document.getElementById('empty-chat-area').style.display = 'none';
             document.getElementById('main-chat-area').style.display = 'flex';
             activeChatFriend = friendName;
             document.getElementById('active-chat-title').innerText = `${friendName} 대화창`;
-            
             currentChatRoomId = `room_msg_${[currentUser.name, friendName].sort().join('_')}`;
             
-            // 배지 초기화
             if(unreadCounts[currentChatRoomId]) { unreadCounts[currentChatRoomId] = 0; }
             
             socket.emit('join_room', currentChatRoomId);
@@ -891,7 +1106,7 @@
                 document.getElementById('main-chat-body').innerHTML = '';
                 if(msgs && msgs.length>0) msgs.forEach(m => appendMainMessage(m.sender, m.message, m.senderPic));
             });
-            loadFriendList(); // CSS 포커싱 업데이트
+            loadFriendList(); 
         }
 
         function closeMainChat() {
@@ -921,8 +1136,7 @@
             
             const res = await fetch(`${API_URL}/api/transfer`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sender: currentUser.name, receiver: activeChatFriend, amount }) });
             if(res.ok) {
-                const msg = `[TRANSFER]${amount}`;
-                const pic = document.getElementById('my-profile-pic').src;
+                const msg = `[TRANSFER]${amount}`; const pic = document.getElementById('my-profile-pic').src;
                 socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
                 appendMainMessage(currentUser.name, msg, pic);
                 document.getElementById('chat-transfer-amount').value = '';
@@ -957,26 +1171,20 @@
             if(text.startsWith('[TRANSFER]')) {
                 displayHtml = `<div class="transfer-widget"><b>💰 송금 완료</b><br><span style="color:var(--success);font-size:16px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</span></div>`;
             } else if(text.startsWith('[META_QR]')) {
-                const parsed = text.replace('[META_QR]', '').split('|');
-                const checkId = parsed[0], secretKey = parsed[1], signature = parsed[2];
-                // 🚀 바로 충전 버튼 활성화
+                const parsed = text.replace('[META_QR]', '').split('|'); const checkId = parsed[0], secretKey = parsed[1], signature = parsed[2];
                 const redeemBtn = !isMe ? `<button class="btn btn-success" style="width:100%; margin-top:5px; padding:6px; font-size:12px;" onclick="window.redeemQRKeyDirect('${checkId}','${secretKey}','${signature}')">지갑으로 바로 충전</button>` : '';
-                displayHtml = `
-                    <div style="border:1px solid var(--success); padding:10px; border-radius:8px; text-align:center; background:#022c22;">
-                        <b style="color:var(--success);">🎫 보안 수표 도착</b>
-                        <canvas id="main_qr_${checkId}"></canvas>
-                        <br><span style="color:var(--danger);font-weight:bold; font-size:11px;">PIN: ${secretKey}</span>
-                        ${redeemBtn}
-                    </div>`;
+                displayHtml = `<div style="border:1px solid var(--success); padding:10px; border-radius:8px; text-align:center; background:#022c22;"><b style="color:var(--success);">🎫 보안 수표 도착</b><canvas id="main_qr_${checkId}"></canvas><br><span style="color:var(--danger);font-weight:bold; font-size:11px;">PIN: ${secretKey}</span>${redeemBtn}</div>`;
                 setTimeout(() => { QRCode.toCanvas(document.getElementById(`main_qr_${checkId}`), text, {width: 120}); }, 100);
+            } else if(text.includes('html 다운로드')) {
+                // 다중 묶음 렌더링 허용
+                displayHtml = text;
             }
 
             const picHtml = picBase64 ? `<img src="${picBase64}" class="profile-pic" style="width:35px; height:35px;">` : `<div class="profile-pic" style="width:35px; height:35px;"></div>`;
-            chatBody.innerHTML += `<div class="msg-row ${isMe ? 'msg-me' : 'msg-other'}">${!isMe ? picHtml : ''}<div style="display:flex; flex-direction:column; max-width:80%;"><div style="font-size:11px; margin-bottom:4px; opacity:0.7; ${isMe?'text-align:right;':''}">${sender}</div><div class="msg-bubble">${displayHtml}</div></div></div>`;
+            chatBody.innerHTML += `<div class="msg-row ${isMe ? 'msg-me' : 'msg-other'}">${!isMe ? picHtml : ''}<div style="display:flex; flex-direction:column; max-width:100%;"><div style="font-size:11px; margin-bottom:4px; opacity:0.7; ${isMe?'text-align:right;':''}">${sender}</div><div class="msg-bubble">${displayHtml}</div></div></div>`;
             chatBody.scrollTop = chatBody.scrollHeight;
         }
 
-        // 🚀 버튼 클릭 즉시 충전 로직
         window.redeemQRKeyDirect = async (checkId, secretKey, signature) => {
             try {
                 const res = await fetch(`${API_URL}/api/check/redeem`, {
@@ -984,26 +1192,22 @@
                     body: JSON.stringify({ redeemer: currentUser.name, checkId, secretKey, signature })
                 });
                 const data = await res.json();
-                if(res.ok) { showToast(`수표 충전 완료: +${Number(data.amount).toLocaleString()} KRW`); updateUserBalance(); switchTab('history'); } 
+                if(res.ok) { showToast(`충전 완료: +${Number(data.amount).toLocaleString()} KRW`); updateUserBalance(); switchTab('history'); } 
                 else showToast(data.error);
             } catch(e){}
         };
 
-        // 소켓 글로벌 브로드캐스트 수신 및 배지(Badge) 업데이트
         function handleReceiveMessage(data) {
-            // 현재 열려있는 방이면 채팅창에 추가
             if(data.roomId === currentChatRoomId) {
                 if(data.sender !== currentUser.name) appendMainMessage(data.sender, data.message, data.senderPic);
             } else if (data.sender !== currentUser.name) {
-                // 다른 방에서 온 메시지면 배지 증가 및 알림
                 if (!unreadCounts[data.roomId]) unreadCounts[data.roomId] = 0;
                 unreadCounts[data.roomId]++;
-                loadFriendList(); // 좌측 패널 업데이트
-                showToast(`💬 ${data.sender} 님으로부터 새 메시지가 도착했습니다.`);
+                loadFriendList(); updateTabBadge();
+                showToast(`💬 ${data.sender} 님의 메시지 도착`);
             }
         }
 
-        // --- 거래 내역 ---
         async function loadHistory() {
             const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`); const list = await res.json() || [];
             const tbody = document.getElementById('history-body'); 
