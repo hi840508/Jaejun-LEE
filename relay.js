@@ -1,4 +1,4 @@
-const express = require('express');
+\const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
@@ -22,7 +22,7 @@ const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
 // 🚀 자산 증발을 영구 차단하기 위한 우분투 최상위 경로 DB 매핑
-const DB_PATH = '/home/ubuntu/earth_final_v15_master.sqlite';
+const DB_PATH = '/home/ubuntu/earth_final_v16_stable.sqlite';
 const db = new sqlite3.Database(DB_PATH);
 
 function initTables() {
@@ -30,6 +30,7 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, realname TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS friends (userName TEXT, friendName TEXT, UNIQUE(userName, friendName))`);
         db.run(`CREATE TABLE IF NOT EXISTS stores (id TEXT PRIMARY KEY, name TEXT, owner TEXT, logo TEXT, status TEXT DEFAULT 'active')`);
+        // 제품 테이블: 압축률, 블록해시, ECC 서명 컬럼 이식
         db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, storeId TEXT, type TEXT, name TEXT, description TEXT, price_stream INTEGER DEFAULT 0, price_original INTEGER DEFAULT 0, stream_time INTEGER DEFAULT 0, stream_unit TEXT DEFAULT 'd', seller TEXT, thumbnail TEXT, encryptedPayload TEXT, compression_ratio INTEGER DEFAULT 0, block_hash TEXT, ecc_signature TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, purchaseType TEXT, rawDate TEXT, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT, sender TEXT, senderPic TEXT, message TEXT, date TEXT)`);
@@ -105,14 +106,16 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
 });
 
 app.post('/api/deposit/request', (req, res) => { db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date) VALUES (?, ?, ?, '대기', ?)`, [req.body.userName, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR')], () => { res.json({ success: true }); }); });
+
 app.post('/api/withdraw/request', (req, res) => {
     const amount = Number(req.body.amount) || 0;
     db.serialize(() => { db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.name]); db.run(`INSERT INTO withdrawals (name, amount, status, date) VALUES (?, ?, '대기', ?)`, [req.body.name, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true })); });
 });
 
+// 🚀 어드민 관리 정보 확장 조인 쿼리
 app.get('/api/admin/actions', (req, res) => {
-    db.all(`SELECT * FROM deposits WHERE status = '대기'`, [], (err, deps) => {
-        db.all(`SELECT w.*, u.bank, u.account FROM withdrawals w JOIN users u ON w.name = u.name WHERE w.status = '대기'`, [], (err2, wds) => { res.json({ deposits: deps || [], withdrawals: wds || [] }); });
+    db.all(`SELECT d.*, u.realname, u.bank, u.account FROM deposits d LEFT JOIN users u ON d.user_name = u.name WHERE d.status = '대기'`, [], (err, deps) => {
+        db.all(`SELECT w.*, u.realname, u.bank, u.account FROM withdrawals w LEFT JOIN users u ON w.name = u.name WHERE w.status = '대기'`, [], (err2, wds) => { res.json({ deposits: deps || [], withdrawals: wds || [] }); });
     });
 });
 
@@ -138,7 +141,7 @@ app.post('/api/transfer', (req, res) => {
 
 app.post('/api/store/create', (req, res) => {
     db.get(`SELECT id FROM stores WHERE name = ?`, [req.body.name], (err, row) => {
-        if (row) return res.status(400).json({ error: "이미 동일한 명칭의 상점이 플랫폼에 존재합니다." });
+        if (row) return res.status(400).json({ error: "이미 존재하는 명칭의 상점입니다." });
         db.run(`INSERT INTO stores (id, name, owner, logo, status) VALUES (?, ?, ?, ?, 'active')`, ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo], () => res.json({ success: true }));
     });
 });
@@ -153,12 +156,12 @@ app.post('/api/admin/store/close', (req, res) => {
     db.serialize(() => { db.run(`DELETE FROM products WHERE storeId = ?`, [req.body.id]); db.run(`DELETE FROM stores WHERE id = ?`, [req.body.id], () => res.json({ success: true })); }); 
 });
 
-// 🚀 Zlib 실물 압축 및 ECC 무결성 엔진 생성
+// 🚀 백엔드 Zlib 실압축 및 ECC 해시 패스포트 엔진 생성
 app.post('/api/products/encrypt-build', (req, res) => {
     try {
         const payloadBuffer = Buffer.from(req.body.encryptedPayload || '', 'utf-8');
         
-        // Zlib Deflate 압축률 산출
+        // 1. Zlib Deflate 압축률 산출
         let ratio = 0;
         try {
             const compressed = zlib.deflateSync(payloadBuffer);
@@ -166,7 +169,7 @@ app.post('/api/products/encrypt-build', (req, res) => {
             if (ratio < 0 || isNaN(ratio)) ratio = Math.floor(Math.random() * 5) + 80; 
         } catch(e) { ratio = 85; }
 
-        // ECC 기반 블록 해시 및 무결성 서명 
+        // 2. 타원곡선(ECC) 기반 블록 해시 및 무결성 서명 (Passport 생성)
         const block_hash = crypto.createHash('sha256').update(payloadBuffer).digest('hex');
         const sign = crypto.createSign('SHA256'); sign.update(block_hash);
         const ecc_signature = sign.sign(privateKey, 'hex');
@@ -184,7 +187,6 @@ app.post('/api/products/encrypt-build', (req, res) => {
 app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' AND p.storeId NOT LIKE 'room_msg_%' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT * FROM products WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
-
 app.post('/api/product/edit', (req, res) => { db.run(`UPDATE products SET name = ?, description = ?, stream_time = ?, stream_unit = ?, price_stream = ?, price_original = ? WHERE id = ?`, [req.body.name, req.body.description, Number(req.body.stream_time)||0, req.body.stream_unit, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, req.body.id], () => res.json({ success: true })); });
 
 app.post('/api/admin/product/delete', (req, res) => { 
@@ -277,4 +279,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH SYSTEM V15 MASTER] BOUND ON PORT ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH SYSTEM V16 MASTER] BOUND ON PORT ${PORT}`); });
