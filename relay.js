@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-const fs = require('fs');
 const http = require('http');
 const crypto = require('crypto');
 const { Server } = require('socket.io');
@@ -20,8 +19,8 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-// 🚀 [자산 완전 보존] 리눅스 홈디렉토리로 데이터베이스 격리 유치 (Git pull 영향 원천 차단)
-const DB_PATH = '/home/ubuntu/earth_production_master.sqlite';
+// 🚀 자산 증발을 영구 차단하기 위해 리눅스 최상위 경로로 DB 완전 격리 (새로운 스키마 적용)
+const DB_PATH = '/home/ubuntu/earth_final_v8.sqlite';
 const db = new sqlite3.Database(DB_PATH);
 
 function initTables() {
@@ -89,7 +88,7 @@ app.post('/api/friend/add', (req, res) => {
 });
 app.get('/api/friends/:userName', (req, res) => { db.all(`SELECT u.name, u.profilePic FROM friends f JOIN users u ON f.friendName = u.name WHERE f.userName = ?`, [req.params.userName], (err, rows) => res.json(rows || [])); });
 
-// 🚀 카카오톡 형태의 활성 대화방 리스트 및 누적 이력 보존 로직 추가 (영구 유지 보증)
+// 🚀 채팅방 목록 보존 (과거 대화 이력 기준 추출)
 app.get('/api/chat/active-rooms/:name', (req, res) => {
     const name = req.params.name;
     const query = `
@@ -143,12 +142,11 @@ app.post('/api/transfer', (req, res) => {
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.sender]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.receiver]);
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [req.body.sender, req.body.receiver, 'P2P 송금 완료', amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+            db.run(`INSERT INTO transfers (sender, receiver, amount, date) VALUES (?, ?, ?, ?)`, [req.body.sender, req.body.receiver, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
         });
     });
 });
 
-// 🚀 셀러 자체 브랜드 폐점 파이프라인
 app.post('/api/store/close', (req, res) => {
     db.serialize(() => {
         db.run(`DELETE FROM products WHERE storeId = ? AND seller = ?`, [req.body.id, req.body.owner]);
@@ -156,7 +154,6 @@ app.post('/api/store/close', (req, res) => {
     });
 });
 
-// 🚀 어드민 강제 상점 강제폐쇄/블라인드 파이프라인
 app.post('/api/admin/store/close', (req, res) => {
     db.serialize(() => {
         db.run(`DELETE FROM products WHERE storeId = ?`, [req.body.id]);
@@ -178,7 +175,6 @@ app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products
 app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT * FROM products WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
 app.post('/api/product/edit', (req, res) => { db.run(`UPDATE products SET name = ?, description = ?, stream_time = ?, stream_unit = ?, price_stream = ?, price_original = ? WHERE id = ?`, [req.body.name, req.body.description, Number(req.body.stream_time)||0, req.body.stream_unit, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, req.body.id], () => res.json({ success: true })); });
 
-// 어드민 전용 상품 강제 파기 삭제 블라인드
 app.post('/api/admin/product/delete', (req, res) => { db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); });
 app.post('/api/product/delete', (req, res) => { db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); });
 
@@ -201,10 +197,18 @@ function generateECCInverseSignature(checkId, secretKey, amount) {
         const sign = crypto.createSign('SHA256'); sign.update(inverseHex); return sign.sign(privateKey, 'hex');
     } catch(e){return '';}
 }
+function verifyECCInverseSignature(checkId, secretKey, amount, signature) {
+    try {
+        const hash = crypto.createHash('sha256').update(`${checkId}:${secretKey}:${amount}`).digest('hex');
+        let inverseHex = ''; for (let i=0; i<hash.length; i++) inverseHex += (15 - parseInt(hash[i], 16)).toString(16);
+        const verify = crypto.createVerify('SHA256'); verify.update(inverseHex); return verify.verify(publicKey, signature, 'hex');
+    } catch(e){return false;}
+}
+
 app.post('/api/check/issue', (req, res) => {
     const amount = Number(req.body.amount) || 0;
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.issuer], (err, row) => {
-        if (!row || row.balance < amount) return res.status(400).json({ error: "발행 한도 범위 이탈" });
+        if (!row || row.balance < amount) return res.status(400).json({ error: "발행 한도 초과" });
         const checkId = 'META_QR_' + Date.now(); const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
         const signature = generateECCInverseSignature(checkId, secretKey, amount); const date = new Date().toLocaleString('ko-KR');
         db.serialize(() => {
@@ -220,12 +224,13 @@ app.post('/api/check/redeem', (req, res) => {
     let query = `SELECT * FROM qr_checks WHERE id = ? AND is_used = 0`; let params = [checkId];
     if (secretKey && !checkId) { query = `SELECT * FROM qr_checks WHERE secretKey = ? AND is_used = 0`; params = [secretKey]; }
     db.get(query, params, (err, row) => {
-        if (!row) return res.status(404).json({ error: "사용이 완료되었거나 폐기된 수표 핀코드" });
+        if (!row) return res.status(404).json({ error: "이미 회수되었거나 무효한 핀입니다." });
+        if (signature && !verifyECCInverseSignature(row.id, row.secretKey, row.amount, signature)) return res.status(401).json({ error: "ECC 인증 실패" });
         const date = new Date().toLocaleString('ko-KR');
         db.serialize(() => {
             db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [row.id]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [row.amount, redeemer]);
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, ['Earth(Root)', redeemer, '보안 수표 회수 환원 충전', row.amount, date], () => res.json({ success: true, amount: row.amount }));
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, ['Earth(Root)', redeemer, '보안 수표 환원 충전', row.amount, date], () => res.json({ success: true, amount: row.amount }));
         });
     });
 });
@@ -246,20 +251,25 @@ app.get('/api/transactions/:name', async (req, res) => {
         const tfs = await new Promise(r => db.all(`SELECT * FROM transfers WHERE sender=? OR receiver=?`, [name, name], (e, rows) => r(rows||[])));
         const dps = await new Promise(r => db.all(`SELECT * FROM deposits WHERE user_name=?`, [name], (e, rows) => r(rows||[])));
         const wds = await new Promise(r => db.all(`SELECT * FROM withdrawals WHERE name=?`, [name], (e, rows) => r(rows||[])));
+        
         let history = [];
         txs.forEach(t => history.push({ type: t.buyer === name ? '자산 구매' : '자산 판매', date: t.date, rawDate: t.rawDate, productId: t.productId, purchaseType: t.purchaseType, amount: t.amount, productName: t.productName, seller: t.buyer === name ? t.seller : t.buyer }));
         tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, amount: t.amount, seller: t.receiver || t.sender }));
         dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, amount: d.amount, seller: 'Earth(Root)' }));
         wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, amount: w.amount, seller: '지정 등록 계좌' }));
-        history.sort((a,b) => new Date(b.date) - new Date(a.date)); res.json(history);
+        
+        history.sort((a,b) => new Date(b.date) - new Date(a.date)); 
+        res.json(history);
     } catch(e) { res.json([]); }
 });
 
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     socket.on('send_message', (data) => { 
-        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { io.emit('receive_message', data); }); 
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { 
+            io.emit('receive_message', data); 
+        }); 
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH BRAND V8 MASTER] BOUND ON PORT ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH SYSTEM V9 MASTER] BOUND ON PORT ${PORT}`); });
