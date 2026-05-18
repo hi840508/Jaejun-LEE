@@ -19,7 +19,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-// 🚀 데이터베이스 이름 고정 및 영구 보존 모드: git pull시 덮어씌워지지 않는 고유 명칭
+// 🚀 자산 증발을 막는 영구 보존 데이터베이스 명칭
 const db = new sqlite3.Database(path.join(__dirname, 'earth_production_master.sqlite'));
 
 db.serialize(() => {
@@ -36,7 +36,6 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, targetStore TEXT)`);
 });
 
-// 로그인 처리 시, 기존 회원이면 조회하고, 없을 경우에만 10,000원으로 신규 인서트
 app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
@@ -65,9 +64,7 @@ app.post('/api/friend/add', (req, res) => {
         });
     });
 });
-app.get('/api/friends/:userName', (req, res) => {
-    db.all(`SELECT u.name, u.profilePic FROM friends f JOIN users u ON f.friendName = u.name WHERE f.userName = ?`, [req.params.userName], (err, rows) => { res.json(rows || []); });
-});
+app.get('/api/friends/:userName', (req, res) => { db.all(`SELECT u.name, u.profilePic FROM friends f JOIN users u ON f.friendName = u.name WHERE f.userName = ?`, [req.params.userName], (err, rows) => { res.json(rows || []); }); });
 
 app.post('/api/deposit/request', (req, res) => {
     const amount = Number(req.body.amount);
@@ -110,7 +107,39 @@ app.post('/api/transfer', (req, res) => {
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.sender]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.receiver]);
-            db.run(`INSERT INTO transfers (sender, receiver, amount, date) VALUES (?, ?, ?, ?)`, [req.body.sender, req.body.receiver, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [req.body.sender, req.body.receiver, 'P2P 송금', amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+        });
+    });
+});
+
+app.post('/api/store/create', (req, res) => { db.run(`INSERT INTO stores (id, name, owner, logo, status) VALUES (?, ?, ?, ?, 'active')`, ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo], () => res.json({ success: true })); });
+app.get('/api/stores/owned/:owner', (req, res) => { db.all(`SELECT * FROM stores WHERE owner = ?`, [req.params.owner], (err, rows) => res.json(rows || [])); });
+app.post('/api/store/status', (req, res) => { db.run(`UPDATE stores SET status = ? WHERE id = ?`, [req.body.status, req.body.id], () => res.json({ success: true })); });
+app.get('/api/stores/active', (req, res) => { db.all(`SELECT * FROM stores WHERE status = 'active'`, [], (err, rows) => res.json(rows || [])); });
+
+app.post('/api/products/encrypt-build', (req, res) => {
+    const price = Number(req.body.price);
+    db.run(`INSERT INTO products (id, storeId, type, name, description, price, seller, thumbnail, encryptedPayload) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?)`, 
+        ['PRD_' + Date.now(), req.body.storeId, req.body.name, req.body.description, price, req.body.seller, req.body.thumbnail, req.body.encryptedPayload], () => res.json({ success: true }));
+});
+app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
+app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); });
+app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT * FROM products WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
+
+app.post('/api/product/edit', (req, res) => { 
+    db.run(`UPDATE products SET name = ?, price = ?, description = ? WHERE id = ?`, 
+    [req.body.name, Number(req.body.price), req.body.description, req.body.id], () => res.json({ success: true })); 
+});
+app.post('/api/product/delete', (req, res) => { db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); });
+
+app.post('/api/buy', (req, res) => {
+    const amount = Number(req.body.amount);
+    db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.buyer], (err, row) => {
+        if (!row || row.balance < amount) return res.status(400).json({ error: "원장 자산 잔액 부족" });
+        db.serialize(() => {
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.buyer]);
+            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.seller]);
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [req.body.buyer, req.body.seller, req.body.productName, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
         });
     });
 });
@@ -167,49 +196,6 @@ app.post('/api/check/redeem', (req, res) => {
     });
 });
 
-app.post('/api/store/create', (req, res) => {
-    db.run(`INSERT INTO stores (id, name, owner, logo, status) VALUES (?, ?, ?, ?, 'active')`, ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo], () => res.json({ success: true }));
-});
-app.get('/api/stores/owned/:owner', (req, res) => { db.all(`SELECT * FROM stores WHERE owner = ?`, [req.params.owner], (err, rows) => res.json(rows || [])); });
-app.post('/api/store/status', (req, res) => { db.run(`UPDATE stores SET status = ? WHERE id = ?`, [req.body.status, req.body.id], () => res.json({ success: true })); });
-app.get('/api/stores/active', (req, res) => { db.all(`SELECT * FROM stores WHERE status = 'active'`, [], (err, rows) => res.json(rows || [])); });
-
-app.post('/api/products/encrypt-build', (req, res) => {
-    const price = Number(req.body.price);
-    db.run(`INSERT INTO products (id, storeId, type, name, description, price, seller, thumbnail, encryptedPayload) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?)`, 
-        ['PRD_' + Date.now(), req.body.storeId, req.body.name, req.body.description, price, req.body.seller, req.body.thumbnail, req.body.encryptedPayload], () => res.json({ success: true }));
-});
-app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
-app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); });
-app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT * FROM products WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
-
-// 🚀 인라인 수정 지원
-app.post('/api/product/edit', (req, res) => { 
-    db.run(`UPDATE products SET name = ?, price = ?, description = ? WHERE id = ?`, 
-    [req.body.name, Number(req.body.price), req.body.description, req.body.id], () => res.json({ success: true })); 
-});
-app.post('/api/product/delete', (req, res) => { db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); });
-
-app.post('/api/buy', (req, res) => {
-    const amount = Number(req.body.amount);
-    db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.buyer], (err, row) => {
-        if (!row || row.balance < amount) return res.status(400).json({ error: "원장 자산 잔액 부족" });
-        db.serialize(() => {
-            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.buyer]);
-            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.seller]);
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [req.body.buyer, req.body.seller, req.body.productName, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
-        });
-    });
-});
-
-app.post('/api/favorite/toggle', (req, res) => {
-    db.get(`SELECT * FROM favorite_stores WHERE userName = ? AND targetStore = ?`, [req.body.userName, req.body.targetStore], (err, row) => {
-        if(row) { db.run(`DELETE FROM favorite_stores WHERE id = ?`, [row.id], () => res.json({ success: true })); } 
-        else { db.run(`INSERT INTO favorite_stores (userName, targetStore) VALUES (?, ?)`, [req.body.userName, req.body.targetStore], () => res.json({ success: true })); }
-    });
-});
-app.get('/api/favorites/:userName', (req, res) => { db.all(`SELECT targetStore FROM favorite_stores WHERE userName = ?`, [req.params.userName], (err, rows) => res.json(rows ? rows.map(r => r.targetStore) : [])); });
-
 app.get('/api/chat/:roomId', (req, res) => { db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => res.json(rows || [])); });
 
 app.get('/api/transactions/:name', async (req, res) => {
@@ -231,11 +217,13 @@ app.get('/api/transactions/:name', async (req, res) => {
     } catch(e) { res.json([]); }
 });
 
+// 🚀 소켓 글로벌 브로드캐스팅 처리 (새 채팅방 개설/배지 트리거)
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     socket.on('send_message', (data) => { 
         db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { 
-            io.to(data.roomId).emit('receive_message', data); 
+            // 방 안에 있는 사람뿐 아니라 서버 전체 접속자에게 신호를 쏴서, 방이 없던 사람도 즉각 방을 만들고 배지를 올리게 함
+            io.emit('receive_message', data); 
         }); 
     });
 });
