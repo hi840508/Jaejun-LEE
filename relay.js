@@ -19,8 +19,8 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-// 데이터베이스 이름 고정 (재시작 시 초기화 방지)
-const db = new sqlite3.Database(path.join(__dirname, 'earth_platform.db'));
+// 🚀 데이터베이스 이름 고정 및 영구 보존 모드: git pull시 덮어씌워지지 않는 고유 명칭
+const db = new sqlite3.Database(path.join(__dirname, 'earth_production_master.sqlite'));
 
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT)`);
@@ -36,6 +36,7 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, targetStore TEXT)`);
 });
 
+// 로그인 처리 시, 기존 회원이면 조회하고, 없을 경우에만 10,000원으로 신규 인서트
 app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
@@ -70,8 +71,7 @@ app.get('/api/friends/:userName', (req, res) => {
 
 app.post('/api/deposit/request', (req, res) => {
     const amount = Number(req.body.amount);
-    db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date) VALUES (?, ?, ?, '대기', ?)`, 
-        [req.body.userName, req.body.senderName, amount, new Date().toLocaleString('ko-KR')], () => { res.json({ success: true }); });
+    db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date) VALUES (?, ?, ?, '대기', ?)`, [req.body.userName, req.body.senderName, amount, new Date().toLocaleString('ko-KR')], () => { res.json({ success: true }); });
 });
 
 app.post('/api/withdraw/request', (req, res) => {
@@ -115,6 +115,58 @@ app.post('/api/transfer', (req, res) => {
     });
 });
 
+// --- 타원곡선 역산 로직 ---
+function generateECCInverseSignature(checkId, secretKey, amount) {
+    try {
+        const hash = crypto.createHash('sha256').update(`${checkId}:${secretKey}:${amount}`).digest('hex');
+        let inverseHex = ''; for (let i=0; i<hash.length; i++) inverseHex += (15 - parseInt(hash[i], 16)).toString(16);
+        const sign = crypto.createSign('SHA256'); sign.update(inverseHex);
+        return sign.sign(privateKey, 'hex');
+    } catch(e){return '';}
+}
+function verifyECCInverseSignature(checkId, secretKey, amount, signature) {
+    try {
+        const hash = crypto.createHash('sha256').update(`${checkId}:${secretKey}:${amount}`).digest('hex');
+        let inverseHex = ''; for (let i=0; i<hash.length; i++) inverseHex += (15 - parseInt(hash[i], 16)).toString(16);
+        const verify = crypto.createVerify('SHA256'); verify.update(inverseHex);
+        return verify.verify(publicKey, signature, 'hex');
+    } catch(e){return false;}
+}
+
+app.post('/api/check/issue', (req, res) => {
+    const amount = Number(req.body.amount);
+    db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.issuer], (err, row) => {
+        if (!row || row.balance < amount) return res.status(400).json({ error: "원장 발행 한도 초과" });
+        const checkId = 'META_QR_' + Date.now(); const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
+        const signature = generateECCInverseSignature(checkId, secretKey, amount); const date = new Date().toLocaleString('ko-KR');
+        db.serialize(() => {
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.issuer]);
+            db.run(`INSERT INTO qr_checks (id, amount, issuer, secretKey, eccSignature, is_used, date) VALUES (?, ?, ?, ?, ?, 0, ?)`, [checkId, amount, req.body.issuer, secretKey, signature, date]);
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [req.body.issuer, 'Earth(Root)', '보안 수표 발행', amount, date], () => {
+                res.json({ success: true, checkId, secretKey, signature });
+            });
+        });
+    });
+});
+
+app.post('/api/check/redeem', (req, res) => {
+    const { redeemer, checkId, secretKey, signature } = req.body;
+    let query = `SELECT * FROM qr_checks WHERE id = ? AND is_used = 0`; let params = [checkId];
+    if (secretKey && !checkId) { query = `SELECT * FROM qr_checks WHERE secretKey = ? AND is_used = 0`; params = [secretKey]; }
+    db.get(query, params, (err, row) => {
+        if (!row) return res.status(404).json({ error: "이미 회수되었거나 무효한 핀입니다." });
+        if (signature && !verifyECCInverseSignature(row.id, row.secretKey, row.amount, signature)) return res.status(401).json({ error: "ECC 무결성 인증 실패" });
+        const date = new Date().toLocaleString('ko-KR');
+        db.serialize(() => {
+            db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [row.id]);
+            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [row.amount, redeemer]);
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, ['Earth(Root)', redeemer, '보안 수표 충전', row.amount, date], () => {
+                res.json({ success: true, amount: row.amount });
+            });
+        });
+    });
+});
+
 app.post('/api/store/create', (req, res) => {
     db.run(`INSERT INTO stores (id, name, owner, logo, status) VALUES (?, ?, ?, ?, 'active')`, ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo], () => res.json({ success: true }));
 });
@@ -131,7 +183,7 @@ app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY
 app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT * FROM products WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
 
-// 🚀 인라인 수정 백엔드 갱신 (Description 추가)
+// 🚀 인라인 수정 지원
 app.post('/api/product/edit', (req, res) => { 
     db.run(`UPDATE products SET name = ?, price = ?, description = ? WHERE id = ?`, 
     [req.body.name, Number(req.body.price), req.body.description, req.body.id], () => res.json({ success: true })); 
