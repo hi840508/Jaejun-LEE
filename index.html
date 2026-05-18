@@ -8,12 +8,12 @@
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
-        /* 🌍 Earth 테마: 우주와 지구를 상징하는 푸른색 계열 */
+        /* 🌍 Earth Theme */
         :root { --bg-main: #020617; --panel-bg: #0f172a; --text-main: #f8fafc; --text-sub: #94a3b8; --primary: #3b82f6; --primary-hover: #2563eb; --border-color: #1e293b; --success: #10b981; --danger: #ef4444; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg-main); color: var(--text-main); padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 1200px; display: flex; flex-direction: column; gap: 20px; }
-        .panel { background: var(--panel-bg); padding: 25px; border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 20px rgba(0,0,0,0.4); margin-bottom: 10px; }
+        .panel { background: var(--panel-bg); padding: 25px; border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 20px rgba(0,0,0,0.5); margin-bottom: 10px; }
         .input-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 15px; }
         .input-group label { font-size: 13px; font-weight: 600; color: var(--text-sub); }
         .input-group input, .input-group textarea, .input-group select { padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; font-size: 14px; color: #fff; outline: none; }
@@ -21,6 +21,7 @@
         .btn { background: var(--primary); color: #fff; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 14px; text-align: center; }
         .btn:hover { background: var(--primary-hover); }
         .btn-danger { background: var(--danger); } .btn-danger:hover { background: #dc2626; }
+        .btn-success { background: var(--success); } .btn-success:hover { background: #059669; }
         .btn-secondary { background: #475569; } .btn-secondary:hover { background: #334155; }
         .tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 20px; gap: 5px; overflow-x: auto; }
         .tab { padding: 12px 18px; cursor: pointer; color: var(--text-sub); border-bottom: 3px solid transparent; transition: 0.2s; font-weight: 600; white-space: nowrap; }
@@ -31,41 +32,48 @@
         @media (max-width: 768px) { .grid-2col { grid-template-columns: 1fr; } }
         .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
         .product-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 15px; background: #1e293b; display: flex; flex-direction: column; box-shadow: 0 4px 6px rgba(0,0,0,0.2); gap: 10px; }
-        .thumb-preview-box { width: 100%; height: 160px; background: #0f172a; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #334155; }
+        .thumb-preview-box { width: 100%; height: 160px; background: #0f172a; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #334155; flex-direction: column; }
         .thumb-preview-box img { width: 100%; height: 100%; object-fit: cover; }
         .profile-pic { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: #334155; border: 1px solid #475569; display: inline-block; vertical-align: middle; cursor: pointer; }
         .history-table { width: 100%; border-collapse: collapse; font-size: 13px; color: #cbd5e1; }
         .history-table th, .history-table td { padding: 12px; border-bottom: 1px solid var(--border-color); text-align: left; }
         .history-table th { background: #1e293b; color: #94a3b8; }
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 30px; font-size: 13px; font-weight:bold; z-index: 3000; opacity: 0; transition: 0.3s; pointer-events: none;}
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 30px; font-size: 13px; font-weight:bold; z-index: 3000; opacity: 0; transition: 0.3s; pointer-events: none; box-shadow: 0 5px 15px rgba(0,0,0,0.3);}
         .toast.show { opacity: 1; bottom: 40px; }
         
-        .messenger-layout { display: flex; height: 70vh; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: #1e293b; }
-        .friend-list-area { width: 300px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; background: #0f172a; }
-        .chat-area { flex: 1; display: flex; flex-direction: column; background: #1e293b; }
-        .friend-item { padding: 15px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 10px; cursor: pointer; transition: 0.2s; }
-        .friend-item:hover { background: #334155; }
+        /* 💬 카카오톡 스타일 메신저 레이아웃 */
+        .messenger-layout { display: flex; height: 75vh; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: #1e293b; }
+        .friend-list-area { width: 320px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; background: #0f172a; }
+        .chat-area { flex: 1; display: flex; flex-direction: column; background: #020617; position: relative; }
+        .friend-item { padding: 15px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; cursor: pointer; transition: 0.2s; position: relative; }
+        .friend-item:hover, .friend-item.active { background: #1e293b; }
+        .unread-badge { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); background: var(--danger); color: white; font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 10px; display: none; }
         .chat-header { padding: 15px 20px; border-bottom: 1px solid var(--border-color); font-weight: bold; background: #0f172a; display: flex; justify-content: space-between; align-items: center; }
-        .chat-body { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; background: #020617; }
-        .chat-input-area { padding: 15px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; background: #0f172a; align-items: center; }
-        .msg-row { display: flex; gap: 10px; max-width: 80%; }
+        .chat-body { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
+        .chat-input-area { padding: 10px 15px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; background: #0f172a; align-items: center; }
+        .chat-input-area input { flex: 1; padding: 12px; border-radius: 20px; border: 1px solid #334155; background: #1e293b; color: #fff; outline: none; }
+        .msg-row { display: flex; gap: 10px; max-width: 75%; }
         .msg-me { align-self: flex-end; flex-direction: row-reverse; }
         .msg-other { align-self: flex-start; }
-        .msg-bubble { padding: 12px 16px; border-radius: 12px; font-size: 13px; line-height: 1.4; word-break: break-all; }
+        .msg-bubble { padding: 10px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.4; word-break: break-all; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
         .msg-me .msg-bubble { background: var(--primary); color: #fff; border-top-right-radius: 4px; }
-        .msg-other .msg-bubble { background: #334155; border: 1px solid #475569; color: #fff; border-top-left-radius: 4px; }
+        .msg-other .msg-bubble { background: #1e293b; border: 1px solid #334155; color: #fff; border-top-left-radius: 4px; }
+        
+        /* 채팅방 내 부가 기능 팝업 메뉴 */
+        .chat-action-menu { display: none; position: absolute; bottom: 70px; left: 15px; background: #1e293b; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); z-index: 100; flex-direction: column; gap: 5px; width: 220px; }
+        .chat-action-menu input { padding: 8px; font-size: 12px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: white; width: 100%; margin-bottom: 5px;}
         
         .earth-logo { width: 35px; height: 35px; margin-right: 10px; vertical-align: middle; fill: #3b82f6; }
-        .editable-field { padding: 6px; border: 1px dashed transparent; border-radius: 4px; transition: 0.2s; }
-        .editable-field.editing { border-color: var(--primary); background: #0f172a; outline: none; }
+        .editable-field { padding: 4px 6px; border: 1px dashed transparent; border-radius: 4px; transition: 0.2s; min-height: 24px; }
+        .editable-field.editing { border-color: var(--primary); background: #0f172a; outline: none; cursor: text; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="panel" id="login-section" style="max-width: 400px; margin: 40px auto; width: 100%; border: 2px solid var(--primary);">
-            <h2 style="text-align: center; margin-bottom: 20px; color:var(--primary);">
+            <h2 style="text-align: center; margin-bottom: 20px; color:var(--primary); display:flex; align-items:center; justify-content:center;">
                 <svg class="earth-logo" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-                Earth 접속
+                Earth 플랫폼
             </h2>
             <div class="input-group"><label>이름 (Name)</label><input type="text" id="ray-login-name" value="이재준"></div>
             <div class="input-group"><label>비밀번호</label><input type="password" id="ray-login-password" value="1234"></div>
@@ -75,14 +83,14 @@
         </div>
 
         <div id="workspace-section" style="display: none;">
-            <div class="panel" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border:none; box-shadow: 0 4px 15px rgba(0,0,0,0.6);">
+            <div class="panel" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border:none; background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);">
                 <div style="display: flex; align-items: center;">
                     <svg class="earth-logo" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-                    <span style="font-size: 24px; font-weight: 900; color: #fff; letter-spacing: -1px;">Earth</span>
+                    <span style="font-size: 22px; font-weight: 900; color: #fff; letter-spacing: -0.5px;">Earth</span>
                     <span id="admin-indicator" style="display:none; background: var(--danger); color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-left: 10px; font-weight: bold;">Root</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <label title="프로필 사진 등록">
+                    <label title="프로필 사진 변경">
                         <img id="my-profile-pic" class="profile-pic" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23475569'/></svg>">
                         <input type="file" style="display:none;" accept="image/*" onchange="uploadProfilePic(event)">
                     </label>
@@ -102,34 +110,34 @@
             <div id="tab-wallet" class="tab-content active">
                 <div style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); color: white; border-radius: 12px; padding: 30px; text-align: center; border:1px solid #334155;">
                     <div style="font-size: 14px; opacity: 0.7; margin-bottom: 8px;">가용 자산 잔액</div>
-                    <div style="font-size: 38px; font-weight: 800; color:var(--primary);"><span id="display-balance">0</span> KRW</div>
+                    <div style="font-size: 38px; font-weight: 800; color:#60a5fa;"><span id="display-balance">0</span> KRW</div>
                 </div>
 
                 <div class="grid-2col">
                     <div class="panel">
                         <h3 style="color:var(--success); margin-bottom: 10px;">무통장 증액 신청</h3>
-                        <div style="background:#022c22; border: 1px solid var(--success); padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size:13px; color:#d1fae5;">
+                        <div style="background:#022c22; border: 1px solid var(--success); padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size:13px; color:#d1fae5; line-height: 1.6;">
                             <strong style="color:var(--success); font-size:14px;">[우리은행] 1002-338-118610 (이재준)</strong><br>
-                            위 계좌로 송금 후 아래 금액을 입력해 주세요. 로그인된 정보로 자동 대조됩니다.
+                            위 공식 계좌로 입금하신 후 금액을 적어 신청해 주십시오. 관리자 대조 후 즉시 자동 증액됩니다.
                         </div>
-                        <div class="input-group"><input type="number" id="deposit-amount" placeholder="송금하신 금액 (KRW)"></div>
-                        <button class="btn" style="width:100%; background:var(--success);" onclick="requestDeposit()">입금 확인 신청</button>
+                        <div class="input-group"><input type="number" id="deposit-amount" placeholder="실제 송금하신 금액 (원)"></div>
+                        <button class="btn btn-success" style="width:100%;" onclick="requestDeposit()">입금 내역 확인 및 증액 신청</button>
                     </div>
                     <div class="panel">
-                        <h3 style="color:var(--danger); margin-bottom: 10px;">등록 계좌 출금 신청</h3>
-                        <div style="background:#450a0a; border: 1px solid var(--danger); padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size:13px; color:#fee2e2;">
-                            가입 시 등록하신 본인 명의 계좌로 안전하게 정산액이 이체됩니다.
+                        <h3 style="color:var(--danger); margin-bottom: 10px;">가입 계좌 출금 신청</h3>
+                        <div style="background:#450a0a; border: 1px solid var(--danger); padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size:13px; color:#fee2e2; line-height: 1.6;">
+                            회원 가입 시 등록하신 본인 명의 계좌로 안전하게 정산액이 이체됩니다. 계좌 변경은 고객센터로 문의 바랍니다.
                         </div>
-                        <div class="input-group"><input type="number" id="withdraw-amount" placeholder="출금 요청 금액 (KRW)"></div>
-                        <button class="btn btn-danger" style="width:100%; margin-top:auto;" onclick="requestWithdrawal()">가입 계좌 출금 신청</button>
+                        <div class="input-group"><input type="number" id="withdraw-amount" placeholder="보유 잔액 내 출금 금액 (원)"></div>
+                        <button class="btn btn-danger" style="width:100%; margin-top:auto;" onclick="requestWithdrawal()">등록 계좌로 출금 신청</button>
                     </div>
                 </div>
 
                 <div class="panel" id="admin-deposit-panel" style="display: none; border: 2px solid var(--success);">
-                    <h3 style="color: var(--success);">[Root Admin] 전체 회원 입출금 승인 원장</h3>
+                    <h3 style="color: var(--success);">[Root Admin] 전체 회원 입출금 승인 제어</h3>
                     <div style="overflow-x: auto; margin-top: 10px;">
                         <table class="history-table">
-                            <thead><tr><th>유형</th><th>고객명</th><th>금액</th><th>승인 제어</th></tr></thead>
+                            <thead><tr><th>유형</th><th>고객명/정보</th><th>금액</th><th>승인 제어</th></tr></thead>
                             <tbody id="admin-action-tbody"></tbody>
                         </table>
                     </div>
@@ -140,35 +148,35 @@
                 <div class="grid-2col">
                     <div class="panel">
                         <h3>신규 브랜드 상점 개설</h3>
-                        <div class="input-group"><input type="text" id="new-brand-name" placeholder="상점명"></div>
-                        <button class="btn" onclick="registerNewBrandStore()">상점 개설</button>
+                        <div class="input-group"><label>상점 명칭</label><input type="text" id="new-brand-name" placeholder="상점명을 입력하세요"></div>
+                        <div class="input-group"><label>대표 로고 이미지</label><input type="file" id="new-brand-logo" accept="image/*"></div>
+                        <button class="btn" onclick="registerNewBrandStore()">독립 브랜드 개설</button>
                     </div>
                     <div class="panel">
-                        <h3>내 브랜드 목록</h3>
+                        <h3>운영 중인 상점 관리</h3>
                         <div id="my-brands-list-zone" style="display:flex; flex-direction:column; gap:10px; margin-top:10px;"></div>
                     </div>
                 </div>
 
                 <div class="panel">
-                    <h3>상품 생성 및 즉시 출하</h3>
+                    <h3>자산 파일 생성 및 상점 배포</h3>
                     <div class="grid-2col" style="margin-bottom:15px;">
                         <div class="input-group">
-                            <select id="target-brand-selector"><option value="">상점이 없습니다</option></select>
+                            <select id="target-brand-selector"><option value="">먼저 상점을 개설하세요</option></select>
                         </div>
                         <div class="input-group">
                             <input type="file" id="folder-picker" webkitdirectory directory multiple onchange="inspectFolderFiles(event)" style="display: none;">
-                            <button class="btn" onclick="document.getElementById('folder-picker').click()">PC 파일/폴더 선택 (즉시 렌더링)</button>
+                            <button class="btn" onclick="document.getElementById('folder-picker').click()">로컬 파일 연동 (자동 썸네일 추출)</button>
                         </div>
                     </div>
-
                     <div id="folder-inspect-zone" style="display: none;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                             <h4>출하 대기 목록 (<span id="inspect-count">0</span>)</h4>
-                            <button class="btn" style="background:var(--success);" onclick="batchRegisterProducts()">일괄 암호화 배포</button>
+                            <button class="btn btn-success" onclick="batchRegisterProducts()">체크 항목 일괄 암호화 배포</button>
                         </div>
                         <div style="overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px;">
                             <table class="history-table">
-                                <thead><tr><th width="40"><input type="checkbox" id="th-check-all" checked onchange="toggleAllInspectChecks(this)"></th><th width="100">초고속 썸네일</th><th>파일명</th><th width="140">배포 가격</th><th width="80">제어</th></tr></thead>
+                                <thead><tr><th width="40"><input type="checkbox" id="th-check-all" checked onchange="toggleAllInspectChecks(this)"></th><th width="100">썸네일</th><th>파일명</th><th width="140">초기 배포가 (KRW)</th><th width="80">제어</th></tr></thead>
                                 <tbody id="folder-inspect-tbody"></tbody>
                             </table>
                         </div>
@@ -176,22 +184,22 @@
                 </div>
 
                 <div class="panel">
-                    <h3>전체 출시 자산 원장 (인라인 수정 지원)</h3>
-                    <p style="font-size:12px; color:var(--text-sub);">상품의 텍스트나 가격을 클릭하여 수정할 수 있습니다.</p>
+                    <h3>전체 출시 자산 원장 (인라인 직접 수정 지원)</h3>
+                    <p style="font-size:12px; color:var(--text-sub); margin-bottom:15px;">※ [수정] 버튼을 누른 후, 상품의 이름/설명/가격을 클릭하여 직접 타이핑하고 [저장]을 누르세요.</p>
                     <div class="market-grid" id="my-store-grid"></div>
                 </div>
             </div>
 
             <div id="tab-market" class="tab-content">
                 <div class="panel" style="background: #0f172a;">
-                    <h4>상점 탐색</h4>
+                    <h4>브랜드 상점 탐색 및 단골 즐겨찾기</h4>
                     <div style="display:flex; gap: 10px; margin-top: 10px;">
                         <input type="text" id="partner-search-input" placeholder="상점 명칭 조회..." style="flex:1; padding: 10px; border-radius:8px; border:1px solid var(--border-color); background:#1e293b; color:#fff;">
                         <button class="btn btn-secondary" onclick="searchPartnerStores()">검색</button>
                     </div>
                     <div style="margin-top: 15px;" id="partner-fav-zone"></div>
                 </div>
-                <div class="input-group" style="margin-top: 10px;"><input type="text" id="market-search" placeholder="자산명 검색..." onkeyup="loadMarketplace()"></div>
+                <div class="input-group" style="margin-top: 10px;"><input type="text" id="market-search" placeholder="자산명, 설명, 판매자 검색..." onkeyup="loadMarketplace()"></div>
                 <div class="market-grid" id="market-grid"></div>
             </div>
 
@@ -201,10 +209,10 @@
                         <div style="padding: 15px; border-bottom: 1px solid var(--border-color);">
                             <h3 style="margin-bottom: 10px; font-size:16px;">친구 목록</h3>
                             <div style="display:flex; gap:5px;">
-                                <input type="text" id="friend-search-input" placeholder="이름 검색 추가..." style="flex:1; padding:8px; border-radius:6px; border:1px solid #334155; background:#1e293b; color:#fff;">
+                                <input type="text" id="friend-search-input" placeholder="정확한 이름 추가..." style="flex:1; padding:8px; border-radius:6px; border:1px solid #334155; background:#1e293b; color:#fff;">
                                 <button class="btn" style="padding:8px;" onclick="addFriend()">추가</button>
                             </div>
-                            <button class="btn btn-secondary" style="width:100%; margin-top:10px; padding:6px; font-size:12px;" onclick="generateInviteLink()">내 초대 링크 복사하기</button>
+                            <button class="btn btn-secondary" style="width:100%; margin-top:10px; padding:6px; font-size:12px;" onclick="generateInviteLink()">내 자동 초대 링크 복사</button>
                         </div>
                         <div id="friend-list-container" style="flex:1; overflow-y:auto;"></div>
                     </div>
@@ -212,22 +220,28 @@
                     <div class="chat-area" id="main-chat-area" style="display:none;">
                         <div class="chat-header">
                             <span id="active-chat-title">채팅방</span>
-                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="closeMainChat()">닫기</button>
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="closeMainChat()">나가기</button>
                         </div>
                         <div class="chat-body" id="main-chat-body"></div>
                         
-                        <div style="padding: 10px 15px; background: #0f172a; border-top: 1px solid var(--border-color); display: flex; gap: 10px; align-items: center;">
-                            <span style="font-size:13px; font-weight:bold; color:var(--success);">간편 송금:</span>
-                            <input type="number" id="chat-transfer-amount" placeholder="보낼 금액" style="width:100px; padding:8px; border-radius:6px; border:1px solid #334155; background:#1e293b; color:#fff;">
-                            <button class="btn" style="padding:8px 15px; background:var(--success);" onclick="sendTransferInChat()">송금 실행</button>
+                        <div class="chat-action-menu" id="chat-action-menu">
+                            <h5 style="color:var(--success); margin-bottom:5px; font-size:13px;">💰 간편 송금</h5>
+                            <input type="number" id="chat-transfer-amount" placeholder="보낼 금액 (원)">
+                            <button class="btn btn-success" style="padding:6px; font-size:12px;" onclick="sendTransferInChat()">즉시 이체</button>
+                            
+                            <h5 style="color:var(--primary); margin-top:10px; margin-bottom:5px; font-size:13px;">🎫 QR 수표 발행 전송</h5>
+                            <input type="number" id="chat-check-amount" placeholder="수표 발행액 (원)">
+                            <button class="btn" style="padding:6px; font-size:12px;" onclick="sendQRCheckInChat()">수표 생성 및 전송</button>
                         </div>
+
                         <div class="chat-input-area">
-                            <input type="text" id="main-chat-input" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendMainMessage()" style="flex:1; padding:12px; border-radius:8px; border:1px solid #334155; background:#1e293b; color:#fff;">
-                            <button class="btn" id="btn-main-send" onclick="sendMainMessage()">전송</button>
+                            <button class="btn btn-secondary" style="border-radius:50%; width:40px; height:40px; padding:0; display:flex; align-items:center; justify-content:center; font-size:20px;" onclick="toggleActionMenu()">+</button>
+                            <input type="text" id="main-chat-input" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendMainMessage()">
+                            <button class="btn" onclick="sendMainMessage()">전송</button>
                         </div>
                     </div>
                     <div id="empty-chat-area" style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--text-sub);">
-                        대화할 친구를 선택하세요.
+                        좌측에서 대화할 상대를 선택하세요.
                     </div>
                 </div>
             </div>
@@ -261,23 +275,17 @@
         </div>
     </div>
 
-    <div class="chat-drawer" id="chat-drawer" style="border-left:1px solid var(--border-color);">
-        <div class="chat-header"><span id="drawer-chat-title">문의</span><span style="cursor:pointer; font-size:24px;" onclick="closeDrawerChat()">&times;</span></div>
-        <div class="chat-body" id="drawer-chat-body" style="background:#020617;"></div>
-        <div class="chat-input-area" style="background:#0f172a; border-top:1px solid var(--border-color);">
-            <input type="text" id="drawer-chat-input" placeholder="메시지 전송..." onkeypress="if(event.key==='Enter') sendDrawerMessage()" style="flex:1; padding:10px; border-radius:8px; border:1px solid #334155; background:#1e293b; color:#fff;">
-            <button class="btn" style="width: auto; margin: 0; padding: 10px 20px;" onclick="sendDrawerMessage()">전송</button>
-        </div>
-    </div>
-
     <div class="toast" id="toast">알림</div>
 
     <script>
         const API_URL = 'http://' + window.location.hostname + ':4000';
-        let socket = null, currentUser = null, scannedFiles = [], activeChatFriend = null, currentChatRoomId = null;
-        let drawerChatRoomId = null, drawerChatPartner = null;
+        let socket = null, currentUser = null, scannedFiles = [];
+        let activeChatFriend = null, currentChatRoomId = null;
+        
+        // 안 읽은 메시지 관리 객체 (Client-side Badge)
+        let unreadCounts = {}; 
 
-        // --- 🚀 프론트엔드 다이나믹 초고속 역산 (ECC Inverse 디코더) ---
+        // --- 🚀 프론트엔드 다이나믹 역산 (데이터/헤더 분리 처리) ---
         function localECCInverseProcess(encryptedData) {
             let result = '';
             for (let i = 0; i < encryptedData.length; i += 10000) {
@@ -291,45 +299,69 @@
             return result;
         }
 
-        // --- 🚀 지독한 썸네일 증발 해결: 자체 드로잉 엔진 탑재 ---
-        // 브라우저가 지원하지 않는 파일(.dcm, .html)도 캔버스로 아이콘을 그려서 썸네일 생성
+        // --- 🚀 초고속 썸네일 & 비디오 프레임 & 확장자 아이콘 자동 생성 엔진 ---
         function generateThumbnail(file) {
             return new Promise((resolve) => {
+                const ext = file.name.split('.').pop().toLowerCase();
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
-                canvas.width = 300; canvas.height = 300;
-                
-                if(file.type.startsWith('image/')) {
+                canvas.width = 300; canvas.height = 200;
+
+                // 1. 이미지 처리
+                if(file.type.startsWith('image/') || ['png','jpg','jpeg','webp','gif'].includes(ext)) {
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         const img = new Image();
                         img.onload = () => {
                             let w = img.width, h = img.height;
-                            if(w > h) { if(w > 300) { h *= 300/w; w = 300; } }
-                            else { if(h > 300) { w *= 300/h; h = 300; } }
-                            ctx.clearRect(0, 0, 300, 300);
-                            ctx.drawImage(img, (300-w)/2, (300-h)/2, w, h);
+                            let ratio = Math.min(300/w, 200/h);
+                            w *= ratio; h *= ratio;
+                            ctx.fillStyle = "#0f172a"; ctx.fillRect(0,0,300,200);
+                            ctx.drawImage(img, (300-w)/2, (200-h)/2, w, h);
                             resolve(canvas.toDataURL('image/jpeg', 0.8)); 
                         };
                         img.src = e.target.result;
                     };
                     reader.readAsDataURL(file);
-                } else {
-                    // 특수 파일(.dcm, .html 등) 자체 아이콘 드로잉
-                    const ext = file.name.split('.').pop().toUpperCase();
-                    ctx.fillStyle = "#1e293b"; // 배경색
-                    ctx.fillRect(0, 0, 300, 300);
-                    ctx.fillStyle = "#3b82f6"; // 글씨색
-                    ctx.font = "bold 60px sans-serif";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.fillText(ext, 150, 130);
-                    ctx.font = "20px sans-serif";
-                    ctx.fillStyle = "#94a3b8";
-                    ctx.fillText("SECURE DATA", 150, 200);
-                    resolve(canvas.toDataURL('image/jpeg', 0.8));
+                } 
+                // 2. 비디오 처리 (1초 구간 프레임 캡처)
+                else if (file.type.startsWith('video/') || ['mp4','webm','mov'].includes(ext)) {
+                    const video = document.createElement('video');
+                    video.preload = 'metadata'; video.muted = true;
+                    video.src = URL.createObjectURL(file);
+                    video.onloadeddata = () => { video.currentTime = 1; }; // 1초 지점 이동
+                    video.onseeked = () => {
+                        let w = video.videoWidth, h = video.videoHeight;
+                        let ratio = Math.min(300/w, 200/h);
+                        w *= ratio; h *= ratio;
+                        ctx.fillStyle = "#0f172a"; ctx.fillRect(0,0,300,200);
+                        ctx.drawImage(video, (300-w)/2, (200-h)/2, w, h);
+                        // 재생 아이콘 오버레이
+                        ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.beginPath(); ctx.arc(150,100,25,0,2*Math.PI); ctx.fill();
+                        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(140,85); ctx.lineTo(165,100); ctx.lineTo(140,115); ctx.fill();
+                        resolve(canvas.toDataURL('image/jpeg', 0.8));
+                    };
+                    video.onerror = () => { resolve(drawGenericIcon(ctx, ext.toUpperCase(), "#ef4444")); };
+                } 
+                // 3. 특수 파일 (HTML, DCM 등)은 세련된 아이콘 드로잉
+                else {
+                    let color = "#3b82f6";
+                    if(ext === 'html') color = "#f97316";
+                    if(ext === 'dcm') color = "#10b981";
+                    if(ext === 'pdf') color = "#ef4444";
+                    resolve(drawGenericIcon(ctx, ext.toUpperCase(), color));
                 }
             });
+        }
+        
+        function drawGenericIcon(ctx, text, color) {
+            ctx.fillStyle = "#1e293b"; ctx.fillRect(0, 0, 300, 200);
+            ctx.fillStyle = color; ctx.font = "bold 50px sans-serif";
+            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillText(text, 150, 90);
+            ctx.font = "16px sans-serif"; ctx.fillStyle = "#94a3b8";
+            ctx.fillText("SECURE DATA", 150, 150);
+            return ctx.canvas.toDataURL('image/jpeg', 0.8);
         }
 
         function showToast(msg) {
@@ -391,14 +423,12 @@
                     window.history.replaceState({}, document.title, window.location.pathname);
                 }
                 
-                updateUserBalance();
-                switchTab('wallet');
-            } catch(e) { showToast("통신 서버 연결 실패."); }
+                updateUserBalance(); switchTab('wallet');
+            } catch(e) { showToast("통신 서버 연결 실패. 서버를 켜주세요."); }
         }
 
         async function uploadProfilePic(event) {
-            const file = event.target.files[0];
-            if(!file) return;
+            const file = event.target.files[0]; if(!file) return;
             const reader = new FileReader();
             reader.onload = async function(e) {
                 const base64 = e.target.result;
@@ -423,6 +453,7 @@
             } catch(e){}
         }
 
+        // --- 입출금 ---
         async function requestDeposit() {
             const amount = parseInt(document.getElementById('deposit-amount').value, 10);
             if(isNaN(amount) || amount <= 0) return showToast("정확한 금액을 기재해 주세요.");
@@ -431,10 +462,7 @@
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userName: currentUser.name, senderName: currentUser.name, amount })
                 });
-                if(res.ok) {
-                    showToast("입금 확인 신청이 Root Admin에게 전송되었습니다.");
-                    document.getElementById('deposit-amount').value = '';
-                }
+                if(res.ok) { showToast("입금 확인 신청 완료"); document.getElementById('deposit-amount').value = ''; }
             } catch(e) {}
         }
 
@@ -447,12 +475,7 @@
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: currentUser.name, amount })
                 });
-                if(res.ok) { 
-                    showToast("출금 신청 완료"); 
-                    document.getElementById('withdraw-amount').value = ''; 
-                    updateUserBalance(); 
-                    if(currentUser.name === '이재준') loadAdminActions(); 
-                }
+                if(res.ok) { showToast("출금 신청 완료"); document.getElementById('withdraw-amount').value = ''; updateUserBalance(); if(currentUser.name === '이재준') loadAdminActions(); }
             } catch(e){}
         }
 
@@ -468,20 +491,18 @@
                 let htmlBuffer = '';
                 data.deposits.forEach(r => {
                     htmlBuffer += `<tr>
-                        <td><span class="status-badge status-active">입금신청</span></td>
+                        <td><span style="background:var(--success); color:#fff; padding:4px 8px; border-radius:12px; font-size:11px;">입금신청</span></td>
                         <td><b>${r.user_name}</b></td>
                         <td><b style="color:var(--success);">${Number(r.amount).toLocaleString()}원</b></td>
-                        <td style="display:flex; gap:5px;">
-                            <button class="btn" style="padding:4px 8px;font-size:12px;background:var(--success);" onclick="approveAction('deposit_direct', ${r.id}, '${r.user_name}', ${r.amount})">즉시 증액</button>
-                        </td>
+                        <td><button class="btn btn-success" style="padding:4px 8px;font-size:12px;" onclick="approveAction('deposit_direct', ${r.id}, '${r.user_name}', ${r.amount})">즉시 증액</button></td>
                     </tr>`;
                 });
                 data.withdrawals.forEach(r => {
                     htmlBuffer += `<tr>
-                        <td><span class="status-badge status-hidden">출금요청</span></td>
+                        <td><span style="background:var(--danger); color:#fff; padding:4px 8px; border-radius:12px; font-size:11px;">출금요청</span></td>
                         <td><b>${r.name}</b><br><span style="font-size:11px;color:gray;">${r.bank} ${r.account}</span></td>
                         <td><b style="color:var(--danger);">${Number(r.amount).toLocaleString()}원</b></td>
-                        <td><button class="btn btn-danger" style="padding:4px 8px;font-size:12px;" onclick="approveAction('withdraw', ${r.id}, '${r.name}', ${r.amount})">출금 완료</button></td>
+                        <td><button class="btn btn-danger" style="padding:4px 8px;font-size:12px;" onclick="approveAction('withdraw', ${r.id}, '${r.name}', ${r.amount})">출금 승인</button></td>
                     </tr>`;
                 });
                 tbody.innerHTML = htmlBuffer;
@@ -498,23 +519,26 @@
             } catch(e){}
         }
 
+        // --- 상점 브랜드 ---
         function registerNewBrandStore() {
             const storeName = document.getElementById('new-brand-name').value.trim();
+            const logoFile = document.getElementById('new-brand-logo').files[0]; 
             if(!storeName) return showToast("상점 명칭을 기재해 주십시오.");
-            sendBrandStorePayload(storeName);
+
+            if(logoFile) {
+                const reader = new FileReader();
+                reader.onload = async function(e) { await sendBrandStorePayload(storeName, e.target.result); };
+                reader.readAsDataURL(logoFile);
+            } else { sendBrandStorePayload(storeName, ''); }
         }
 
-        async function sendBrandStorePayload(name) {
+        async function sendBrandStorePayload(name, logoBase64) {
             try {
                 const res = await fetch(`${API_URL}/api/store/create`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, owner: currentUser.name })
+                    body: JSON.stringify({ name, owner: currentUser.name, logo: logoBase64 })
                 });
-                if(res.ok) {
-                    showToast("브랜드 상점 개설 완료");
-                    document.getElementById('new-brand-name').value = '';
-                    loadMyBrandStores();
-                }
+                if(res.ok) { showToast("브랜드 상점 개설 완료"); document.getElementById('new-brand-name').value = ''; document.getElementById('new-brand-logo').value = ''; loadMyBrandStores(); }
             } catch(e){}
         }
 
@@ -527,15 +551,17 @@
                 
                 if(stores.length === 0) {
                     listZone.innerHTML = '<div style="color:gray; font-size:13px;">개설된 상점이 없습니다.</div>';
-                    selector.innerHTML = '<option value="">출시할 상점 선택</option>'; return;
+                    selector.innerHTML = '<option value="">상점 선택</option>'; return;
                 }
-
                 let listHtml = ''; let selectHtml = '<option value="">상점 선택</option>';
                 stores.forEach(st => {
+                    let logoHtml = `<span style="font-size:11px; color:gray;">N/A</span>`;
+                    if(st.logo) { logoHtml = `<img src="${st.logo}">`; }
                     const badgeClass = st.status === 'active' ? 'status-active' : 'status-hidden';
-                    const badgeText = st.status === 'active' ? '공개중' : '수정중(숨김)';
+                    const badgeText = st.status === 'active' ? '공개중' : '숨김';
                     listHtml += `
                         <div style="display:flex; align-items:center; gap:15px; border:1px solid var(--border-color); padding:10px; border-radius:8px; background:#1e293b;">
+                            <div class="brand-logo-circle">${logoHtml}</div>
                             <div style="flex:1; color:#fff;"><b>${st.name}</b> <span class="status-badge ${badgeClass}">${badgeText}</span></div>
                             <button class="btn btn-secondary" style="padding:6px; font-size:12px;" onclick="toggleBrandStatus('${st.id}', '${st.status}')">상태 변경</button>
                         </div>`;
@@ -551,6 +577,7 @@
             loadMyBrandStores();
         }
 
+        // --- 파일 연동 & 일괄 배포 ---
         async function inspectFolderFiles(event) {
             const files = event.target.files;
             scannedFiles = Array.from(files);
@@ -560,13 +587,14 @@
             document.getElementById('inspect-count').innerText = scannedFiles.length;
 
             let htmlBuffer = '';
+            showToast("파일 썸네일 자동 분석 중입니다...");
             for(let idx=0; idx<scannedFiles.length; idx++) {
                 const file = scannedFiles[idx];
-                const thumbData = await generateThumbnail(file); // 무조건 썸네일 생성됨
+                const thumbData = await generateThumbnail(file);
                 htmlBuffer += `
                     <tr id="inspect-row-${idx}">
                         <td><input type="checkbox" class="inspect-row-check" data-idx="${idx}" checked></td>
-                        <td><div class="thumb-preview-box" style="height:60px; width:80px; margin:0;"><img src="${thumbData}"></div></td>
+                        <td><div class="thumb-preview-box" style="height:60px; width:90px; margin:0;"><img src="${thumbData}"></div></td>
                         <td style="color:#fff;"><b style="font-size:12px;">${file.name}</b></td>
                         <td><div class="input-group" style="margin:0;"><input type="number" class="inspect-row-price" value="10000" style="padding:6px;"></div></td>
                         <td><button class="btn" style="padding:6px; font-size:12px;" onclick="individualRegister(${idx})">배포</button></td>
@@ -585,8 +613,7 @@
             const price = parseInt(row.querySelector('.inspect-row-price').value, 10);
             
             await uploadProductToServer(file, price, storeId);
-            row.style.background = "rgba(16, 185, 129, 0.2)"; 
-            row.querySelector('button').disabled = true; row.querySelector('button').innerText = "완료";
+            row.style.background = "rgba(16, 185, 129, 0.2)"; row.querySelector('button').disabled = true; row.querySelector('button').innerText = "완료";
             loadMyStore();
         }
 
@@ -603,11 +630,9 @@
                 if(row.querySelector('button').disabled) continue;
                 const price = parseInt(row.querySelector('.inspect-row-price').value, 10);
                 await uploadProductToServer(scannedFiles[idx], price, storeId);
-                row.style.background = "rgba(16, 185, 129, 0.2)"; 
-                row.querySelector('button').disabled = true; row.querySelector('button').innerText = "완료";
+                row.style.background = "rgba(16, 185, 129, 0.2)"; row.querySelector('button').disabled = true; row.querySelector('button').innerText = "완료";
             }
-            showToast("일괄 배포가 완결되었습니다.");
-            loadMyStore(); switchTab('my-store');
+            showToast("일괄 배포가 완결되었습니다."); loadMyStore(); switchTab('my-store');
         }
 
         function uploadProductToServer(file, price, storeId) {
@@ -615,7 +640,7 @@
                 const reader = new FileReader();
                 reader.onload = async function(e) {
                     const rawBase64 = e.target.result;
-                    // 🚀 렌더링 파괴 방지: data:...base64, 헤더는 분리하고 순수 데이터만 암호화
+                    // 데이터/헤더 분리 암호화 (블랙스크린 파괴 방지 핵심)
                     const parts = rawBase64.split(',');
                     const header = parts[0] + ',';
                     const dataPart = parts[1];
@@ -640,7 +665,7 @@
             });
         }
 
-        // --- 🚀 인라인 텍스트 수정 기능 추가 ---
+        // --- 내 상점 관리 (인라인 텍스트 수정 적용) ---
         async function loadMyStore() {
             try {
                 const res = await fetch(`${API_URL}/api/products`);
@@ -655,14 +680,14 @@
                         <div class="product-card" id="card-${p.id}">
                             <div class="thumb-preview-box"><img src="${p.thumbnail}"></div>
                             <div style="font-size:11px;color:var(--text-sub);">상점 ID: ${p.storeId}</div>
-                            <div id="name-${p.id}" class="editable-field" style="font-weight:bold; font-size:14px; color:#fff;" contenteditable="false">${p.name}</div>
+                            <div id="name-${p.id}" class="editable-field" style="font-weight:bold; font-size:15px; color:#fff;" contenteditable="false">${p.name}</div>
                             <div id="desc-${p.id}" class="editable-field" style="font-size:12px; color:#94a3b8; min-height:20px;" contenteditable="false">${p.description || '상품 설명이 없습니다.'}</div>
-                            <div style="color:var(--primary); font-weight:bold; margin-top:5px;">
+                            <div style="color:var(--primary); font-weight:bold; margin-top:5px; margin-bottom:5px;">
                                 <span id="price-${p.id}" class="editable-field" contenteditable="false">${p.price}</span> KRW
                             </div>
                             <div style="display:flex; gap:5px; margin-top:auto;">
-                                <button class="btn btn-warning" id="btn-edit-${p.id}" style="flex:1; padding:6px; font-size:12px;" onclick="toggleEditMode('${p.id}')">수정</button>
-                                <button class="btn btn-danger" style="flex:1; padding:6px; font-size:12px;" onclick="deleteProduct('${p.id}')">삭제</button>
+                                <button class="btn" id="btn-edit-${p.id}" style="flex:1; padding:8px; font-size:13px;" onclick="toggleEditMode('${p.id}')">수정</button>
+                                <button class="btn btn-danger" style="flex:1; padding:8px; font-size:13px;" onclick="deleteProduct('${p.id}')">삭제</button>
                             </div>
                         </div>`;
                 });
@@ -681,7 +706,7 @@
                 [nameEl, descEl, priceEl].forEach(el => { el.contentEditable = "true"; el.classList.add('editing'); });
                 nameEl.focus();
             } else {
-                btn.innerText = '수정'; btn.style.background = 'var(--warning)';
+                btn.innerText = '수정'; btn.style.background = 'var(--primary)';
                 [nameEl, descEl, priceEl].forEach(el => { el.contentEditable = "false"; el.classList.remove('editing'); });
                 const newName = nameEl.innerText.trim();
                 const newDesc = descEl.innerText.trim();
@@ -691,8 +716,7 @@
                     method: 'POST', headers: {'Content-Type':'application/json'}, 
                     body: JSON.stringify({ id, name: newName, price: newPrice, description: newDesc }) 
                 });
-                showToast("상품 정보가 성공적으로 수정되었습니다.");
-                loadMyStore(); // 리렌더링
+                showToast("상품 정보 수정 완료"); loadMyStore();
             }
         };
 
@@ -702,16 +726,15 @@
             showToast("삭제 완료"); loadMyStore();
         }
 
+        // --- 마켓 (다운로드/렌더링 버튼 즉시 활성화 복구) ---
         async function searchPartnerStores() {
             try {
                 const res = await fetch(`${API_URL}/api/stores/active`); const stores = await res.json() || [];
                 const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`); const favs = await favRes.json() || [];
                 const zone = document.getElementById('partner-fav-zone');
                 const query = document.getElementById('partner-search-input').value.toLowerCase();
-                
                 let filtered = stores.filter(st => st.owner !== currentUser.name);
                 if(query) filtered = filtered.filter(st => st.name.toLowerCase().includes(query));
-
                 if(filtered.length === 0) { zone.innerHTML = '<span style="font-size:12px; color:gray;">검색 조건에 맞는 상점이 없습니다.</span>'; return; }
 
                 let htmlBuffer = '';
@@ -721,7 +744,7 @@
                         <span style="display:inline-flex; align-items:center; background:#1e293b; padding:6px 12px; border-radius:20px; border:1px solid var(--border-color); margin-right:8px; font-size:13px; margin-bottom:8px; color:#fff;">
                             <b>${st.name}</b> <span style="font-size:11px; margin-left:4px; color:#94a3b8;">(${st.owner})</span>
                             <span style="margin-left:8px; cursor:pointer; color:${isFav?'#f59e0b':'#475569'}; font-size:16px;" onclick="toggleFavoriteStore('${st.id}')">★</span>
-                            <span style="margin-left:8px; cursor:pointer; font-size:12px; color:var(--primary); text-decoration:underline;" onclick="openStoreOwnerChat('${st.owner}')">채팅 문의</span>
+                            <span style="margin-left:8px; cursor:pointer; font-size:12px; color:var(--primary); text-decoration:underline;" onclick="openMessengerChat('${st.owner}')">문의</span>
                         </span>`;
                 });
                 zone.innerHTML = htmlBuffer;
@@ -737,7 +760,7 @@
             try {
                 const res = await fetch(`${API_URL}/api/products/active`); let prods = await res.json() || [];
                 const q = document.getElementById('market-search').value.toLowerCase();
-                if(q) prods = prods.filter(p => p.name.toLowerCase().includes(q) || p.seller.toLowerCase().includes(q));
+                if(q) prods = prods.filter(p => p.name.toLowerCase().includes(q) || p.seller.toLowerCase().includes(q) || (p.description && p.description.toLowerCase().includes(q)));
 
                 const histRes = await fetch(`${API_URL}/api/transactions/${currentUser.name}`); const history = await histRes.json() || [];
                 const grid = document.getElementById('market-grid');
@@ -746,20 +769,25 @@
                 let htmlBuffer = '';
                 prods.forEach(p => {
                     const isMine = p.seller === currentUser.name;
+                    // 결제 성공 시 다운로드/렌더링 권한 부여 (상품 이름으로 체크)
                     const isBought = history.some(h => h.buyer === currentUser.name && h.productName === p.name);
-                    let actionBtn = isMine || isBought ? 
-                        `<button class="btn" style="background:var(--success);" onclick="openUniversalViewer('${p.id}')">로컬 역산 렌더링 열기</button>` : 
-                        `<button class="btn" style="background:var(--primary);" onclick="buyAsset('${p.id}', '${p.name}', ${p.price}, '${p.seller}')">자산 구매 (${Number(p.price).toLocaleString()}원)</button>`;
+                    
+                    let actionBtn = '';
+                    if (isMine || isBought) {
+                        actionBtn = `<button class="btn btn-success" onclick="openUniversalViewer('${p.id}')">▶ 로컬 역산 렌더링 열기</button>`;
+                    } else {
+                        actionBtn = `<button class="btn" onclick="buyAsset('${p.id}', '${p.name}', ${p.price}, '${p.seller}')">💳 자산 구매 (${Number(p.price).toLocaleString()}원)</button>`;
+                    }
 
                     htmlBuffer += `
                         <div class="product-card">
                             <div class="thumb-preview-box"><img src="${p.thumbnail}"></div>
                             <div style="font-size:11px;color:var(--text-sub);">판매자: <b>${p.seller}</b></div>
-                            <h4 style="font-size:14px; margin-bottom:0; color:#fff;">${p.name}</h4>
+                            <h4 style="font-size:15px; margin-bottom:0; color:#fff;">${p.name}</h4>
                             <div style="font-size:12px; color:#94a3b8; margin-bottom:5px; flex-grow:1; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${p.description || ''}</div>
-                            <p style="font-weight:bold; color:var(--primary);">${Number(p.price).toLocaleString()} KRW</p>
+                            <p style="font-weight:bold; color:var(--primary); font-size:16px;">${Number(p.price).toLocaleString()} KRW</p>
                             <div style="margin-top:auto; display:flex; flex-direction:column; gap:5px;">
-                                ${!isMine ? `<button class="btn btn-outline" style="background:transparent; color:var(--primary); border:1px solid var(--primary); padding:6px; font-size:12px;" onclick="openStoreOwnerChat('${p.seller}')">판매자와 1:1 채팅</button>` : ''}
+                                ${!isMine ? `<button class="btn btn-secondary" style="padding:8px; font-size:12px;" onclick="openMessengerChat('${p.seller}')">판매자와 1:1 대화</button>` : ''}
                                 ${actionBtn}
                             </div>
                         </div>`;
@@ -769,13 +797,13 @@
         }
 
         async function buyAsset(id, name, price, seller) {
-            if(!confirm(`해당 자산을 구매하시겠습니까?`)) return;
+            if(!confirm(`해당 데이터 권리를 획득하시겠습니까?`)) return;
             const res = await fetch(`${API_URL}/api/buy`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ buyer: currentUser.name, seller, productId: id, productName: name, amount: price }) });
-            if(res.ok) { showToast("결제 완료"); loadMarketplace(); updateUserBalance(); switchTab('history'); } 
+            if(res.ok) { showToast("결제 완료. 스트리밍 권한이 획득되었습니다."); loadMarketplace(); updateUserBalance(); switchTab('history'); } 
             else { const d = await res.json(); showToast(d.error); }
         }
 
-        // --- 🚀 암호화 스트리밍 렌더러 (블랙스크린 영구 해결) ---
+        // --- 🚀 암호화 스트리밍 렌더러 (블랙스크린 파괴 방어) ---
         async function openUniversalViewer(id) {
             try {
                 const res = await fetch(`${API_URL}/api/product/detail/${id}`); 
@@ -787,47 +815,40 @@
 
                 setTimeout(async () => {
                     try {
-                        // 🚀 데이터와 헤더 분리 복호화
                         const parts = p.encryptedPayload.split(',');
                         const header = parts[0] + ',';
                         const dataPart = parts[1];
-                        const decryptedData = localECCInverseProcess(dataPart);
-                        
-                        // 완벽한 Data URL 재생성 (Fetch 불필요, 메모리 즉시 렌더링)
+                        const decryptedData = localECCInverseProcess(dataPart); // 고속 역산
                         const finalDataUrl = header + decryptedData;
 
-                        // 확장자 판별 렌더링
                         const ext = p.name.split('.').pop().toLowerCase();
                         
                         if (['png','jpg','jpeg','gif','webp'].includes(ext) || header.includes('image/')) {
                             display.innerHTML = `<img src="${finalDataUrl}" style="max-width:100%; max-height:100%; object-fit:contain;">`;
-                        } else if (['mp4','webm'].includes(ext) || header.includes('video/')) {
+                        } else if (['mp4','webm','mov'].includes(ext) || header.includes('video/')) {
                             display.innerHTML = `<video src="${finalDataUrl}" controls autoplay style="max-width:100%; max-height:100%;"></video>`;
                         } else if (['pdf'].includes(ext) || header.includes('application/pdf')) {
                             display.innerHTML = `<iframe src="${finalDataUrl}" style="width:100%; height:100%; border:none; background:#fff;"></iframe>`;
                         } else {
-                            // html이나 기타 파일의 경우 다운로드 유도 뷰어
-                            display.innerHTML = `<div style="text-align:center;"><br><span style="font-size:40px;">📄</span><br><br><b style="color:white;">${p.name}</b><br>보안 해제 완료 (아래 버튼으로 다운로드하세요)</div>`;
+                            display.innerHTML = `<div style="text-align:center;"><br><span style="font-size:50px;">📄</span><br><br><b style="color:white; font-size:18px;">${p.name}</b><br><br>보안 데이터 해제 완료 (아래 버튼으로 다운로드하여 열람하세요)</div>`;
                         }
 
-                        // 원본 다운로더 바인딩
                         document.getElementById('btn-download-original').onclick = function() {
                             const link = document.createElement('a'); link.href = finalDataUrl; link.download = p.name; link.click();
-                            showToast("원본 데이터 다운로드 완료");
+                            showToast("원본 데이터 파일이 기기에 저장되었습니다.");
                         };
-                    } catch(err) {
-                        display.innerHTML = `<div style="color:var(--danger); font-weight:bold;">역산 렌더링 오류 발생</div>`;
-                    }
+                    } catch(err) { display.innerHTML = `<div style="color:var(--danger); font-weight:bold;">역산 렌더링 오류 발생</div>`; }
                 }, 100); 
             } catch(e){ showToast("데이터 로드 실패"); }
         }
 
         function closeModal() { 
-            document.getElementById('modal-viewer-display').innerHTML = ''; // 닫을 때 내용물 즉각 파기하여 메모리 누수 방지
+            // 🚀 모달을 닫을 때 DOM 내부를 완벽히 비워서 브라우저 메모리 부하와 블랙스크린 차단
+            document.getElementById('modal-viewer-display').innerHTML = ''; 
             document.getElementById('universal-modal').style.display = 'none'; 
         }
 
-        // --- 🚀 메신저 (채팅 & 룸 설정 완벽 복구) ---
+        // --- 🚀 카카오톡형 소셜 메신저 및 배지 로직 ---
         function generateInviteLink() {
             const link = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(currentUser.name)}`;
             navigator.clipboard.writeText(link).then(() => showToast("초대 링크 주소가 복사되었습니다."));
@@ -847,16 +868,21 @@
             const container = document.getElementById('friend-list-container'); container.innerHTML = '';
             
             if(currentUser.name !== '이재준') {
+                const room = `room_msg_${[currentUser.name, '이재준'].sort().join('_')}`;
+                const badge = unreadCounts[room] ? `<div class="unread-badge" style="display:block;">${unreadCounts[room]}</div>` : `<div class="unread-badge"></div>`;
                 container.innerHTML += `
-                    <div class="friend-item" onclick="openMessengerChat('이재준')">
+                    <div class="friend-item ${activeChatFriend === '이재준' ? 'active' : ''}" onclick="openMessengerChat('이재준')">
                         <div class="profile-pic" style="background:var(--danger); color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px;">CS</div>
                         <div><b style="color:#fff;">Root Admin (고객센터)</b></div>
+                        ${badge}
                     </div>`;
             }
 
             friends.forEach(f => {
+                const room = `room_msg_${[currentUser.name, f.name].sort().join('_')}`;
+                const badge = unreadCounts[room] ? `<div class="unread-badge" style="display:block;">${unreadCounts[room]}</div>` : `<div class="unread-badge"></div>`;
                 const picHtml = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`;
-                container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${f.name}')">${picHtml}<div><b style="color:#fff;">${f.name}</b></div></div>`;
+                container.innerHTML += `<div class="friend-item ${activeChatFriend === f.name ? 'active' : ''}" onclick="openMessengerChat('${f.name}')">${picHtml}<div><b style="color:#fff;">${f.name}</b></div>${badge}</div>`;
             });
         }
 
@@ -866,20 +892,30 @@
             activeChatFriend = friendName;
             document.getElementById('active-chat-title').innerText = `${friendName} 대화창`;
             
-            // 룸 아이디 생성 (문자열 정렬 기반)
             currentChatRoomId = `room_msg_${[currentUser.name, friendName].sort().join('_')}`;
-            socket.emit('join_room', currentChatRoomId);
             
+            // 배지 초기화
+            if(unreadCounts[currentChatRoomId]) { unreadCounts[currentChatRoomId] = 0; loadFriendList(); }
+
+            socket.emit('join_room', currentChatRoomId);
             fetch(`${API_URL}/api/chat/${currentChatRoomId}`).then(res => res.json()).then(msgs => {
                 document.getElementById('main-chat-body').innerHTML = '';
                 if(msgs && msgs.length>0) msgs.forEach(m => appendMainMessage(m.sender, m.message, m.senderPic));
             });
+            loadFriendList(); // 선택된 친구 배경색 업데이트
         }
 
         function closeMainChat() {
             document.getElementById('main-chat-area').style.display = 'none';
             document.getElementById('empty-chat-area').style.display = 'flex';
             activeChatFriend = null; currentChatRoomId = null;
+            loadFriendList();
+        }
+
+        // [+] 버튼 팝업 토글
+        function toggleActionMenu() {
+            const menu = document.getElementById('chat-action-menu');
+            menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
         }
 
         function sendMainMessage() {
@@ -902,32 +938,31 @@
                 socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
                 appendMainMessage(currentUser.name, msg, pic);
                 document.getElementById('chat-transfer-amount').value = '';
+                toggleActionMenu(); // 메뉴 닫기
                 updateUserBalance();
             } else { const d = await res.json(); showToast(d.error); }
         }
 
-        function openStoreOwnerChat(sellerName) {
-            if(sellerName === currentUser.name) return showToast("본인의 상점입니다.");
-            drawerChatPartner = sellerName;
-            drawerChatRoomId = `room_msg_${[currentUser.name, sellerName].sort().join('_')}`;
-            document.getElementById('drawer-chat-title').innerText = `${sellerName} 대표 1:1`;
-            document.getElementById('chat-drawer').classList.add('open');
-            socket.emit('join_room', drawerChatRoomId); 
+        // 채팅창에서 즉시 QR 수표 발행 전송
+        async function sendQRCheckInChat() {
+            if(!activeChatFriend) return;
+            const amount = parseInt(document.getElementById('chat-check-amount').value, 10);
+            if(isNaN(amount) || amount <= 0) return showToast("금액 산정 오류");
             
-            fetch(`${API_URL}/api/chat/${drawerChatRoomId}`).then(res=>res.json()).then(msgs=>{
-                document.getElementById('drawer-chat-body').innerHTML = '';
-                if(msgs && msgs.length>0) msgs.forEach(m => appendDrawerMessage(m.sender, m.message));
+            const res = await fetch(`${API_URL}/api/check/issue`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ issuer: currentUser.name, amount })
             });
-        }
-
-        function closeDrawerChat() { document.getElementById('chat-drawer').classList.remove('open'); drawerChatRoomId = null; }
-
-        function sendDrawerMessage() {
-            const input = document.getElementById('drawer-chat-input'); const msg = input.value.trim();
-            if(!msg) return;
-            const pic = document.getElementById('my-profile-pic').src;
-            socket.emit('send_message', { roomId: drawerChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
-            appendDrawerMessage(currentUser.name, msg); input.value = '';
+            const data = await res.json();
+            if(res.ok) {
+                const msg = `[META_QR]${data.checkId}|${data.secretKey}|${data.signature}`;
+                const pic = document.getElementById('my-profile-pic').src;
+                socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
+                appendMainMessage(currentUser.name, msg, pic);
+                document.getElementById('chat-check-amount').value = '';
+                toggleActionMenu(); // 메뉴 닫기
+                updateUserBalance();
+            } else showToast(data.error);
         }
 
         function appendMainMessage(sender, text, picBase64) {
@@ -935,29 +970,32 @@
             let displayHtml = text;
             
             if(text.startsWith('[TRANSFER]')) {
-                displayHtml = `<div class="transfer-widget"><b>송금 영수증</b><br><span style="color:var(--success);font-size:16px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</span></div>`;
+                displayHtml = `<div class="transfer-widget"><b>💰 송금 완료</b><br><span style="color:var(--success);font-size:16px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</span></div>`;
+            } else if(text.startsWith('[META_QR]')) {
+                const parsed = text.replace('[META_QR]', '').split('|');
+                displayHtml = `<div style="border:1px solid #10b981; padding:10px; border-radius:8px; text-align:center; background:#022c22;"><b>🎫 보안 수표 도착</b><canvas id="main_qr_${parsed[0]}"></canvas><br><span style="color:var(--danger);font-weight:bold;">PIN: ${parsed[1]}</span></div>`;
+                setTimeout(() => { QRCode.toCanvas(document.getElementById(`main_qr_${parsed[0]}`), text, {width: 120}); }, 100);
             }
 
-            const picHtml = picBase64 ? `<img src="${picBase64}" class="profile-pic" style="width:30px; height:30px;">` : '';
+            const picHtml = picBase64 ? `<img src="${picBase64}" class="profile-pic" style="width:35px; height:35px;">` : `<div class="profile-pic" style="width:35px; height:35px;"></div>`;
             chatBody.innerHTML += `<div class="msg-row ${isMe ? 'msg-me' : 'msg-other'}">${!isMe ? picHtml : ''}<div style="display:flex; flex-direction:column; max-width:80%;"><div style="font-size:11px; margin-bottom:4px; opacity:0.7; ${isMe?'text-align:right;':''}">${sender}</div><div class="msg-bubble">${displayHtml}</div></div></div>`;
             chatBody.scrollTop = chatBody.scrollHeight;
         }
 
-        function appendDrawerMessage(sender, text) {
-            const chatBody = document.getElementById('drawer-chat-body'); const isMe = sender === currentUser.name;
-            let displayHtml = text;
-            if(text.startsWith('[TRANSFER]')) {
-                displayHtml = `<div class="transfer-widget"><b>송금 영수증</b><br><span style="color:var(--success);font-size:16px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</span></div>`;
-            }
-            chatBody.innerHTML += `<div class="msg-bubble ${isMe ? 'msg-me' : 'msg-other'}" style="align-self:${isMe?'flex-end':'flex-start'};"><div style="font-size:11px;opacity:0.7;margin-bottom:4px;">${sender}</div><div>${displayHtml}</div></div>`;
-            chatBody.scrollTop = chatBody.scrollHeight;
-        }
-
+        // 메시지 수신 시 알림 배지 카운트 증가 처리
         function handleReceiveMessage(data) {
-            if(data.roomId === currentChatRoomId && data.sender !== currentUser.name) appendMainMessage(data.sender, data.message, data.senderPic);
-            if(data.roomId === drawerChatRoomId && data.sender !== currentUser.name) appendDrawerMessage(data.sender, data.message);
+            if(data.roomId === currentChatRoomId && data.sender !== currentUser.name) {
+                appendMainMessage(data.sender, data.message, data.senderPic);
+            } else if (data.sender !== currentUser.name) {
+                // 방에 안 들어와 있을 때 배지 증가
+                if (!unreadCounts[data.roomId]) unreadCounts[data.roomId] = 0;
+                unreadCounts[data.roomId]++;
+                loadFriendList(); // 좌측 패널 업데이트
+                showToast(`💬 ${data.sender}님으로부터 새 메시지가 도착했습니다.`);
+            }
         }
 
+        // --- 거래 내역 (수표 발행/충전 포함) ---
         async function loadHistory() {
             const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`); const list = await res.json() || [];
             const tbody = document.getElementById('history-body'); 
@@ -967,7 +1005,7 @@
             list.forEach(h => { 
                 let sign = (h.buyer === currentUser.name || h.sender === currentUser.name || h.type.includes('출금')) ? '-' : '+';
                 let color = sign === '-' ? 'color:var(--danger);' : 'color:var(--success);';
-                htmlBuffer += `<tr><td>${h.date}</td><td><b>${h.type}</b></td><td style="color:#fff;">${h.productName || '원장 변동'}</td><td>${h.seller || h.receiver || h.sender || '시스템'}</td><td style="font-weight:bold; ${color}">${sign}${Number(h.amount).toLocaleString()}원</td></tr>`;
+                htmlBuffer += `<tr><td>${h.date}</td><td><b style="color:#fff;">${h.type}</b></td><td style="color:#94a3b8;">${h.productName || '원장 변동'}</td><td>${h.seller || h.receiver || h.sender || '시스템'}</td><td style="font-weight:bold; font-size:15px; ${color}">${sign}${Number(h.amount).toLocaleString()}원</td></tr>`;
             });
             tbody.innerHTML = htmlBuffer;
         }
