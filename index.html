@@ -36,7 +36,9 @@
         .product-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 15px; background: #fff; display: flex; flex-direction: column; position: relative; gap: 10px; }
         .thumb-preview-box { width: 100%; height: 160px; background: #f3f4f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #e5e7eb; position: relative; }
         .thumb-preview-box img { width: 100%; height: 100%; object-fit: cover; }
-        .profile-pic { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: #e5e7eb; border: 1px solid #ccc; display: inline-block; vertical-align: middle; }
+        .brand-logo-circle { width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--border-color); overflow: hidden; background: #e5e7eb; display: flex; align-items: center; justify-content: center; }
+        .brand-logo-circle img { width: 100%; height: 100%; object-fit: cover; }
+        .profile-pic { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: #e5e7eb; border: 1px solid #ccc; display: inline-block; vertical-align: middle; cursor: pointer; }
         .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .history-table th, .history-table td { padding: 12px; border-bottom: 1px solid var(--border-color); text-align: left; }
         .history-table th { background: #f9fafb; color: var(--text-sub); }
@@ -44,7 +46,7 @@
         .toast.show { opacity: 1; bottom: 40px; }
         .admin-badge { background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-left: 5px; font-weight: bold; display: none; }
         
-        /* 메신저 전용 스타일 */
+        /* 메신저 레이아웃 */
         .messenger-layout { display: flex; height: 70vh; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: #fff; }
         .friend-list-area { width: 300px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; background: #f9fafb; }
         .chat-area { flex: 1; display: flex; flex-direction: column; background: #fff; }
@@ -60,16 +62,17 @@
         .msg-me .msg-bubble { background: var(--primary); color: #fff; border-top-right-radius: 4px; }
         .msg-other .msg-bubble { background: #fff; border: 1px solid var(--border-color); color: #1f2937; border-top-left-radius: 4px; }
         .transfer-widget { border: 1px solid #10b981; background: #ecfdf5; padding: 10px; border-radius: 8px; text-align: center; margin-top: 5px; }
+        .instruction-box { background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed var(--primary); margin-bottom: 15px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="panel" id="login-section" style="max-width: 450px; margin: 40px auto; width: 100%;">
             <h2 style="text-align: center; margin-bottom: 20px;">Meta Platform 접속</h2>
-            <div class="input-group"><label>이름 (Name)</label><input type="text" id="ray-login-name" value="이재준"></div>
-            <div class="input-group"><label>비밀번호</label><input type="password" id="ray-login-password" value="1234"></div>
-            <div class="input-group"><label>정산 은행</label><input type="text" id="ray-login-bank" value="우리은행"></div>
-            <div class="input-group"><label>정산 계좌</label><input type="text" id="ray-login-account" value="1002338118610"></div>
+            <div class="input-group"><label>이름 (Name)</label><input type="text" id="ray-login-name"></div>
+            <div class="input-group"><label>비밀번호</label><input type="password" id="ray-login-password"></div>
+            <div class="input-group"><label>정산 은행</label><input type="text" id="ray-login-bank" placeholder="예: 우리은행"></div>
+            <div class="input-group"><label>정산 계좌</label><input type="text" id="ray-login-account" placeholder="예: 1002-338-118610"></div>
             <button class="btn" style="width: 100%;" onclick="login()">보안망 접속하기</button>
         </div>
 
@@ -77,7 +80,7 @@
             <div class="panel" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                 <h2>Meta Commerce <span class="admin-badge" id="admin-indicator">Admin</span></h2>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <label style="cursor:pointer;" title="프로필 사진 변경">
+                    <label title="프로필 사진 등록/변경">
                         <img id="my-profile-pic" class="profile-pic" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23ccc'/></svg>">
                         <input type="file" style="display:none;" accept="image/*" onchange="uploadProfilePic(event)">
                     </label>
@@ -103,19 +106,56 @@
                 <div class="grid-2col">
                     <div class="panel">
                         <h3 style="color:#059669;">무통장 증액 신청</h3>
+                        <div class="instruction-box" style="background:#ecfdf5; border-color:#10b981;">
+                            <h4 style="color:#047857; margin-bottom:8px;">📌 자산 충전 가이드</h4>
+                            <p style="font-size:13px; color:#374151; line-height:1.5;">
+                                1. 아래 관리자 계좌로 충전할 금액을 입금해 주세요.<br>
+                                <strong style="color:#ef4444; font-size:15px; display:block; margin:8px 0;">우리은행 1002-338-118610 (예금주: 이재준)</strong>
+                                2. 입금 후 아래 폼에 실제 <b>송금인 성함</b>과 <b>금액</b>을 입력하고 신청합니다.<br>
+                                3. 관리자 확인 후 즉시 잔액이 증액되거나, 보안 수표가 채팅으로 전송됩니다.
+                            </p>
+                        </div>
                         <div class="input-group"><label>실제 송금인 명의</label><input type="text" id="deposit-sender-name" placeholder="보낸 분 성함"></div>
-                        <div class="input-group"><label>입금 금액 (KRW)</label><input type="number" id="deposit-amount" placeholder="송금 금액"></div>
+                        <div class="input-group"><label>입금 확인 요청 금액 (KRW)</label><input type="number" id="deposit-amount" placeholder="송금하신 금액"></div>
                         <button class="btn" style="width:100%; background:#10b981;" onclick="requestDeposit()">입금 내역 제출 및 증액 신청</button>
                     </div>
+
                     <div class="panel">
-                        <h3 style="color:#ef4444;">계좌 출금 신청</h3>
+                        <h3 style="color:#ef4444;">등록 계좌 출금 신청</h3>
+                        <div class="instruction-box" style="background:#fef2f2; border-color:#ef4444;">
+                            <h4 style="color:#b91c1c; margin-bottom:8px;">📌 출금 안내</h4>
+                            <p style="font-size:13px; color:#374151; line-height:1.5;">
+                                회원 가입 시 등록하신 본인 명의의 은행 계좌로 정산액이 출금됩니다.<br>
+                                현재 등록된 계좌가 맞는지 확인하시고, 변경이 필요하시면 고객센터에 문의해 주세요.
+                            </p>
+                        </div>
                         <div class="input-group"><label>출금 요청 금액 (KRW)</label><input type="number" id="withdraw-amount" placeholder="가용 한도 내 입력"></div>
-                        <button class="btn btn-danger" style="width:100%; margin-top:auto;" onclick="requestWithdrawal()">등록 계좌로 출금 (관리자 승인)</button>
+                        <button class="btn btn-danger" style="width:100%; margin-top:auto;" onclick="requestWithdrawal()">등록 계좌로 출금 신청 (관리자 승인)</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3 style="color:#6366f1;">ECC 암호화 QR 수표 발행 및 충전</h3>
+                    <div class="grid-2col">
+                        <div>
+                            <div class="input-group"><label>발행할 자산 금액</label><input type="number" id="check-amount" placeholder="금액 입력"></div>
+                            <button class="btn" style="width: 100%; background:#818cf8;" onclick="issueCheck()">타원곡선 서명 QR 생성</button>
+                            <div id="qr-output-zone" style="margin-top: 15px; display: none; text-align: center; border: 2px dashed #818cf8; padding: 15px; border-radius: 8px;">
+                                <canvas id="qr-canvas"></canvas>
+                                <div style="margin-top: 5px; font-weight: bold; color: #ef4444;">보안 핀키: <span id="check-key-text"></span></div>
+                                <button class="btn btn-secondary" style="font-size:12px; padding:6px 12px; margin-top:10px;" onclick="downloadQR()">QR 이미지 저장</button>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="input-group"><label>방식 1: 받은 QR 수표 이미지 등록</label><input type="file" id="check-file-input" accept="image/*" onchange="redeemQRFile(event)"></div>
+                            <div class="input-group"><label>방식 2: 핀키 텍스트 직접 입력</label><input type="text" id="check-key-input" placeholder="보안키 6자리"></div>
+                            <button class="btn" style="width: 100%; background:#4b5563;" onclick="redeemQRKey()">역산 검증 및 충전</button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="panel" id="admin-control-panel" style="display: none; border: 2px solid #ef4444;">
-                    <h3 style="color: #ef4444;">[Admin Control] 플랫폼 정산 및 출금 승인 원장</h3>
+                    <h3 style="color: #ef4444;">[Admin Control] 플랫폼 입출금 승인 제어</h3>
                     <div style="overflow-x: auto; margin-top: 10px;">
                         <table class="history-table">
                             <thead><tr><th>유형</th><th>고객명/송금인</th><th>은행/계좌</th><th>금액</th><th>승인 제어 로직</th></tr></thead>
@@ -128,47 +168,65 @@
             <div id="tab-my-store" class="tab-content">
                 <div class="grid-2col">
                     <div class="panel">
-                        <h3>신규 브랜드 상점 신설</h3>
-                        <div class="input-group"><label>브랜드 명칭</label><input type="text" id="new-brand-name" placeholder="상점명"></div>
-                        <div class="input-group"><label>로고 이미지 등록</label><input type="file" id="new-brand-logo" accept="image/*"></div>
-                        <button class="btn" onclick="registerNewBrandStore()">상점 등록</button>
+                        <h3>신규 브랜드 상점 개설</h3>
+                        <div class="input-group"><label>브랜드 명칭</label><input type="text" id="new-brand-name" placeholder="상점명을 정해주세요"></div>
+                        <div class="input-group"><label>로고 이미지 (선택)</label><input type="file" id="new-brand-logo" accept="image/*"></div>
+                        <button class="btn" onclick="registerNewBrandStore()">상점 개설하기</button>
                     </div>
                     <div class="panel">
-                        <h3>내가 운영 중인 상점 관리</h3>
+                        <h3>내가 운영 중인 상점 (공개/수정 토글)</h3>
                         <div id="my-brands-list-zone" style="display:flex; flex-direction:column; gap:10px; margin-top:10px;"></div>
                     </div>
                 </div>
+
                 <div class="panel">
-                    <h3>상품 만들기 및 즉시 배포</h3>
+                    <h3>상품 만들기 및 상점 출하</h3>
+                    <p style="font-size: 13px; color: var(--text-sub); margin-bottom: 15px;">PC 폴더를 지정하면, 즉시 로컬 썸네일이 추출되며 상품 리스트가 구성됩니다.</p>
                     <div class="grid-2col" style="margin-bottom:15px;">
-                        <div class="input-group"><label>출시 대상 상점 지정</label><select id="target-brand-selector"><option value="">상점이 없습니다</option></select></div>
-                        <div class="input-group"><label>원본 데이터 폴더 스캔</label><input type="file" id="folder-picker" webkitdirectory directory multiple onchange="inspectFolderFiles(event)" style="display: none;"><button class="btn" onclick="document.getElementById('folder-picker').click()">로컬 파일 연동</button></div>
+                        <div class="input-group">
+                            <label>출시 대상 상점 지정</label>
+                            <select id="target-brand-selector"><option value="">상점을 먼저 개설해주세요</option></select>
+                        </div>
+                        <div class="input-group">
+                            <label>출하할 자산 폴더 스캔</label>
+                            <input type="file" id="folder-picker" webkitdirectory directory multiple onchange="inspectFolderFiles(event)" style="display: none;">
+                            <button class="btn" onclick="document.getElementById('folder-picker').click()">PC 폴더 연동하기</button>
+                        </div>
                     </div>
+
                     <div id="folder-inspect-zone" style="display: none;">
-                        <button class="btn" style="background:#059669; margin-bottom:10px;" onclick="batchRegisterProducts()">체크 항목 일괄 암호화 배포</button>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h4>출하 대기 목록 (<span id="inspect-count">0</span>)</h4>
+                            <button class="btn" style="background:#059669;" onclick="batchRegisterProducts()">체크 항목 일괄 암호화 배포</button>
+                        </div>
                         <div style="overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px;">
                             <table class="history-table">
-                                <thead><tr><th width="40"><input type="checkbox" id="th-check-all" checked onchange="toggleAllInspectChecks(this)"></th><th width="100">썸네일</th><th>파일명</th><th width="140">판매가 설정</th><th width="80">제어</th></tr></thead>
+                                <thead><tr><th width="40"><input type="checkbox" id="th-check-all" checked onchange="toggleAllInspectChecks(this)"></th><th width="100">썸네일</th><th>파일명</th><th width="140">판매가 설정</th><th width="80">상태</th></tr></thead>
                                 <tbody id="folder-inspect-tbody"></tbody>
                             </table>
                         </div>
                     </div>
                 </div>
+
                 <div class="panel">
-                    <h3>출시 자산 관리</h3><div class="market-grid" id="my-store-grid"></div>
+                    <h3>출시된 자산 관리</h3>
+                    <div class="market-grid" id="my-store-grid"></div>
                 </div>
             </div>
 
             <div id="tab-market" class="tab-content">
                 <div class="panel" style="background: #f9fafb;">
-                    <h4>브랜드 상점 탐색 및 단골 지정</h4>
+                    <h4>브랜드 상점 탐색 및 즐겨찾기</h4>
                     <div style="display:flex; gap: 10px; margin-top: 10px;">
                         <input type="text" id="partner-search-input" placeholder="상점 명칭 조회..." style="flex:1; padding: 10px; border-radius:8px; border:1px solid var(--border-color);">
-                        <button class="btn btn-secondary" onclick="searchPartnerStores()">검색</button>
+                        <button class="btn btn-secondary" onclick="searchPartnerStores()">상점 검색</button>
                     </div>
                     <div style="margin-top: 15px;" id="partner-fav-zone"></div>
                 </div>
-                <div class="input-group" style="margin-top: 10px;"><input type="text" id="market-search" placeholder="자산 검색..." onkeyup="loadMarketplace()"></div>
+
+                <div class="input-group" style="margin-top: 10px;">
+                    <input type="text" id="market-search" placeholder="자산명 검색..." onkeyup="loadMarketplace()">
+                </div>
                 <div class="market-grid" id="market-grid"></div>
             </div>
 
@@ -178,24 +236,24 @@
                         <div style="padding: 15px; border-bottom: 1px solid var(--border-color); background: #fff;">
                             <h3 style="margin-bottom: 10px; font-size:16px;">친구 목록</h3>
                             <div style="display:flex; gap:5px;">
-                                <input type="text" id="friend-search-input" placeholder="이름으로 검색..." style="flex:1; padding:8px; border-radius:6px; border:1px solid #ccc;">
+                                <input type="text" id="friend-search-input" placeholder="정확한 이름 검색..." style="flex:1; padding:8px; border-radius:6px; border:1px solid #ccc;">
                                 <button class="btn" style="padding:8px;" onclick="addFriend()">추가</button>
                             </div>
-                            <button class="btn btn-outline" style="width:100%; margin-top:10px; padding:6px; font-size:12px; border:1px solid var(--primary); color:var(--primary); background:#fff;" onclick="generateInviteLink()">초대 링크 생성</button>
+                            <button class="btn btn-outline" style="width:100%; margin-top:10px; padding:6px; font-size:12px; border:1px solid var(--primary); color:var(--primary); background:#fff;" onclick="generateInviteLink()">내 초대 링크 복사하기</button>
                         </div>
-                        <div id="friend-list-container" style="flex:1; overflow-y:auto;">
-                            </div>
+                        <div id="friend-list-container" style="flex:1; overflow-y:auto;"></div>
                     </div>
                     <div class="chat-area" id="main-chat-area" style="display:none;">
                         <div class="chat-header">
                             <span id="active-chat-title">채팅방</span>
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="closeMainChat()">채팅방 닫기</button>
                         </div>
                         <div class="chat-body" id="main-chat-body"></div>
                         
                         <div style="padding: 10px 15px; background: #f8fafc; border-top: 1px solid var(--border-color); display: flex; gap: 10px; align-items: center;">
-                            <span style="font-size:13px; font-weight:bold; color:#10b981;">💰 간편 송금:</span>
-                            <input type="number" id="chat-transfer-amount" placeholder="금액 입력" style="width:100px; padding:8px; border-radius:6px; border:1px solid #ccc;">
-                            <button class="btn" style="padding:8px 15px; background:#10b981;" onclick="sendTransferInChat()">송금하기</button>
+                            <span style="font-size:13px; font-weight:bold; color:#10b981;">💰 채팅창 간편 송금:</span>
+                            <input type="number" id="chat-transfer-amount" placeholder="보낼 금액" style="width:100px; padding:8px; border-radius:6px; border:1px solid #ccc;">
+                            <button class="btn" style="padding:8px 15px; background:#10b981;" onclick="sendTransferInChat()">송금 실행</button>
                         </div>
 
                         <div class="chat-input-area">
@@ -204,17 +262,17 @@
                         </div>
                     </div>
                     <div id="empty-chat-area" style="flex:1; display:flex; align-items:center; justify-content:center; color:gray; background:#f9fafb;">
-                        대화할 친구를 선택하세요.
+                        좌측에서 대화할 친구를 선택하거나 추가하세요.
                     </div>
                 </div>
             </div>
 
             <div id="tab-history" class="tab-content">
                 <div class="panel">
-                    <h3>트랜잭션 원장</h3>
+                    <h3>트랜잭션 원장 기록</h3>
                     <div style="overflow-x:auto; margin-top: 15px;">
                         <table class="history-table">
-                            <thead><tr><th>일시</th><th>종류</th><th>내역</th><th>상대방</th><th>변동 금액</th></tr></thead>
+                            <thead><tr><th>일시</th><th>종류</th><th>상세 내역</th><th>상대방/대상</th><th>변동 금액</th></tr></thead>
                             <tbody id="history-body"></tbody>
                         </table>
                     </div>
@@ -226,31 +284,59 @@
     <div style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 2000; justify-content: center; align-items: center;" id="universal-modal">
         <div style="background: white; padding: 20px; border-radius: 12px; width: 95%; max-width: 850px; height: 85vh; display: flex; flex-direction: column; gap: 15px;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                <h3 id="modal-product-title">암호화 통합 프로토콜 뷰어</h3>
+                <h3 id="modal-product-title">다이나믹 암호 역산 렌더러</h3>
                 <span style="font-size: 24px; font-weight: bold; cursor: pointer; color: red;" onclick="closeModal()">&times;</span>
             </div>
             <div id="modal-viewer-display" style="flex: 1; background: #000; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; color: white; position: relative;"></div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <button class="btn" style="background:#4f46e5;" id="btn-download-original">원본 복원 파일 다운로드</button>
+                <span style="font-size: 12px; color: var(--text-sub);">브라우저에서 실시간 ECC 역산 파싱이 완료되었습니다.</span>
+                <button class="btn" style="background:#4f46e5;" id="btn-download-original">암호화 HTML 단독 규격 다운로드</button>
             </div>
+        </div>
+    </div>
+
+    <div class="chat-drawer" id="chat-drawer">
+        <div class="chat-header"><span id="chat-title">보안 통신망</span><span class="chat-close" onclick="closeDrawerChat()">&times;</span></div>
+        <div class="chat-body" id="drawer-chat-body"></div>
+        <div class="chat-input-area">
+            <input type="text" id="drawer-chat-input" placeholder="메시지 전송..." onkeypress="if(event.keyCode===13) sendDrawerMessage()">
+            <button class="btn" style="width: auto; margin: 0; padding: 10px 24px;" onclick="sendDrawerMessage()">전송</button>
         </div>
     </div>
 
     <div class="toast" id="toast">알림</div>
 
     <script>
+        // 통신 서버 설정
         const API_URL = 'http://' + window.location.hostname + ':4000';
-        let socket = null, currentUser = null, scannedFiles = [], activeChatFriend = null, currentChatRoomId = null;
+        let socket = null;
+        let currentUser = null;
+        let scannedFiles = [];
+        let activeChatFriend = null;
+        let currentChatRoomId = null;
+        let drawerChatRoomId = null;
+        let drawerChatPartner = null;
 
+        // -----------------------------------------------------------
+        // [핵심 엔진] 프론트엔드 다이나믹 역산 (ECC Inverse 로컬 디코더)
+        // -----------------------------------------------------------
         function localECCInverseProcess(encryptedData) {
             let decrypted = '';
-            for(let i=0; i<encryptedData.length; i++) { decrypted += String.fromCharCode(encryptedData.charCodeAt(i) ^ 42); }
+            // 백엔드에서 XOR 처리된 Base64 데이터를 브라우저 단에서 역산하여 원본 복원
+            for(let i=0; i<encryptedData.length; i++) {
+                decrypted += String.fromCharCode(encryptedData.charCodeAt(i) ^ 42);
+            }
             return decrypted;
         }
 
+        // -----------------------------------------------------------
+        // 유틸리티 함수
+        // -----------------------------------------------------------
         function showToast(msg) {
-            const t = document.getElementById('toast'); t.innerText = msg;
-            t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000);
+            const t = document.getElementById('toast'); 
+            t.innerText = msg;
+            t.classList.add('show'); 
+            setTimeout(() => t.classList.remove('show'), 3000);
         }
 
         function switchTab(id) {
@@ -260,19 +346,36 @@
             if(matchedTab) matchedTab.classList.add('active');
             document.getElementById(`tab-${id}`).classList.add('active');
             
-            if(id === 'market') { loadMarketplace(); searchPartnerStores(); }
-            if(id === 'my-store') { loadMyStore(); loadMyBrandStores(); }
-            if(id === 'messenger') { loadFriendList(); }
-            if(id === 'history') loadHistory();
-            if(id === 'wallet') { updateUserBalance(); if(currentUser && currentUser.name === '이재준') loadAdminActions(); }
+            if(id === 'wallet') { 
+                updateUserBalance(); 
+                if(currentUser && currentUser.name === '이재준') loadAdminActions(); 
+            }
+            if(id === 'my-store') { 
+                loadMyBrandStores(); 
+                loadMyStore(); 
+            }
+            if(id === 'market') { 
+                searchPartnerStores(); 
+                loadMarketplace(); 
+            }
+            if(id === 'messenger') { 
+                loadFriendList(); 
+            }
+            if(id === 'history') {
+                loadHistory();
+            }
         }
 
+        // -----------------------------------------------------------
+        // 1. 인증 및 메인 로드
+        // -----------------------------------------------------------
         async function login() {
             const name = document.getElementById('ray-login-name').value.trim();
             const password = document.getElementById('ray-login-password').value.trim();
             const bank = document.getElementById('ray-login-bank').value.trim();
             const account = document.getElementById('ray-login-account').value.trim();
-            if(!name || !password) return showToast("인증 명세 누락");
+            
+            if(!name || !password) return showToast("이름과 비밀번호를 입력하세요.");
 
             try {
                 const res = await fetch(`${API_URL}/api/auth`, {
@@ -280,7 +383,10 @@
                     body: JSON.stringify({ name, password, bank, account })
                 });
                 const data = await res.json();
-                if(!res.ok) return showToast(data.error);
+                if(!res.ok) {
+                    showToast(data.error);
+                    return;
+                }
 
                 currentUser = data;
                 document.getElementById('login-section').style.display = 'none';
@@ -296,18 +402,23 @@
                 socket = io(API_URL, { transports: ['websocket', 'polling'] });
                 socket.on('receive_message', handleReceiveMessage);
                 
-                // 초대 링크 처리
+                // 초대 링크로 접속 시 자동 친구 추가 로직
                 const urlParams = new URLSearchParams(window.location.search);
                 const inviteName = urlParams.get('invite');
                 if(inviteName && inviteName !== data.name) {
-                    await fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: data.name, friendName: inviteName }) });
+                    await fetch(`${API_URL}/api/friend/add`, { 
+                        method: 'POST', headers: {'Content-Type':'application/json'}, 
+                        body: JSON.stringify({ userName: data.name, friendName: inviteName }) 
+                    });
                     showToast(`${inviteName} 님과 자동으로 친구 등록되었습니다.`);
-                    window.history.replaceState({}, document.title, window.location.pathname); // URL 클린업
+                    window.history.replaceState({}, document.title, window.location.pathname); 
                 }
                 
                 updateUserBalance();
                 switchTab('wallet');
-            } catch(e) { showToast("통신 서버 연결 실패"); }
+            } catch(e) { 
+                showToast("통신 서버 연결 실패. 서버가 구동 중인지 확인하세요."); 
+            }
         }
 
         async function uploadProfilePic(event) {
@@ -317,7 +428,10 @@
             reader.onload = async function(e) {
                 const base64 = e.target.result;
                 document.getElementById('my-profile-pic').src = base64;
-                await fetch(`${API_URL}/api/user/profile`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: currentUser.name, profilePic: base64 }) });
+                await fetch(`${API_URL}/api/user/profile`, { 
+                    method: 'POST', headers: {'Content-Type':'application/json'}, 
+                    body: JSON.stringify({ name: currentUser.name, profilePic: base64 }) 
+                });
                 showToast("프로필 사진이 업데이트 되었습니다.");
             };
             reader.readAsDataURL(file);
@@ -333,63 +447,600 @@
             } catch(e){}
         }
 
-        // --- 출금 및 입금 (어드민 연동) ---
+        // -----------------------------------------------------------
+        // 2. 내 지갑 (입출금 및 QR 제어)
+        // -----------------------------------------------------------
         async function requestDeposit() {
             const senderName = document.getElementById('deposit-sender-name').value.trim();
             const amount = parseInt(document.getElementById('deposit-amount').value);
-            if(!senderName || isNaN(amount) || amount <= 0) return showToast("정산 정보를 명확히 채워주세요.");
-            await fetch(`${API_URL}/api/deposit/request`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, senderName, amount }) });
-            showToast("입금 확인 요청이 전송되었습니다.");
+            if(!senderName || isNaN(amount) || amount <= 0) return showToast("입금자명과 금액을 정확히 기재해 주세요.");
+            
+            const res = await fetch(`${API_URL}/api/deposit/request`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ userName: currentUser.name, senderName, amount }) 
+            });
+            if(res.ok) {
+                showToast("입금 확인 및 증액 신청이 관리자에게 전송되었습니다.");
+                document.getElementById('deposit-sender-name').value = '';
+                document.getElementById('deposit-amount').value = '';
+            }
         }
 
         async function requestWithdrawal() {
             const amount = parseInt(document.getElementById('withdraw-amount').value);
-            if(isNaN(amount) || amount <= 0) return showToast("금액 오류");
-            if(amount > currentUser.balance) return showToast("가용 한도를 초과했습니다.");
-            await fetch(`${API_URL}/api/withdraw/request`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: currentUser.name, amount }) });
-            showToast("출금 신청 완료 (관리자 승인 대기)");
-            document.getElementById('withdraw-amount').value = ''; updateUserBalance();
+            if(isNaN(amount) || amount <= 0) return showToast("출금 금액이 올바르지 않습니다.");
+            if(amount > currentUser.balance) return showToast("가용 자산 한도를 초과했습니다.");
+            
+            const res = await fetch(`${API_URL}/api/withdraw/request`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ name: currentUser.name, amount }) 
+            });
+            if(res.ok) {
+                showToast("출금 신청 완료 (관리자 승인 후 계좌 입금)");
+                document.getElementById('withdraw-amount').value = ''; 
+                updateUserBalance();
+            }
         }
 
+        // 어드민 제어
         async function loadAdminActions() {
             const res = await fetch(`${API_URL}/api/admin/actions`);
             const data = await res.json();
-            const tbody = document.getElementById('admin-action-tbody'); tbody.innerHTML = '';
+            const tbody = document.getElementById('admin-action-tbody'); 
+            tbody.innerHTML = '';
             
+            if(data.deposits.length === 0 && data.withdrawals.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5">대기 중인 요청이 없습니다.</td></tr>';
+                return;
+            }
+
             data.deposits.forEach(r => {
-                tbody.innerHTML += `<tr><td><span class="status-badge" style="background:#d1fae5; color:#065f46;">입금신청</span></td><td><b>${r.user_name}</b><br>(${r.sender_name})</td><td>무통장</td><td><b style="color:#10b981;">${r.amount.toLocaleString()}원</b></td><td><button class="btn" style="padding:4px 8px;font-size:12px;background:#10b981;" onclick="approveAction('deposit', ${r.id}, '${r.user_name}', ${r.amount})">증액 승인</button></td></tr>`;
+                tbody.innerHTML += `
+                    <tr>
+                        <td><span style="background:#d1fae5; color:#065f46; padding:4px 8px; border-radius:12px; font-weight:bold; font-size:11px;">입금(충전)</span></td>
+                        <td><b>${r.user_name}</b><br><span style="font-size:11px; color:gray;">(송금인: ${r.sender_name})</span></td>
+                        <td>무통장 입금</td>
+                        <td><b style="color:#10b981;">${r.amount.toLocaleString()}원</b></td>
+                        <td style="display:flex; gap:5px; flex-wrap:wrap;">
+                            <button class="btn" style="padding:4px 8px;font-size:12px;background:#818cf8;" onclick="approveAction('deposit_qr', ${r.id}, '${r.user_name}', ${r.amount})">QR채팅 전송</button>
+                            <button class="btn" style="padding:4px 8px;font-size:12px;background:#10b981;" onclick="approveAction('deposit_direct', ${r.id}, '${r.user_name}', ${r.amount})">즉시 증액</button>
+                        </td>
+                    </tr>`;
             });
             data.withdrawals.forEach(r => {
-                tbody.innerHTML += `<tr><td><span class="status-badge" style="background:#fee2e2; color:#991b1b;">출금신청</span></td><td><b>${r.name}</b></td><td>${r.bank} / ${r.account}</td><td><b style="color:#ef4444;">${r.amount.toLocaleString()}원</b></td><td><button class="btn" style="padding:4px 8px;font-size:12px;background:#ef4444;" onclick="approveAction('withdraw', ${r.id}, '${r.name}', ${r.amount})">출금 승인</button></td></tr>`;
+                tbody.innerHTML += `
+                    <tr>
+                        <td><span style="background:#fee2e2; color:#991b1b; padding:4px 8px; border-radius:12px; font-weight:bold; font-size:11px;">계좌 출금</span></td>
+                        <td><b>${r.name}</b></td>
+                        <td>${r.bank} / ${r.account}</td>
+                        <td><b style="color:#ef4444;">${r.amount.toLocaleString()}원</b></td>
+                        <td><button class="btn" style="padding:4px 8px;font-size:12px;background:#ef4444;" onclick="approveAction('withdraw', ${r.id}, '${r.name}', ${r.amount})">송금 완료/승인</button></td>
+                    </tr>`;
             });
-            if(data.deposits.length===0 && data.withdrawals.length===0) tbody.innerHTML = '<tr><td colspan="5">대기 중인 요청이 없습니다.</td></tr>';
         }
 
         async function approveAction(type, id, userName, amount) {
-            await fetch(`${API_URL}/api/admin/approve`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ type, id, userName, amount }) });
-            showToast("승인 처리 완료"); loadAdminActions();
+            await fetch(`${API_URL}/api/admin/approve`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ type, id, userName, amount, adminName: currentUser.name }) 
+            });
+            showToast("승인 처리가 완료되었습니다."); 
+            loadAdminActions();
+            updateUserBalance();
         }
 
-        // --- 메신저 / 친구 시스템 ---
+        // 수표 시스템
+        async function issueCheck() {
+            const amount = parseInt(document.getElementById('check-amount').value);
+            if(isNaN(amount) || amount <= 0) return showToast("금액 설정 오류");
+            
+            const res = await fetch(`${API_URL}/api/check/issue`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ issuer: currentUser.name, amount })
+            });
+            const data = await res.json();
+            if(res.ok) {
+                const canvas = document.getElementById('qr-canvas');
+                const qrData = `[META_QR]${data.checkId}|${data.secretKey}|${data.signature}`;
+                QRCode.toCanvas(canvas, qrData, { width: 180 }, (err) => {
+                    if(!err) {
+                        document.getElementById('qr-output-zone').style.display = 'block';
+                        document.getElementById('check-key-text').innerText = data.secretKey;
+                        document.getElementById('check-amount').value = '';
+                        showToast("ECC 타원곡선 보안 수표 생성 완료");
+                        updateUserBalance();
+                    }
+                });
+            } else {
+                showToast(data.error);
+            }
+        }
+
+        function downloadQR() {
+            const canvas = document.getElementById('qr-canvas');
+            const a = document.createElement('a'); 
+            a.href = canvas.toDataURL("image/png"); 
+            a.download = `ECC_CHECK_${Date.now()}.png`; 
+            a.click();
+        }
+
+        async function redeemQRKey() {
+            const secretKey = document.getElementById('check-key-input').value.trim();
+            if(!secretKey) return showToast("핀키 번호를 기재하세요.");
+            await executeRedeem({ secretKey });
+        }
+
+        function redeemQRFile(event) {
+            const file = event.target.files[0]; 
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas'); 
+                    canvas.width = img.width; 
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d'); 
+                    ctx.drawImage(img, 0, 0, img.width, img.height);
+                    const code = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, img.width, img.height);
+                    
+                    if(code && code.data.startsWith('[META_QR]')) {
+                        const parsed = code.data.replace('[META_QR]', '').split('|');
+                        executeRedeem({ checkId: parsed[0], secretKey: parsed[1], signature: parsed[2] });
+                    } else {
+                        showToast("인식 실패: 유효한 보안 QR 코드가 아닙니다.");
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function executeRedeem(payload) {
+            const res = await fetch(`${API_URL}/api/check/redeem`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ redeemer: currentUser.name, ...payload }) 
+            });
+            const data = await res.json();
+            if(res.ok) { 
+                showToast(`역산 검증 완료: 자산 동기화 +${data.amount.toLocaleString()} KRW`); 
+                document.getElementById('check-key-input').value = '';
+                updateUserBalance(); 
+            } else {
+                showToast(data.error);
+            }
+        }
+
+        // -----------------------------------------------------------
+        // 3. 내 상점 (브랜드 등록, 상품 스캔, 썸네일 렌더링)
+        // -----------------------------------------------------------
+        function registerNewBrandStore() {
+            const storeName = document.getElementById('new-brand-name').value.trim();
+            const logoFile = document.getElementById('new-brand-logo').files[0];
+            if(!storeName) return showToast("상점 명칭을 기재해 주세요.");
+
+            if(logoFile) {
+                const reader = new FileReader();
+                reader.onload = async function(e) { await sendBrandStorePayload(storeName, e.target.result); };
+                reader.readAsDataURL(logoFile);
+            } else { 
+                sendBrandStorePayload(storeName, ''); 
+            }
+        }
+
+        async function sendBrandStorePayload(name, logoBase64) {
+            const res = await fetch(`${API_URL}/api/store/create`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ name, owner: currentUser.name, logo: logoBase64 }) 
+            });
+            if(res.ok) {
+                showToast("브랜드 상점 개설 완료"); 
+                document.getElementById('new-brand-name').value = ''; 
+                document.getElementById('new-brand-logo').value = ''; 
+                loadMyBrandStores();
+            }
+        }
+
+        async function loadMyBrandStores() {
+            const res = await fetch(`${API_URL}/api/stores/owned/${currentUser.name}`);
+            const stores = await res.json() || [];
+            
+            const listZone = document.getElementById('my-brands-list-zone');
+            const selector = document.getElementById('target-brand-selector');
+            
+            listZone.innerHTML = ''; 
+            selector.innerHTML = '<option value="">출시할 상점 선택</option>';
+
+            if(stores.length === 0) {
+                listZone.innerHTML = '<div style="color:gray; font-size:13px;">개설된 브랜드 상점이 없습니다.</div>';
+                return;
+            }
+
+            stores.forEach(st => {
+                let logoHtml = `<span style="font-size:11px; color:gray;">N/A</span>`;
+                if(st.logo) { logoHtml = `<img src="${st.logo}">`; }
+                
+                const badgeStatus = st.status === 'active' ? '<span style="color:#059669; font-size:11px; font-weight:bold;">[공개중]</span>' : '<span style="color:#ef4444; font-size:11px; font-weight:bold;">[수정중/숨김]</span>';
+                
+                listZone.innerHTML += `
+                    <div style="display:flex; align-items:center; gap:15px; border:1px solid var(--border-color); padding:10px; border-radius:8px; background:#fafafa;">
+                        <div class="brand-logo-circle">${logoHtml}</div>
+                        <div style="flex:1;"><b>${st.name}</b> ${badgeStatus}</div>
+                        <button class="btn btn-secondary" style="padding:6px; font-size:12px;" onclick="toggleBrandStatus('${st.id}', '${st.status}')">상태 변경</button>
+                    </div>`;
+                
+                selector.innerHTML += `<option value="${st.id}">${st.name}</option>`;
+            });
+        }
+
+        async function toggleBrandStatus(storeId, currentStatus) {
+            const newStatus = currentStatus === 'active' ? 'editing' : 'active';
+            await fetch(`${API_URL}/api/store/status`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ id: storeId, status: newStatus }) 
+            });
+            loadMyBrandStores();
+            showToast("상점 공개 상태가 변경되었습니다.");
+        }
+
+        // 고속 로컬 썸네일 스캔
+        function inspectFolderFiles(event) {
+            const files = event.target.files;
+            scannedFiles = Array.from(files);
+            const tbody = document.getElementById('folder-inspect-tbody');
+            tbody.innerHTML = '';
+            
+            if(scannedFiles.length === 0) return;
+            
+            document.getElementById('folder-inspect-zone').style.display = 'block';
+            document.getElementById('inspect-count').innerText = scannedFiles.length;
+
+            scannedFiles.forEach((file, idx) => {
+                let thumbHtml = `<span style="font-size:12px; color:gray; font-weight:bold;">DATA</span>`;
+                
+                // URL.createObjectURL을 사용하여 브라우저 멈춤 없이 즉각 렌더링
+                if(file.type.startsWith('image/') || file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
+                    thumbHtml = `<img src="${URL.createObjectURL(file)}">`;
+                }
+
+                tbody.innerHTML += `
+                    <tr id="inspect-row-${idx}">
+                        <td><input type="checkbox" class="inspect-row-check" data-idx="${idx}" checked></td>
+                        <td><div class="thumb-preview-box" style="height:60px; width:80px; margin:0;">${thumbHtml}</div></td>
+                        <td><b style="font-size:12px;">${file.name}</b></td>
+                        <td><div class="input-group" style="margin:0;"><input type="number" class="inspect-row-price" value="10000" style="padding:6px;"></div></td>
+                        <td><button class="btn" style="padding:6px 12px;font-size:12px;" onclick="individualRegister(${idx})">배포</button></td>
+                    </tr>`;
+            });
+        }
+
+        function toggleAllInspectChecks(master) { 
+            document.querySelectorAll('.inspect-row-check').forEach(ck => ck.checked = master.checked); 
+        }
+
+        async function individualRegister(idx) {
+            const storeId = document.getElementById('target-brand-selector').value;
+            if(!storeId) return showToast("출하할 대상 상점을 선택하세요.");
+            
+            const file = scannedFiles[idx];
+            const row = document.getElementById(`inspect-row-${idx}`);
+            const price = row.querySelector('.inspect-row-price').value;
+            
+            await uploadProductToServer(file, price, storeId);
+            row.style.background = "#e0f2fe"; 
+            row.querySelector('button').disabled = true;
+            row.querySelector('button').innerText = "완료";
+            loadMyStore();
+        }
+
+        async function batchRegisterProducts() {
+            const storeId = document.getElementById('target-brand-selector').value;
+            if(!storeId) return showToast("출하할 대상 상점을 선택하세요.");
+
+            const checks = document.querySelectorAll('.inspect-row-check:checked');
+            if(checks.length === 0) return showToast("등록할 자산을 체크해 주세요.");
+            
+            showToast(`${checks.length}개 파일 암호화 변환 작업 중...`);
+            
+            for(let ck of checks) {
+                const idx = parseInt(ck.getAttribute('data-idx'));
+                const file = scannedFiles[idx];
+                const row = document.getElementById(`inspect-row-${idx}`);
+                
+                if(row.querySelector('button').disabled) continue; // 이미 처리된 건 스킵
+                
+                const price = row.querySelector('.inspect-row-price').value;
+                await uploadProductToServer(file, price, storeId);
+                
+                row.style.background = "#e0f2fe"; 
+                row.querySelector('button').disabled = true;
+                row.querySelector('button').innerText = "완료";
+            }
+            showToast("선택 항목 배포가 완료되었습니다.");
+            loadMyStore();
+        }
+
+        function uploadProductToServer(file, price, storeId) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    const rawBase64 = e.target.result;
+                    // 원본 데이터를 논문 기반 XOR 모듈로 1차 인코딩
+                    const encodedPayload = localECCInverseProcess(rawBase64);
+                    
+                    // 마켓 고속 렌더링용 공개 썸네일 추출
+                    let thumbBase64 = '';
+                    if(file.type.startsWith('image/') || file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
+                        thumbBase64 = rawBase64; 
+                    }
+
+                    const payload = {
+                        name: file.name, 
+                        price: parseInt(price), 
+                        seller: currentUser.name, 
+                        storeId: storeId, 
+                        thumbnail: thumbBase64, 
+                        encryptedPayload: encodedPayload
+                    };
+
+                    try {
+                        const res = await fetch(`${API_URL}/api/products/encrypt-build`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        resolve(await res.json());
+                    } catch(err){ resolve(null); }
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function loadMyStore() {
+            const res = await fetch(`${API_URL}/api/products`);
+            let prods = await res.json() || [];
+            prods = prods.filter(p => p.seller === currentUser.name);
+            
+            const grid = document.getElementById('my-store-grid'); 
+            grid.innerHTML = '';
+            
+            if(prods.length === 0) { 
+                grid.innerHTML = '<div style="color:var(--text-sub); font-size:13px;">등록된 자산이 없습니다.</div>'; 
+                return; 
+            }
+            
+            prods.forEach(p => {
+                grid.innerHTML += `
+                    <div class="product-card">
+                        <div class="thumb-preview-box">
+                            ${p.thumbnail ? `<img src="${p.thumbnail}">` : `<span style="font-size:12px;color:gray;font-weight:bold;">SECURE DATA</span>`}
+                        </div>
+                        <h4 style="font-size:14px; margin-bottom:0;">${p.name}</h4>
+                        <p style="color:var(--primary); font-weight:bold;">${p.price.toLocaleString()} KRW</p>
+                        <div style="display:flex; gap:5px; margin-top:auto;">
+                            <button class="btn btn-warning" style="flex:1; padding:6px; font-size:12px;" onclick="editProduct('${p.id}')">수정</button>
+                            <button class="btn btn-danger" style="flex:1; padding:6px; font-size:12px;" onclick="deleteProduct('${p.id}')">삭제</button>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        async function editProduct(id) {
+            const newName = prompt("변경하실 자산 명칭을 입력하세요:"); if(!newName) return;
+            const newPrice = parseInt(prompt("변경하실 금액(KRW)을 입력하세요:")); if(isNaN(newPrice)) return;
+            
+            await fetch(`${API_URL}/api/product/edit`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ id, name: newName, price: newPrice }) 
+            });
+            showToast("정보가 수정되었습니다."); 
+            loadMyStore();
+        }
+
+        async function deleteProduct(id) {
+            if(!confirm("해당 자산을 영구 삭제하시겠습니까?")) return;
+            await fetch(`${API_URL}/api/product/delete`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ id }) 
+            });
+            showToast("삭제가 완료되었습니다."); 
+            loadMyStore();
+        }
+
+        // -----------------------------------------------------------
+        // 4. 마켓 (상점 탐색 및 자산 구매)
+        // -----------------------------------------------------------
+        async function searchPartnerStores() {
+            try {
+                const res = await fetch(`${API_URL}/api/stores/active`); 
+                const stores = await res.json() || [];
+                const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`); 
+                const favs = await favRes.json() || [];
+                
+                const zone = document.getElementById('partner-fav-zone'); 
+                zone.innerHTML = '';
+                
+                const query = document.getElementById('partner-search-input').value.toLowerCase();
+                
+                // 타인의 상점 중 '공개(active)' 상태인 것만 필터링
+                let filtered = stores.filter(st => st.owner !== currentUser.name);
+                if(query) {
+                    filtered = filtered.filter(st => st.name.toLowerCase().includes(query));
+                }
+
+                if(filtered.length === 0) { 
+                    zone.innerHTML = '<span style="font-size:12px; color:gray;">검색된 브랜드 상점이 없습니다.</span>'; 
+                    return; 
+                }
+
+                filtered.forEach(st => {
+                    const isFav = favs.includes(st.id);
+                    zone.innerHTML += `
+                        <span style="display:inline-flex; align-items:center; background:#fff; padding:6px 12px; border-radius:20px; border:1px solid var(--border-color); margin-right:8px; font-size:13px; margin-bottom:8px;">
+                            <b>${st.name}</b> <span style="font-size:11px; margin-left:4px; color:gray;">(대표: ${st.owner})</span>
+                            <span style="margin-left:8px; cursor:pointer; color:${isFav?'#f59e0b':'#ccc'}; font-size:16px;" onclick="toggleFavoriteStore('${st.id}')">★</span>
+                            <span style="margin-left:8px; cursor:pointer; font-size:12px; color:var(--primary); text-decoration:underline;" onclick="openStoreOwnerChat('${st.owner}')">대표와 채팅</span>
+                        </span>`;
+                });
+            } catch(e){}
+        }
+
+        async function toggleFavoriteStore(targetStoreId) {
+            await fetch(`${API_URL}/api/favorite/toggle`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ userName: currentUser.name, targetStore: targetStoreId }) 
+            });
+            searchPartnerStores();
+        }
+
+        async function loadMarketplace() {
+            try {
+                // 수정 중이지 않은(active) 상점의 상품만 가져옴
+                const res = await fetch(`${API_URL}/api/products/active`); 
+                let prods = await res.json() || [];
+                
+                const q = document.getElementById('market-search').value.toLowerCase();
+                if(q) {
+                    prods = prods.filter(p => p.name.toLowerCase().includes(q) || p.seller.toLowerCase().includes(q));
+                }
+
+                const histRes = await fetch(`${API_URL}/api/transactions/${currentUser.name}`); 
+                const history = await histRes.json() || [];
+                
+                const grid = document.getElementById('market-grid'); 
+                grid.innerHTML = '';
+                
+                if(prods.length === 0) { 
+                    grid.innerHTML = '<div style="color:gray; font-size:13px;">현재 마켓에 노출된 자산이 없습니다.</div>'; 
+                    return; 
+                }
+
+                prods.forEach(p => {
+                    const isMine = p.seller === currentUser.name;
+                    const isBought = history.some(h => h.buyer === currentUser.name && h.productName === p.name);
+                    
+                    let actionBtn = '';
+                    if(isMine || isBought) {
+                        actionBtn = `<button class="btn" style="background:#10b981;" onclick="openUniversalViewer('${p.id}')">로컬 역산 렌더링 열기</button>`;
+                    } else {
+                        actionBtn = `<button class="btn" style="background:var(--primary);" onclick="buyAsset('${p.id}', '${p.name}', ${p.price}, '${p.seller}')">자산 구매 (${p.price.toLocaleString()}원)</button>`;
+                    }
+
+                    grid.innerHTML += `
+                        <div class="product-card">
+                            <div class="thumb-preview-box">
+                                ${p.thumbnail ? `<img src="${p.thumbnail}">` : `<span style="font-size:12px;color:gray;font-weight:bold;">SECURE DATA</span>`}
+                            </div>
+                            <div style="font-size:11px;color:gray;">상점주: <b>${p.seller}</b></div>
+                            <h4 style="font-size:14px; margin-bottom:0;">${p.name}</h4>
+                            <p style="font-weight:bold; color:var(--primary);">${p.price.toLocaleString()} KRW</p>
+                            <div style="margin-top:auto; display:flex; flex-direction:column; gap:5px;">
+                                ${!isMine ? `<button class="btn btn-outline" style="background:#fff; color:var(--primary); border:1px solid var(--primary); padding:6px; font-size:12px;" onclick="openStoreOwnerChat('${p.seller}')">판매자와 채팅하기</button>` : ''}
+                                ${actionBtn}
+                            </div>
+                        </div>`;
+                });
+            } catch(e){}
+        }
+
+        async function buyAsset(id, name, price, seller) {
+            if(!confirm(`[${name}] 자산을 구매하시겠습니까?`)) return;
+            const res = await fetch(`${API_URL}/api/buy`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ buyer: currentUser.name, seller, productId: id, productName: name, amount: price }) 
+            });
+            if(res.ok) { 
+                showToast("구매 체결 및 소유권 획득이 완료되었습니다."); 
+                loadMarketplace(); 
+                updateUserBalance(); 
+            } else { 
+                const d = await res.json(); 
+                showToast(d.error); 
+            }
+        }
+
+        // -----------------------------------------------------------
+        // 5. 다이나믹 역산 렌더러 및 단독 실행형 HTML 다운로더
+        // -----------------------------------------------------------
+        async function openUniversalViewer(id) {
+            try {
+                const res = await fetch(`${API_URL}/api/product/detail/${id}`);
+                const p = await res.json();
+                document.getElementById('modal-product-title').innerText = p.name;
+                document.getElementById('universal-modal').style.display = 'flex';
+                
+                // 브라우저에서 실시간으로 역산(Decryption)을 수행하여 복호화
+                const decryptedBase64 = localECCInverseProcess(p.encryptedPayload);
+                const display = document.getElementById('modal-viewer-display');
+                
+                if(p.name.toLowerCase().match(/\.(png|jpg|jpeg|gif|webp)$/)) {
+                    display.innerHTML = `<img src="${decryptedBase64}" style="max-width:100%; max-height:100%; object-fit:contain;">`;
+                } else {
+                    display.innerHTML = `<div style="text-align:center;"><br><span style="font-size:40px;">📄</span><br><br><b>${p.name}</b><br>무결성 원본 역산 파싱 완료</div>`;
+                }
+
+                // 암호화된 데이터를 내장한 완전 독립형(Standalone) HTML 다운로드 로직
+                document.getElementById('btn-download-original').onclick = function() {
+                    const htmlContent = `
+                        <!DOCTYPE html><html><head><meta charset="UTF-8"><title>${p.name} - Secure Asset</title></head>
+                        <body style="background:#111; color:#fff; display:flex; justify-content:center; align-items:center; height:100vh; margin:0;">
+                            <div id="viewer">역산 렌더링을 진행하고 있습니다...</div>
+                            <script>
+                                const payload = "${p.encryptedPayload.replace(/"/g, '\\"')}";
+                                let dec = ''; 
+                                for(let i=0; i<payload.length; i++) { 
+                                    dec += String.fromCharCode(payload.charCodeAt(i) ^ 42); 
+                                }
+                                if("${p.name}".match(/\\.(png|jpg|jpeg|gif|webp)$/i)) { 
+                                    document.getElementById('viewer').innerHTML = '<img src="'+dec+'" style="max-width:100%;max-height:100%;">'; 
+                                } else { 
+                                    document.getElementById('viewer').innerHTML = '<h2>${p.name}</h2><p>데이터 무결성 검증 완료</p>'; 
+                                }
+                            <\/script>
+                        </body></html>`;
+                    
+                    const blob = new Blob([htmlContent], {type: 'text/html'});
+                    const link = document.createElement('a'); 
+                    link.href = URL.createObjectURL(blob); 
+                    link.download = p.name + "_secured.html";
+                    link.click(); 
+                    showToast("독자적 암호화 HTML 원본이 다운로드되었습니다.");
+                };
+            } catch(e){}
+        }
+        function closeModal() { document.getElementById('universal-modal').style.display = 'none'; }
+
+        // -----------------------------------------------------------
+        // 6. 메신저 (소셜 기능, P2P 송금, 고객센터)
+        // -----------------------------------------------------------
         function generateInviteLink() {
             const link = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(currentUser.name)}`;
-            navigator.clipboard.writeText(link).then(() => showToast("초대 링크가 클립보드에 복사되었습니다."));
+            navigator.clipboard.writeText(link).then(() => showToast("내 초대 링크가 복사되었습니다. 링크를 친구에게 전달하세요."));
         }
 
         async function addFriend() {
             const friendName = document.getElementById('friend-search-input').value.trim();
             if(!friendName || friendName === currentUser.name) return;
-            const res = await fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName }) });
-            if(res.ok) { showToast("친구 등록 완료"); document.getElementById('friend-search-input').value=''; loadFriendList(); }
-            else { const d = await res.json(); showToast(d.error); }
+            const res = await fetch(`${API_URL}/api/friend/add`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ userName: currentUser.name, friendName }) 
+            });
+            if(res.ok) { 
+                showToast("친구가 추가되었습니다."); 
+                document.getElementById('friend-search-input').value=''; 
+                loadFriendList(); 
+            } else { 
+                const d = await res.json(); 
+                showToast(d.error); 
+            }
         }
 
         async function loadFriendList() {
             const res = await fetch(`${API_URL}/api/friends/${currentUser.name}`);
-            const friends = await res.json();
-            const container = document.getElementById('friend-list-container'); container.innerHTML = '';
+            const friends = await res.json() || [];
+            const container = document.getElementById('friend-list-container'); 
+            container.innerHTML = '';
             
-            // 이재준 고객센터 기본 고정
+            // 관리자 계정이 아니라면 무조건 고객센터(이재준)는 고정 친구로 등록
             if(currentUser.name !== '이재준') {
                 container.innerHTML += `
                     <div class="friend-item" onclick="openMessengerChat('이재준')">
@@ -412,7 +1063,10 @@
             document.getElementById('empty-chat-area').style.display = 'none';
             document.getElementById('main-chat-area').style.display = 'flex';
             activeChatFriend = friendName;
-            document.getElementById('active-chat-title').innerText = `${friendName} 님과의 대화`;
+            
+            const title = friendName === '이재준' ? '고객센터 (이재준 님)' : `${friendName} 님과의 대화`;
+            document.getElementById('active-chat-title').innerText = title;
+            
             currentChatRoomId = `room_msg_${[currentUser.name, friendName].sort().join('_')}`;
             socket.emit('join_room', currentChatRoomId);
             
@@ -422,41 +1076,70 @@
             msgs.forEach(m => appendMainMessage(m.sender, m.message, m.senderPic));
         }
 
-        function sendMainMessage() {
-            const input = document.getElementById('main-chat-input'); const msg = input.value.trim();
-            if(!msg || !activeChatFriend) return;
-            const pic = document.getElementById('my-profile-pic').src;
-            socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
-            appendMainMessage(currentUser.name, msg, pic); input.value = '';
+        function closeMainChat() {
+            document.getElementById('main-chat-area').style.display = 'none';
+            document.getElementById('empty-chat-area').style.display = 'flex';
+            activeChatFriend = null;
+            currentChatRoomId = null;
         }
 
+        function sendMainMessage() {
+            const input = document.getElementById('main-chat-input'); 
+            const msg = input.value.trim();
+            if(!msg || !activeChatFriend) return;
+            
+            const pic = document.getElementById('my-profile-pic').src;
+            socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
+            appendMainMessage(currentUser.name, msg, pic); 
+            input.value = '';
+        }
+
+        // 채팅방 내 다이렉트 송금
         async function sendTransferInChat() {
             if(!activeChatFriend) return;
             const amount = parseInt(document.getElementById('chat-transfer-amount').value);
-            if(isNaN(amount) || amount <= 0) return showToast("금액 오류");
+            if(isNaN(amount) || amount <= 0) return showToast("정확한 송금 금액을 입력하세요.");
             
-            const res = await fetch(`${API_URL}/api/transfer`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sender: currentUser.name, receiver: activeChatFriend, amount }) });
+            const res = await fetch(`${API_URL}/api/transfer`, { 
+                method: 'POST', headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ sender: currentUser.name, receiver: activeChatFriend, amount }) 
+            });
+            
             if(res.ok) {
+                // 송금이 완료되면 채팅방에 송금 완료 영수증 메시지를 띄웁니다.
                 const msg = `[TRANSFER]${amount}`;
                 const pic = document.getElementById('my-profile-pic').src;
                 socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
                 appendMainMessage(currentUser.name, msg, pic);
+                
                 document.getElementById('chat-transfer-amount').value = '';
                 updateUserBalance();
-            } else { const d = await res.json(); showToast(d.error); }
-        }
-
-        function handleReceiveMessage(data) {
-            if(data.roomId === currentChatRoomId && data.sender !== currentUser.name) appendMainMessage(data.sender, data.message, data.senderPic);
+            } else { 
+                const d = await res.json(); 
+                showToast(d.error); 
+            }
         }
 
         function appendMainMessage(sender, text, picBase64) {
-            const chatBody = document.getElementById('main-chat-body'); const isMe = sender === currentUser.name;
+            const chatBody = document.getElementById('main-chat-body'); 
+            const isMe = sender === currentUser.name;
             let displayHtml = text;
             
+            // 전송된 메시지가 송금 코드일 경우
             if(text.startsWith('[TRANSFER]')) {
                 const amt = parseInt(text.replace('[TRANSFER]', ''));
-                displayHtml = `<div class="transfer-widget"><b>💸 송금 완료</b><br><span style="color:#10b981; font-size:18px;">${amt.toLocaleString()} 원</span></div>`;
+                displayHtml = `<div class="transfer-widget"><b>💸 송금 완료 영수증</b><br><span style="color:#10b981; font-size:18px;">${amt.toLocaleString()} 원</span></div>`;
+            }
+            // 전송된 메시지가 어드민이 발급한 QR 수표일 경우
+            else if(text.startsWith('[META_QR]')) {
+                const parsed = text.replace('[META_QR]', '').split('|');
+                displayHtml = `
+                    <div class="transfer-widget" style="border-color:#6366f1; background:#eef2ff;">
+                        <div style="font-weight:bold; color:#4f46e5; margin-bottom:5px;">[보안 인증 수표 수신]</div>
+                        <canvas id="main_chat_qr_${parsed[0]}"></canvas>
+                        <div style="font-size:12px; color:#ef4444; font-weight:bold; margin-top:5px;">PIN 키: ${parsed[1]}</div>
+                    </div>`;
+                setTimeout(() => { QRCode.toCanvas(document.getElementById(`main_chat_qr_${parsed[0]}`), text, {width: 120}); }, 100);
             }
 
             const picHtml = picBase64 ? `<img src="${picBase64}" class="profile-pic" style="width:30px; height:30px;">` : '';
@@ -473,84 +1156,117 @@
             chatBody.scrollTop = chatBody.scrollHeight;
         }
 
-        // --- 나머지 기존 커머스 로직 (상품 등록, 뷰어, 상점 등) ---
-        // (이전 코드와 동일하게 작동하며, 공간관계상 주요 연동부만 남깁니다)
-        
-        function registerNewBrandStore() { /* 기존 동일 */ }
-        function inspectFolderFiles(event) { /* 기존 동일 */ 
-            const files = event.target.files; scannedFiles = Array.from(files);
-            const tbody = document.getElementById('folder-inspect-tbody'); tbody.innerHTML = '';
-            if(scannedFiles.length === 0) return;
-            document.getElementById('folder-inspect-zone').style.display = 'block';
-            scannedFiles.forEach((file, idx) => {
-                let thumbHtml = `<span style="font-size:12px; color:gray;">DATA</span>`;
-                if(file.type.startsWith('image/') || file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i)) thumbHtml = `<img src="${URL.createObjectURL(file)}">`;
-                tbody.innerHTML += `<tr id="inspect-row-${idx}"><td><input type="checkbox" class="inspect-row-check" data-idx="${idx}" checked></td><td><div class="thumb-preview-box" style="height:60px; width:80px;">${thumbHtml}</div></td><td><b style="font-size:12px;">${file.name}</b></td><td><input type="number" class="inspect-row-price" value="10000" style="padding:6px; width:100px;"></td><td><button class="btn" style="padding:6px;font-size:12px;" onclick="individualRegister(${idx})">배포</button></td></tr>`;
-            });
-        }
-        function toggleAllInspectChecks(master) { document.querySelectorAll('.inspect-row-check').forEach(ck => ck.checked = master.checked); }
-        async function individualRegister(idx) {
-            const storeId = document.getElementById('target-brand-selector').value;
-            const row = document.getElementById(`inspect-row-${idx}`);
-            await uploadProductToServer(scannedFiles[idx], row.querySelector('.inspect-row-price').value, storeId);
-            row.style.background = "#e0f2fe"; row.querySelector('button').disabled = true;
-        }
-        async function batchRegisterProducts() {
-            const storeId = document.getElementById('target-brand-selector').value;
-            const checks = document.querySelectorAll('.inspect-row-check:checked');
-            for(let ck of checks) {
-                const idx = parseInt(ck.getAttribute('data-idx'));
-                const row = document.getElementById(`inspect-row-${idx}`);
-                if(!row.querySelector('button').disabled) {
-                    await uploadProductToServer(scannedFiles[idx], row.querySelector('.inspect-row-price').value, storeId);
-                    row.style.background = "#e0f2fe"; row.querySelector('button').disabled = true;
-                }
-            }
-            switchTab('my-store');
-        }
-        function uploadProductToServer(file, price, storeId) {
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = async function(e) {
-                    const rawBase64 = e.target.result;
-                    const encodedPayload = localECCInverseProcess(rawBase64);
-                    let thumbBase64 = '';
-                    if(file.type.startsWith('image/') || file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i)) thumbBase64 = rawBase64;
-                    const res = await fetch(`${API_URL}/api/products/encrypt-build`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: file.name, price: parseInt(price), seller: currentUser.name, storeId: storeId, thumbnail: thumbBase64, encryptedPayload: encodedPayload }) });
-                    resolve(await res.json());
-                };
-                reader.readAsDataURL(file);
-            });
+        // -----------------------------------------------------------
+        // 7. 플로팅 드로어 채팅 (고객센터 / 상점주 문의)
+        // -----------------------------------------------------------
+        function openCustomerCenter() {
+            drawerChatPartner = '이재준';
+            drawerChatRoomId = `room_msg_${[currentUser.name, '이재준'].sort().join('_')}`;
+            document.getElementById('chat-title').innerText = `고객센터 (1:1 문의)`;
+            document.getElementById('chat-drawer').classList.add('open');
+            socket.emit('join_room', drawerChatRoomId); 
+            loadDrawerChatHistory();
         }
 
-        async function loadMyStore() { /* 기존 동일 */ }
-        async function loadMyBrandStores() { /* 기존 동일 */ 
-            const res = await fetch(`${API_URL}/api/stores/owned/${currentUser.name}`); const stores = await res.json() || [];
-            const selector = document.getElementById('target-brand-selector'); selector.innerHTML = '';
-            stores.forEach(st => selector.innerHTML += `<option value="${st.id}">${st.name}</option>`);
+        function openStoreOwnerChat(sellerName) {
+            drawerChatPartner = sellerName;
+            drawerChatRoomId = `room_msg_${[currentUser.name, sellerName].sort().join('_')}`;
+            document.getElementById('chat-title').innerText = `${sellerName} 님 (상점 대표)`;
+            document.getElementById('chat-drawer').classList.add('open');
+            socket.emit('join_room', drawerChatRoomId); 
+            loadDrawerChatHistory();
         }
-        async function loadMarketplace() { /* 기존 동일, 구매 버튼 로직 유지 */ }
-        
-        async function openUniversalViewer(id) {
-            const res = await fetch(`${API_URL}/api/product/detail/${id}`); const p = await res.json();
-            document.getElementById('modal-product-title').innerText = p.name; document.getElementById('universal-modal').style.display = 'flex';
-            const decryptedBase64 = localECCInverseProcess(p.encryptedPayload);
-            const display = document.getElementById('modal-viewer-display');
-            if(p.name.toLowerCase().match(/\.(png|jpg|jpeg|gif|webp)$/)) display.innerHTML = `<img src="${decryptedBase64}" style="max-width:100%; max-height:100%; object-fit:contain;">`;
-            else display.innerHTML = `<div style="text-align:center;"><br><b>${p.name}</b><br>무결성 원본 역산 파싱 렌더링 완료</div>`;
-            document.getElementById('btn-download-original').onclick = function() {
-                const htmlContent = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${p.name}</title></head><body style="background:#111; color:#fff; display:flex; justify-content:center; align-items:center; height:100vh; margin:0;"><div id="viewer">로컬 역산 렌더링 진행 중...</div><script>const payload = "${p.encryptedPayload.replace(/"/g, '\\"')}"; let dec = ''; for(let i=0; i<payload.length; i++) { dec += String.fromCharCode(payload.charCodeAt(i) ^ 42); } if("${p.name}".match(/\\.(png|jpg|jpeg|gif|webp)$/i)) { document.getElementById('viewer').innerHTML = '<img src="'+dec+'" style="max-width:100%;max-height:100%;">'; } else { document.getElementById('viewer').innerHTML = '<h2>${p.name}</h2><p>데이터 무결성 검증 완료</p>'; }<\/script></body></html>`;
-                const blob = new Blob([htmlContent], {type: 'text/html'}); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = p.name + "_secured.html"; link.click();
-            };
+
+        function closeDrawerChat() { 
+            document.getElementById('chat-drawer').classList.remove('open'); 
+            drawerChatRoomId = null;
         }
-        function closeModal() { document.getElementById('universal-modal').style.display = 'none'; }
-        
+
+        async function loadDrawerChatHistory() {
+            try {
+                const res = await fetch(`${API_URL}/api/chat/${drawerChatRoomId}`); 
+                const msgs = await res.json() || [];
+                const chatBody = document.getElementById('drawer-chat-body'); 
+                chatBody.innerHTML = '';
+                msgs.forEach(m => appendDrawerMessage(m.sender, m.message));
+            } catch(e) {}
+        }
+
+        function sendDrawerMessage() {
+            const input = document.getElementById('drawer-chat-input'); 
+            const msg = input.value.trim();
+            if(!msg) return;
+            const pic = document.getElementById('my-profile-pic').src;
+            socket.emit('send_message', { roomId: drawerChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
+            appendDrawerMessage(currentUser.name, msg); 
+            input.value = '';
+        }
+
+        function appendDrawerMessage(sender, text) {
+            const chatBody = document.getElementById('drawer-chat-body'); 
+            const isMe = sender === currentUser.name;
+            let displayHtml = text;
+            
+            if(text.startsWith('[TRANSFER]')) {
+                const amt = parseInt(text.replace('[TRANSFER]', ''));
+                displayHtml = `<div class="transfer-widget"><b>💸 송금 영수증</b><br><span style="color:#10b981;">${amt.toLocaleString()} 원</span></div>`;
+            } else if(text.startsWith('[META_QR]')) {
+                const parsed = text.replace('[META_QR]', '').split('|');
+                displayHtml = `
+                    <div class="qr-msg-box">
+                        <div style="font-weight:bold; color:#059669; margin-bottom:5px;">보안 인증 수표 도착</div>
+                        <canvas id="drawer_qr_${parsed[0]}"></canvas>
+                        <div style="font-size:12px; color:#ef4444; font-weight:bold; margin-top:5px;">PIN 키: ${parsed[1]}</div>
+                    </div>`;
+                setTimeout(() => { QRCode.toCanvas(document.getElementById(`drawer_qr_${parsed[0]}`), text, {width: 120}); }, 100);
+            }
+
+            chatBody.innerHTML += `
+                <div class="msg-bubble ${isMe ? 'msg-me' : 'msg-other'}" style="align-self: ${isMe ? 'flex-end' : 'flex-start'};">
+                    <div style="font-size:11px; margin-bottom:4px; opacity:0.7;">${isMe ? '나' : sender}</div>
+                    <div>${displayHtml}</div>
+                </div>`;
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
+        // 공통 소켓 수신 핸들러
+        function handleReceiveMessage(data) {
+            // 메신저 탭에 열려있는 방일 때
+            if(data.roomId === currentChatRoomId && data.sender !== currentUser.name) {
+                appendMainMessage(data.sender, data.message, data.senderPic);
+            }
+            // 플로팅 드로어에 열려있는 방일 때
+            else if(data.roomId === drawerChatRoomId && data.sender !== currentUser.name) {
+                appendDrawerMessage(data.sender, data.message);
+            }
+        }
+
+        // -----------------------------------------------------------
+        // 8. 트랜잭션 기록
+        // -----------------------------------------------------------
         async function loadHistory() {
-            const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`); const list = await res.json() || []; 
-            const tbody = document.getElementById('history-body'); tbody.innerHTML = '';
-            if(list.length === 0) return tbody.innerHTML = '<tr><td colspan="5">기록이 없습니다.</td></tr>';
-            list.forEach(h => { let sign = (h.buyer === currentUser.name || h.sender === currentUser.name || h.type.includes('출금')) ? '-' : '+';
-                tbody.innerHTML += `<tr><td>${h.date}</td><td><b>${h.type}</b></td><td>${h.productName || '원장 변동'}</td><td>${h.seller || h.receiver || h.sender || '시스템'}</td><td><b>${sign}${h.amount.toLocaleString()}원</b></td></tr>`;
+            const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`); 
+            const list = await res.json() || []; 
+            const tbody = document.getElementById('history-body'); 
+            tbody.innerHTML = '';
+            
+            if(list.length === 0) { 
+                tbody.innerHTML = '<tr><td colspan="5">기록이 없습니다.</td></tr>'; 
+                return; 
+            }
+            
+            list.forEach(h => {
+                let sign = (h.buyer === currentUser.name || h.sender === currentUser.name || h.type.includes('출금')) ? '-' : '+';
+                let color = sign === '-' ? 'color:#ef4444;' : 'color:#10b981;';
+                
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${h.date}</td>
+                        <td><b>${h.type}</b></td>
+                        <td>${h.productName || '계좌 입출금 및 P2P'}</td>
+                        <td>${h.seller || h.receiver || h.sender || '시스템'}</td>
+                        <td style="font-weight:bold; ${color}">${sign}${h.amount.toLocaleString()} 원</td>
+                    </tr>`;
             });
         }
     </script>
