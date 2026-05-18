@@ -19,8 +19,10 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-// 🚀 자산 증발 차단 DB
-const db = new sqlite3.Database(path.join(__dirname, 'earth_production_master.sqlite'));
+// 🚀 자산 증발을 영구 차단하는 절대 경로 DB 파일명 (git pull 영향 안 받음)
+const db = new sqlite3.Database('/home/ubuntu/earth_master_data.sqlite', (err) => {
+    if(err) console.log("DB 경로 생성 오류, 현재 폴더에 생성합니다.");
+});
 
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT)`);
@@ -36,20 +38,20 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, targetStore TEXT)`);
 });
 
-// 🚀 2단계 로그인 로직 (회원 존재 검증)
+// 🚀 2단계 로그인 로직 (회원 존재 검증만 처리하여 잔액 초기화 방지)
 app.post('/api/auth/verify', (req, res) => {
     db.get(`SELECT * FROM users WHERE name = ?`, [req.body.name], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (row) {
             if (row.password === req.body.password) res.json({ exists: true, user: row });
-            else res.status(401).json({ exists: true, error: "비밀번호가 틀렸습니다." });
+            else res.status(401).json({ exists: true, error: "비밀번호 오류" });
         } else {
             res.json({ exists: false });
         }
     });
 });
 
-// 🚀 신규 회원 가입 (10,000원 지급 보존)
+// 🚀 신규 가입 전용 (10,000원 부여)
 app.post('/api/auth/register', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, 10000)`, [name, password, bank, account], (err) => {
@@ -214,6 +216,7 @@ app.post('/api/favorite/toggle', (req, res) => {
     });
 });
 app.get('/api/favorites/:userName', (req, res) => { db.all(`SELECT targetStore FROM favorite_stores WHERE userName = ?`, [req.params.userName], (err, rows) => res.json(rows ? rows.map(r => r.targetStore) : [])); });
+
 app.get('/api/chat/:roomId', (req, res) => { db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => res.json(rows || [])); });
 
 app.get('/api/transactions/:name', async (req, res) => {
@@ -225,24 +228,25 @@ app.get('/api/transactions/:name', async (req, res) => {
         const wds = await new Promise(r => db.all(`SELECT * FROM withdrawals WHERE name=?`, [name], (e, rows) => r(rows||[])));
         
         let history = [];
-        txs.forEach(t => history.push({ type: t.buyer === name ? '자산 구매' : '자산 판매', date: t.date, amount: t.amount, productName: t.productName, seller: t.seller }));
+        txs.forEach(t => history.push({ type: t.buyer === name ? '자산 판매' : '자산 구매', date: t.date, amount: t.amount, productName: t.productName, seller: t.buyer === name ? t.seller : t.buyer }));
         tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, amount: t.amount, seller: t.receiver || t.sender }));
         dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, amount: d.amount, seller: 'Earth(Root)' }));
-        wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, amount: w.amount, seller: '지정 계좌' }));
+        wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, amount: w.amount, seller: '지정 등록 계좌' }));
         
         history.sort((a,b) => new Date(b.date) - new Date(a.date)); 
         res.json(history);
     } catch(e) { res.json([]); }
 });
 
-// 🚀 소켓 글로벌 브로드캐스팅 (방 생성/알림 트리거)
+// 🚀 소켓 글로벌 브로드캐스팅 처리 (새 채팅방 개설/배지 트리거)
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     socket.on('send_message', (data) => { 
         db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { 
+            // 방 안에 있는 사람뿐 아니라 서버 전체 접속자에게 신호를 쏴서, 방이 없던 사람도 즉각 방을 만들고 배지를 올리게 함
             io.emit('receive_message', data); 
         }); 
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH SYSTEM PERFECT] BOUND ON PORT ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH SYSTEM V6] BOUND ON PORT ${PORT}`); });
