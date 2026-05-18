@@ -40,7 +40,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-const db = new sqlite3.Database(path.join(__dirname, 'commerce_master_ultimate_final.db'));
+const db = new sqlite3.Database(path.join(__dirname, 'commerce_master_ultimate_v4.db'));
 
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT)`);
@@ -60,7 +60,7 @@ app.post('/api/auth', (req, res) => {
     const { name, password, bank, account } = req.body;
     db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
         if (row) {
-            if (row.password !== password) return res.status(401).json({ error: "비밀번호 자격 위배" });
+            if (row.password !== password) return res.status(401).json({ error: "비밀번호 오류" });
             return res.json(row);
         } else {
             db.run(`INSERT INTO users (name, password, bank, account, balance) VALUES (?, ?, ?, ?, 10000)`, [name, password, bank, account], () => {
@@ -85,12 +85,14 @@ app.post('/api/friend/add', (req, res) => {
 app.get('/api/friends/:userName', (req, res) => { db.all(`SELECT u.name, u.profilePic FROM friends f JOIN users u ON f.friendName = u.name WHERE f.userName = ?`, [req.params.userName], (err, rows) => res.json(rows || [])); });
 
 app.post('/api/deposit/request', (req, res) => {
-    db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date) VALUES (?, ?, ?, '대기', ?)`, [req.body.userName, req.body.senderName, req.body.amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+    const amount = Number(req.body.amount);
+    db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date) VALUES (?, ?, ?, '대기', ?)`, [req.body.userName, req.body.senderName, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
 });
 app.post('/api/withdraw/request', (req, res) => {
+    const amount = Number(req.body.amount);
     db.serialize(() => {
-        db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [req.body.amount, req.body.name]);
-        db.run(`INSERT INTO withdrawals (name, amount, status, date) VALUES (?, ?, '대기', ?)`, [req.body.name, req.body.amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+        db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.name]);
+        db.run(`INSERT INTO withdrawals (name, amount, status, date) VALUES (?, ?, '대기', ?)`, [req.body.name, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
     });
 });
 
@@ -103,7 +105,8 @@ app.get('/api/admin/actions', (req, res) => {
 });
 
 app.post('/api/admin/approve', (req, res) => {
-    const { type, id, userName, amount, adminName } = req.body;
+    const { type, id, userName, adminName } = req.body;
+    const amount = Number(req.body.amount);
     if(type === 'deposit_direct') {
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, userName]);
@@ -128,26 +131,26 @@ app.post('/api/admin/approve', (req, res) => {
 });
 
 app.post('/api/transfer', (req, res) => {
-    const { sender, receiver, amount } = req.body;
-    db.get(`SELECT balance FROM users WHERE name = ?`, [sender], (err, sRow) => {
+    const amount = Number(req.body.amount);
+    db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.sender], (err, sRow) => {
         if (!sRow || sRow.balance < amount) return res.status(400).json({ error: "원장 자산 범위를 탈각한 이체 시도" });
         db.serialize(() => {
-            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, sender]);
-            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, receiver]);
-            db.run(`INSERT INTO transfers (sender, receiver, amount, date) VALUES (?, ?, ?, ?)`, [sender, receiver, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.sender]);
+            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.receiver]);
+            db.run(`INSERT INTO transfers (sender, receiver, amount, date) VALUES (?, ?, ?, ?)`, [req.body.sender, req.body.receiver, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
         });
     });
 });
 
 app.post('/api/check/issue', (req, res) => {
-    const { issuer, amount } = req.body;
-    db.get(`SELECT balance FROM users WHERE name = ?`, [issuer], (err, row) => {
+    const amount = Number(req.body.amount);
+    db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.issuer], (err, row) => {
         if (!row || row.balance < amount) return res.status(400).json({ error: "한도 부족" });
         const checkId = 'META_QR_' + Date.now(); const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
         const signature = generateECCInverseSignature(checkId, secretKey, amount);
         db.serialize(() => {
-            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, issuer]);
-            db.run(`INSERT INTO qr_checks (id, amount, issuer, secretKey, eccSignature, is_used, date) VALUES (?, ?, ?, ?, ?, 0, ?)`, [checkId, amount, issuer, secretKey, signature, new Date().toLocaleString('ko-KR')], () => {
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.issuer]);
+            db.run(`INSERT INTO qr_checks (id, amount, issuer, secretKey, eccSignature, is_used, date) VALUES (?, ?, ?, ?, ?, 0, ?)`, [checkId, amount, req.body.issuer, secretKey, signature, new Date().toLocaleString('ko-KR')], () => {
                 res.json({ success: true, checkId, secretKey, signature });
             });
         });
@@ -177,23 +180,23 @@ app.get('/api/stores/active', (req, res) => { db.all(`SELECT * FROM stores WHERE
 
 app.post('/api/products/encrypt-build', (req, res) => {
     db.run(`INSERT INTO products (id, storeId, type, name, description, price, seller, thumbnail, encryptedPayload) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?)`, 
-        ['PRD_' + Date.now(), req.body.storeId, req.body.name, req.body.description, req.body.price, req.body.seller, req.body.thumbnail, req.body.encryptedPayload], () => res.json({ success: true }));
+        ['PRD_' + Date.now(), req.body.storeId, req.body.name, req.body.description, Number(req.body.price), req.body.seller, req.body.thumbnail, req.body.encryptedPayload], () => res.json({ success: true }));
 });
 app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT * FROM products WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
 
-app.post('/api/product/edit', (req, res) => { db.run(`UPDATE products SET name = ?, price = ? WHERE id = ?`, [req.body.name, req.body.price, req.body.id], () => res.json({ success: true })); });
+app.post('/api/product/edit', (req, res) => { db.run(`UPDATE products SET name = ?, price = ? WHERE id = ?`, [req.body.name, Number(req.body.price), req.body.id], () => res.json({ success: true })); });
 app.post('/api/product/delete', (req, res) => { db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); });
 
 app.post('/api/buy', (req, res) => {
-    const { buyer, seller, productId, productName, amount } = req.body;
-    db.get(`SELECT balance FROM users WHERE name = ?`, [buyer], (err, row) => {
+    const amount = Number(req.body.amount);
+    db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.buyer], (err, row) => {
         if (!row || row.balance < amount) return res.status(400).json({ error: "자산 부족" });
         db.serialize(() => {
-            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
-            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [buyer, seller, productName, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.buyer]);
+            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.seller]);
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [req.body.buyer, req.body.seller, req.body.productName, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
         });
     });
 });
@@ -218,8 +221,8 @@ app.get('/api/transactions/:name', async (req, res) => {
         let history = [];
         txs.forEach(t => history.push({ type: t.buyer === name ? '자산 구매' : '자산 판매', date: t.date, amount: t.amount, productName: t.productName, seller: t.seller }));
         tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, amount: t.amount, seller: t.receiver || t.sender }));
-        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, amount: d.amount, seller: '어드민' }));
-        wds.forEach(w => history.push({ type: `출금 집행 (${w.status})`, date: w.date, amount: w.amount, seller: '지정 계좌' }));
+        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, amount: d.amount, seller: '어드민 (승인대기)' }));
+        wds.forEach(w => history.push({ type: `출금 완료`, date: w.date, amount: w.amount, seller: '지정 등록 계좌' }));
         history.sort((a,b) => new Date(b.date) - new Date(a.date)); res.json(history);
     } catch(e) { res.json([]); }
 });
@@ -231,4 +234,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`[GITHUB SYSTEM V4 SOCIAL] BOUND ON PORT ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`[GITHUB SYSTEM V5 PERFECT] BOUND ON PORT ${PORT}`); });
