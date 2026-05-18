@@ -520,24 +520,58 @@
 
         function logout() { localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
 
-        function loginSuccess(data) {
-            currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
-            document.getElementById('display-name').innerText = data.name; if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
-            const str = `[${data.bank}] ${data.account} (${data.realname || ''})`; document.getElementById('modal-withdraw-account-info').innerText = str;
+function loginSuccess(data) {
+            currentUser = data; 
+            document.getElementById('login-section').style.display = 'none'; 
+            document.getElementById('workspace-section').style.display = 'block';
+            document.getElementById('display-name').innerText = data.name; 
+            if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
+            
+            const str = `[${data.bank}] ${data.account} (${data.realname || ''})`;
+            
+            // 🚀 안전한 방어 코드 적용 (존재할 때만 UI 주입하여 크래시 방지)
+            const accEl = document.getElementById('withdraw-account-info');
+            if(accEl) accEl.innerText = str;
+            
+            const modalAccEl = document.getElementById('modal-withdraw-account-info');
+            if(modalAccEl) modalAccEl.innerText = str;
+
+            // 🚀 Admin 권한 부여 로직 (계좌번호 숫자만 치환하여 정확히 검증)
+            const cleanAcc = data.account ? data.account.replace(/[^0-9]/g, '') : '';
+            if(cleanAcc === '1002338118610') {
+                document.getElementById('admin-indicator').style.display = 'inline-block';
+                document.getElementById('admin-deposit-panel').style.display = 'block';
+                document.getElementById('admin-db-reset-btn').style.display = 'block';
+            }
 
             socket = io(API_URL, { transports: ['websocket', 'polling'] });
             socket.on('receive_message', handleReceiveMessage);
             
-            const urlParams = new URLSearchParams(window.location.search); const inviteName = urlParams.get('invite');
+            // 🚀 초대 URL 처리 (자동 채팅방 개방)
+            const urlParams = new URLSearchParams(window.location.search);
+            const inviteName = urlParams.get('invite');
+            const redeemData = urlParams.get('redeem');
+            
             if(inviteName && inviteName !== data.name) {
-                fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: data.name, friendName: inviteName }) }).then(() => {
-                    showToast(`${inviteName} 님과 자동 채널이 연결되었습니다.`); window.history.replaceState({}, document.title, window.location.pathname);
-                    loadFriendList(); setTimeout(() => { toggleMessengerDrawer(); openMessengerChat(inviteName); }, 500);
+                fetch(`${API_URL}/api/friend/add`, {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ userName: data.name, friendName: inviteName })
+                }).then(() => {
+                    showToast(`${inviteName} 님과 연결되었습니다.`);
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    setTimeout(() => openMessengerChat(inviteName), 500); 
                 });
+            } else if (redeemData) {
+                const parts = redeemData.split('|');
+                if(parts.length === 3) executeRedeemDirect(parts[0], parts[1], parts[2]);
+                window.history.replaceState({}, document.title, window.location.pathname);
             }
-            updateUserBalance(); switchTab('market'); loadFriendList(); loadChatList();
+            
+            updateUserBalance(); 
+            switchTab('market'); // 당근마켓플레이스로 첫 화면 리디렉션
+            loadFriendList(); 
+            loadChatList();
         }
-
         // --- 🚀 프로필 관리 & Admin 권한 트리거 (mars) ---
         function openProfileModal() {
             if(!currentUser) return;
@@ -546,20 +580,47 @@
         }
         function previewProfilePic(e) { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = function(evt) { tempProfilePicBase64 = evt.target.result; document.getElementById('modal-profile-pic').src = tempProfilePicBase64; }; reader.readAsDataURL(file); }
         
-        async function saveProfile() {
-            const password = document.getElementById('modal-password').value.trim(); const realname = document.getElementById('modal-realname').value.trim(); const bank = document.getElementById('modal-bank').value.trim(); const account = document.getElementById('modal-account').value.trim();
+async function saveProfile() {
+            const password = document.getElementById('modal-password').value.trim(); 
+            const realname = document.getElementById('modal-realname').value.trim(); 
+            const bank = document.getElementById('modal-bank').value.trim(); 
+            const account = document.getElementById('modal-account').value.trim();
             if(!password || !realname || !bank || !account) return showToast("모든 정보 기입 필수");
             try {
-                const res = await fetch(`${API_URL}/api/user/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: currentUser.name, password, realname, bank, account, profilePic: tempProfilePicBase64 }) });
+                const res = await fetch(`${API_URL}/api/user/update`, { 
+                    method: 'POST', 
+                    headers: {'Content-Type':'application/json'}, 
+                    body: JSON.stringify({ name: currentUser.name, password, realname, bank, account, profilePic: tempProfilePicBase64 }) 
+                });
                 if(res.ok) {
                     currentUser.password = password; currentUser.realname = realname; currentUser.bank = bank; currentUser.account = account; currentUser.profilePic = tempProfilePicBase64;
                     if(tempProfilePicBase64) document.getElementById('my-profile-pic').src = tempProfilePicBase64;
-                    document.getElementById('modal-withdraw-account-info').innerText = `[${bank}] ${account} (${realname})`;
-                    showToast("계정 설정 저장 완료"); closeModal('profile-modal');
+                    
+                    const str = `[${bank}] ${account} (${realname})`; 
+                    
+                    // 🚀 안전한 방어 코드 적용
+                    const accEl = document.getElementById('withdraw-account-info');
+                    if(accEl) accEl.innerText = str;
+                    
+                    const modalAccEl = document.getElementById('modal-withdraw-account-info');
+                    if(modalAccEl) modalAccEl.innerText = str;
+                    
+                    const cleanAcc = account.replace(/[^0-9]/g, '');
+                    if(cleanAcc === '1002338118610') { 
+                        document.getElementById('admin-indicator').style.display='inline-block'; 
+                        document.getElementById('admin-deposit-panel').style.display='block'; 
+                        document.getElementById('admin-db-reset-btn').style.display='block'; 
+                    } else { 
+                        document.getElementById('admin-indicator').style.display='none'; 
+                        document.getElementById('admin-deposit-panel').style.display='none'; 
+                        document.getElementById('admin-db-reset-btn').style.display='none'; 
+                    }
+                    
+                    showToast("계정 설정 저장 완료"); 
+                    closeModal('profile-modal');
                 }
             } catch(e){ showToast("에러 발생"); }
         }
-
         function activateAdmin() {
             const pwd = document.getElementById('modal-password').value;
             if(pwd === 'mars') {
