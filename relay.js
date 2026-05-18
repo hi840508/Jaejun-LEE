@@ -1,4 +1,4 @@
-\const express = require('express');
+const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
@@ -12,7 +12,7 @@ app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: '1000mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1000mb' }));
 
-// 🚀 실제 비대칭 디지털 서명 알고리즘(ECDSA - prime256v1) 세팅
+// 실제 비대칭 디지털 서명 알고리즘(ECDSA) 
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
@@ -21,16 +21,19 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-// 🚀 자산 증발을 영구 차단하기 위한 우분투 최상위 경로 DB 매핑
-const DB_PATH = '/home/ubuntu/earth_final_v16_stable.sqlite';
-const db = new sqlite3.Database(DB_PATH);
+// 🚀 [서버 크래시 해결] 권한 충돌이 없는 안전한 현재 폴더 경로 사용
+// .gitignore에 *.sqlite가 등록되어 있으므로 git pull을 해도 데이터가 보존됩니다.
+const DB_PATH = path.join(__dirname, 'earth_database_master.sqlite');
+const db = new sqlite3.Database(DB_PATH, (err) => {
+    if (err) console.error("데이터베이스 연결 실패:", err);
+    else console.log("데이터베이스 원장 연결 성공");
+});
 
 function initTables() {
     db.serialize(() => {
         db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, realname TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS friends (userName TEXT, friendName TEXT, UNIQUE(userName, friendName))`);
         db.run(`CREATE TABLE IF NOT EXISTS stores (id TEXT PRIMARY KEY, name TEXT, owner TEXT, logo TEXT, status TEXT DEFAULT 'active')`);
-        // 제품 테이블: 압축률, 블록해시, ECC 서명 컬럼 이식
         db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, storeId TEXT, type TEXT, name TEXT, description TEXT, price_stream INTEGER DEFAULT 0, price_original INTEGER DEFAULT 0, stream_time INTEGER DEFAULT 0, stream_unit TEXT DEFAULT 'd', seller TEXT, thumbnail TEXT, encryptedPayload TEXT, compression_ratio INTEGER DEFAULT 0, block_hash TEXT, ecc_signature TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, purchaseType TEXT, rawDate TEXT, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT, sender TEXT, senderPic TEXT, message TEXT, date TEXT)`);
@@ -43,7 +46,6 @@ function initTables() {
 }
 initTables();
 
-// 🚀 어드민 강제 전체 폭파 리셋 파이프라인 (mars 비밀번호 트리거 기반)
 app.post('/api/admin/db-reset', (req, res) => {
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
     db.serialize(() => {
@@ -112,7 +114,6 @@ app.post('/api/withdraw/request', (req, res) => {
     db.serialize(() => { db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.name]); db.run(`INSERT INTO withdrawals (name, amount, status, date) VALUES (?, ?, '대기', ?)`, [req.body.name, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true })); });
 });
 
-// 🚀 어드민 관리 정보 확장 조인 쿼리
 app.get('/api/admin/actions', (req, res) => {
     db.all(`SELECT d.*, u.realname, u.bank, u.account FROM deposits d LEFT JOIN users u ON d.user_name = u.name WHERE d.status = '대기'`, [], (err, deps) => {
         db.all(`SELECT w.*, u.realname, u.bank, u.account FROM withdrawals w LEFT JOIN users u ON w.name = u.name WHERE w.status = '대기'`, [], (err2, wds) => { res.json({ deposits: deps || [], withdrawals: wds || [] }); });
@@ -156,12 +157,9 @@ app.post('/api/admin/store/close', (req, res) => {
     db.serialize(() => { db.run(`DELETE FROM products WHERE storeId = ?`, [req.body.id]); db.run(`DELETE FROM stores WHERE id = ?`, [req.body.id], () => res.json({ success: true })); }); 
 });
 
-// 🚀 백엔드 Zlib 실압축 및 ECC 해시 패스포트 엔진 생성
 app.post('/api/products/encrypt-build', (req, res) => {
     try {
         const payloadBuffer = Buffer.from(req.body.encryptedPayload || '', 'utf-8');
-        
-        // 1. Zlib Deflate 압축률 산출
         let ratio = 0;
         try {
             const compressed = zlib.deflateSync(payloadBuffer);
@@ -169,7 +167,6 @@ app.post('/api/products/encrypt-build', (req, res) => {
             if (ratio < 0 || isNaN(ratio)) ratio = Math.floor(Math.random() * 5) + 80; 
         } catch(e) { ratio = 85; }
 
-        // 2. 타원곡선(ECC) 기반 블록 해시 및 무결성 서명 (Passport 생성)
         const block_hash = crypto.createHash('sha256').update(payloadBuffer).digest('hex');
         const sign = crypto.createSign('SHA256'); sign.update(block_hash);
         const ecc_signature = sign.sign(privateKey, 'hex');
@@ -207,14 +204,20 @@ app.post('/api/buy', (req, res) => {
     });
 });
 
+function generateECCInverseSignature(checkId, secretKey, amount) {
+    try {
+        const hash = crypto.createHash('sha256').update(`${checkId}:${secretKey}:${amount}`).digest('hex');
+        let inverseHex = ''; for (let i=0; i<hash.length; i++) inverseHex += (15 - parseInt(hash[i], 16)).toString(16);
+        const sign = crypto.createSign('SHA256'); sign.update(inverseHex); return sign.sign(privateKey, 'hex');
+    } catch(e){return '';}
+}
+
 app.post('/api/check/issue', (req, res) => {
     const amount = Number(req.body.amount) || 0;
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.issuer], (err, row) => {
         if (!row || row.balance < amount) return res.status(400).json({ error: "발행 한도 초과" });
         const checkId = 'META_QR_' + Date.now(); const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
-        const hash = crypto.createHash('sha256').update(`${checkId}:${secretKey}:${amount}`).digest('hex');
-        const sign = crypto.createSign('SHA256'); sign.update(hash); const signature = sign.sign(privateKey, 'hex');
-        const date = new Date().toLocaleString('ko-KR');
+        const signature = generateECCInverseSignature(checkId, secretKey, amount); const date = new Date().toLocaleString('ko-KR');
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.issuer]);
             db.run(`INSERT INTO qr_checks (id, amount, issuer, secretKey, eccSignature, is_used, date) VALUES (?, ?, ?, ?, ?, 0, ?)`, [checkId, amount, req.body.issuer, secretKey, signature, date]);
@@ -264,7 +267,6 @@ app.get('/api/transactions/:name', async (req, res) => {
     } catch(e) { res.json([]); }
 });
 
-// 🚀 채팅방 메시지 수신 시 강제 친구 등록 (서랍장 연동)
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     socket.on('send_message', (data) => { 
@@ -279,4 +281,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH SYSTEM V16 MASTER] BOUND ON PORT ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`[EARTH MASTER VER] BOUND ON PORT ${PORT}`); });
