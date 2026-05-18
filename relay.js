@@ -19,7 +19,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-// 🚀 자산 증발을 영구 차단하기 위해 리눅스 최상위 경로로 DB 완전 격리 (새로운 스키마 적용)
+// 🚀 자산 증발 영구 차단을 위한 루트 안전 경로 락인
 const DB_PATH = '/home/ubuntu/earth_final_v8.sqlite';
 const db = new sqlite3.Database(DB_PATH);
 
@@ -43,12 +43,8 @@ initTables();
 // 🚀 어드민 강제 전체 폭파 리셋 파이프라인
 app.post('/api/admin/db-reset', (req, res) => {
     db.serialize(() => {
-        db.run(`DROP TABLE IF EXISTS users`); db.run(`DROP TABLE IF EXISTS friends`);
-        db.run(`DROP TABLE IF EXISTS stores`); db.run(`DROP TABLE IF EXISTS products`);
-        db.run(`DROP TABLE IF EXISTS transactions`); db.run(`DROP TABLE IF EXISTS chats`);
-        db.run(`DROP TABLE IF EXISTS qr_checks`); db.run(`DROP TABLE IF EXISTS transfers`);
-        db.run(`DROP TABLE IF EXISTS deposits`); db.run(`DROP TABLE IF EXISTS withdrawals`);
-        db.run(`DROP TABLE IF EXISTS favorite_stores`);
+        const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores'];
+        tables.forEach(t => db.run(`DROP TABLE IF EXISTS ${t}`));
         initTables();
         res.json({ success: true });
     });
@@ -88,7 +84,7 @@ app.post('/api/friend/add', (req, res) => {
 });
 app.get('/api/friends/:userName', (req, res) => { db.all(`SELECT u.name, u.profilePic FROM friends f JOIN users u ON f.friendName = u.name WHERE f.userName = ?`, [req.params.userName], (err, rows) => res.json(rows || [])); });
 
-// 🚀 채팅방 목록 보존 (과거 대화 이력 기준 추출)
+// 🚀 진행중인 대화방 목록 (과거 이력 100% 보존 추출)
 app.get('/api/chat/active-rooms/:name', (req, res) => {
     const name = req.params.name;
     const query = `
@@ -147,6 +143,7 @@ app.post('/api/transfer', (req, res) => {
     });
 });
 
+// 상점 폐쇄 처리 로직
 app.post('/api/store/close', (req, res) => {
     db.serialize(() => {
         db.run(`DELETE FROM products WHERE storeId = ? AND seller = ?`, [req.body.id, req.body.owner]);
@@ -168,11 +165,19 @@ app.get('/api/stores/active', (req, res) => { db.all(`SELECT * FROM stores WHERE
 
 app.post('/api/products/encrypt-build', (req, res) => {
     db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, stream_time, stream_unit, seller, thumbnail, encryptedPayload) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-        ['PRD_' + Date.now(), req.body.storeId, req.body.name, req.body.description, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, Number(req.body.stream_time)||0, req.body.stream_unit, req.body.seller, req.body.thumbnail, req.body.encryptedPayload], () => res.json({ success: true }));
+        [req.body.storeId.startsWith('room_msg_') ? req.body.storeId : 'PRD_' + Date.now(), req.body.storeId, req.body.name, req.body.description, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, Number(req.body.stream_time)||0, req.body.stream_unit, req.body.seller, req.body.thumbnail, req.body.encryptedPayload], function() {
+            // 방 아이디로 생성했을 경우를 고려하여 insert된 id (또는 생성한 id) 리턴
+            res.json({ success: true, id: this.lastID || (req.body.storeId.startsWith('room_msg_') ? req.body.storeId : 'PRD_' + Date.now()) });
+        });
 });
+
 app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
-app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); });
+// 🚀 채팅방에서 올린 프라이빗 상품(storeId가 room_msg_로 시작)은 마켓에 노출 금지 필터 적용
+app.get('/api/products/active', (req, res) => { 
+    db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' AND p.storeId NOT LIKE 'room_msg_%' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); 
+});
 app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT * FROM products WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
+
 app.post('/api/product/edit', (req, res) => { db.run(`UPDATE products SET name = ?, description = ?, stream_time = ?, stream_unit = ?, price_stream = ?, price_original = ? WHERE id = ?`, [req.body.name, req.body.description, Number(req.body.stream_time)||0, req.body.stream_unit, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, req.body.id], () => res.json({ success: true })); });
 
 app.post('/api/admin/product/delete', (req, res) => { db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); });
@@ -263,9 +268,17 @@ app.get('/api/transactions/:name', async (req, res) => {
     } catch(e) { res.json([]); }
 });
 
+// 🚀 소켓 글로벌 브로드캐스팅 및 메시지 도착 시 상대방에게도 강제 친구 관계 삽입
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     socket.on('send_message', (data) => { 
+        // 🚀 자동 친구 개설 로직
+        const users = data.roomId.replace('room_msg_', '').split('_');
+        if(users.length === 2) {
+            db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[0], users[1]]);
+            db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[1], users[0]]);
+        }
+        
         db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { 
             io.emit('receive_message', data); 
         }); 
