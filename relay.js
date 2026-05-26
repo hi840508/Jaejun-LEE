@@ -12,7 +12,7 @@ app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: '1000mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1000mb' }));
 
-// 🚀 실제 비대칭 디지털 서명 알고리즘(ECDSA - prime256v1) 세팅
+// 실제 비대칭 디지털 서명 알고리즘(ECDSA) 
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
@@ -21,29 +21,36 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 4000;
 
-// 🚀 자산 증발을 영구 차단하기 위한 우분투 최상위 경로 DB 매핑 안전망
-const DB_PATH = '/home/ubuntu/earth_final_v17_master.sqlite';
-const db = new sqlite3.Database(DB_PATH);
+// 🚀 [서버 크래시 해결] 권한 충돌이 없는 안전한 현재 폴더 경로 사용
+// .gitignore에 *.sqlite가 등록되어 있으므로 git pull을 해도 데이터가 보존됩니다.
+const DB_PATH = path.join(__dirname, 'earth_database_master.sqlite');
+const db = new sqlite3.Database(DB_PATH, (err) => {
+    if (err) console.error("데이터베이스 연결 실패:", err);
+    else console.log("데이터베이스 원장 연결 성공");
+});
 
 function initTables() {
     db.serialize(() => {
         db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, realname TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS friends (userName TEXT, friendName TEXT, UNIQUE(userName, friendName))`);
-        db.run(`CREATE TABLE IF NOT EXISTS stores (id TEXT PRIMARY KEY, name TEXT, owner TEXT, logo TEXT, status TEXT DEFAULT 'active')`);
-        // 🚀 제품 테이블: 압축률, 블록해시, ECC 서명 컬럼 이식
+        db.run(`CREATE TABLE IF NOT EXISTS stores (id TEXT PRIMARY KEY, name TEXT, owner TEXT, logo TEXT, status TEXT DEFAULT 'active', background TEXT, description TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, storeId TEXT, type TEXT, name TEXT, description TEXT, price_stream INTEGER DEFAULT 0, price_original INTEGER DEFAULT 0, stream_time INTEGER DEFAULT 0, stream_unit TEXT DEFAULT 'd', seller TEXT, thumbnail TEXT, encryptedPayload TEXT, compression_ratio INTEGER DEFAULT 0, block_hash TEXT, ecc_signature TEXT)`);
-        db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, purchaseType TEXT, rawDate TEXT, date TEXT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, purchaseType TEXT, rawDate TEXT, date TEXT, refunded INTEGER DEFAULT 0)`);
         db.run(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT, sender TEXT, senderPic TEXT, message TEXT, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS qr_checks (id TEXT PRIMARY KEY, amount INTEGER, issuer TEXT, secretKey TEXT, eccSignature TEXT, is_used INTEGER, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, amount INTEGER, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS deposits (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name TEXT, sender_name TEXT, amount INTEGER, status TEXT, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS withdrawals (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount INTEGER, status TEXT, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, targetStore TEXT)`);
+
+        // 🚀 기존 DB 호환을 위한 마이그레이션 (컬럼 추가; 이미 있으면 에러 무시)
+        db.run(`ALTER TABLE stores ADD COLUMN background TEXT`, () => {});
+        db.run(`ALTER TABLE stores ADD COLUMN description TEXT`, () => {});
+        db.run(`ALTER TABLE transactions ADD COLUMN refunded INTEGER DEFAULT 0`, () => {});
     });
 }
 initTables();
 
-// 🚀 어드민 강제 전체 폭파 리셋 파이프라인 (mars 비밀번호 트리거 기반)
 app.post('/api/admin/db-reset', (req, res) => {
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
     db.serialize(() => {
@@ -112,7 +119,6 @@ app.post('/api/withdraw/request', (req, res) => {
     db.serialize(() => { db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.name]); db.run(`INSERT INTO withdrawals (name, amount, status, date) VALUES (?, ?, '대기', ?)`, [req.body.name, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true })); });
 });
 
-// 🚀 어드민 관리 상세 정보 확장 조인 쿼리 탑재
 app.get('/api/admin/actions', (req, res) => {
     db.all(`SELECT d.*, u.realname, u.bank, u.account FROM deposits d LEFT JOIN users u ON d.user_name = u.name WHERE d.status = '대기'`, [], (err, deps) => {
         db.all(`SELECT w.*, u.realname, u.bank, u.account FROM withdrawals w LEFT JOIN users u ON w.name = u.name WHERE w.status = '대기'`, [], (err2, wds) => { res.json({ deposits: deps || [], withdrawals: wds || [] }); });
@@ -142,13 +148,32 @@ app.post('/api/transfer', (req, res) => {
 app.post('/api/store/create', (req, res) => {
     db.get(`SELECT id FROM stores WHERE name = ?`, [req.body.name], (err, row) => {
         if (row) return res.status(400).json({ error: "이미 존재하는 명칭의 상점입니다." });
-        db.run(`INSERT INTO stores (id, name, owner, logo, status) VALUES (?, ?, ?, ?, 'active')`, ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo], () => res.json({ success: true }));
+        db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description) VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+            ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || ''],
+            () => res.json({ success: true }));
+    });
+});
+
+// 🚀 상점 배경/소개 업데이트
+app.post('/api/store/update', (req, res) => {
+    db.get(`SELECT owner FROM stores WHERE id = ?`, [req.body.id], (err, row) => {
+        if(!row) return res.status(404).json({ error: "상점이 존재하지 않습니다." });
+        if(row.owner !== req.body.owner) return res.status(403).json({ error: "본인 상점만 수정 가능합니다." });
+        const fields = []; const values = [];
+        if(req.body.background !== undefined) { fields.push('background = ?'); values.push(req.body.background); }
+        if(req.body.description !== undefined) { fields.push('description = ?'); values.push(req.body.description); }
+        if(req.body.logo !== undefined && req.body.logo) { fields.push('logo = ?'); values.push(req.body.logo); }
+        if(fields.length === 0) return res.json({ success: true });
+        values.push(req.body.id);
+        db.run(`UPDATE stores SET ${fields.join(', ')} WHERE id = ?`, values, () => res.json({ success: true }));
     });
 });
 
 app.get('/api/stores/owned/:owner', (req, res) => { db.all(`SELECT * FROM stores WHERE owner = ?`, [req.params.owner], (err, rows) => res.json(rows || [])); });
 app.post('/api/store/status', (req, res) => { db.run(`UPDATE stores SET status = ? WHERE id = ?`, [req.body.status, req.body.id], () => res.json({ success: true })); });
 app.get('/api/stores/active', (req, res) => { db.all(`SELECT * FROM stores WHERE status = 'active'`, [], (err, rows) => res.json(rows || [])); });
+// 🚀 단일 상점 상세 (배경/소개 포함)
+app.get('/api/store/:id', (req, res) => { db.get(`SELECT * FROM stores WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
 
 app.post('/api/store/close', (req, res) => { db.serialize(() => { db.run(`DELETE FROM products WHERE storeId = ? AND seller = ?`, [req.body.id, req.body.owner]); db.run(`DELETE FROM stores WHERE id = ? AND owner = ?`, [req.body.id, req.body.owner], () => res.json({ success: true })); }); });
 app.post('/api/admin/store/close', (req, res) => { 
@@ -156,12 +181,9 @@ app.post('/api/admin/store/close', (req, res) => {
     db.serialize(() => { db.run(`DELETE FROM products WHERE storeId = ?`, [req.body.id]); db.run(`DELETE FROM stores WHERE id = ?`, [req.body.id], () => res.json({ success: true })); }); 
 });
 
-// 🚀 백엔드 Zlib 실압축 및 ECC 해시 패스포트 엔진 생성
 app.post('/api/products/encrypt-build', (req, res) => {
     try {
         const payloadBuffer = Buffer.from(req.body.encryptedPayload || '', 'utf-8');
-        
-        // 1. Zlib Deflate 압축률 산출
         let ratio = 0;
         try {
             const compressed = zlib.deflateSync(payloadBuffer);
@@ -169,7 +191,6 @@ app.post('/api/products/encrypt-build', (req, res) => {
             if (ratio < 0 || isNaN(ratio)) ratio = Math.floor(Math.random() * 5) + 80; 
         } catch(e) { ratio = 85; }
 
-        // 2. 타원곡선(ECC) 기반 블록 해시 및 무결성 서명 (Passport 생성)
         const block_hash = crypto.createHash('sha256').update(payloadBuffer).digest('hex');
         const sign = crypto.createSign('SHA256'); sign.update(block_hash);
         const ecc_signature = sign.sign(privateKey, 'hex');
@@ -207,15 +228,20 @@ app.post('/api/buy', (req, res) => {
     });
 });
 
+function generateECCInverseSignature(checkId, secretKey, amount) {
+    try {
+        const hash = crypto.createHash('sha256').update(`${checkId}:${secretKey}:${amount}`).digest('hex');
+        let inverseHex = ''; for (let i=0; i<hash.length; i++) inverseHex += (15 - parseInt(hash[i], 16)).toString(16);
+        const sign = crypto.createSign('SHA256'); sign.update(inverseHex); return sign.sign(privateKey, 'hex');
+    } catch(e){return '';}
+}
+
 app.post('/api/check/issue', (req, res) => {
     const amount = Number(req.body.amount) || 0;
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.issuer], (err, row) => {
         if (!row || row.balance < amount) return res.status(400).json({ error: "발행 한도 초과" });
         const checkId = 'META_QR_' + Date.now(); const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
-        // 수표 전용 임시 ECC
-        const hash = crypto.createHash('sha256').update(`${checkId}:${secretKey}:${amount}`).digest('hex');
-        const sign = crypto.createSign('SHA256'); sign.update(hash); const signature = sign.sign(privateKey, 'hex');
-        const date = new Date().toLocaleString('ko-KR');
+        const signature = generateECCInverseSignature(checkId, secretKey, amount); const date = new Date().toLocaleString('ko-KR');
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.issuer]);
             db.run(`INSERT INTO qr_checks (id, amount, issuer, secretKey, eccSignature, is_used, date) VALUES (?, ?, ?, ?, ?, 0, ?)`, [checkId, amount, req.body.issuer, secretKey, signature, date]);
@@ -255,21 +281,63 @@ app.get('/api/transactions/:name', async (req, res) => {
         const tfs = await new Promise(r => db.all(`SELECT * FROM transfers WHERE sender=? OR receiver=?`, [name, name], (e, rows) => r(rows||[])));
         const dps = await new Promise(r => db.all(`SELECT * FROM deposits WHERE user_name=?`, [name], (e, rows) => r(rows||[])));
         const wds = await new Promise(r => db.all(`SELECT * FROM withdrawals WHERE name=?`, [name], (e, rows) => r(rows||[])));
-        
+
         let history = [];
-        txs.forEach(t => history.push({ type: t.buyer === name ? '자산 구매' : '자산 판매', date: t.date, rawDate: t.rawDate, productId: t.productId, purchaseType: t.purchaseType, amount: t.amount, productName: t.productName, seller: t.buyer === name ? t.seller : t.buyer }));
-        tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, amount: t.amount, seller: t.receiver || t.sender }));
-        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, amount: d.amount, seller: 'Earth(Root)' }));
-        wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, amount: w.amount, seller: '지정 등록 계좌' }));
-        history.sort((a,b) => new Date(b.date) - new Date(a.date)); res.json(history);
+        txs.forEach(t => {
+            const isBuyer = t.buyer === name;
+            // 🚀 환불 가능 여부: 구매자(buyer)이면서 아직 환불되지 않은 일반 자산 구매만 환불 가능
+            const refundable = isBuyer && !t.refunded && t.productId && !['보안 수표 발행', '보안 수표 환원 충전'].includes(t.productName);
+            history.push({
+                txId: t.id, type: t.refunded ? (isBuyer ? '자산 구매 (환불됨)' : '자산 판매 (환불처리)') : (isBuyer ? '자산 구매' : '자산 판매'),
+                date: t.date, rawDate: t.rawDate || t.date, productId: t.productId, purchaseType: t.purchaseType,
+                amount: t.amount, productName: t.productName, buyer: t.buyer, seller: isBuyer ? t.seller : t.buyer,
+                refunded: !!t.refunded, refundable
+            });
+        });
+        tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, rawDate: t.date, amount: t.amount, seller: t.receiver || t.sender, sender: t.sender, receiver: t.receiver }));
+        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, rawDate: d.date, amount: d.amount, seller: 'Earth(Root)' }));
+        wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, rawDate: w.date, amount: w.amount, seller: '지정 등록 계좌' }));
+
+        // 🚀 최신순 정렬 (rawDate 우선, 없으면 date 사용)
+        history.sort((a,b) => {
+            const da = new Date(a.rawDate || a.date).getTime() || 0;
+            const dbb = new Date(b.rawDate || b.date).getTime() || 0;
+            return dbb - da;
+        });
+        res.json(history);
     } catch(e) { res.json([]); }
 });
 
-// 🚀 채팅방 메시지 수신 시 강제 친구 등록 (서랍장 연동)
+// 🚀 환불 처리 (구매자가 환불 요청 → 판매자 잔액에서 차감, 구매자에게 환급)
+app.post('/api/refund', (req, res) => {
+    const { txId, requester } = req.body;
+    db.get(`SELECT * FROM transactions WHERE id = ?`, [txId], (err, tx) => {
+        if(!tx) return res.status(404).json({ error: "거래 내역을 찾을 수 없습니다." });
+        if(tx.buyer !== requester) return res.status(403).json({ error: "구매자만 환불 요청할 수 있습니다." });
+        if(tx.refunded) return res.status(400).json({ error: "이미 환불 처리된 거래입니다." });
+        if(!tx.productId || ['보안 수표 발행', '보안 수표 환원 충전'].includes(tx.productName)) {
+            return res.status(400).json({ error: "해당 거래 유형은 환불할 수 없습니다." });
+        }
+        const amount = Number(tx.amount) || 0;
+        db.get(`SELECT balance FROM users WHERE name = ?`, [tx.seller], (e2, sRow) => {
+            if(!sRow) return res.status(404).json({ error: "판매자 계정을 찾을 수 없습니다." });
+            if(sRow.balance < amount) return res.status(400).json({ error: "판매자 잔액 부족으로 환불 불가" });
+            const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
+            db.serialize(() => {
+                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, tx.buyer]);
+                db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, tx.seller]);
+                db.run(`UPDATE transactions SET refunded = 1 WHERE id = ?`, [txId]);
+                db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, refunded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                    [tx.seller, tx.buyer, tx.productId, `[환불] ${tx.productName}`, amount, 'refund', rawDate, date],
+                    () => res.json({ success: true, amount }));
+            });
+        });
+    });
+});
+
 io.on('connection', (socket) => {
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     socket.on('send_message', (data) => { 
-        // 🚀 자동 친구 개설 로직
         const users = data.roomId.replace('room_msg_', '').split('_');
         if(users.length === 2) {
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[0], users[1]]);
