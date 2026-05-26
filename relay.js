@@ -42,6 +42,8 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS deposits (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name TEXT, sender_name TEXT, amount INTEGER, status TEXT, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS withdrawals (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount INTEGER, status TEXT, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, targetStore TEXT)`);
+        // 🚀 환불 요청 (판매자 승인 필요)
+        db.run(`CREATE TABLE IF NOT EXISTS refund_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, txId INTEGER, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, status TEXT DEFAULT 'pending', reason TEXT, request_date TEXT, decision_date TEXT)`);
 
         // 🚀 기존 DB 호환을 위한 마이그레이션 (컬럼 추가; 이미 있으면 에러 무시)
         db.run(`ALTER TABLE stores ADD COLUMN background TEXT`, () => {});
@@ -54,7 +56,7 @@ initTables();
 app.post('/api/admin/db-reset', (req, res) => {
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
     db.serialize(() => {
-        const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores'];
+        const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores', 'refund_requests'];
         tables.forEach(t => db.run(`DROP TABLE IF EXISTS ${t}`));
         initTables(); res.json({ success: true });
     });
@@ -175,6 +177,29 @@ app.get('/api/stores/active', (req, res) => { db.all(`SELECT * FROM stores WHERE
 // 🚀 단일 상점 상세 (배경/소개 포함)
 app.get('/api/store/:id', (req, res) => { db.get(`SELECT * FROM stores WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
 
+// 🚀 디지털 거래소 메인 쇼케이스: 최신 등록 브랜드 + 각 브랜드의 최신 상품 4개 썸네일
+app.get('/api/stores/showcase', (req, res) => {
+    db.all(`SELECT * FROM stores WHERE status = 'active' ORDER BY id DESC LIMIT 30`, [], (err, stores) => {
+        if(err || !stores) return res.json([]);
+        if(stores.length === 0) return res.json([]);
+        const tasks = stores.map(st => new Promise(resolve => {
+            db.all(`SELECT id, name, thumbnail, price_stream, price_original FROM products WHERE storeId = ? ORDER BY id DESC LIMIT 4`, [st.id], (e, prods) => {
+                resolve({ ...st, latestProducts: prods || [], productCount: (prods || []).length });
+            });
+        }));
+        Promise.all(tasks).then(results => {
+            // 🚀 상품이 있는 브랜드를 우선 노출, 그 다음 빈 브랜드
+            results.sort((a, b) => {
+                if((b.latestProducts.length > 0) !== (a.latestProducts.length > 0)) {
+                    return (b.latestProducts.length > 0) ? 1 : -1;
+                }
+                return 0; // 이미 id DESC 정렬됨
+            });
+            res.json(results);
+        }).catch(() => res.json([]));
+    });
+});
+
 app.post('/api/store/close', (req, res) => { db.serialize(() => { db.run(`DELETE FROM products WHERE storeId = ? AND seller = ?`, [req.body.id, req.body.owner]); db.run(`DELETE FROM stores WHERE id = ? AND owner = ?`, [req.body.id, req.body.owner], () => res.json({ success: true })); }); });
 app.post('/api/admin/store/close', (req, res) => { 
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
@@ -277,7 +302,12 @@ app.get('/api/chat/:roomId', (req, res) => { db.all(`SELECT * FROM chats WHERE r
 app.get('/api/transactions/:name', async (req, res) => {
     const name = req.params.name;
     try {
-        const txs = await new Promise(r => db.all(`SELECT * FROM transactions WHERE buyer=? OR seller=?`, [name, name], (e, rows) => r(rows||[])));
+        // 🚀 환불 요청 상태를 LEFT JOIN으로 함께 조회 (최신 요청 1개 기준)
+        const txQuery = `SELECT t.*,
+            (SELECT status FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_status,
+            (SELECT id FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_request_id
+            FROM transactions t WHERE t.buyer=? OR t.seller=?`;
+        const txs = await new Promise(r => db.all(txQuery, [name, name], (e, rows) => r(rows||[])));
         const tfs = await new Promise(r => db.all(`SELECT * FROM transfers WHERE sender=? OR receiver=?`, [name, name], (e, rows) => r(rows||[])));
         const dps = await new Promise(r => db.all(`SELECT * FROM deposits WHERE user_name=?`, [name], (e, rows) => r(rows||[])));
         const wds = await new Promise(r => db.all(`SELECT * FROM withdrawals WHERE name=?`, [name], (e, rows) => r(rows||[])));
@@ -285,20 +315,24 @@ app.get('/api/transactions/:name', async (req, res) => {
         let history = [];
         txs.forEach(t => {
             const isBuyer = t.buyer === name;
-            // 🚀 환불 가능 여부: 구매자(buyer)이면서 아직 환불되지 않은 일반 자산 구매만 환불 가능
-            const refundable = isBuyer && !t.refunded && t.productId && !['보안 수표 발행', '보안 수표 환원 충전'].includes(t.productName);
+            const refStatus = t.refund_status; // 'pending' | 'approved' | 'rejected' | null
+            // 🚀 환불 요청 가능 여부: 구매자이며, 미환불, 대기중 요청 없음, 유효한 자산 거래
+            const refundable = isBuyer && !t.refunded && refStatus !== 'pending'
+                && t.productId && t.purchaseType !== 'refund'
+                && !['보안 수표 발행', '보안 수표 환원 충전'].includes(t.productName);
+            const baseType = t.purchaseType === 'refund' ? (isBuyer ? '환불 수령' : '환불 지급') : (isBuyer ? '자산 구매' : '자산 판매');
             history.push({
-                txId: t.id, type: t.refunded ? (isBuyer ? '자산 구매 (환불됨)' : '자산 판매 (환불처리)') : (isBuyer ? '자산 구매' : '자산 판매'),
+                txId: t.id, type: baseType,
                 date: t.date, rawDate: t.rawDate || t.date, productId: t.productId, purchaseType: t.purchaseType,
                 amount: t.amount, productName: t.productName, buyer: t.buyer, seller: isBuyer ? t.seller : t.buyer,
-                refunded: !!t.refunded, refundable
+                refunded: !!t.refunded, refundable, refundStatus: refStatus, refundRequestId: t.refund_request_id
             });
         });
         tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, rawDate: t.date, amount: t.amount, seller: t.receiver || t.sender, sender: t.sender, receiver: t.receiver }));
         dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, rawDate: d.date, amount: d.amount, seller: 'Earth(Root)' }));
         wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, rawDate: w.date, amount: w.amount, seller: '지정 등록 계좌' }));
 
-        // 🚀 최신순 정렬 (rawDate 우선, 없으면 date 사용)
+        // 🚀 최신순 정렬 (rawDate 우선)
         history.sort((a,b) => {
             const da = new Date(a.rawDate || a.date).getTime() || 0;
             const dbb = new Date(b.rawDate || b.date).getTime() || 0;
@@ -308,31 +342,72 @@ app.get('/api/transactions/:name', async (req, res) => {
     } catch(e) { res.json([]); }
 });
 
-// 🚀 환불 처리 (구매자가 환불 요청 → 판매자 잔액에서 차감, 구매자에게 환급)
-app.post('/api/refund', (req, res) => {
-    const { txId, requester } = req.body;
+// 🚀 환불 요청 (판매자 승인 대기 상태로 생성; 자금 이동 X)
+app.post('/api/refund/request', (req, res) => {
+    const { txId, requester, reason } = req.body;
     db.get(`SELECT * FROM transactions WHERE id = ?`, [txId], (err, tx) => {
         if(!tx) return res.status(404).json({ error: "거래 내역을 찾을 수 없습니다." });
         if(tx.buyer !== requester) return res.status(403).json({ error: "구매자만 환불 요청할 수 있습니다." });
         if(tx.refunded) return res.status(400).json({ error: "이미 환불 처리된 거래입니다." });
-        if(!tx.productId || ['보안 수표 발행', '보안 수표 환원 충전'].includes(tx.productName)) {
+        if(!tx.productId || tx.purchaseType === 'refund' || ['보안 수표 발행', '보안 수표 환원 충전'].includes(tx.productName)) {
             return res.status(400).json({ error: "해당 거래 유형은 환불할 수 없습니다." });
         }
-        const amount = Number(tx.amount) || 0;
-        db.get(`SELECT balance FROM users WHERE name = ?`, [tx.seller], (e2, sRow) => {
-            if(!sRow) return res.status(404).json({ error: "판매자 계정을 찾을 수 없습니다." });
-            if(sRow.balance < amount) return res.status(400).json({ error: "판매자 잔액 부족으로 환불 불가" });
-            const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
-            db.serialize(() => {
-                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, tx.buyer]);
-                db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, tx.seller]);
-                db.run(`UPDATE transactions SET refunded = 1 WHERE id = ?`, [txId]);
-                db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, refunded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-                    [tx.seller, tx.buyer, tx.productId, `[환불] ${tx.productName}`, amount, 'refund', rawDate, date],
-                    () => res.json({ success: true, amount }));
-            });
+        db.get(`SELECT * FROM refund_requests WHERE txId = ? AND status = 'pending'`, [txId], (e2, existing) => {
+            if(existing) return res.status(400).json({ error: "이미 환불 요청이 진행 중입니다. (판매자 승인 대기)" });
+            const date = new Date().toLocaleString('ko-KR');
+            db.run(`INSERT INTO refund_requests (txId, buyer, seller, productId, productName, amount, status, reason, request_date) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+                [txId, tx.buyer, tx.seller, tx.productId, tx.productName, tx.amount, reason || '', date],
+                function(err3) {
+                    if(err3) return res.status(500).json({ error: err3.message });
+                    res.json({ success: true, requestId: this.lastID });
+                });
         });
     });
+});
+
+// 🚀 판매자에게 들어온 환불 요청 (승인/거절 대기)
+app.get('/api/refunds/incoming/:name', (req, res) => {
+    db.all(`SELECT * FROM refund_requests WHERE seller = ? AND status = 'pending' ORDER BY id DESC`, [req.params.name], (err, rows) => res.json(rows || []));
+});
+// 🚀 구매자가 보낸 모든 환불 요청 이력
+app.get('/api/refunds/outgoing/:name', (req, res) => {
+    db.all(`SELECT * FROM refund_requests WHERE buyer = ? ORDER BY id DESC`, [req.params.name], (err, rows) => res.json(rows || []));
+});
+
+// 🚀 판매자가 환불 승인/거절
+app.post('/api/refund/decide', (req, res) => {
+    const { requestId, decider, decision } = req.body; // decision: 'approve' | 'reject'
+    db.get(`SELECT * FROM refund_requests WHERE id = ?`, [requestId], (err, rq) => {
+        if(!rq) return res.status(404).json({ error: '환불 요청을 찾을 수 없습니다.' });
+        if(rq.seller !== decider) return res.status(403).json({ error: '판매자만 결정할 수 있습니다.' });
+        if(rq.status !== 'pending') return res.status(400).json({ error: '이미 처리된 요청입니다.' });
+        const date = new Date().toLocaleString('ko-KR');
+        if(decision === 'reject') {
+            db.run(`UPDATE refund_requests SET status = 'rejected', decision_date = ? WHERE id = ?`, [date, requestId], () => res.json({ success: true, status: 'rejected' }));
+        } else if(decision === 'approve') {
+            db.get(`SELECT balance FROM users WHERE name = ?`, [rq.seller], (e2, sRow) => {
+                if(!sRow) return res.status(404).json({ error: "판매자 계정 오류" });
+                if(sRow.balance < rq.amount) return res.status(400).json({ error: "잔액 부족으로 환불 승인 불가" });
+                const rawDate = new Date().toISOString();
+                db.serialize(() => {
+                    db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [rq.amount, rq.buyer]);
+                    db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [rq.amount, rq.seller]);
+                    db.run(`UPDATE transactions SET refunded = 1 WHERE id = ?`, [rq.txId]);
+                    db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, refunded) VALUES (?, ?, ?, ?, ?, 'refund', ?, ?, 1)`,
+                        [rq.seller, rq.buyer, rq.productId, `[환불] ${rq.productName}`, rq.amount, rawDate, date]);
+                    db.run(`UPDATE refund_requests SET status = 'approved', decision_date = ? WHERE id = ?`, [date, requestId],
+                        () => res.json({ success: true, status: 'approved', amount: rq.amount }));
+                });
+            });
+        } else {
+            res.status(400).json({ error: '결정 유형이 올바르지 않습니다.' });
+        }
+    });
+});
+
+// 🚀 레거시 호환: /api/refund 요청을 새 요청 흐름으로 라우팅 (즉시 처리가 아닌 승인 대기 생성)
+app.post('/api/refund', (req, res) => {
+    req.url = '/api/refund/request'; app._router.handle(req, res);
 });
 
 io.on('connection', (socket) => {
