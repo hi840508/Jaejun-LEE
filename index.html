@@ -230,6 +230,12 @@
                 <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" style="margin-right:8px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
                 Earth
             </h2>
+
+            <!-- 🚀 QR 진입자 안내 (?store= 파라미터 감지 시 표시) -->
+            <div id="login-store-hint" style="display:none; background:linear-gradient(135deg,#fef3c7,#fde68a); border:1px solid #f59e0b; padding:10px 14px; border-radius:10px; margin-bottom:15px; font-size:12px; color:#78350f; line-height:1.5;">
+                🎁 <b>홍보 QR로 접속하셨습니다.</b><br>
+                로그인 또는 가입 후 자동으로 해당 상점이 즐겨찾기에 등록되고 입장됩니다.
+            </div>
             
             <div class="tabs" style="justify-content:center; border:none; margin-bottom:15px;" id="login-tabs-wrap">
                 <div class="tab active" style="flex:1; text-align:center; padding:10px;" onclick="toggleLoginMode('login')">기존 회원 로그인</div>
@@ -286,6 +292,12 @@
             </div>
 
             <div id="tab-market" class="tab-content active">
+                <!-- 🚀 v2.1 진단용 배너 (이 줄이 보이지 않으면 구버전 HTML이 서빙 중) -->
+                <div style="background:linear-gradient(135deg, #fef3c7, #fde68a); border:1px solid #f59e0b; border-radius:10px; padding:10px 14px; font-size:12px; color:#78350f; display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:16px;">🌍</span>
+                    <span><b>Earth Commerce v2.1</b> · 디지털 거래소에서 최신 브랜드를 둘러보고, 마음에 드는 상점은 ⭐로 즐겨찾기 하세요. 상점 운영자는 <b>"내 상점" → 🎁 홍보 QR 생성</b>으로 손님을 초대할 수 있습니다.</span>
+                </div>
+
                 <div class="panel" style="padding:15px; background:#f8fafc; position:relative;">
                     <div style="font-size:14px; font-weight:bold; margin-bottom:10px; color:var(--text-main);">🏬 브랜드 상점 탐색</div>
                     <div style="display:flex; gap:10px;">
@@ -581,6 +593,27 @@
         </div>
     </div>
 
+    <!-- 🚀 상점 홍보 QR 모달 -->
+    <div class="modal-overlay" id="promo-qr-modal">
+        <div class="modal-content" style="max-width:380px;">
+            <div class="modal-header"><span>🎁 상점 홍보 QR</span><button class="close-btn-x" onclick="closeModal('promo-qr-modal')">&times;</button></div>
+            <div style="text-align:center;">
+                <div id="promo-qr-store-name" style="font-size:16px; font-weight:bold; margin-bottom:6px; color:var(--text-main);"></div>
+                <div style="font-size:11px; color:var(--text-sub); margin-bottom:12px; line-height:1.5;">
+                    스캔 시 자동으로 즐겨찾기에 등록되고 상점에 입장합니다.<br>
+                    회원이 아닐 경우 가입 후 자동 연결됩니다.<br>
+                    <b style="color:var(--primary);">상점이 폐점되기 전까지 계속 사용 가능</b>
+                </div>
+                <div style="display:flex; justify-content:center; padding:18px; background:#fff; border:1px solid var(--border-color); border-radius:12px;">
+                    <canvas id="promo-qr-canvas" style="max-width:100%;"></canvas>
+                </div>
+                <div id="promo-qr-url" style="font-size:10px; color:var(--text-sub); margin-top:10px; word-break:break-all; padding:6px; background:#f1f5f9; border-radius:6px;"></div>
+                <button class="btn btn-success" style="width:100%; padding:12px; margin-top:12px; font-size:14px;" onclick="downloadPromoQRJPG()">📥 JPG 이미지로 저장</button>
+                <button class="btn btn-outline" style="width:100%; padding:8px; margin-top:6px; font-size:12px;" onclick="copyPromoQRURL()">🔗 링크 복사</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="universal-modal">
         <div class="modal-content" style="width:100vw; height:100vh; max-width:none; border-radius:0; border:none; padding:0; background:#f8fafc; flex-direction:column;">
             <div style="padding:15px 20px; background:#ffffff; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); box-shadow:0 2px 4px rgba(0,0,0,0.02);">
@@ -645,8 +678,20 @@
         let unreadCounts = {}; let tempProfilePicBase64 = null;
         let isAdmin = false; 
 
-        // 🚀 자동 로그인
+        // 🚀 자동 로그인 + QR(?store=) 진입 사전 저장 (비회원이 가입 후 처리되도록)
         window.onload = () => {
+            // ?store= 파라미터는 어떤 경우에도 즉시 localStorage에 저장 (비로그인 → 가입/로그인 후 자동 처리)
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const storeParam = urlParams.get('store');
+                if(storeParam) {
+                    localStorage.setItem('pendingStoreEntry', storeParam);
+                    // 로그인 페이지 안내 (비회원 경우)
+                    const hint = document.getElementById('login-store-hint');
+                    if(hint) hint.style.display = 'block';
+                }
+            } catch(e) {}
+
             const savedData = localStorage.getItem('earth_auto_login');
             if(savedData) loginSuccess(JSON.parse(savedData));
         };
@@ -757,6 +802,13 @@
             const urlParams = new URLSearchParams(window.location.search);
             const inviteName = urlParams.get('invite');
             const redeemData = urlParams.get('redeem');
+            const storeParam = urlParams.get('store'); // 🚀 QR 스캔 진입
+
+            // 🚀 ?store= 파라미터가 있으면 localStorage에 저장하고 로그인 완료 후 처리
+            if(storeParam) {
+                localStorage.setItem('pendingStoreEntry', storeParam);
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
             
             if(inviteName && inviteName !== data.name) {
                 fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: data.name, friendName: inviteName }) }).then(r => r.json()).then(j => {
@@ -779,6 +831,9 @@
             }
             
             updateUserBalance(); switchTab('market'); loadFriendList(); loadChatList();
+
+            // 🚀 QR 스캔 진입 처리 (다른 모든 초기화 후 실행)
+            setTimeout(() => { processPendingStoreEntry(); }, 600);
         }
 
         // 🚀 표준 룸 ID 생성 (양측 동일 보장 - 알파벳 정렬)
@@ -995,6 +1050,7 @@
                         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
                             <div style="display:flex; align-items:center; gap:10px;"><div class="brand-logo-circle">${logoHtml}</div><div><b style="font-size:15px;">${st.name}</b><div style="font-size:11px; color:var(--text-sub);">${st.status === 'active' ? '🟢 운영중' : '🟡 편집중'}</div></div></div>
                             <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                                <button class="btn" style="padding:6px 10px; font-size:11px; background:linear-gradient(135deg, #f59e0b, #ef4444); color:#fff;" onclick="openPromoQR('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🎁 홍보 QR</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="uploadStoreBackground('${st.id}')">🖼️ 배경 ${hasBg?'변경':'등록'}</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="editStoreDescription('${st.id}', \`${descStr}\`)">📝 소개</button>
                                 <button class="btn btn-secondary" style="padding:6px 10px; font-size:11px;" onclick="toggleBrandStatus('${st.id}', '${st.status}')">상태 토글</button>
@@ -1012,6 +1068,89 @@
 
         async function toggleBrandStatus(storeId, currentStatus) { const newStatus = currentStatus === 'active' ? 'editing' : 'active'; await fetch(`${API_URL}/api/store/status`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: storeId, status: newStatus }) }); loadMyBrandStores(); }
         async function closeOwnBrandStore(id) { if(!confirm("해당 상점 브랜드를 영구 폐쇄하십니까? 소속 에셋이 즉시 동시 소멸됩니다.")) return; try { const res = await fetch(`${API_URL}/api/store/close`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id, owner: currentUser.name }) }); if(res.ok) { showToast("폐쇄 처리 완료"); loadMyBrandStores(); loadMyStore(); } } catch(e){} }
+
+        // 🚀 상점 홍보 QR 생성 + JPG 다운로드
+        window.currentPromoQR = { storeId: null, storeName: null, url: null };
+
+        window.openPromoQR = function(storeId, storeName) {
+            const url = `${window.location.origin}${window.location.pathname}?store=${storeId}`;
+            window.currentPromoQR = { storeId, storeName, url };
+            document.getElementById('promo-qr-store-name').innerText = `🏬 ${storeName}`;
+            document.getElementById('promo-qr-url').innerText = url;
+            const canvas = document.getElementById('promo-qr-canvas');
+            // QRCode 라이브러리로 캔버스 렌더 (260px 고정 — JPG 출력 시 선명함)
+            QRCode.toCanvas(canvas, url, { width: 260, margin: 2, color: { dark: '#1f2937', light: '#ffffff' } }, function(err) {
+                if(err) { console.error(err); showToast("QR 생성 실패"); }
+            });
+            openModal('promo-qr-modal');
+        }
+
+        window.downloadPromoQRJPG = function() {
+            const canvas = document.getElementById('promo-qr-canvas');
+            if(!canvas || !window.currentPromoQR.storeId) return showToast("QR 데이터가 없습니다.");
+            // 캔버스를 흰색 배경의 새 캔버스로 합성한 후 JPEG 추출 (투명도 → 흰색 처리)
+            const exportCanvas = document.createElement('canvas');
+            const PAD = 30; const TITLE_H = 60;
+            exportCanvas.width = canvas.width + PAD * 2;
+            exportCanvas.height = canvas.height + PAD * 2 + TITLE_H;
+            const ctx = exportCanvas.getContext('2d');
+            // 흰 배경
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+            // 상점명 타이틀
+            ctx.fillStyle = '#1f2937'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(`🏬 ${window.currentPromoQR.storeName}`, exportCanvas.width/2, 30);
+            ctx.fillStyle = '#64748b'; ctx.font = '12px sans-serif';
+            ctx.fillText('스캔하면 자동 즐겨찾기 + 입장', exportCanvas.width/2, 50);
+            // QR 합성
+            ctx.drawImage(canvas, PAD, TITLE_H + PAD - 10);
+            // JPEG 다운로드 (품질 0.95)
+            const dataUrl = exportCanvas.toDataURL('image/jpeg', 0.95);
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            const safeName = (window.currentPromoQR.storeName || 'store').replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ_-]/g, '_').substring(0, 30);
+            a.download = `${safeName}_홍보QR.jpg`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            showToast(`📥 ${safeName}_홍보QR.jpg 다운로드 완료`);
+        }
+
+        window.copyPromoQRURL = function() {
+            const url = window.currentPromoQR.url;
+            if(!url) return;
+            navigator.clipboard.writeText(url).then(() => showToast("🔗 링크 클립보드 복사 완료")).catch(() => {
+                // fallback
+                const tmp = document.createElement('textarea'); tmp.value = url; document.body.appendChild(tmp); tmp.select(); document.execCommand('copy'); document.body.removeChild(tmp);
+                showToast("🔗 링크 복사됨");
+            });
+        }
+
+        // 🚀 ?store= URL 파라미터 처리: QR 스캔/링크 접속 시 자동 즐겨찾기 + 상점 입장
+        // 회원이면 즉시 처리, 비회원이면 로그인 후 자동 실행
+        async function processPendingStoreEntry() {
+            const storeId = localStorage.getItem('pendingStoreEntry');
+            if(!storeId || !currentUser) return;
+            localStorage.removeItem('pendingStoreEntry');
+            try {
+                // 1. 상점이 실제 존재/운영중인지 확인
+                const r = await fetch(`${API_URL}/api/store/${storeId}`);
+                const st = await r.json();
+                if(!st || !st.id) { showToast("상점을 찾을 수 없습니다. (이미 폐점된 상점일 수 있음)"); return; }
+                if(st.status && st.status !== 'active') { showToast(`"${st.name}" 상점은 현재 ${st.status} 상태입니다.`); return; }
+                // 2. 본인 상점이면 그냥 입장만 (즐겨찾기 의미 없음)
+                if(st.owner !== currentUser.name) {
+                    // 3. 즐겨찾기에 이미 있는지 확인 후 추가
+                    const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`);
+                    const favs = await favRes.json() || [];
+                    if(!favs.includes(storeId)) {
+                        await fetch(`${API_URL}/api/favorite/toggle`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, targetStore: storeId }) });
+                        showToast(`⭐ "${st.name}" 상점이 즐겨찾기에 등록되었습니다.`);
+                    }
+                }
+                // 4. 디지털 거래소 탭으로 이동 후 상점 입장
+                switchTab('market');
+                setTimeout(() => { enterBrandStoreById(storeId); }, 300);
+            } catch(e) { console.error('store entry error:', e); showToast("상점 입장 처리 실패"); }
+        }
 
         const dz = document.getElementById('my-store-dropzone');
         dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); }); dz.addEventListener('dragleave', e => { e.preventDefault(); dz.classList.remove('dragover'); });
@@ -1375,14 +1514,18 @@
         // 🚀 최신 등록 브랜드 쇼케이스 로드
         async function loadShowcase() {
             const wrap = document.getElementById('brand-showcase-grid');
-            wrap.innerHTML = '<div style="text-align:center; padding:40px 20px; color:var(--text-sub); font-size:13px;">📡 최신 브랜드 데이터 로딩 중...</div>';
+            if(!wrap) { console.warn('brand-showcase-grid not found (구버전 HTML?)'); return; }
             try {
                 const res = await fetch(`${API_URL}/api/stores/showcase`);
-                if(!res.ok) throw new Error('fetch failed');
+                if(!res.ok) throw new Error('showcase fetch failed: ' + res.status);
                 const showcase = await res.json() || [];
                 window.showcaseCache = showcase;
-                const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`);
-                const favs = await favRes.json() || []; window.favoriteStoreIds = favs;
+                let favs = [];
+                try {
+                    const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`);
+                    if(favRes.ok) favs = await favRes.json() || [];
+                } catch(e) { console.warn('favorites fetch failed:', e); }
+                window.favoriteStoreIds = favs;
                 renderFavoriteBrands(showcase, favs);
 
                 if(showcase.length === 0) {
@@ -1441,12 +1584,13 @@
                     </div>`;
                 });
                 wrap.innerHTML = h;
-                filterShowcaseInline(); // 검색어 있으면 즉시 필터링
+                filterShowcaseInline();
             } catch(e) {
                 console.error('Showcase load error:', e);
-                wrap.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--danger); font-size:13px; background:#fff; border:1px solid var(--danger); border-radius:12px;">
-                    ⚠️ 브랜드 데이터 로딩 실패<br>
-                    <span style="font-size:11px; color:var(--text-sub);">서버 연결 상태를 확인해 주세요.</span>
+                wrap.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--danger); font-size:13px; background:#fff7ed; border:1px solid var(--warning); border-radius:12px;">
+                    ⚠️ 브랜드 데이터를 불러오지 못했습니다.<br>
+                    <span style="font-size:11px; color:var(--text-sub);">잠시 후 자동 재시도되거나, 위의 🔄 새로고침을 눌러 주세요.</span><br>
+                    <button class="btn btn-outline" style="margin-top:10px; padding:6px 14px; font-size:12px;" onclick="loadShowcase()">🔄 지금 다시 시도</button>
                 </div>`;
             }
         }
