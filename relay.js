@@ -271,11 +271,42 @@ app.post('/api/product/delete', (req, res) => { db.run(`DELETE FROM products WHE
 app.post('/api/buy', (req, res) => {
     const amount = Number(req.body.amount) || 0; const pType = req.body.purchaseType; const rawDate = new Date().toISOString();
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.buyer], (err, row) => {
-        if (!row || row.balance < amount) return res.status(400).json({ error: "원장 자산 잔액 부족" });
+        if (!row || row.balance < amount) return res.status(400).json({ error: "잔액 부족" });
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.buyer]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.seller]);
             db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [req.body.buyer, req.body.seller, req.body.productId, req.body.productName, amount, pType, rawDate, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+        });
+    });
+});
+
+// 🚀 장바구니 일괄 결제 — 한 번에 결제하되 거래내역에는 개별 상품 단위로 기록 (환불 가능)
+app.post('/api/buy/cart', (req, res) => {
+    const { buyer, items } = req.body; // items: [{productId, productName, seller, amount, purchaseType}]
+    if(!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "장바구니가 비어있습니다." });
+    const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    db.get(`SELECT balance FROM users WHERE name = ?`, [buyer], (err, row) => {
+        if(!row || row.balance < total) return res.status(400).json({ error: `잔액 부족 (필요: ${total.toLocaleString()}원)` });
+        // 같은 판매자에게 가는 금액들을 합산해서 한 번에 잔액 처리
+        const sellerSums = {};
+        items.forEach(i => { sellerSums[i.seller] = (sellerSums[i.seller] || 0) + Number(i.amount); });
+        const now = new Date(); const dateStr = now.toLocaleString('ko-KR');
+        db.serialize(() => {
+            // 구매자 잔액 차감 (전체)
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [total, buyer]);
+            // 판매자별 잔액 증가
+            for(const seller in sellerSums) {
+                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [sellerSums[seller], seller]);
+            }
+            // 거래내역은 상품별로 개별 기록 (환불 단위 = 1개 상품)
+            // rawDate에 마이크로초 오프셋을 추가해 정렬 순서 안정화
+            let successCount = 0;
+            items.forEach((it, idx) => {
+                const itemRaw = new Date(now.getTime() + idx).toISOString();
+                db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [buyer, it.seller, it.productId, it.productName, Number(it.amount) || 0, it.purchaseType || 'original', itemRaw, dateStr],
+                    function(e) { if(!e) successCount++; if(idx === items.length - 1) res.json({ success: true, count: items.length, total }); });
+            });
         });
     });
 });
