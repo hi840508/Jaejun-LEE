@@ -31,24 +31,27 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 
 function initTables() {
     db.serialize(() => {
-        db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, realname TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, realname TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT, phone TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS friends (userName TEXT, friendName TEXT, UNIQUE(userName, friendName))`);
         db.run(`CREATE TABLE IF NOT EXISTS stores (id TEXT PRIMARY KEY, name TEXT, owner TEXT, logo TEXT, status TEXT DEFAULT 'active', background TEXT, description TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, storeId TEXT, type TEXT, name TEXT, description TEXT, price_stream INTEGER DEFAULT 0, price_original INTEGER DEFAULT 0, stream_time INTEGER DEFAULT 0, stream_unit TEXT DEFAULT 'd', seller TEXT, thumbnail TEXT, encryptedPayload TEXT, compression_ratio INTEGER DEFAULT 0, block_hash TEXT, ecc_signature TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, purchaseType TEXT, rawDate TEXT, date TEXT, refunded INTEGER DEFAULT 0)`);
         db.run(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT, sender TEXT, senderPic TEXT, message TEXT, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS qr_checks (id TEXT PRIMARY KEY, amount INTEGER, issuer TEXT, secretKey TEXT, eccSignature TEXT, is_used INTEGER, date TEXT)`);
-        db.run(`CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, amount INTEGER, date TEXT)`);
-        db.run(`CREATE TABLE IF NOT EXISTS deposits (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name TEXT, sender_name TEXT, amount INTEGER, status TEXT, date TEXT)`);
-        db.run(`CREATE TABLE IF NOT EXISTS withdrawals (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount INTEGER, status TEXT, date TEXT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, amount INTEGER, date TEXT, rawDate TEXT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS deposits (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name TEXT, sender_name TEXT, amount INTEGER, status TEXT, date TEXT, rawDate TEXT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS withdrawals (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount INTEGER, status TEXT, date TEXT, rawDate TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, targetStore TEXT)`);
-        // 🚀 환불 요청 (판매자 승인 필요)
         db.run(`CREATE TABLE IF NOT EXISTS refund_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, txId INTEGER, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, status TEXT DEFAULT 'pending', reason TEXT, request_date TEXT, decision_date TEXT)`);
 
         // 🚀 기존 DB 호환을 위한 마이그레이션 (컬럼 추가; 이미 있으면 에러 무시)
         db.run(`ALTER TABLE stores ADD COLUMN background TEXT`, () => {});
         db.run(`ALTER TABLE stores ADD COLUMN description TEXT`, () => {});
         db.run(`ALTER TABLE transactions ADD COLUMN refunded INTEGER DEFAULT 0`, () => {});
+        db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
+        db.run(`ALTER TABLE transfers ADD COLUMN rawDate TEXT`, () => {});
+        db.run(`ALTER TABLE deposits ADD COLUMN rawDate TEXT`, () => {});
+        db.run(`ALTER TABLE withdrawals ADD COLUMN rawDate TEXT`, () => {});
     });
 }
 initTables();
@@ -73,24 +76,47 @@ app.post('/api/auth/verify', (req, res) => {
 });
 
 app.post('/api/auth/register', (req, res) => {
-    const { name, password, realname, bank, account } = req.body;
-    db.run(`INSERT INTO users (name, password, realname, bank, account, balance) VALUES (?, ?, ?, ?, ?, 10000)`, [name, password, realname, bank, account], (err) => {
+    const { name, password, realname, bank, account, phone } = req.body;
+    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone) VALUES (?, ?, ?, ?, ?, 10000, ?)`, [name, password, realname, bank, account, phone || ''], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
-        res.json({ name, password, realname, bank, account, balance: 10000, profilePic: null });
+        // 🚀 가입 축하금 거래 장부 기록 (절대 누락 방지)
+        // 컨벤션: 사용자가 돈을 받으므로 seller=사용자, buyer=Earth(Root) — 보안수표 환원과 동일
+        const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
+        db.run(`INSERT INTO transactions (buyer, seller, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            ['Earth(Root)', name, '신규 가입 정산 한도 축하금', 10000, 'signup_bonus', rawDate, date]);
+        res.json({ name, password, realname, bank, account, phone: phone || '', balance: 10000, profilePic: null });
     });
 });
 
 app.post('/api/user/update', (req, res) => {
-    db.run(`UPDATE users SET password = ?, realname = ?, bank = ?, account = ?, profilePic = ? WHERE name = ?`, [req.body.password, req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.name], () => res.json({success: true}));
+    db.run(`UPDATE users SET password = ?, realname = ?, bank = ?, account = ?, profilePic = ?, phone = ? WHERE name = ?`, [req.body.password, req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.name], () => res.json({success: true}));
 });
-app.get('/api/users/:name', (req, res) => { db.get(`SELECT balance FROM users WHERE name = ?`, [req.params.name], (err, row) => res.json(row || { balance: 0 })); });
+// 🚀 회원 검색 (이름/실명/전화로 부분 매칭) - 친구 등록용. 반드시 /:name 라우트보다 먼저 등록 (라우트 우선순위)
+app.get('/api/users/search', (req, res) => {
+    const q = (req.query.q || '').trim(); const exclude = req.query.exclude || '';
+    if(!q || q.length < 1) return res.json([]);
+    const like = `%${q}%`;
+    db.all(`SELECT name, profilePic, phone, realname FROM users WHERE (name LIKE ? OR realname LIKE ? OR phone LIKE ?) AND name != ? LIMIT 20`,
+        [like, like, like, exclude], (err, rows) => res.json(rows || []));
+});
+// 🚀 전체 사용자 정보 (잔액 + 프로필 + 전화)
+app.get('/api/users/:name', (req, res) => { db.get(`SELECT name, balance, profilePic, phone, realname FROM users WHERE name = ?`, [req.params.name], (err, row) => res.json(row || { balance: 0 })); });
 
 app.post('/api/friend/add', (req, res) => {
     const { userName, friendName } = req.body;
-    db.get(`SELECT name FROM users WHERE name = ?`, [friendName], (err, row) => {
+    if(userName === friendName) return res.status(400).json({ error: "본인 ID는 추가할 수 없습니다." });
+    db.get(`SELECT name, profilePic FROM users WHERE name = ?`, [friendName], (err, row) => {
         if(!row) return res.status(404).json({ error: "미존재 회원 식별자" });
-        db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [userName, friendName], () => {
-            db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [friendName, userName], () => res.json({ success: true }));
+        db.get(`SELECT name, profilePic FROM users WHERE name = ?`, [userName], (e2, meRow) => {
+            db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [userName, friendName], () => {
+                db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [friendName, userName], () => {
+                    // 🚀 socket으로 양측에 친구 추가 사실 즉시 알림 → 별도 새로고침 없이 친구목록/대화방 갱신
+                    try {
+                        io.emit('friend_added', { a: userName, b: friendName, aPic: meRow && meRow.profilePic || null, bPic: row.profilePic || null });
+                    } catch(e) {}
+                    res.json({ success: true, partner: row });
+                });
+            });
         });
     });
 });
@@ -114,11 +140,11 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
     });
 });
 
-app.post('/api/deposit/request', (req, res) => { db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date) VALUES (?, ?, ?, '대기', ?)`, [req.body.userName, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR')], () => { res.json({ success: true }); }); });
+app.post('/api/deposit/request', (req, res) => { const rawDate = new Date().toISOString(); db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date, rawDate) VALUES (?, ?, ?, '대기', ?, ?)`, [req.body.userName, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR'), rawDate], () => { res.json({ success: true }); }); });
 
 app.post('/api/withdraw/request', (req, res) => {
-    const amount = Number(req.body.amount) || 0;
-    db.serialize(() => { db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.name]); db.run(`INSERT INTO withdrawals (name, amount, status, date) VALUES (?, ?, '대기', ?)`, [req.body.name, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true })); });
+    const amount = Number(req.body.amount) || 0; const rawDate = new Date().toISOString();
+    db.serialize(() => { db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.name]); db.run(`INSERT INTO withdrawals (name, amount, status, date, rawDate) VALUES (?, ?, '대기', ?, ?)`, [req.body.name, amount, new Date().toLocaleString('ko-KR'), rawDate], () => res.json({ success: true })); });
 });
 
 app.get('/api/admin/actions', (req, res) => {
@@ -139,10 +165,11 @@ app.post('/api/transfer', (req, res) => {
     const amount = Number(req.body.amount) || 0;
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.sender], (err, sRow) => {
         if (!sRow || sRow.balance < amount) return res.status(400).json({ error: "원장 자산 잔액 부족" });
+        const rawDate = new Date().toISOString(); const date = new Date().toLocaleString('ko-KR');
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.sender]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.receiver]);
-            db.run(`INSERT INTO transfers (sender, receiver, amount, date) VALUES (?, ?, ?, ?)`, [req.body.sender, req.body.receiver, amount, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+            db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate) VALUES (?, ?, ?, ?, ?)`, [req.body.sender, req.body.receiver, amount, date, rawDate], () => res.json({ success: true }));
         });
     });
 });
@@ -266,11 +293,11 @@ app.post('/api/check/issue', (req, res) => {
     db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.issuer], (err, row) => {
         if (!row || row.balance < amount) return res.status(400).json({ error: "발행 한도 초과" });
         const checkId = 'META_QR_' + Date.now(); const secretKey = Math.floor(100000 + Math.random() * 900000).toString();
-        const signature = generateECCInverseSignature(checkId, secretKey, amount); const date = new Date().toLocaleString('ko-KR');
+        const signature = generateECCInverseSignature(checkId, secretKey, amount); const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.issuer]);
             db.run(`INSERT INTO qr_checks (id, amount, issuer, secretKey, eccSignature, is_used, date) VALUES (?, ?, ?, ?, ?, 0, ?)`, [checkId, amount, req.body.issuer, secretKey, signature, date]);
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, [req.body.issuer, 'Earth(Root)', '보안 수표 발행', amount, date], () => res.json({ success: true, checkId, secretKey, signature }));
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, rawDate, date) VALUES (?, ?, ?, ?, ?, ?)`, [req.body.issuer, 'Earth(Root)', '보안 수표 발행', amount, rawDate, date], () => res.json({ success: true, checkId, secretKey, signature }));
         });
     });
 });
@@ -281,11 +308,11 @@ app.post('/api/check/redeem', (req, res) => {
     if (secretKey && !checkId) { query = `SELECT * FROM qr_checks WHERE secretKey = ? AND is_used = 0`; params = [secretKey]; }
     db.get(query, params, (err, row) => {
         if (!row) return res.status(404).json({ error: "이미 회수되었거나 무효한 핀입니다." });
-        const date = new Date().toLocaleString('ko-KR');
+        const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
         db.serialize(() => {
             db.run(`UPDATE qr_checks SET is_used = 1 WHERE id = ?`, [row.id]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [row.amount, redeemer]);
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, date) VALUES (?, ?, ?, ?, ?)`, ['Earth(Root)', redeemer, '보안 수표 환원 충전', row.amount, date], () => res.json({ success: true, amount: row.amount }));
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, rawDate, date) VALUES (?, ?, ?, ?, ?, ?)`, ['Earth(Root)', redeemer, '보안 수표 환원 충전', row.amount, rawDate, date], () => res.json({ success: true, amount: row.amount }));
         });
     });
 });
@@ -318,9 +345,15 @@ app.get('/api/transactions/:name', async (req, res) => {
             const refStatus = t.refund_status; // 'pending' | 'approved' | 'rejected' | null
             // 🚀 환불 요청 가능 여부: 구매자이며, 미환불, 대기중 요청 없음, 유효한 자산 거래
             const refundable = isBuyer && !t.refunded && refStatus !== 'pending'
-                && t.productId && t.purchaseType !== 'refund'
-                && !['보안 수표 발행', '보안 수표 환원 충전'].includes(t.productName);
-            const baseType = t.purchaseType === 'refund' ? (isBuyer ? '환불 수령' : '환불 지급') : (isBuyer ? '자산 구매' : '자산 판매');
+                && t.productId && t.purchaseType !== 'refund' && t.purchaseType !== 'signup_bonus'
+                && !['보안 수표 발행', '보안 수표 환원 충전', '신규 가입 정산 한도 축하금'].includes(t.productName);
+            // 🚀 거래 유형 라벨 (장부 누락 없이 의미 명확)
+            let baseType;
+            if(t.purchaseType === 'refund') baseType = isBuyer ? '환불 수령' : '환불 지급';
+            else if(t.purchaseType === 'signup_bonus') baseType = '가입 축하금';
+            else if(t.productName === '보안 수표 발행') baseType = '보안 수표 발행';
+            else if(t.productName === '보안 수표 환원 충전') baseType = '보안 수표 환원';
+            else baseType = isBuyer ? '자산 구매' : '자산 판매';
             history.push({
                 txId: t.id, type: baseType,
                 date: t.date, rawDate: t.rawDate || t.date, productId: t.productId, purchaseType: t.purchaseType,
@@ -328,9 +361,9 @@ app.get('/api/transactions/:name', async (req, res) => {
                 refunded: !!t.refunded, refundable, refundStatus: refStatus, refundRequestId: t.refund_request_id
             });
         });
-        tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, rawDate: t.date, amount: t.amount, seller: t.receiver || t.sender, sender: t.sender, receiver: t.receiver }));
-        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, rawDate: d.date, amount: d.amount, seller: 'Earth(Root)' }));
-        wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, rawDate: w.date, amount: w.amount, seller: '지정 등록 계좌' }));
+        tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, rawDate: t.rawDate || t.date, amount: t.amount, seller: t.receiver || t.sender, sender: t.sender, receiver: t.receiver }));
+        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, rawDate: d.rawDate || d.date, amount: d.amount, seller: 'Earth(Root)' }));
+        wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, rawDate: w.rawDate || w.date, amount: w.amount, seller: '지정 등록 계좌' }));
 
         // 🚀 최신순 정렬 (rawDate 우선)
         history.sort((a,b) => {
