@@ -7,6 +7,8 @@
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
     <style>
         /* 🌍 Earth Light Theme - 당근마켓 벤치마킹 및 깔끔한 UI */
         :root { --bg-main: #f1f5f9; --panel-bg: #ffffff; --text-main: #0f172a; --text-sub: #64748b; --primary: #3b82f6; --primary-hover: #2563eb; --border-color: #cbd5e1; --success: #10b981; --danger: #ef4444; --warning: #f59e0b; --gradient-btn: linear-gradient(135deg, #60a5fa 0%, #2563eb 100%); }
@@ -100,14 +102,48 @@
         .friend-item:hover { background: #f8fafc; }
         .unread-badge { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); background: var(--danger); color: white; font-size: 11px; font-weight: bold; padding: 2px 7px; border-radius: 10px; display: none; }
         
-        .chat-body { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f0f4f8; }
-        .chat-input-area { padding: 10px; border-top: 1px solid var(--border-color); display: flex; gap: 8px; align-items: center; background: #fff; flex-shrink: 0; }
-        .chat-input-area input { flex: 1; padding: 10px 15px; border-radius: 20px; border: 1px solid var(--border-color); background: #f1f5f9; outline: none; color: var(--text-main); }
-        
-        .msg-row { display: flex; gap: 8px; max-width: 85%; }
-        .msg-bubble { padding: 10px 14px; border-radius: 16px; font-size: 13.5px; line-height: 1.4; word-break: break-all; }
-        .msg-me { align-self: flex-end; background: var(--gradient-btn); color: #fff; border-bottom-right-radius: 4px; box-shadow: 0 1px 2px rgba(59,130,246,0.1); }
-        .msg-other { align-self: flex-start; background: #fff; border: 1px solid var(--border-color); color: var(--text-main); border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        /* 🚀 카카오톡 스타일 채팅 UI */
+        .chat-body { flex: 1; padding: 14px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; background: #abc1d1; }
+        .chat-input-area { padding: 10px; border-top: 1px solid #d4dde5; display: flex; gap: 8px; align-items: center; background: #f4f6f8; flex-shrink: 0; }
+        .chat-input-area input { flex: 1; padding: 10px 15px; border-radius: 22px; border: 1px solid #d4dde5; background: #ffffff; outline: none; color: #1f2937; font-size:14px; }
+
+        /* 메시지 한 줄 (시간/말풍선) 한 단위 */
+        .kt-msg-line { display:flex; gap:6px; align-items:flex-end; max-width:90%; margin-top:2px; }
+        .kt-msg-line.me { align-self:flex-end; flex-direction:row-reverse; }
+        .kt-msg-line.other { align-self:flex-start; }
+        .kt-msg-line + .kt-msg-line.same-sender { margin-top:1px; }
+
+        /* 프로필 사진 (other 메시지 첫 줄에만 표시) */
+        .kt-avatar { width:36px; height:36px; border-radius:14px; background:#cbd5e1; flex-shrink:0; object-fit:cover; }
+        .kt-avatar-spacer { width:36px; flex-shrink:0; }
+
+        /* 발신자명 (other 첫 줄에만, 말풍선 위) */
+        .kt-sender-name { font-size:12px; color:#1f2937; margin: 6px 0 3px 44px; font-weight:500; }
+        .kt-bubble-col { display:flex; flex-direction:column; min-width:0; max-width:75vw; }
+
+        /* 말풍선 본체 */
+        .kt-bubble { padding:8px 11px; font-size:14px; line-height:1.42; word-break:break-word; max-width:100%; box-shadow:0 1px 1px rgba(0,0,0,0.04); }
+        .kt-bubble.other { background:#ffffff; color:#1f2937; border-radius: 2px 16px 16px 16px; }
+        .kt-bubble.me { background:#fee500; color:#1f2937; border-radius: 16px 2px 16px 16px; align-self:flex-end; }
+        .kt-bubble.me.same-sender { border-radius:16px 16px 2px 16px; }
+        .kt-bubble.other.same-sender { border-radius:16px 16px 16px 2px; }
+
+        /* 시간 (말풍선 옆 아래) */
+        .kt-time { font-size:10px; color:#52677a; padding-bottom:3px; flex-shrink:0; white-space:nowrap; }
+        .kt-msg-line.me .kt-time { color:#52677a; }
+
+        /* 시스템 안내 메시지 (방 입장 등) */
+        .kt-system-line { align-self:center; background:rgba(255,255,255,0.6); color:#475569; font-size:11px; padding:4px 12px; border-radius:30px; margin:6px 0; }
+
+        /* 카카오톡 헤더 */
+        .kt-chat-header { padding:12px 14px; background:#abc1d1; color:#1f2937; display:flex; align-items:center; gap:10px; border-bottom:1px solid #93a8b9; }
+        .kt-chat-header b { font-size:15px; }
+
+        /* 친구 검색 결과 */
+        .friend-search-result { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; gap: 12px; }
+        .friend-search-result .add-btn { background: var(--gradient-btn); color:#fff; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:bold; cursor:pointer; }
+        .friend-search-result .add-btn.added { background:#10b981; cursor:default; }
+        .friend-search-result .meta { font-size:11px; color:var(--text-sub); margin-top:2px; }
         
         /* 채팅방 기능 팝업 (QR 삭제됨) */
         .chat-action-menu { display: none; position: absolute; bottom: 65px; left: 10px; background: #fff; border: 1px solid var(--border-color); border-radius: 12px; padding: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); z-index: 100; flex-direction: column; gap: 8px; width: calc(100% - 20px); max-width: 280px; }
@@ -180,6 +216,11 @@
         .refund-status-pill.pending { background:#fef3c7; color:#92400e; }
         .refund-status-pill.approved { background:#dcfce7; color:#166534; }
         .refund-status-pill.rejected { background:#fee2e2; color:#991b1b; }
+
+        /* 🚀 거래내역 기간 칩 */
+        .hist-period-chip { padding:5px 12px; border-radius:30px; border:1px solid var(--border-color); background:#fff; cursor:pointer; font-size:11px; font-weight:bold; color:var(--text-sub); transition:0.15s; }
+        .hist-period-chip:hover { background:#f1f5f9; }
+        .hist-period-chip.active { background:var(--text-main); color:#fff; border-color:var(--text-main); }
     </style>
 </head>
 <body>
@@ -211,6 +252,7 @@
                 </div>
                 <div class="input-group"><label>사용할 접속 ID</label><input type="text" id="reg-name" placeholder="ID 지정"></div>
                 <div class="input-group"><label>비밀번호</label><input type="password" id="reg-password" placeholder="비밀번호 지정"></div>
+                <div class="input-group"><label>휴대전화번호</label><input type="tel" id="reg-phone" placeholder="예: 010-1234-5678"></div>
                 <div style="height:1px; background:var(--border-color); margin:10px 0;"></div>
                 <div class="input-group"><label>예금주 실명</label><input type="text" id="reg-realname" placeholder="예: 홍길동"></div>
                 <div class="input-group"><label>정산 은행명</label><input type="text" id="reg-bank" placeholder="예: 우리은행"></div>
@@ -245,7 +287,7 @@
 
             <div id="tab-market" class="tab-content active">
                 <div class="panel" style="padding:15px; background:#f8fafc; position:relative;">
-                    <div style="font-size:14px; font-weight:bold; margin-bottom:10px; color:var(--text-main);">브랜드 상점 탐색</div>
+                    <div style="font-size:14px; font-weight:bold; margin-bottom:10px; color:var(--text-main);">🏬 브랜드 상점 탐색</div>
                     <div style="display:flex; gap:10px;">
                         <input type="text" id="partner-search-input" placeholder="브랜드 명칭 키워드 검색 후 Enter..." style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border-color); outline:none;" onkeyup="if(event.key==='Enter') searchPartnerStores(true); else filterShowcaseInline()">
                         <button class="btn btn-secondary" onclick="searchPartnerStores(true)">브랜드 검색</button>
@@ -277,13 +319,16 @@
                 </div>
 
                 <!-- 🚀 디지털 거래소 메인: 최신 등록 브랜드 쇼케이스 (브랜드 미입장 시 표시) -->
-                <div id="brand-showcase-wrap">
+                <div id="brand-showcase-wrap" style="display:block;">
                     <div class="showcase-section-title">
                         <span>🆕 최신 등록 브랜드</span>
                         <span class="badge-new">NEW</span>
                         <span style="font-size:11px; color:var(--text-sub); font-weight:normal; margin-left:6px;">최근 등록된 브랜드 순으로 표시됩니다. 썸네일을 클릭하면 상품 상세로 이동합니다.</span>
+                        <button class="btn btn-outline" style="padding:4px 10px; font-size:11px; border-radius:20px; margin-left:auto;" onclick="loadShowcase()">🔄 새로고침</button>
                     </div>
-                    <div id="brand-showcase-grid" style="display:flex; flex-direction:column; gap:12px;"></div>
+                    <div id="brand-showcase-grid" style="display:flex; flex-direction:column; gap:12px; min-height:120px;">
+                        <div style="text-align:center; padding:30px 20px; color:var(--text-sub); font-size:13px; background:#fff; border:1px dashed var(--border-color); border-radius:12px;">📡 브랜드 쇼케이스 데이터 로딩 중...</div>
+                    </div>
                 </div>
 
                 <!-- 🚀 브랜드 내부 또는 전체 상품 검색 결과 영역 -->
@@ -396,12 +441,34 @@
                 </div>
 
                 <div class="panel">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                        <h4 style="font-size:14px; margin:0;">자금 변동 거래 장부</h4>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                        <h4 style="font-size:14px; margin:0;">📒 자금 변동 거래 장부 (전체 누락 없음)</h4>
                         <div style="background:#ecfdf5; padding:8px 12px; border-radius:8px; border:1px solid var(--success); color:var(--success); font-weight:bold; font-size:13px;">
                             총 누적 판매 수익: <span id="total-sales-revenue">0</span> KRW
                         </div>
                     </div>
+
+                    <!-- 🚀 기간별 보기 + PDF 출력 -->
+                    <div style="background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:10px 12px; margin-bottom:10px;">
+                        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px;">
+                            <span style="font-size:11px; color:var(--text-sub); font-weight:bold;">기간 ·</span>
+                            <button class="hist-period-chip active" data-period="all" onclick="setHistoryPeriod('all', this)">전체</button>
+                            <button class="hist-period-chip" data-period="today" onclick="setHistoryPeriod('today', this)">오늘</button>
+                            <button class="hist-period-chip" data-period="week" onclick="setHistoryPeriod('week', this)">이번 주</button>
+                            <button class="hist-period-chip" data-period="month" onclick="setHistoryPeriod('month', this)">이번 달</button>
+                            <button class="hist-period-chip" data-period="lastmonth" onclick="setHistoryPeriod('lastmonth', this)">지난 달</button>
+                            <button class="hist-period-chip" data-period="year" onclick="setHistoryPeriod('year', this)">올해</button>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                            <span style="font-size:11px; color:var(--text-sub); font-weight:bold;">날짜 지정 ·</span>
+                            <input type="date" id="hist-from" style="padding:5px 8px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;" onchange="setHistoryPeriod('custom')">
+                            <span style="font-size:11px; color:var(--text-sub);">~</span>
+                            <input type="date" id="hist-to" style="padding:5px 8px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;" onchange="setHistoryPeriod('custom')">
+                            <button class="btn btn-danger" style="padding:6px 12px; font-size:12px; border-radius:20px; margin-left:auto;" onclick="exportHistoryPDF()">📄 PDF 출력</button>
+                        </div>
+                        <div id="hist-summary" style="font-size:11px; color:var(--text-sub); margin-top:6px;"></div>
+                    </div>
+
                     <div style="overflow-x:auto; border-radius:8px; border:1px solid var(--border-color);">
                         <table class="history-table">
                             <thead><tr><th>일시</th><th>종류</th><th>상세 내역</th><th>대상</th><th>변동 금액</th><th>환불 처리</th></tr></thead>
@@ -425,9 +492,9 @@
         <div class="messenger-views">
             <div class="messenger-view active" id="view-friend-list">
                 <div style="padding:15px; background:#f8fafc; border-bottom:1px solid var(--border-color);">
-                    <div style="display:flex; gap:5px; margin-bottom:10px;">
-                        <input type="text" id="friend-search-input" placeholder="상대방 ID로 추가..." style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border-color); outline:none;">
-                        <button class="btn" style="padding:10px;" onclick="addFriend()">추가</button>
+                    <div style="position:relative; margin-bottom:10px;">
+                        <input type="text" id="friend-search-input" placeholder="🔍 회원 ID / 실명 / 전화번호 검색..." style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border-color); outline:none;" oninput="searchUsersForFriend()">
+                        <div id="friend-search-results" style="display:none; position:absolute; left:0; right:0; top:100%; background:#fff; border:1px solid var(--border-color); border-top:none; border-radius:0 0 8px 8px; max-height:240px; overflow-y:auto; z-index:5; box-shadow:0 8px 20px rgba(0,0,0,0.1);"></div>
                     </div>
                     <button class="btn btn-outline" style="width:100%; padding:8px; font-size:12px; border-style:dashed;" onclick="copyInviteLink()">🔗 초대 링크 복사 (접속 시 자동 친구 맺기)</button>
                 </div>
@@ -439,9 +506,9 @@
             </div>
 
             <div class="messenger-view" id="view-chat-room">
-                <div style="padding:10px 15px; background:#f8fafc; border-bottom:1px solid var(--border-color); display:flex; align-items:center; gap:10px;">
-                    <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px; border-radius:15px;" onclick="backToDrawerList()">◀ 목록</button>
-                    <span id="active-chat-title" style="font-weight:bold; font-size:14px; color:var(--text-main);">대화방</span>
+                <div class="kt-chat-header">
+                    <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px; border-radius:15px;" onclick="backToDrawerList()">◀</button>
+                    <b id="active-chat-title">대화방</b>
                 </div>
                 <div class="chat-body" id="main-chat-body"></div>
                 
@@ -505,6 +572,7 @@
             
             <div style="height:1px; background:var(--border-color); margin:5px 0;"></div>
             <div class="input-group"><label>예금주 실명</label><input type="text" id="modal-realname"></div>
+            <div class="input-group"><label>휴대전화번호</label><input type="tel" id="modal-phone" placeholder="010-0000-0000"></div>
             <div class="input-group"><label>정산 연동 은행</label><input type="text" id="modal-bank"></div>
             <div class="input-group"><label>정산 계좌번호</label><input type="text" id="modal-account"></div>
             <button class="btn btn-success" style="width:100%; padding:14px;" onclick="saveProfile()">설정 저장</button>
@@ -653,11 +721,12 @@
         async function registerUser() {
             const name = document.getElementById('reg-name').value.trim(); const password = document.getElementById('reg-password').value.trim();
             const realname = document.getElementById('reg-realname').value.trim(); const bank = document.getElementById('reg-bank').value.trim(); const account = document.getElementById('reg-account').value.trim();
+            const phone = document.getElementById('reg-phone').value.trim();
             if(!name || !password || !realname || !bank || !account) return showToast("모든 정보를 빠짐없이 기입해 주세요.");
             try {
-                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account }) });
+                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone }) });
                 const data = await res.json(); if(res.ok) loginSuccess(data); else showToast(data.error);
-            } catch(e){ showToast("통신 장애 발생"); }
+            } catch(e) { showToast("서버 통신 오류"); }
         }
 
         function logout() { localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
@@ -681,17 +750,29 @@
 
             socket = io(API_URL, { transports: ['websocket', 'polling'] });
             socket.on('receive_message', handleReceiveMessage);
+            // 🚀 실시간 친구 추가 알림 (별도 새로고침 없이 친구목록/대화방 즉시 갱신)
+            socket.on('friend_added', handleFriendAdded);
             
-            // 초대 URL 처리 (자동 대화방 100% 매칭 개설)
+            // 초대 URL 처리 (자동 친구 등록 + 대화방 즉시 개설; 양측 모두 별도 새로고침 없이 반영)
             const urlParams = new URLSearchParams(window.location.search);
             const inviteName = urlParams.get('invite');
             const redeemData = urlParams.get('redeem');
             
             if(inviteName && inviteName !== data.name) {
-                fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: data.name, friendName: inviteName }) }).then(() => {
-                    showToast(`${inviteName} 님과 연결되어 대화방이 활성화되었습니다.`);
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                    loadFriendList(); setTimeout(() => { toggleMessengerDrawer(); openMessengerChat(inviteName); }, 500); 
+                fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: data.name, friendName: inviteName }) }).then(r => r.json()).then(j => {
+                    if(j.success) {
+                        showToast(`${inviteName} 님과 자동 친구 등록 · 대화방이 활성화되었습니다.`);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        // 🚀 즉시 양측 대화방 개설 - 빈 시스템 메시지 1건으로 chat 테이블에 roomId가 생성되도록 보장
+                        const roomId = createRoomId(data.name, inviteName);
+                        if(socket && socket.connected) {
+                            socket.emit('join_room', roomId);
+                            // 시스템 안내 메시지 - 양측 대화방 목록에 즉시 표시되도록
+                            socket.emit('send_message', { roomId, sender: '__system__', senderPic: null, message: `🟢 ${data.name} 님과 ${inviteName} 님이 친구로 연결되었습니다.` });
+                        }
+                        loadFriendList(); loadChatList();
+                        setTimeout(() => { toggleMessengerDrawer(); openMessengerChat(inviteName); }, 400);
+                    } else { showToast(j.error || "친구 등록 실패"); }
                 });
             } else if (redeemData) {
                 const parts = redeemData.split('|'); if(parts.length === 3) executeRedeemDirect(parts[0], parts[1], parts[2]); window.history.replaceState({}, document.title, window.location.pathname);
@@ -700,21 +781,40 @@
             updateUserBalance(); switchTab('market'); loadFriendList(); loadChatList();
         }
 
+        // 🚀 표준 룸 ID 생성 (양측 동일 보장 - 알파벳 정렬)
+        function createRoomId(a, b) {
+            const sorted = [a, b].sort();
+            return `room_msg_${sorted[0]}_${sorted[1]}`;
+        }
+
+        // 🚀 socket 'friend_added' 핸들러: 본인이 양쪽 중 하나면 친구/대화방 자동 갱신
+        function handleFriendAdded(payload) {
+            if(!currentUser) return;
+            const me = currentUser.name;
+            if(payload.a !== me && payload.b !== me) return; // 무관한 알림
+            const partner = payload.a === me ? payload.b : payload.a;
+            showToast(`🟢 ${partner} 님과의 대화방이 새로 열렸습니다.`);
+            loadFriendList(); loadChatList();
+        }
+
         // --- 🚀 프로필/Admin 제어 모달 ---
         function openProfileModal() {
             if(!currentUser) return;
-            document.getElementById('modal-name').value = currentUser.name; document.getElementById('modal-realname').value = currentUser.realname || ''; document.getElementById('modal-password').value = currentUser.password || ''; document.getElementById('modal-bank').value = currentUser.bank || ''; document.getElementById('modal-account').value = currentUser.account || ''; document.getElementById('modal-profile-pic').src = currentUser.profilePic || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>";
+            document.getElementById('modal-name').value = currentUser.name; document.getElementById('modal-realname').value = currentUser.realname || ''; document.getElementById('modal-password').value = currentUser.password || ''; document.getElementById('modal-bank').value = currentUser.bank || ''; document.getElementById('modal-account').value = currentUser.account || '';
+            const phoneEl = document.getElementById('modal-phone'); if(phoneEl) phoneEl.value = currentUser.phone || '';
+            document.getElementById('modal-profile-pic').src = currentUser.profilePic || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>";
             tempProfilePicBase64 = currentUser.profilePic; openModal('profile-modal');
         }
         function previewProfilePic(e) { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = function(evt) { tempProfilePicBase64 = evt.target.result; document.getElementById('modal-profile-pic').src = tempProfilePicBase64; }; reader.readAsDataURL(file); }
         
         async function saveProfile() {
             const password = document.getElementById('modal-password').value.trim(); const realname = document.getElementById('modal-realname').value.trim(); const bank = document.getElementById('modal-bank').value.trim(); const account = document.getElementById('modal-account').value.trim();
+            const phone = (document.getElementById('modal-phone') && document.getElementById('modal-phone').value.trim()) || '';
             if(!password || !realname || !bank || !account) return showToast("모든 정보 기입 필수");
             try {
-                const res = await fetch(`${API_URL}/api/user/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: currentUser.name, password, realname, bank, account, profilePic: tempProfilePicBase64 }) });
+                const res = await fetch(`${API_URL}/api/user/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: currentUser.name, password, realname, bank, account, phone, profilePic: tempProfilePicBase64 }) });
                 if(res.ok) {
-                    currentUser.password = password; currentUser.realname = realname; currentUser.bank = bank; currentUser.account = account; currentUser.profilePic = tempProfilePicBase64;
+                    currentUser.password = password; currentUser.realname = realname; currentUser.bank = bank; currentUser.account = account; currentUser.phone = phone; currentUser.profilePic = tempProfilePicBase64;
                     if(tempProfilePicBase64) document.getElementById('my-profile-pic').src = tempProfilePicBase64;
                     const str = `[${bank}] ${account} (${realname})`; const modalAccEl = document.getElementById('modal-withdraw-account-info'); if(modalAccEl) modalAccEl.innerText = str;
                     
@@ -1551,18 +1651,74 @@
 
         function openMessengerChat(friendName) {
             const drawer = document.getElementById('messenger-drawer'); if(!drawer.classList.contains('open')) drawer.classList.add('open');
-            activeChatFriend = friendName; document.getElementById('active-chat-title').innerText = `${friendName} 대화 채널`;
+            activeChatFriend = friendName; document.getElementById('active-chat-title').innerText = `${friendName === '이재준' ? 'Root Admin (고객센터)' : friendName}`;
             currentChatRoomId = `room_msg_${[currentUser.name, friendName].sort().join('_')}`;
             if(unreadCounts[currentChatRoomId]) unreadCounts[currentChatRoomId] = 0;
 
             socket.emit('join_room', currentChatRoomId);
-            fetch(`${API_URL}/api/chat/${currentChatRoomId}`).then(res => res.json()).then(msgs => { document.getElementById('main-chat-body').innerHTML = ''; if(msgs && msgs.length>0) msgs.forEach(m => appendMainMessage(m.sender, m.message, m.senderPic)); });
+            fetch(`${API_URL}/api/chat/${currentChatRoomId}`).then(res => res.json()).then(msgs => {
+                document.getElementById('main-chat-body').innerHTML = '';
+                if(msgs && msgs.length>0) msgs.forEach(m => {
+                    // 날짜에서 HH:MM 부분만 추출
+                    const tm = m.date ? (m.date.match(/\d{1,2}:\d{2}/) || [''])[0] : '';
+                    appendMainMessage(m.sender, m.message, m.senderPic, tm);
+                });
+            });
             document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-room').classList.add('active'); updateTabBadge();
         }
 
         function toggleChatActionMenu() { const menu = document.getElementById('chat-action-menu'); menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex'; }
         
-        async function addFriend() { const friendName = document.getElementById('friend-search-input').value.trim(); if(!friendName || friendName === currentUser.name) return; const res = await fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName }) }); if(res.ok) { showToast("연락처 추가 완료"); document.getElementById('friend-search-input').value=''; loadFriendList(); } }
+        // 🚀 회원 검색 (이름/실명/전화로 부분 매칭, 검색 결과 인라인 표시)
+        let _friendSearchTimer = null;
+        window.searchUsersForFriend = function() {
+            const q = document.getElementById('friend-search-input').value.trim();
+            const box = document.getElementById('friend-search-results');
+            if(_friendSearchTimer) clearTimeout(_friendSearchTimer);
+            if(!q || q.length < 1) { box.style.display = 'none'; box.innerHTML = ''; return; }
+            _friendSearchTimer = setTimeout(async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/users/search?q=${encodeURIComponent(q)}&exclude=${encodeURIComponent(currentUser.name)}`);
+                    const list = await res.json() || [];
+                    const myFriendsRes = await fetch(`${API_URL}/api/friends/${currentUser.name}`);
+                    const myFriends = (await myFriendsRes.json() || []).map(f => f.name);
+                    if(list.length === 0) { box.innerHTML = '<div style="padding:14px; text-align:center; color:var(--text-sub); font-size:12px;">검색 결과가 없습니다.</div>'; box.style.display = 'block'; return; }
+                    let h = '';
+                    list.forEach(u => {
+                        const isFriend = myFriends.includes(u.name);
+                        const pic = u.profilePic ? `<img class="profile-pic" src="${u.profilePic}" style="width:36px; height:36px;">` : `<div class="profile-pic" style="width:36px; height:36px; background:#cbd5e1;"></div>`;
+                        const meta = [u.realname, u.phone].filter(x => x).join(' · ') || '추가 정보 없음';
+                        const btn = isFriend ? `<button class="add-btn added">이미 친구</button>` : `<button class="add-btn" onclick="addFriendByName('${u.name.replace(/'/g,"\\'")}')">+ 친구추가</button>`;
+                        h += `<div class="friend-search-result">${pic}<div style="flex:1; min-width:0;"><b style="font-size:13px;">${u.name}</b><div class="meta">${meta}</div></div>${btn}</div>`;
+                    });
+                    box.innerHTML = h; box.style.display = 'block';
+                } catch(e) { console.error('user search err', e); }
+            }, 250);
+        }
+
+        window.addFriendByName = async function(friendName) {
+            if(!friendName || friendName === currentUser.name) return;
+            const res = await fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName }) });
+            const data = await res.json();
+            if(res.ok) {
+                showToast(`${friendName} 님이 친구로 등록되었습니다.`);
+                // 🚀 양측 대화방 즉시 개설 (시스템 메시지 1건)
+                const roomId = createRoomId(currentUser.name, friendName);
+                if(socket && socket.connected) {
+                    socket.emit('join_room', roomId);
+                    socket.emit('send_message', { roomId, sender: '__system__', senderPic: null, message: `🟢 ${currentUser.name} 님과 ${friendName} 님이 친구로 연결되었습니다.` });
+                }
+                document.getElementById('friend-search-input').value = '';
+                document.getElementById('friend-search-results').style.display = 'none';
+                loadFriendList(); loadChatList();
+            } else { showToast(data.error || '추가 실패'); }
+        }
+
+        // 🚀 레거시 호환: 키 입력 핸들러 보존
+        async function addFriend() {
+            const friendName = document.getElementById('friend-search-input').value.trim();
+            if(friendName) addFriendByName(friendName);
+        }
 
         async function loadFriendList() {
             if(!currentUser) return; const res = await fetch(`${API_URL}/api/friends/${currentUser.name}`); const friends = await res.json() || [];
@@ -1634,19 +1790,47 @@
             }; reader.readAsDataURL(file);
         }
 
-        function appendMainMessage(sender, text, picBase64) {
-            const chatBody = document.getElementById('main-chat-body'); const isMe = sender === currentUser.name; let displayHtml = text;
-            
-            if(text.startsWith('[TRANSFER]')) {
-                displayHtml = `<div style="background:#ecfdf5; padding:15px; border-radius:12px; border:1px solid var(--success); color:#065f46; text-align:center;"><b>💸 실시간 자산 이체 완료</b><br><span style="font-size:20px; font-weight:900;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</span></div>`;
-            } else if (text.startsWith('[PRIVATE_ASSET]')) {
-                const parts = text.replace('[PRIVATE_ASSET]', '').split('|'); const pId = parts[0]; const pName = parts[1]; const pStr = Number(parts[2]); const pOri = Number(parts[3]); const pThumb = parts[4];
-                const actionBtn = isMe ? `<button class="btn btn-success" style="width:100%; padding:8px; font-size:12px;" onclick="openUniversalViewer('${pId}', true)">내가 등록한 상품 (원본 열람)</button>` : `<div style="display:flex; flex-direction:column; gap:4px;"><button class="btn btn-outline" style="padding:6px; font-size:11px;" onclick="buyPrivateAsset('${pId}', '${pName}', ${pStr}, '${sender}', 'stream')">▶ 스트리밍 결제 : ${pStr.toLocaleString()}원</button><button class="btn" style="padding:6px; font-size:11px; background:var(--gradient-btn);" onclick="buyPrivateAsset('${pId}', '${pName}', ${pOri}, '${sender}', 'original')">💎 원본 소유 결제 : ${pOri.toLocaleString()}원</button></div>`;
-                displayHtml = `<div style="background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:12px; width:230px; box-shadow:0 4px 10px rgba(0,0,0,0.05);"><div style="width:100%; height:130px; background:#f8fafc; border-radius:8px; overflow:hidden; border:1px solid var(--border-color); margin-bottom:10px;"><img src="${pThumb}" style="width:100%; height:100%; object-fit:contain;"></div><div style="font-size:11px; color:var(--success); font-weight:bold; margin-bottom:4px;">🔒 1:1 비밀 에셋 거래</div><div style="font-size:13px; font-weight:bold; color:var(--text-main); word-break:break-all; margin-bottom:10px;">${pName}</div>${actionBtn}</div>`;
+        function appendMainMessage(sender, text, picBase64, dateStr) {
+            const chatBody = document.getElementById('main-chat-body');
+
+            // 🚀 시스템 안내 메시지 (친구 등록 등) - 카카오톡식 중앙 알림
+            if(sender === '__system__') {
+                chatBody.innerHTML += `<div class="kt-system-line">${text}</div>`;
+                chatBody.scrollTop = chatBody.scrollHeight; return;
             }
 
-            const pic = picBase64 ? `<img src="${picBase64}" class="profile-pic" style="width:34px; height:34px; border:none;">` : `<div class="profile-pic" style="width:34px; height:34px; border:none;"></div>`;
-            chatBody.innerHTML += `<div class="msg-row ${isMe ? 'msg-me' : 'msg-other'}">${!isMe ? pic : ''}<div style="display:flex; flex-direction:column; max-width:100%;"><div style="font-size:11px; color:var(--text-sub); margin-bottom:4px; font-weight:600; ${isMe?'text-align:right;':''}">${sender}</div><div class="msg-bubble ${isMe?'msg-me':'msg-other'}">${displayHtml}</div></div></div>`;
+            const isMe = sender === currentUser.name;
+            let displayHtml = text;
+
+            if(text.startsWith('[TRANSFER]')) {
+                displayHtml = `<div style="padding:4px;"><div style="font-size:11px; opacity:0.7;">💸 자산 이체</div><div style="font-size:18px; font-weight:900; margin-top:2px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</div></div>`;
+            } else if (text.startsWith('[PRIVATE_ASSET]')) {
+                const parts = text.replace('[PRIVATE_ASSET]', '').split('|'); const pId = parts[0]; const pName = parts[1]; const pStr = Number(parts[2]); const pOri = Number(parts[3]); const pThumb = parts[4];
+                const actionBtn = isMe ? `<button class="btn btn-success" style="width:100%; padding:8px; font-size:12px;" onclick="openUniversalViewer('${pId}', true)">내가 등록한 상품 (원본 열람)</button>` : `<div style="display:flex; flex-direction:column; gap:4px;"><button class="btn btn-outline" style="padding:6px; font-size:11px;" onclick="buyPrivateAsset('${pId}', '${pName}', ${pStr}, '${sender}', 'stream')">▶ 스트리밍 ${pStr.toLocaleString()}원</button><button class="btn" style="padding:6px; font-size:11px; background:var(--gradient-btn);" onclick="buyPrivateAsset('${pId}', '${pName}', ${pOri}, '${sender}', 'original')">💎 원본 ${pOri.toLocaleString()}원</button></div>`;
+                displayHtml = `<div style="padding:4px; width:220px;"><div style="width:100%; height:120px; background:#f8fafc; border-radius:8px; overflow:hidden; margin-bottom:8px;"><img src="${pThumb}" style="width:100%; height:100%; object-fit:cover;"></div><div style="font-size:10px; color:#10b981; font-weight:bold; margin-bottom:2px;">🔒 1:1 비밀 에셋</div><div style="font-size:12px; font-weight:bold; word-break:break-all; margin-bottom:8px;">${pName}</div>${actionBtn}</div>`;
+            }
+
+            // 🚀 같은 발신자의 직전 메시지가 있으면 묶음 처리 (프로필/이름 생략)
+            const lastLine = chatBody.lastElementChild;
+            const sameAsLast = lastLine && lastLine.classList && lastLine.classList.contains('kt-msg-line')
+                && lastLine.getAttribute('data-sender') === sender;
+
+            const time = dateStr || new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+            if(isMe) {
+                const bubbleClass = sameAsLast ? 'kt-bubble me same-sender' : 'kt-bubble me';
+                chatBody.innerHTML += `<div class="kt-msg-line me${sameAsLast?' same-sender':''}" data-sender="${sender}"><div class="kt-time">${time}</div><div class="${bubbleClass}">${displayHtml}</div></div>`;
+            } else {
+                const showName = !sameAsLast;
+                const avatar = sameAsLast
+                    ? `<div class="kt-avatar-spacer"></div>`
+                    : (picBase64 ? `<img class="kt-avatar" src="${picBase64}">` : `<div class="kt-avatar" style="display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:13px; background:linear-gradient(135deg,#94a3b8,#64748b);">${(sender||'?').substring(0,1)}</div>`);
+                if(showName) {
+                    chatBody.innerHTML += `<div class="kt-sender-name">${sender === '이재준' ? 'Root Admin (고객센터)' : sender}</div>`;
+                }
+                const bubbleClass = sameAsLast ? 'kt-bubble other same-sender' : 'kt-bubble other';
+                chatBody.innerHTML += `<div class="kt-msg-line other${sameAsLast?' same-sender':''}" data-sender="${sender}">${avatar}<div class="kt-bubble-col"><div class="${bubbleClass}">${displayHtml}</div></div><div class="kt-time">${time}</div></div>`;
+            }
             chatBody.scrollTop = chatBody.scrollHeight;
         }
 
@@ -1669,18 +1853,114 @@
             }
         }
 
-        // --- 🚀 누적 판매 수익 장부 + 환불 요청/승인 흐름 ---
-        async function loadHistory() {
-            const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`); const list = await res.json() || [];
-            const tbody = document.getElementById('history-body'); const totalEl = document.getElementById('total-sales-revenue');
-            if(list.length === 0) { totalEl.innerText = "0"; tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">거래 내역이 존재하지 않습니다.</td></tr>'; return; }
-            let hBuffer = ''; let totalSales = 0;
-            list.forEach(h => {
-                let sign = (h.buyer === currentUser.name || h.sender === currentUser.name || h.type.includes('출금') || h.type === '환불 지급') ? '-' : '+';
-                let color = sign === '-' ? 'color:var(--danger);' : 'color:var(--success);';
-                if (h.type === '자산 판매' && sign === '+' && !h.refunded) { totalSales += Number(h.amount); }
+        // --- 🚀 자금 변동 거래 장부 (장부 역할: 절대 누락 없음 + 기간 필터 + PDF 출력) ---
+        window.historyAll = [];          // 서버에서 받은 전체 기록 (캐시)
+        window.historyPeriodMode = 'all'; // all | today | week | month | lastmonth | year | custom
 
-                // 🚀 환불 액션 셀 (구매자 관점)
+        async function loadHistory() {
+            const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`);
+            window.historyAll = await res.json() || [];
+            renderHistory();
+        }
+
+        window.setHistoryPeriod = function(mode, el) {
+            window.historyPeriodMode = mode;
+            // 칩 활성 토글 (custom은 칩 클릭이 아니라 날짜 변경에서 트리거)
+            if(mode !== 'custom') {
+                document.querySelectorAll('.hist-period-chip').forEach(c => c.classList.toggle('active', c.dataset.period === mode));
+                // 칩 클릭 시 날짜 입력 동기화
+                const [from, to] = getPeriodRange(mode);
+                document.getElementById('hist-from').value = from ? formatYMD(from) : '';
+                document.getElementById('hist-to').value = to ? formatYMD(to) : '';
+            } else {
+                document.querySelectorAll('.hist-period-chip').forEach(c => c.classList.remove('active'));
+            }
+            renderHistory();
+        }
+
+        function formatYMD(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+
+        function getPeriodRange(mode) {
+            const now = new Date();
+            if(mode === 'all') return [null, null];
+            if(mode === 'today') {
+                const s = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0,0,0,0);
+                const e = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23,59,59,999);
+                return [s, e];
+            }
+            if(mode === 'week') {
+                const day = now.getDay(); // 0=일
+                const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
+                const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 6, 23,59,59,999);
+                return [start, end];
+            }
+            if(mode === 'month') {
+                const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                const end = new Date(now.getFullYear(), now.getMonth()+1, 0, 23,59,59,999);
+                return [start, end];
+            }
+            if(mode === 'lastmonth') {
+                const start = new Date(now.getFullYear(), now.getMonth()-1, 1);
+                const end = new Date(now.getFullYear(), now.getMonth(), 0, 23,59,59,999);
+                return [start, end];
+            }
+            if(mode === 'year') {
+                const start = new Date(now.getFullYear(), 0, 1);
+                const end = new Date(now.getFullYear(), 11, 31, 23,59,59,999);
+                return [start, end];
+            }
+            if(mode === 'custom') {
+                const f = document.getElementById('hist-from').value;
+                const t = document.getElementById('hist-to').value;
+                const start = f ? new Date(f + 'T00:00:00') : null;
+                const end = t ? new Date(t + 'T23:59:59') : null;
+                return [start, end];
+            }
+            return [null, null];
+        }
+
+        function getFilteredHistory() {
+            const [start, end] = getPeriodRange(window.historyPeriodMode);
+            if(!start && !end) return window.historyAll.slice();
+            return window.historyAll.filter(h => {
+                const ts = new Date(h.rawDate || h.date).getTime();
+                if(isNaN(ts)) return true; // 파싱 실패 시 보존 (누락 방지)
+                if(start && ts < start.getTime()) return false;
+                if(end && ts > end.getTime()) return false;
+                return true;
+            });
+        }
+
+        function renderHistory() {
+            const tbody = document.getElementById('history-body');
+            const totalEl = document.getElementById('total-sales-revenue');
+            const summary = document.getElementById('hist-summary');
+            const list = getFilteredHistory();
+
+            // 총 누적 판매 수익은 전체 데이터 기준 (필터와 무관)
+            let totalSales = 0;
+            window.historyAll.forEach(h => { if(h.type === '자산 판매' && !h.refunded && (h.buyer !== currentUser.name)) totalSales += Number(h.amount); });
+            totalEl.innerText = totalSales.toLocaleString();
+
+            if(list.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:var(--text-sub);">선택한 기간에 거래 내역이 없습니다.</td></tr>';
+                summary.innerText = `📋 총 ${window.historyAll.length}건 중 0건 표시`;
+                return;
+            }
+
+            // 합계 계산 (필터 결과)
+            let sumIn = 0, sumOut = 0;
+            list.forEach(h => {
+                const isOut = (h.buyer === currentUser.name || h.sender === currentUser.name || h.type.includes('출금') || h.type === '환불 지급');
+                if(isOut) sumOut += Number(h.amount) || 0; else sumIn += Number(h.amount) || 0;
+            });
+            summary.innerHTML = `📋 ${window.historyAll.length}건 중 <b>${list.length}건</b> 표시 · 수입 <b style="color:var(--success);">+${sumIn.toLocaleString()}원</b> / 지출 <b style="color:var(--danger);">-${sumOut.toLocaleString()}원</b>`;
+
+            let buf = '';
+            list.forEach(h => {
+                const sign = (h.buyer === currentUser.name || h.sender === currentUser.name || h.type.includes('출금') || h.type === '환불 지급') ? '-' : '+';
+                const color = sign === '-' ? 'color:var(--danger);' : 'color:var(--success);';
+
                 let refundCell = '<span style="color:var(--text-sub); font-size:11px;">-</span>';
                 if(h.refundable && h.txId) {
                     refundCell = `<button class="btn btn-danger" style="padding:6px 10px; font-size:11px; border-radius:6px;" onclick="requestRefund(${h.txId}, '${(h.productName||'').replace(/'/g, "\\'")}')">↩ 환불 요청</button>`;
@@ -1693,9 +1973,58 @@
                         <button class="btn btn-outline" style="padding:4px 8px; font-size:10px; margin-left:4px; border-radius:6px;" onclick="requestRefund(${h.txId}, '${(h.productName||'').replace(/'/g, "\\'")}')">재요청</button>`;
                 }
 
-                hBuffer += `<tr><td style="white-space:nowrap;">${h.date}</td><td><b style="color:var(--text-main);">${h.type}</b></td><td style="color:var(--text-sub);">${h.productName || '원장 변동 명세'}</td><td>${h.seller || h.receiver || h.sender || '시스템 본부'}</td><td style="font-weight:bold; font-size:14px; ${color}">${sign}${Number(h.amount).toLocaleString()}원</td><td>${refundCell}</td></tr>`;
+                buf += `<tr><td style="white-space:nowrap;">${h.date}</td><td><b style="color:var(--text-main);">${h.type}</b></td><td style="color:var(--text-sub);">${h.productName || '원장 변동 명세'}</td><td>${h.seller || h.receiver || h.sender || '시스템 본부'}</td><td style="font-weight:bold; font-size:14px; ${color}">${sign}${Number(h.amount).toLocaleString()}원</td><td>${refundCell}</td></tr>`;
             });
-            tbody.innerHTML = hBuffer; totalEl.innerText = totalSales.toLocaleString();
+            tbody.innerHTML = buf;
+        }
+
+        // 🚀 PDF 출력 (jsPDF + autotable)
+        window.exportHistoryPDF = function() {
+            if(!window.jspdf || !window.jspdf.jsPDF) return showToast("PDF 라이브러리 로딩 실패. 새로고침 후 다시 시도해 주세요.");
+            const list = getFilteredHistory();
+            if(list.length === 0) return showToast("출력할 거래 내역이 없습니다.");
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+            // 한글은 jsPDF 내장폰트로 미지원 → 이미지 변환을 위해 헤더는 영문/숫자 위주로,
+            // 한글 내용은 셀에 그대로 넣되 깨질 수 있어 사전에 안내. (간편함 우선)
+            // 더 안정적인 한글 출력을 위해 표 본문은 ASCII safe 라벨로 매핑
+            const typeMap = {
+                '자산 구매':'BUY', '자산 판매':'SELL', '송금 (출금)':'SEND', '송금 (입금)':'RECV',
+                '환불 수령':'REFUND-IN', '환불 지급':'REFUND-OUT',
+                '출금 집행 완료':'WITHDRAW'
+            };
+
+            doc.setFontSize(16); doc.text('Earth Ledger - Transaction History', 14, 15);
+            doc.setFontSize(10);
+            const headerLines = [
+                `Account: ${currentUser.name} (${currentUser.realname || ''})`,
+                `Period: ${document.getElementById('hist-from').value || 'ALL'} ~ ${document.getElementById('hist-to').value || 'ALL'}`,
+                `Total Records: ${list.length}  /  Generated: ${new Date().toLocaleString('ko-KR')}`
+            ];
+            headerLines.forEach((l, i) => doc.text(l, 14, 23 + i*5));
+
+            const rows = list.map(h => {
+                const sign = (h.buyer === currentUser.name || h.sender === currentUser.name || h.type.includes('출금') || h.type === '환불 지급') ? '-' : '+';
+                const typeShort = typeMap[h.type] || (h.type.includes('입금') ? 'DEPOSIT' : h.type.includes('수표') ? 'CHECK' : (h.type.replace(/[가-힣]/g, '').trim() || 'TX'));
+                const detail = (h.productName || '-').replace(/[^\x00-\x7F]/g, '?'); // 비ASCII는 ?로 대체 (PDF 안전)
+                const target = (h.seller || h.receiver || h.sender || 'System').replace(/[^\x00-\x7F]/g, '?');
+                const refundCol = h.refunded ? 'REFUNDED' : h.refundStatus === 'pending' ? 'PENDING' : h.refundStatus === 'rejected' ? 'REJECTED' : '-';
+                return [h.date, typeShort, detail, target, `${sign}${Number(h.amount).toLocaleString()}`, refundCol];
+            });
+
+            doc.autoTable({
+                head: [['Date', 'Type', 'Detail', 'Counterparty', 'Amount (KRW)', 'Refund']],
+                body: rows,
+                startY: 42,
+                styles: { fontSize: 8, cellPadding: 2 },
+                headStyles: { fillColor: [37, 99, 235] },
+                columnStyles: { 4: { halign: 'right' } }
+            });
+
+            const fname = `Earth_Ledger_${currentUser.name}_${formatYMD(new Date())}.pdf`;
+            doc.save(fname);
+            showToast(`📄 ${fname} 다운로드 완료 (총 ${list.length}건)`);
         }
 
         // 🚀 환불 요청 (판매자 승인 대기 상태 생성, 자금 이동 X)
