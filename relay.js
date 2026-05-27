@@ -467,6 +467,27 @@ app.get('/api/product/orders/:seller', (req, res) => {
     db.all(`SELECT * FROM product_orders WHERE seller = ? ORDER BY id DESC LIMIT 100`, [req.params.seller], (err, rows) => res.json(rows || []));
 });
 
+// 🚀 [v7p+] 판매자에게 대기 중인 주문 개수 (5초마다 폴링) + 구매자에게 본인 pending 개수
+app.get('/api/orders/pending/:userName', (req, res) => {
+    const name = req.params.userName;
+    db.all(
+        `SELECT id, productId, buyer, seller, amount, memo, created_at,
+                (SELECT name FROM products WHERE id = product_orders.productId) as productName
+         FROM product_orders WHERE status = 'pending' AND (seller = ? OR buyer = ?) ORDER BY id DESC LIMIT 50`,
+        [name, name],
+        (err, rows) => {
+            if(err) return res.status(500).json({ error: err.message });
+            const list = rows || [];
+            const asSeller = list.filter(o => o.seller === name);
+            const asBuyer = list.filter(o => o.buyer === name);
+            res.json({
+                sellerPending: asSeller.length, sellerPendingOrders: asSeller,
+                buyerPending: asBuyer.length, buyerPendingOrders: asBuyer
+            });
+        }
+    );
+});
+
 // 🚀 [v6] 채팅방 메타 upsert (주문 채팅방 생성/업데이트)
 app.post('/api/chat-room/upsert', (req, res) => {
     const { roomId, type, buyer, seller, storeId, storeName, lastProductId, lastProductName } = req.body;
