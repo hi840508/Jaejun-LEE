@@ -18,7 +18,7 @@ const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve:
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, { cors: { origin: "*" }, maxHttpBufferSize: 20 * 1024 * 1024 }); // 🚀 20MB for file attachments
 const PORT = 4000;
 
 // 🚀 [서버 크래시 해결] 권한 충돌이 없는 안전한 현재 폴더 경로 사용
@@ -44,6 +44,9 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, targetStore TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS refund_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, txId INTEGER, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, status TEXT DEFAULT 'pending', reason TEXT, request_date TEXT, decision_date TEXT)`);
 
+        // 🚀 상품 주문 제출 (구매자가 폼 작성/파일 첨부 → 판매자에게 채팅으로 전달)
+        db.run(`CREATE TABLE IF NOT EXISTS product_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, productId TEXT, buyer TEXT, seller TEXT, txId INTEGER, bundle_html TEXT, memo TEXT, form_data TEXT, created_at TEXT)`);
+
         // 🚀 기존 DB 호환을 위한 마이그레이션 (컬럼 추가; 이미 있으면 에러 무시)
         db.run(`ALTER TABLE stores ADD COLUMN background TEXT`, () => {});
         db.run(`ALTER TABLE stores ADD COLUMN description TEXT`, () => {});
@@ -58,6 +61,9 @@ function initTables() {
         db.run(`ALTER TABLE transfers ADD COLUMN rawDate TEXT`, () => {});
         db.run(`ALTER TABLE deposits ADD COLUMN rawDate TEXT`, () => {});
         db.run(`ALTER TABLE withdrawals ADD COLUMN rawDate TEXT`, () => {});
+        // 🚀 products: 패키지 메타 (대표 파일 + PDF + 추가 파일 묶음 JSON)
+        db.run(`ALTER TABLE products ADD COLUMN package_data TEXT`, () => {});
+        db.run(`ALTER TABLE products ADD COLUMN is_package INTEGER DEFAULT 0`, () => {});
     });
 }
 initTables();
@@ -65,7 +71,7 @@ initTables();
 app.post('/api/admin/db-reset', (req, res) => {
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
     db.serialize(() => {
-        const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores', 'refund_requests'];
+        const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores', 'refund_requests', 'product_orders'];
         tables.forEach(t => db.run(`DROP TABLE IF EXISTS ${t}`));
         initTables(); res.json({ success: true });
     });
@@ -356,13 +362,30 @@ app.post('/api/products/encrypt-build', (req, res) => {
         const ecc_signature = sign.sign(privateKey, 'hex');
         
         const pid = req.body.storeId.startsWith('room_msg_') ? req.body.storeId + '_' + Date.now() : 'PRD_' + Date.now();
-        
-        db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, stream_time, stream_unit, seller, thumbnail, encryptedPayload, compression_ratio, block_hash, ecc_signature) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-            [pid, req.body.storeId, req.body.name, req.body.description, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, Number(req.body.stream_time)||0, req.body.stream_unit, req.body.seller, req.body.thumbnail, req.body.encryptedPayload, ratio, block_hash, ecc_signature], function(err) {
+        const isPackage = req.body.is_package ? 1 : 0;
+        const packageData = req.body.package_data || null;
+
+        db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, stream_time, stream_unit, seller, thumbnail, encryptedPayload, compression_ratio, block_hash, ecc_signature, package_data, is_package) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [pid, req.body.storeId, req.body.name, req.body.description, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, Number(req.body.stream_time)||0, req.body.stream_unit, req.body.seller, req.body.thumbnail, req.body.encryptedPayload, ratio, block_hash, ecc_signature, packageData, isPackage], function(err) {
                 if(err) return res.status(500).json({error: err.message});
                 res.json({ success: true, id: pid, ratio, block_hash, ecc_signature });
             });
-    } catch(err) { res.status(500).json({error: "에셋 패키징 실패"}); }
+    } catch(err) { res.status(500).json({error: "상품 패키징 실패"}); }
+});
+
+// 🚀 구매 확정 시 작성된 폼 데이터 + 첨부 파일을 판매자에게 채팅으로 전달
+app.post('/api/product/submit-order', (req, res) => {
+    const { productId, buyer, seller, txId, bundle_html, memo, form_data } = req.body;
+    const date = new Date().toLocaleString('ko-KR');
+    db.run(`INSERT INTO product_orders (productId, buyer, seller, txId, bundle_html, memo, form_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [productId, buyer, seller, txId || null, bundle_html || '', memo || '', JSON.stringify(form_data || {}), date],
+        function(err) {
+            if(err) return res.status(500).json({ error: err.message });
+            res.json({ success: true, orderId: this.lastID });
+        });
+});
+app.get('/api/product/orders/:seller', (req, res) => {
+    db.all(`SELECT * FROM product_orders WHERE seller = ? ORDER BY id DESC LIMIT 100`, [req.params.seller], (err, rows) => res.json(rows || []));
 });
 
 app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
