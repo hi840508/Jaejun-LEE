@@ -688,11 +688,16 @@ app.get('/api/order/bundle/:orderId', (req, res) => {
 app.get('/api/transactions/:name', async (req, res) => {
     const name = req.params.name;
     try {
-        // 🚀 환불 요청 상태를 LEFT JOIN으로 함께 조회 (최신 요청 1개 기준)
+        // 🚀 환불 요청 상태 + 상품·상점 정보 JOIN
         const txQuery = `SELECT t.*,
             (SELECT status FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_status,
-            (SELECT id FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_request_id
-            FROM transactions t WHERE t.buyer=? OR t.seller=?`;
+            (SELECT id FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_request_id,
+            p.is_package as p_is_package, p.package_data as p_package_data, p.storeId as p_storeId,
+            s.name as storeName, s.category as storeCategory
+            FROM transactions t
+            LEFT JOIN products p ON t.productId = p.id
+            LEFT JOIN stores s ON p.storeId = s.id
+            WHERE t.buyer=? OR t.seller=?`;
         const txs = await new Promise(r => db.all(txQuery, [name, name], (e, rows) => r(rows||[])));
         const tfs = await new Promise(r => db.all(`SELECT * FROM transfers WHERE sender=? OR receiver=?`, [name, name], (e, rows) => r(rows||[])));
         const dps = await new Promise(r => db.all(`SELECT * FROM deposits WHERE user_name=?`, [name], (e, rows) => r(rows||[])));
@@ -701,23 +706,32 @@ app.get('/api/transactions/:name', async (req, res) => {
         let history = [];
         txs.forEach(t => {
             const isBuyer = t.buyer === name;
-            const refStatus = t.refund_status; // 'pending' | 'approved' | 'rejected' | null
-            // 🚀 환불 요청 가능 여부: 구매자이며, 미환불, 대기중 요청 없음, 유효한 자산 거래
+            const refStatus = t.refund_status;
             const refundable = isBuyer && !t.refunded && refStatus !== 'pending'
                 && t.productId && t.purchaseType !== 'refund' && t.purchaseType !== 'signup_bonus'
                 && !['보안 수표 발행', '보안 수표 환원 충전', '신규 가입 정산 한도 축하금'].includes(t.productName);
-            // 🚀 거래 유형 라벨 (장부 누락 없이 의미 명확)
             let baseType;
             if(t.purchaseType === 'refund') baseType = isBuyer ? '환불 수령' : '환불 지급';
             else if(t.purchaseType === 'signup_bonus') baseType = '가입 축하금';
             else if(t.productName === '보안 수표 발행') baseType = '보안 수표 발행';
             else if(t.productName === '보안 수표 환원 충전') baseType = '보안 수표 환원';
             else baseType = isBuyer ? '자산 구매' : '자산 판매';
+
+            // 🚀 [v7] 패키지 상품이면 파일명 목록 추출
+            let fileNames = [];
+            try {
+                if(t.p_is_package && t.p_package_data) {
+                    const pkg = JSON.parse(t.p_package_data);
+                    fileNames = (pkg.files || []).map(f => f.filename).filter(x => x).slice(0, 5);
+                }
+            } catch(e){}
+
             history.push({
                 txId: t.id, type: baseType,
                 date: t.date, rawDate: t.rawDate || t.date, productId: t.productId, purchaseType: t.purchaseType,
                 amount: t.amount, productName: t.productName, buyer: t.buyer, seller: isBuyer ? t.seller : t.buyer,
-                refunded: !!t.refunded, refundable, refundStatus: refStatus, refundRequestId: t.refund_request_id
+                refunded: !!t.refunded, refundable, refundStatus: refStatus, refundRequestId: t.refund_request_id,
+                storeName: t.storeName || null, storeId: t.p_storeId || null, fileNames: fileNames
             });
         });
         tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, rawDate: t.rawDate || t.date, amount: t.amount, seller: t.receiver || t.sender, sender: t.sender, receiver: t.receiver }));
