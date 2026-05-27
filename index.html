@@ -14,7 +14,7 @@
         :root { 
             --bg-main: #f9f9f9; 
             --panel-bg: #ffffff; 
-            --text-main: #0f0f0f; 
+            --text-main: #0f0f0f; ㅁ
             --text-sub: #606060; 
             --primary: #2563eb; 
             --primary-hover: #1d4ed8; 
@@ -167,6 +167,21 @@
             .yt-search-bar { display: none; }
             .yt-topbar { padding: 6px 10px; }
         }
+        /* 모바일에서만 보이는 검색 아이콘 */
+        .yt-mobile-search-btn {
+            display: none;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 50%;
+            color: var(--text-main);
+        }
+        .yt-mobile-search-btn:hover { background: #f0f0f0; }
+        @media (max-width: 768px) {
+            .yt-mobile-search-btn { display: inline-flex; align-items:center; justify-content:center; }
+            #topbar-uname-wrap { display: none; }
+        }
 
         .yt-layout {
             display: grid;
@@ -181,32 +196,6 @@
         }
         @media (max-width: 768px) {
             .yt-layout { grid-template-columns: 1fr; }
-            .yt-sidebar { 
-                position: fixed; 
-                left: -280px; 
-                top: 56px; 
-                width: 280px; 
-                height: calc(100vh - 56px); 
-                background: #fff; 
-                z-index: 99; 
-                transition: left 0.25s; 
-                overflow-y: auto;
-                box-shadow: 2px 0 12px rgba(0,0,0,0.1);
-            }
-            .yt-sidebar.open { left: 0; }
-            .yt-sidebar .yt-sb-title, .yt-sidebar .yt-sb-item span:not(.ic) { display: inline; }
-            .yt-sidebar .yt-sb-item { justify-content: flex-start; }
-        }
-        .yt-sidebar-overlay {
-            display: none;
-            position: fixed;
-            inset: 56px 0 0 0;
-            background: rgba(0,0,0,0.4);
-            z-index: 98;
-        }
-        @media (max-width: 768px) {
-            .yt-sidebar.open ~ .yt-sidebar-overlay,
-            body.sidebar-open .yt-sidebar-overlay { display: block; }
         }
 
         .yt-sidebar {
@@ -218,6 +207,34 @@
             top: 56px;
             height: calc(100vh - 56px);
             align-self: start;
+        }
+
+        /* 모바일: 사이드바를 오버레이 슬라이드로 변경 */
+        @media (max-width: 768px) {
+            .yt-sidebar {
+                position: fixed;
+                left: -300px;
+                top: 56px;
+                width: 280px;
+                height: calc(100vh - 56px);
+                z-index: 99;
+                transition: left 0.25s;
+                box-shadow: 2px 0 16px rgba(0,0,0,0.15);
+                border-right: none;
+            }
+            .yt-sidebar.open { left: 0; }
+            .yt-sidebar .yt-sb-title, .yt-sidebar .yt-sb-item span:not(.ic) { display: inline; }
+            .yt-sidebar .yt-sb-item { justify-content: flex-start; }
+        }
+        .yt-sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 56px 0 0 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 98;
+        }
+        @media (max-width: 768px) {
+            body.sidebar-open .yt-sidebar-overlay { display: block; }
         }
         .yt-sb-section { padding: 4px 8px; }
         .yt-sb-title { font-size: 11px; color: var(--text-sub); font-weight: 700; padding: 8px 12px 4px; letter-spacing: 0.5px; text-transform: uppercase; }
@@ -240,7 +257,8 @@
         }
         .yt-sb-item:hover { background: #f0f0f0; }
         .yt-sb-item.active { background: #e5e5e5; font-weight: 700; }
-        .yt-sb-item .ic { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
+        .yt-sb-item .ic { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; flex-shrink:0; color:currentColor; }
+        .yt-sb-item .ic svg { width:22px; height:22px; }
         .yt-sb-divider { height: 1px; background: var(--border-color); margin: 8px 0; }
 
         .yt-main {
@@ -298,9 +316,15 @@
             cursor: pointer;
             font-family: inherit;
         }
-        .yt-bn-item .ic { font-size: 20px; }
+        .yt-bn-item .ic { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; color:currentColor; }
+        .yt-bn-item .ic svg { width:22px; height:22px; }
         .yt-bn-item.active { color: var(--text-main); font-weight: 700; }
         .yt-bn-item:active { transform: scale(0.95); }
+
+        /* details > summary 기본 화살표 숨김 (사용자 정의 디자인) */
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary::marker { content: ''; }
 
         /* container를 yt-main에 흡수되도록 width 풀기 */
         .yt-main .container, .yt-main > * { max-width: none; padding: 0; }
@@ -406,8 +430,12 @@
         .history-table th, .history-table td { padding: 12px 10px; border-bottom: 1px solid var(--border-color); text-align: left; }
         .history-table th { background: #f8fafc; color: var(--text-sub); }
         
-        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.7); z-index: 6000; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
-        .modal-content { background: var(--panel-bg); padding: 25px; border-radius: 16px; width: 90%; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 12px; position: relative; }
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.7); z-index: 6000; justify-content: center; align-items: center; backdrop-filter: blur(2px); padding: 20px; overflow-y: auto; }
+        .modal-content { background: var(--panel-bg); padding: 25px; border-radius: 16px; width: 100%; max-width: 500px; max-height: calc(100vh - 40px); overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 12px; position: relative; }
+        @media (max-width: 600px) {
+            .modal-overlay { padding: 0; align-items: flex-start; }
+            .modal-content { max-height: 100vh; min-height: 100vh; border-radius: 0; padding: 18px; }
+        }
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; font-size: 16px; font-weight: bold; color: var(--text-main); }
         
         .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 12px 24px; border-radius: 30px; font-size: 13px; font-weight: bold; z-index: 9999; opacity: 0; transition: 0.3s; pointer-events: none; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
@@ -650,23 +678,31 @@
 
         <div id="workspace-section" style="display: none;">
             <div class="yt-topbar">
-                <div style="display: flex; align-items: center; gap:10px; cursor:pointer;" onclick="goHome()" title="홈으로 이동 (디지털 거래소)">
-                    <button class="yt-menu-btn" onclick="event.stopPropagation(); toggleSidebar()" title="메뉴">☰</button>
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="color:var(--primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-                    <span style="font-size: 18px; font-weight: 900; color: var(--text-main); letter-spacing: -0.5px;">Earth</span>
-                    <span id="admin-indicator" style="display:none; background: var(--danger); color: white; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: bold;">Root Admin</span>
-                    <span style="background: #0f0f0f; color: white; padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold;" title="v7: YouTube 사이드바 + 통합 RAYCloud 뷰어">v7</span>
+                <div style="display: flex; align-items: center; gap:8px;">
+                    <button class="yt-menu-btn" onclick="toggleSidebar()" title="메뉴" aria-label="메뉴">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                    <div style="display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="goHome()" title="홈으로 이동">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="color:var(--primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                        <span style="font-size: 18px; font-weight: 900; color: var(--text-main); letter-spacing: -0.5px;">Earth</span>
+                        <span id="admin-indicator" style="display:none; background: var(--danger); color: white; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: bold;">Root Admin</span>
+                        <span style="background: #0f0f0f; color: white; padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold;">v7p</span>
+                    </div>
                 </div>
                 <div class="yt-search-bar">
                     <input type="text" id="topbar-global-search" placeholder="브랜드 · 상품 · 회원 검색..." onkeyup="if(event.key==='Enter') doTopbarSearch()">
-                    <button onclick="doTopbarSearch()">🔍</button>
+                    <button onclick="doTopbarSearch()" aria-label="검색"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
-                    <div style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 12px; border-radius:30px; background:#f0f0f0; transition:0.2s;" onclick="openProfileModal()">
+                    <!-- 모바일 검색 버튼 (검색바가 안 보일 때만) -->
+                    <button class="yt-mobile-search-btn" onclick="openMobileSearch()" aria-label="검색">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    </button>
+                    <div style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 10px; border-radius:30px; background:#f0f0f0; transition:0.2s;" onclick="openProfileModal()">
                         <img id="my-profile-pic" class="profile-pic" style="width:24px; height:24px; border:none;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>">
-                        <span style="font-weight: 600; color:var(--text-main); font-size:13px;"><span id="display-name" style="color: var(--text-main);"></span></span>
+                        <span style="font-weight: 600; color:var(--text-main); font-size:13px;" id="topbar-uname-wrap"><span id="display-name" style="color: var(--text-main);"></span></span>
                     </div>
-                    <button class="btn btn-outline" style="padding: 6px 12px; font-size: 12px;" onclick="logout()">로그아웃</button>
+                    <button class="btn btn-outline" style="padding: 6px 10px; font-size: 12px;" onclick="logout()">로그아웃</button>
                 </div>
             </div>
 
@@ -674,28 +710,28 @@
                 <!-- 사이드바 (YouTube 스타일) -->
                 <aside class="yt-sidebar" id="yt-sidebar">
                     <div class="yt-sb-section">
-                        <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic">🏠</span><span>홈</span></button>
-                        <button class="yt-sb-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic">💰</span><span>내 지갑</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>홈</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"></rect><path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path><path d="M2 10h20"></path></svg></span><span>내 지갑</span></button>
                     </div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
-                        <div class="yt-sb-title">⭐ 구독 (즐겨찾기 상점)</div>
+                        <div class="yt-sb-title">구독 (즐겨찾기 상점)</div>
                         <div id="yt-sb-favs" style="display:flex; flex-direction:column; gap:2px;"></div>
                     </div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
-                        <div class="yt-sb-title">👤 내 페이지</div>
-                        <button class="yt-sb-item" onclick="switchTab('my-store')" data-tab="my-store"><span class="ic">🏪</span><span>내 상점</span></button>
-                        <button class="yt-sb-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic">🛍️</span><span>내 구매</span></button>
+                        <div class="yt-sb-title">내 페이지</div>
+                        <button class="yt-sb-item" onclick="switchTab('my-store')" data-tab="my-store"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-4h16l1 4M4 9v11h16V9M9 9V5h6v4"></path></svg></span><span>내 상점</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg></span><span>내 구매</span></button>
                     </div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
-                        <div class="yt-sb-title">🧭 탐색 (카테고리)</div>
+                        <div class="yt-sb-title">탐색 (카테고리)</div>
                         <div id="yt-sb-categories" style="display:flex; flex-direction:column; gap:2px;"></div>
                     </div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
-                        <button class="yt-sb-item" onclick="switchTab('history')" data-tab="history"><span class="ic">📊</span><span>거래 내역</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span><span>거래 내역</span></button>
                     </div>
                 </aside>
 
@@ -706,29 +742,6 @@
 
                     <div class="tabs" style="display:none;"></div>
             <div id="tab-market" class="tab-content active">
-
-                <div class="panel" style="padding:15px; background:#f8fafc; position:relative;">
-                    <div style="font-size:14px; font-weight:bold; margin-bottom:10px; color:var(--text-main);">🔍 통합 검색</div>
-                    <div style="display:flex; gap:10px;">
-                        <input type="text" id="partner-search-input" placeholder="브랜드명 · ID · 실명 · 전화번호로 검색..." style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border-color); outline:none;" onkeyup="if(event.key==='Enter') performGlobalSearch(true); else filterShowcaseInline()">
-                        <button class="btn btn-secondary" onclick="performGlobalSearch(true)">검색</button>
-                    </div>
-                    <div style="font-size:11px; color:var(--text-sub); margin-top:8px;">💡 검색은 <b>브랜드명, 회원 ID, 실명, 전화번호</b>를 모두 살핍니다. 검색 결과 칩 클릭 시 입장 또는 채팅 가능합니다.</div>
-
-                    <!-- 🚀 [v6] 카테고리 필터 칩 -->
-                    <div id="brand-category-chips" style="margin-top:12px; display:flex; flex-wrap:wrap; gap:6px;"></div>
-
-                    <!-- 🚀 통합 검색 결과 (사용자 + 상점) -->
-                    <div id="global-search-results" style="margin-top:12px; display:none;"></div>
-
-                    <!-- 🚀 즐겨찾는 브랜드 리스트 -->
-                    <div id="fav-brands-section" style="margin-top:12px; display:none;">
-                        <div style="font-size:12px; font-weight:bold; color:var(--warning); margin-bottom:6px;">⭐ 즐겨찾는 브랜드 (클릭 시 즉시 입장)</div>
-                        <div id="fav-brands-list" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
-                    </div>
-
-                    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px;" id="partner-fav-zone"></div>
-                </div>
 
                 <!-- 🚀 브랜드 입장 시 배경 화면 + 브랜드 정보 표시 -->
                 <div id="brand-backdrop" style="display:none; border-radius:16px; overflow:hidden; border:1px solid var(--border-color); margin-bottom:10px; background:#fff;">
@@ -743,22 +756,47 @@
                     <button class="btn btn-secondary" style="padding:6px 12px; font-size:12px; border-radius:20px;" onclick="clearMarketFilter()">◀ 검색 결과로 돌아가기</button>
                     <span id="market-filter-title" style="font-weight:bold; font-size:14px; color:var(--primary);"></span>
                     <button class="btn btn-outline" id="market-filter-fav-btn" style="padding:6px 10px; font-size:11px; border-radius:20px;" onclick="toggleFavoriteCurrentBrand()">★ 이 브랜드 즐겨찾기</button>
-                    <button class="btn btn-outline" id="market-filter-inquire-btn" style="padding:6px 10px; font-size:11px; border-radius:20px; display:none;" onclick="inquireCurrentBrandOwner()">💬 1:1문의</button>
-                    <button class="btn" id="market-filter-cart-btn" style="padding:6px 12px; font-size:11px; border-radius:20px; margin-left:auto; background:var(--gradient-btn); color:#fff; position:relative;" onclick="openCart()">🛒 장바구니 <span id="cart-count-badge" style="display:none; background:#ef4444; color:#fff; font-size:10px; padding:2px 6px; border-radius:30px; margin-left:4px;">0</span></button>
+                    <button class="btn btn-outline" id="market-filter-inquire-btn" style="padding:6px 10px; font-size:11px; border-radius:20px; display:none;" onclick="inquireCurrentBrandOwner()">1:1 문의</button>
+                    <button class="btn" id="market-filter-cart-btn" style="padding:6px 12px; font-size:11px; border-radius:20px; margin-left:auto; background:var(--gradient-btn); color:#fff; position:relative;" onclick="openCart()">장바구니 <span id="cart-count-badge" style="display:none; background:#ef4444; color:#fff; font-size:10px; padding:2px 6px; border-radius:30px; margin-left:4px;">0</span></button>
                 </div>
 
-                <!-- 🚀 디지털 거래소 메인: 최신 등록 브랜드 쇼케이스 (브랜드 미입장 시 표시) -->
+                <!-- 🚀 [v7+] 디지털 거래소 메인 — 컨텐츠 우선 (상품·브랜드 쇼케이스) -->
                 <div id="brand-showcase-wrap" style="display:block;">
                     <div class="showcase-section-title">
-                        <span>🆕 최신 등록 브랜드</span>
+                        <span>최신 등록 브랜드</span>
                         <span class="badge-new">NEW</span>
-                        <span style="font-size:11px; color:var(--text-sub); font-weight:normal; margin-left:6px;">최근 등록된 브랜드 순으로 표시됩니다. 썸네일을 클릭하면 상품 상세로 이동합니다.</span>
-                        <button class="btn btn-outline" style="padding:4px 10px; font-size:11px; border-radius:20px; margin-left:auto;" onclick="loadShowcase()">🔄 새로고침</button>
+                        <button class="btn btn-outline" style="padding:4px 10px; font-size:11px; border-radius:20px; margin-left:auto;" onclick="loadShowcase()">새로고침</button>
                     </div>
                     <div id="brand-showcase-grid" style="display:flex; flex-direction:column; gap:12px; min-height:120px;">
-                        <div style="text-align:center; padding:30px 20px; color:var(--text-sub); font-size:13px; background:#fff; border:1px dashed var(--border-color); border-radius:12px;">📡 브랜드 쇼케이스 데이터 로딩 중...</div>
+                        <div style="text-align:center; padding:30px 20px; color:var(--text-sub); font-size:13px; background:#fff; border:1px dashed var(--border-color); border-radius:12px;">브랜드 쇼케이스 데이터 로딩 중...</div>
                     </div>
                 </div>
+
+                <!-- 🚀 [v7+] 통합 검색 패널 — 쇼케이스 아래로 이동 + 접힘 -->
+                <details id="market-search-panel" style="margin-top:20px; background:#fff; border:1px solid var(--border-color); border-radius:12px; overflow:hidden;">
+                    <summary style="padding:12px 16px; cursor:pointer; font-size:13px; font-weight:600; color:var(--text-main); list-style:none; display:flex; align-items:center; gap:8px; user-select:none;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <span>통합 검색 (브랜드 · 회원 · 전화번호)</span>
+                        <span style="font-size:11px; color:var(--text-sub); font-weight:normal; margin-left:auto;">클릭하여 펼치기</span>
+                    </summary>
+                    <div style="padding:14px 16px; border-top:1px solid var(--border-color); background:#fafafa;">
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" id="partner-search-input" placeholder="브랜드명 · ID · 실명 · 전화번호로 검색..." style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border-color); outline:none;" onkeyup="if(event.key==='Enter') performGlobalSearch(true); else filterShowcaseInline()">
+                            <button class="btn btn-secondary" onclick="performGlobalSearch(true)">검색</button>
+                        </div>
+
+                        <div id="brand-category-chips" style="display:none;"></div>
+
+                        <div id="global-search-results" style="margin-top:12px; display:none;"></div>
+
+                        <div id="fav-brands-section" style="margin-top:12px; display:none;">
+                            <div style="font-size:12px; font-weight:bold; color:var(--warning); margin-bottom:6px;">즐겨찾는 브랜드 (클릭 시 즉시 입장)</div>
+                            <div id="fav-brands-list" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+                        </div>
+
+                        <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px;" id="partner-fav-zone"></div>
+                    </div>
+                </details>
 
                 <!-- 🚀 브랜드 내부 또는 전체 상품 검색 결과 영역 -->
                 <div id="brand-inner-wrap" style="display:none;">
@@ -787,27 +825,27 @@
                         <div class="input-group"><input type="text" id="new-brand-name" placeholder="상점 고유 명칭"></div>
                         <div class="input-group">
                             <label>🏷️ 브랜드 카테고리 (정체성)</label>
-                            <select id="new-brand-category" style="padding:10px; border-radius:8px; border:1px solid var(--border-color); background:#f8fafc; font-family:inherit; font-size:13px; width:100%;">
-                                <option value="general">🏪 일반 상점</option>
-                                <option value="food">🍽️ 음식점 · 카페</option>
-                                <option value="dental_lab">🦷 치과 기공소</option>
-                                <option value="medical">🏥 병원 · 의원</option>
-                                <option value="fashion">👗 패션 · 의류</option>
-                                <option value="beauty">💄 뷰티 · 미용</option>
-                                <option value="education">📚 교육 · 강의</option>
-                                <option value="art">🎨 아트 · 디자인</option>
-                                <option value="music">🎵 음악 · 음원</option>
-                                <option value="game">🎮 게임 · IT</option>
-                                <option value="craft">🛠️ 공예 · 수공</option>
-                                <option value="construction">🏗️ 건설 · 시공</option>
-                                <option value="real_estate">🏠 부동산</option>
-                                <option value="auto">🚗 자동차 · 운송</option>
-                                <option value="pet">🐾 반려동물</option>
-                                <option value="sports">⚽ 스포츠 · 레저</option>
-                                <option value="book">📖 도서 · 출판</option>
-                                <option value="legal">⚖️ 법률 · 자문</option>
-                                <option value="finance">💰 금융 · 컨설팅</option>
-                                <option value="other">📦 기타</option>
+                            <select id="new-brand-category" style="padding:10px; border-radius:8px; border:1px solid var(--border-color); background:#fff; font-family:inherit; font-size:13px; width:100%;">
+                                <option value="general">일반 상점</option>
+                                <option value="food">음식점 · 카페</option>
+                                <option value="dental_lab">치과 기공소</option>
+                                <option value="medical">병원 · 의원</option>
+                                <option value="fashion">패션 · 의류</option>
+                                <option value="beauty">뷰티 · 미용</option>
+                                <option value="education">교육 · 강의</option>
+                                <option value="art">아트 · 디자인</option>
+                                <option value="music">음악 · 음원</option>
+                                <option value="game">게임 · IT</option>
+                                <option value="craft">공예 · 수공</option>
+                                <option value="construction">건설 · 시공</option>
+                                <option value="real_estate">부동산</option>
+                                <option value="auto">자동차 · 운송</option>
+                                <option value="pet">반려동물</option>
+                                <option value="sports">스포츠 · 레저</option>
+                                <option value="book">도서 · 출판</option>
+                                <option value="legal">법률 · 자문</option>
+                                <option value="finance">금융 · 컨설팅</option>
+                                <option value="other">기타</option>
                             </select>
                         </div>
                         <div class="input-group"><label>상점 로고 (정사각형 추천)</label><input type="file" id="new-brand-logo" accept="image/*"></div>
@@ -823,7 +861,7 @@
 
                 <div class="panel">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:15px;">
-                        <h4 style="font-size:14px; margin:0;">📦 상품 등록</h4>
+                        <h4 style="font-size:14px; margin:0;">상품 등록</h4>
                         <select id="target-brand-selector" style="padding:8px; border-radius:6px; border:1px solid var(--border-color); outline:none;"><option value="">출하 상점 지정</option></select>
                     </div>
 
@@ -893,10 +931,10 @@
                 <div class="panel" style="padding:14px 16px; background:linear-gradient(135deg, #fef3c7, #fde68a); border:none;">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                         <div>
-                            <h3 style="font-size:18px; color:#78350f; font-weight:900; margin-bottom:4px;">🛍️ 내가 구매한 상품</h3>
+                            <h3 style="font-size:18px; color:#78350f; font-weight:900; margin-bottom:4px;">내가 구매한 상품</h3>
                             <div style="font-size:12px; color:#78350f;">결제한 상품을 다시 열람 · 추가 주문 · 판매자 채팅으로 연결합니다.</div>
                         </div>
-                        <button class="btn btn-outline" style="padding:8px 14px; font-size:12px; border-color:#92400e; color:#92400e;" onclick="loadMyPurchases()">🔄 새로고침</button>
+                        <button class="btn btn-outline" style="padding:8px 14px; font-size:12px; border-color:#92400e; color:#92400e;" onclick="loadMyPurchases()">새로고침</button>
                     </div>
                 </div>
                 <div class="panel" style="padding:0; overflow:hidden;">
@@ -1010,11 +1048,11 @@
 
             <!-- 🚀 [v7] 모바일 하단 네비 (YouTube 모바일 스타일) -->
             <nav class="yt-bottom-nav">
-                <button class="yt-bn-item active" onclick="switchTab('market')" data-tab="market"><span class="ic">🏠</span><span>홈</span></button>
-                <button class="yt-bn-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic">🛍️</span><span>구매</span></button>
-                <button class="yt-bn-item" onclick="switchTab('my-store')" data-tab="my-store"><span class="ic">🏪</span><span>내상점</span></button>
-                <button class="yt-bn-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic">💰</span><span>지갑</span></button>
-                <button class="yt-bn-item" onclick="switchTab('history')" data-tab="history"><span class="ic">📊</span><span>내역</span></button>
+                <button class="yt-bn-item active" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>홈</span></button>
+                <button class="yt-bn-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg></span><span>구매</span></button>
+                <button class="yt-bn-item" onclick="switchTab('my-store')" data-tab="my-store"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-4h16l1 4M4 9v11h16V9M9 9V5h6v4"></path></svg></span><span>내상점</span></button>
+                <button class="yt-bn-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"></rect><path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path><path d="M2 10h20"></path></svg></span><span>지갑</span></button>
+                <button class="yt-bn-item" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span><span>내역</span></button>
             </nav>
 
             <!-- 🚀 [v7] 모바일 사이드바 오버레이 (햄버거 메뉴) -->
@@ -1095,7 +1133,7 @@
 
     <div class="modal-overlay" id="deposit-modal">
         <div class="modal-content">
-            <div class="modal-header"><span>📥 자금 입금 신청</span><button class="close-btn-x" onclick="closeModal('deposit-modal')">&times;</button></div>
+            <div class="modal-header"><span>자금 입금 신청</span><button class="close-btn-x" onclick="closeModal('deposit-modal')">&times;</button></div>
             <div style="background:#ecfdf5; border:1px solid var(--success); padding:12px; border-radius:8px; font-size:12px; color:#166534; line-height:1.5;">
                 <strong style="font-size:14px;">우리은행 1002-338-118610 (이재준)</strong><br>송금하신 금액을 기입해 주십시오. 로그인 계정과 매칭됩니다.
             </div>
@@ -1106,7 +1144,7 @@
 
     <div class="modal-overlay" id="withdraw-modal">
         <div class="modal-content">
-            <div class="modal-header"><span>📤 정산 출금 신청</span><button class="close-btn-x" onclick="closeModal('withdraw-modal')">&times;</button></div>
+            <div class="modal-header"><span>정산 출금 신청</span><button class="close-btn-x" onclick="closeModal('withdraw-modal')">&times;</button></div>
             <div style="background:#fef2f2; border:1px solid var(--danger); padding:12px; border-radius:8px; font-size:12px; color:#991b1b; line-height:1.5;">
                 * 가용 잔액 <b>10,000원 초과</b> 시 <b>1만 원 단위</b>로만 출금됩니다.<br>계좌: <strong id="modal-withdraw-account-info"></strong>
             </div>
@@ -1117,7 +1155,7 @@
 
     <div class="modal-overlay" id="profile-modal">
         <div class="modal-content">
-            <div class="modal-header"><span>⚙️ 계정 설정</span><button class="close-btn-x" onclick="closeModal('profile-modal')">&times;</button></div>
+            <div class="modal-header"><span>계정 설정</span><button class="close-btn-x" onclick="closeModal('profile-modal')">&times;</button></div>
             <div style="display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:10px;">
                 <img id="modal-profile-pic" class="profile-pic" style="width:60px; height:60px;" src="">
                 <input type="file" id="modal-pic-upload" accept="image/*" style="display:none;" onchange="previewProfilePic(event)">
@@ -1126,10 +1164,10 @@
             <div class="input-group"><label>접속 ID (변경 불가)</label><input type="text" id="modal-name" readonly style="background:#f1f5f9; color:#64748b;"></div>
             
             <div class="input-group">
-                <label>비밀번호 변경 및 🛡️ Admin 권한 락해제</label>
+                <label>비밀번호 변경 및 Admin 권한 락해제</label>
                 <input type="password" id="modal-password" placeholder="비밀번호 기입 (Admin 해제키: mars)">
             </div>
-            <button class="btn btn-danger" style="width:100%; padding:10px; margin-bottom:10px; font-size:12px;" onclick="activateAdmin()">🛡️ Admin 마스터 권한 트리거 가동</button>
+            <button class="btn btn-danger" style="width:100%; padding:10px; margin-bottom:10px; font-size:12px;" onclick="activateAdmin()">Admin 마스터 권한 트리거 가동</button>
             
             <div style="height:1px; background:var(--border-color); margin:5px 0;"></div>
             <div class="input-group"><label>예금주 실명</label><input type="text" id="modal-realname"></div>
@@ -1248,7 +1286,7 @@
     <!-- 🚀 장바구니 모달 -->
     <div class="modal-overlay" id="cart-modal">
         <div class="modal-content" style="max-width:560px; max-height:85vh; display:flex; flex-direction:column;">
-            <div class="modal-header"><span>🛒 장바구니</span><button class="close-btn-x" onclick="closeModal('cart-modal')">&times;</button></div>
+            <div class="modal-header"><span>장바구니</span><button class="close-btn-x" onclick="closeModal('cart-modal')">&times;</button></div>
             <div style="font-size:11px; color:var(--text-sub); margin-bottom:8px;">💡 결제 후 거래내역에는 각 상품별로 개별 기록됩니다. 환불도 상품 단위로 가능합니다.</div>
             <div id="cart-items-list" style="flex:1; overflow-y:auto; min-height:200px; max-height:50vh;"></div>
             <div style="border-top:2px solid var(--border-color); padding-top:12px; margin-top:10px;">
@@ -1267,7 +1305,7 @@
     <!-- 🚀 상점 홍보 QR 모달 -->
     <div class="modal-overlay" id="promo-qr-modal">
         <div class="modal-content" style="max-width:380px;">
-            <div class="modal-header"><span>🎁 상점 홍보 QR</span><button class="close-btn-x" onclick="closeModal('promo-qr-modal')">&times;</button></div>
+            <div class="modal-header"><span>상점 홍보 QR</span><button class="close-btn-x" onclick="closeModal('promo-qr-modal')">&times;</button></div>
             <div style="text-align:center;">
                 <div id="promo-qr-store-name" style="font-size:16px; font-weight:bold; margin-bottom:6px; color:var(--text-main);"></div>
                 <div style="font-size:11px; color:var(--text-sub); margin-bottom:12px; line-height:1.5;">
@@ -1311,15 +1349,18 @@
     <div class="toast" id="toast">알림</div>
 
     <script>
-        // 🚀 ============ EARTH PATCH v7 (2026-05-27) — YouTube 사이드바 + 통합 뷰어 ============
-        // v7 핵심 수정:
-        //   1. [신규] YouTube 스타일 톱바 + 사이드바 (홈/구독=즐겨찾기/내페이지=내상점/탐색=카테고리/내지갑/거래내역)
-        //   2. [신규] 모바일 하단 5칸 네비 + 햄버거 사이드바
-        //   3. [신규] 통합 RAYCloud 뷰어 빌더 — 이미지/영상/오디오/PDF/HTML/3D/DICOM/텍스트 인라인 미리보기
-        //   4. [신규] 채팅 파일 카드 (kt-card-msg) — 발신자/수신자 동일 UI, 인라인 미리보기 모달
-        //   5. [신규] 거래내역 상세에 상품명 + 상점명 + 첨부 파일명 모두 표시
-        //   6. [개선] 주문서 HTML에 구매자 정보(이름·연락처·주소) 자동 포함
-        window.__EARTH_VERSION = 'v7-2026-05-27';
+        // 🚀 ============ EARTH PATCH v7+ (2026-05-27) — YouTube UI + 깨끗한 아이콘 ============
+        // v7+ 핵심 수정 (이번 라운드):
+        //   1. [신규] 사이드바·하단네비 SVG 아이콘 (이모지 제거)
+        //   2. [신규] 모바일 좌상단 햄버거 + 검색 아이콘 (YouTube 모바일 패턴)
+        //   3. [신규] 검색 패널 접힘 박스(<details>) — 상품 우선 표시 (콘텐츠 first)
+        //   4. [신규] 계정 설정 모달 자동 핏 (max-height + overflow + 모바일 풀스크린)
+        //   5. [개선] 카테고리 라벨 이모지 제거 (작은 점으로 변경)
+        //   6. [개선] 모달 헤더/메인 버튼 이모지 정리
+        //   7. [개선] 마켓 카드 버튼 — 💎/▶/🛒 이모지 제거, SVG 카트 아이콘
+        //   8. [수정] inquireCurrentBrandOwner — 친구 자동 등록 + 즉시 채팅 오픈
+        //   9. [수정] "생성자와 채팅하기" → "판매자와 채팅하기" (bundle HTML)
+        window.__EARTH_VERSION = 'v7p-2026-05-27';
         console.log('%c🌍 Earth Commerce — PATCH ' + window.__EARTH_VERSION, 'background:#0f0f0f;color:#fff;padding:4px 10px;border-radius:4px;font-weight:bold;');
 
         // 🚀 손상된 최근 이모지 localStorage 일회성 정리 (이전 버전이 null을 저장했을 수 있음)
@@ -1524,7 +1565,7 @@
         function logout() { localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
 
         function loginSuccess(data) {
-            currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
+            currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
             document.getElementById('display-name').innerText = data.name; if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
             
             const str = `[${data.bank}] ${data.account} (${data.realname || ''})`; 
@@ -1821,6 +1862,7 @@
             if(window.innerWidth <= 768) {
                 const sb = document.getElementById('yt-sidebar');
                 if(sb) sb.classList.remove('open');
+                document.body.classList.remove('sidebar-open');
             }
             // 🚀 [v7] 메인 영역 최상단으로 스크롤
             const main = document.querySelector('.yt-main');
@@ -1845,11 +1887,12 @@
             if(id === 'wallet' && currentUser) { updateUserBalance(); if(isAdmin) loadAdminActions(); }
         }
 
-        // 🚀 [v7] ============ YouTube 스타일 사이드바 동작 ============
+        // 🚀 [v7+] ============ YouTube 스타일 사이드바 동작 ============
         window.toggleSidebar = function() {
             const sb = document.getElementById('yt-sidebar');
             if(!sb) return;
-            sb.classList.toggle('open');
+            const isOpen = sb.classList.toggle('open');
+            document.body.classList.toggle('sidebar-open', isOpen);
         };
 
         // 🚀 [v7] 사이드바: 즐겨찾기 상점 리스트 (= 구독)
@@ -1879,13 +1922,12 @@
             const wrap = document.getElementById('yt-sb-categories');
             if(!wrap || !window.BRAND_CATEGORIES) return;
             const active = window.activeCategoryFilter || 'all';
-            let h = `<button class="yt-sb-item ${active==='all'?'active':''}" onclick="setCategoryFilter('all'); switchTab('market');"><span class="ic">🌐</span><span>전체</span></button>`;
+            const dotIcon = `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor; opacity:0.5;"></span>`;
+            let h = `<button class="yt-sb-item ${active==='all'?'active':''}" onclick="setCategoryFilter('all'); switchTab('market');"><span class="ic">${dotIcon}</span><span>전체</span></button>`;
             window.BRAND_CATEGORIES.forEach(c => {
-                // 라벨 형태 "🍽️ 음식점 · 카페" → 아이콘만 추출
-                const parts = c.label.split(' ');
-                const ic = parts[0] || '📦';
-                const rest = parts.slice(1).join(' ');
-                h += `<button class="yt-sb-item ${active===c.id?'active':''}" onclick="setCategoryFilter('${c.id}'); switchTab('market');"><span class="ic">${ic}</span><span>${rest}</span></button>`;
+                // 카테고리 라벨에서 이모지 제거 (간결한 텍스트만)
+                const cleanLabel = c.label.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{2700}-\u{27BF}\uFE0F]+\s*/u, '');
+                h += `<button class="yt-sb-item ${active===c.id?'active':''}" onclick="setCategoryFilter('${c.id}'); switchTab('market');"><span class="ic">${dotIcon}</span><span>${cleanLabel}</span></button>`;
             });
             wrap.innerHTML = h;
         };
@@ -1897,12 +1939,24 @@
             const active = window.activeCategoryFilter || 'all';
             let h = `<button class="cat-chip ${active==='all'?'active':''}" onclick="setCategoryFilter('all')">전체</button>`;
             window.BRAND_CATEGORIES.forEach(c => {
-                h += `<button class="cat-chip ${active===c.id?'active':''}" onclick="setCategoryFilter('${c.id}')">${c.label}</button>`;
+                const cleanLabel = c.label.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{2700}-\u{27BF}\uFE0F]+\s*/u, '');
+                h += `<button class="cat-chip ${active===c.id?'active':''}" onclick="setCategoryFilter('${c.id}')">${cleanLabel}</button>`;
             });
             wrap.innerHTML = h;
         };
 
-        // 🚀 [v7] 톱바 통합 검색
+        // 🚀 [v7+] 모바일 검색: 거래소로 이동 + 검색 패널 펼치기 + 입력란에 포커스
+        window.openMobileSearch = function() {
+            switchTab('market');
+            setTimeout(() => {
+                const panel = document.getElementById('market-search-panel');
+                if(panel) panel.open = true;
+                const input = document.getElementById('partner-search-input');
+                if(input) { input.focus(); input.scrollIntoView({behavior:'smooth', block:'center'}); }
+            }, 200);
+        };
+
+        // 🚀 [v7+] 톱바 통합 검색
         window.doTopbarSearch = function() {
             const input = document.getElementById('topbar-global-search');
             if(!input) return;
@@ -1911,12 +1965,14 @@
             // 거래소로 이동 후 검색 실행
             switchTab('market');
             setTimeout(() => {
+                const panel = document.getElementById('market-search-panel');
+                if(panel) panel.open = true;
                 const main = document.getElementById('partner-search-input');
                 if(main) {
                     main.value = q;
                     if(window.performGlobalSearch) window.performGlobalSearch(true);
                 }
-            }, 100);
+            }, 200);
         };
 
         // 🚀 ============ 장바구니 시스템 ============
@@ -2061,12 +2117,23 @@
             switchTab('market');
         }
 
-        // 🚀 상점 내부에서 1:1문의 (filter nav 버튼)
-        window.inquireCurrentBrandOwner = function() {
+        // 🚀 상점 내부에서 1:1문의 (filter nav 버튼) — 친구 자동 등록 + 대화방 즉시 개설
+        window.inquireCurrentBrandOwner = async function() {
             const st = window.currentMarketFilterStore;
             if(!st || !st.owner) return showToast("상점 정보가 없습니다.");
             if(st.owner === currentUser.name) return showToast("본인이 운영하는 상점입니다.");
-            openMessengerChat(st.owner);
+            // 친구로 자동 등록
+            try {
+                await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: st.owner }) });
+            } catch(_){}
+            // 메신저 열기 + 채팅 시작
+            const drawer = document.getElementById('messenger-drawer');
+            if(drawer && !drawer.classList.contains('open')) drawer.classList.add('open');
+            setTimeout(() => {
+                openMessengerChat(st.owner);
+                if(typeof loadFriendList === 'function') loadFriendList();
+                if(typeof loadChatList === 'function') loadChatList();
+            }, 150);
         }
 
         async function updateUserBalance() { if(!currentUser) return; try { const res = await fetch(`${API_URL}/api/users/${currentUser.name}`); const data = await res.json(); currentUser.balance = Number(data.balance) || 0; document.getElementById('display-balance').innerText = currentUser.balance.toLocaleString(); } catch(e){} }
@@ -3095,11 +3162,11 @@
                     '<div class="header">',
                     '<h1>🌍 Earth Bundle</h1>',
                     '<div class="sub">' + target.length + '개 상품 · 자체완결 뷰어</div>',
-                    '<div class="creator-pill">' + (creatorPic ? '<img src="' + creatorPic + '">' : '<span>👤</span>') + '<span>생성자: <b>' + creatorSafe + '</b></span></div>',
-                    '<div><a href="#" class="chat-btn" id="topChatBtn">💬 생성자와 채팅하기</a></div>',
+                    '<div class="creator-pill">' + (creatorPic ? '<img src="' + creatorPic + '">' : '<span></span>') + '<span>판매자: <b>' + creatorSafe + '</b></span></div>',
+                    '<div><a href="#" class="chat-btn" id="topChatBtn">판매자와 채팅하기</a></div>',
                     '</div>',
                     '<div class="container" id="productsContainer"></div>',
-                    '<div class="footer-chat"><a href="#" class="footer-chat-btn" id="bottomChatBtn">💬 ' + creatorSafe + ' 님과 채팅</a></div>',
+                    '<div class="footer-chat"><a href="#" class="footer-chat-btn" id="bottomChatBtn">' + creatorSafe + ' 님과 채팅</a></div>',
                     '<scr' + 'ipt id="bundleData" type="application/json">',
                     bundleData,
                     '</scr' + 'ipt>',
@@ -3588,26 +3655,22 @@
                     const bStr = history.find(hi => hi.buyer === currentUser.name && hi.productId === p.id && hi.purchaseType === 'stream' && !hi.refunded);
                     const bOri = history.find(hi => hi.buyer === currentUser.name && hi.productId === p.id && hi.purchaseType === 'original' && !hi.refunded);
 
+                    // 🚀 [v7+] 구매 완료해도 버튼은 그대로 (중복 구매 가능). 본인 상품만 "열람" 버튼.
                     let actions = '';
-                    if(isMine || bOri) {
-                        actions = `<button class="btn-own" onclick="openUniversalViewer('${p.id}', true)">✓ 소유 · 원본 열람</button>`;
-                    } else if(bStr) {
-                        let ms = 24*3600*1000; if(p.stream_unit==='h') ms=3600*1000; if(p.stream_unit==='y') ms=365*24*3600*1000;
-                        if(Date.now() > new Date(bStr.rawDate || bStr.date).getTime() + (p.stream_time * ms)) {
-                            actions = `<button class="btn-expired" onclick="buyAsset('${p.id}', '${(p.name||'').replace(/'/g,"\\'")}', ${p.price_stream}, '${p.seller}', 'stream')">⏱️ 스트리밍 만료 · 재구독</button>`;
-                        } else {
-                            actions = `<button class="btn-own" onclick="openUniversalViewer('${p.id}', false)">▶ 스트리밍 열람중</button>`;
-                        }
+                    if(isMine) {
+                        // 본인 상품 → 미리보기만
+                        actions = `<button class="btn-own" onclick="openUniversalViewer('${p.id}', true)">내 상품 · 미리보기</button>`;
                     } else {
-                        // 🚀 즉시 구매 + 장바구니 담기 버튼
+                        // 타인 상품 → 항상 구매 가능 (중복 구매 허용)
                         const safeName = (p.name||'').replace(/'/g,"\\'");
-                        actions = `
-                            <button class="btn-stream" onclick="buyAsset('${p.id}', '${safeName}', ${p.price_stream}, '${p.seller}', 'stream')" title="즉시 결제">▶ ${Number(p.price_stream).toLocaleString()}원</button>
-                            <button class="btn-original" onclick="buyAsset('${p.id}', '${safeName}', ${p.price_original}, '${p.seller}', 'original')" title="즉시 결제">💎 ${Number(p.price_original).toLocaleString()}원</button>
-                            <button class="btn-cart" onclick="addToCart('${p.id}', '${safeName}', ${p.price_original}, '${p.seller}', 'original', event)" title="장바구니 담기 (원본)">🛒</button>`;
+                        const ownedBadge = (bOri || bStr) ? `<div style="font-size:10px; color:var(--success); font-weight:bold; margin-bottom:4px;">✓ 이미 구매함${bOri?' (원본)':' (스트리밍)'} · "내 구매"에서 열람 가능</div>` : '';
+                        actions = ownedBadge + `
+                            <button class="btn-stream" onclick="buyAsset('${p.id}', '${safeName}', ${p.price_stream}, '${p.seller}', 'stream')" title="스트리밍 즉시 결제">스트리밍 ${Number(p.price_stream).toLocaleString()}원</button>
+                            <button class="btn-original" onclick="buyAsset('${p.id}', '${safeName}', ${p.price_original}, '${p.seller}', 'original')" title="원본 즉시 결제">원본 ${Number(p.price_original).toLocaleString()}원</button>
+                            <button class="btn-cart" onclick="addToCart('${p.id}', '${safeName}', ${p.price_original}, '${p.seller}', 'original', event)" title="장바구니 담기 (원본)" aria-label="장바구니"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg></button>`;
                     }
 
-                    const isNew = idx < 3 && !isMine && !bStr && !bOri; // 정렬이 신상순일 때 상위 3개에 NEW
+                    const isNew = idx < 3 && !isMine && !bStr && !bOri;
                     const showNewTag = (window.marketSortMode === 'latest') && isNew;
                     const discountPct = (p.price_original && p.price_stream && p.price_stream < p.price_original)
                         ? Math.round((1 - p.price_stream / p.price_original) * 100) : 0;
@@ -3759,50 +3822,89 @@
             const st = window.orderFormState;
             if(!st.pdfFile) return showToast('PDF 양식이 없습니다.');
             const pdf = st.pdfFile;
-            // 모달이 없으면 생성
+            // 모달이 없으면 생성 (있으면 재사용)
             let m = document.getElementById('pdf-fill-modal');
-            if(!m) {
-                m = document.createElement('div');
-                m.id = 'pdf-fill-modal';
-                m.className = 'modal-overlay';
-                m.innerHTML = `<div class="modal-content" style="max-width:1200px; max-height:96vh; padding:0; display:flex; flex-direction:column;">
-                    <div class="modal-header" style="margin:0; padding:14px 18px;"><span>📋 주문서 양식 작성</span><button class="close-btn-x" onclick="closeModal('pdf-fill-modal')">&times;</button></div>
-                    <div style="display:grid; grid-template-columns:1fr 380px; gap:0; flex:1; min-height:0;">
-                        <iframe id="pdf-fill-iframe" style="width:100%; height:100%; border:none; background:#1e293b;"></iframe>
-                        <div style="border-left:1px solid var(--border-color); padding:16px; overflow-y:auto; background:#f8fafc; display:flex; flex-direction:column;">
-                            <div style="font-size:13px; font-weight:bold; color:var(--text-main); margin-bottom:6px;">✍️ PDF의 각 항목 답변</div>
-                            <div style="font-size:11px; color:var(--text-sub); margin-bottom:10px;">왼쪽 PDF를 보면서 항목별로 답변을 작성하세요. 저장 시 메인 주문서에 자동 반영됩니다.</div>
-                            <textarea id="pdf-fill-textarea" rows="20" style="flex:1; padding:12px; border:1px solid var(--border-color); border-radius:8px; font-family:inherit; font-size:13px; resize:none; min-height:300px;" placeholder="예시:\n1. 환자명: \n2. 보철 종류: \n3. 색상: \n..."></textarea>
-                            <div style="margin-top:12px; display:flex; gap:8px;">
-                                <button class="btn btn-outline" style="flex:1; padding:10px;" onclick="closeModal('pdf-fill-modal')">취소</button>
-                                <button class="btn" style="flex:2; padding:10px; background:linear-gradient(135deg,#10b981,#059669); font-weight:bold;" onclick="savePdfFillAnswers()">💾 저장 후 주문서에 반영</button>
-                            </div>
+            if(m) m.remove(); // 항상 새로 생성 (크기 변경 반영)
+            m = document.createElement('div');
+            m.id = 'pdf-fill-modal';
+            m.className = 'modal-overlay';
+            // 🚀 [v7+] 큰 화면 분할: 좌 PDF(미리보기) 작게 + 우 답변 입력 크게
+            // grid: 모바일 1열, 데스크톱 작은 PDF + 큰 텍스트영역
+            m.innerHTML = `<div class="modal-content" style="max-width:1400px; width:96vw; height:94vh; padding:0; display:flex; flex-direction:column; background:#fff;">
+                <div class="modal-header" style="margin:0; padding:14px 22px; background:#f8fafc; border-bottom:1px solid var(--border-color);">
+                    <span style="font-size:16px; font-weight:700;">📋 주문서 양식 작성 — 답변은 자동으로 텍스트 파일로 첨부됩니다</span>
+                    <button class="close-btn-x" onclick="closeModal('pdf-fill-modal')">&times;</button>
+                </div>
+                <div class="pdf-fill-grid" style="display:grid; grid-template-columns:320px 1fr; gap:0; flex:1; min-height:0;">
+                    <div style="background:#1e293b; padding:12px; display:flex; flex-direction:column; gap:10px; border-right:1px solid #475569;">
+                        <div style="color:#fff; font-size:12px; font-weight:bold; opacity:0.7;">📄 PDF 양식 (참고용)</div>
+                        <iframe id="pdf-fill-iframe" style="width:100%; flex:1; border:none; background:#fff; border-radius:6px;"></iframe>
+                        <a href="${pdf.content}" download="${(pdf.filename||'order-form.pdf').replace(/"/g,'&quot;')}" style="background:rgba(255,255,255,0.15); color:#fff; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:11px; text-align:center;">📥 PDF 다운로드해서 보기</a>
+                    </div>
+                    <div style="padding:20px 24px; overflow-y:auto; background:#fff; display:flex; flex-direction:column;">
+                        <div style="font-size:15px; font-weight:bold; color:var(--text-main); margin-bottom:6px;">✍️ PDF의 각 항목 답변 작성</div>
+                        <div style="font-size:12px; color:var(--text-sub); margin-bottom:12px;">왼쪽 PDF 양식을 참고하여 항목별로 답변을 입력하세요. 저장 시 <b style="color:var(--primary);">PDF_Answers.txt</b> 파일로 자동 첨부되어 판매자에게 전달됩니다.</div>
+                        <textarea id="pdf-fill-textarea" style="flex:1; min-height:0; padding:18px; border:1px solid var(--border-color); border-radius:8px; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:14px; line-height:1.8; resize:none; outline:none; background:#fafbfc;" placeholder="예시:&#10;&#10;1. 환자명: 홍길동&#10;2. 보철 종류: 풀크라운&#10;3. 색상: A2&#10;4. 사이즈: 14호&#10;5. 마진 라인: 어깨 0.8mm&#10;6. 인상재: 실리콘&#10;7. 특이사항: 좌측 어금니 보강&#10;..."></textarea>
+                        <div style="margin-top:14px; display:flex; gap:8px;">
+                            <button class="btn btn-outline" style="flex:1; padding:12px;" onclick="closeModal('pdf-fill-modal')">취소</button>
+                            <button class="btn" style="flex:3; padding:12px; font-size:14px; background:linear-gradient(135deg,#10b981,#059669); font-weight:bold;" onclick="savePdfFillAnswers()">💾 저장 + 답변을 PDF_Answers.txt 파일로 자동 첨부</button>
                         </div>
                     </div>
-                </div>`;
-                document.body.appendChild(m);
+                </div>
+            </div>`;
+            document.body.appendChild(m);
+            // 모바일 grid override
+            const styleId = 'pdf-fill-mobile-css';
+            if(!document.getElementById(styleId)) {
+                const s = document.createElement('style');
+                s.id = styleId;
+                s.textContent = '@media(max-width:900px){#pdf-fill-modal .pdf-fill-grid{grid-template-columns:1fr!important;}#pdf-fill-modal .pdf-fill-grid > div:first-child{max-height:200px;}}';
+                document.head.appendChild(s);
             }
             document.getElementById('pdf-fill-iframe').src = pdf.content;
             const ta = document.getElementById('pdf-fill-textarea');
             ta.value = st.pdfFilledData || '';
             openModal('pdf-fill-modal');
+            setTimeout(() => ta.focus(), 100);
         };
 
         window.savePdfFillAnswers = function() {
             const ta = document.getElementById('pdf-fill-textarea');
             const val = (ta.value || '').trim();
             window.orderFormState.pdfFilledData = val;
+
+            // 🚀 [v7+] 답변이 있으면 PDF_Answers.txt 파일로 buyerFiles에 자동 추가
+            // 기존에 자동 첨부된 답변 파일이 있으면 갱신 (중복 방지)
+            const ANSWER_FILE_NAME = 'PDF_Answers.txt';
+            const ts = new Date().toLocaleString('ko-KR');
+            const fileContent = `[주문서 PDF 답변]\n작성일: ${ts}\n작성자: ${currentUser.name}\n양식 PDF: ${window.orderFormState.pdfFile ? (window.orderFormState.pdfFile.filename || '주문서.pdf') : ''}\n\n${'='.repeat(50)}\n\n${val}`;
+            // base64 데이터 URL 생성
+            const dataUrl = 'data:text/plain;charset=utf-8;base64,' + btoa(unescape(encodeURIComponent(fileContent)));
+            const blob = new Blob([fileContent], { type: 'text/plain' });
+            const answerFile = new File([blob], ANSWER_FILE_NAME, { type: 'text/plain' });
+            // 기존 답변 파일 제거 후 추가
+            const buyerFiles = window.orderFormState.buyerFiles || [];
+            const filtered = buyerFiles.filter(f => f.name !== ANSWER_FILE_NAME);
+            if(val) {
+                filtered.push(answerFile);
+                window.orderFormState.buyerFiles = filtered;
+                renderBuyerFilesList();
+            } else {
+                window.orderFormState.buyerFiles = filtered;
+                renderBuyerFilesList();
+            }
+
             const stat = document.getElementById('pdf-filled-status');
             if(stat) {
                 if(val) {
                     const lines = val.split('\n').filter(l => l.trim()).length;
-                    stat.innerHTML = `<span style="color:var(--success); font-weight:bold;">✓ 답변 작성 완료 (${lines}줄)</span> · 메인 주문서에 자동 반영됩니다.`;
+                    stat.innerHTML = `<span style="color:var(--success); font-weight:bold;">✓ 답변 작성 완료 (${lines}줄)</span> · <b>PDF_Answers.txt</b> 파일로 자동 첨부되었습니다.`;
                 } else {
                     stat.innerText = '아직 답변을 작성하지 않았습니다.';
                 }
             }
             closeModal('pdf-fill-modal');
-            showToast(val ? '✅ PDF 답변이 저장되었습니다.' : 'PDF 답변이 비어 있습니다.');
+            showToast(val ? `✅ 답변이 PDF_Answers.txt 파일로 자동 첨부되었습니다 (${val.length}자)` : 'PDF 답변이 비어 있습니다.');
         };
 
         function addBuyerFiles(fileList) {
@@ -3903,22 +4005,193 @@
             const submitData = await submitRes.json();
             if(!submitRes.ok) return showToast(submitData.error || '주문 전송 실패');
 
-            // 채팅 카드 전송 — orderId 포함
+            // 🚀 [v7+] 채팅 카드 전송 — orderId 포함
             const summaryMsg = `[ORDER_PENDING]${submitData.orderId}|${st.product.id}|${(st.product.name||'').replace(/\|/g, ' ')}|${st.amount}|${buyerFilesB64.length}|${(memo||'').replace(/\|/g, ' ').substring(0, 60)}`;
             const pic = document.getElementById('my-profile-pic').src;
-            if(socket && socket.connected) {
+            
+            // 🚀 [v7+] 주문서 HTML을 파일로도 채팅에 업로드 (상품명_주문서.html)
+            const safeProdName = (st.product.name || 'order').replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ_.-]/g, '_');
+            const orderFileName = `${safeProdName}_주문서.html`;
+            const orderHtmlBlob = new Blob([orderHtml], { type: 'text/html' });
+            const orderSizeKB = (orderHtmlBlob.size / 1024).toFixed(1);
+            const orderDataUrl = await new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = e => resolve(e.target.result);
+                r.onerror = () => reject(new Error('blob read fail'));
+                r.readAsDataURL(orderHtmlBlob);
+            });
+            const fileMsg = `[FILE_ATTACH]${orderFileName}|${orderSizeKB}|text/html|${orderDataUrl}`;
+
+            // 소켓 연결 보장: 미연결 시 잠시 대기
+            const ensureSocket = async () => {
+                if(socket && socket.connected) return true;
+                for(let i = 0; i < 10; i++) {
+                    await new Promise(r => setTimeout(r, 200));
+                    if(socket && socket.connected) return true;
+                }
+                return false;
+            };
+            const ok = await ensureSocket();
+            if(ok && socket) {
+                // 1. 방에 다시 join (이미 join돼 있어도 안전)
+                socket.emit('join_room', roomId);
+                // 2. 주문 카드 메시지
                 socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: summaryMsg });
+                // 3. 주문서 HTML 파일 첨부 메시지
+                setTimeout(() => {
+                    socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: fileMsg });
+                }, 300);
+            } else {
+                if(window.__earthDiag) window.__earthDiag('socket not connected for order msg', true);
+                showToast('⚠️ 채팅 서버 연결이 불안정합니다. 잠시 후 채팅에서 다시 확인해 주세요.');
             }
 
             closeModal('order-form-modal');
-            showToast(`📤 주문서가 ${st.seller}님에게 전달되었습니다. 승인 대기 중...`);
+            showToast(`📤 주문서 + HTML 파일이 ${st.seller}님에게 전달되었습니다. 승인 대기 중...`);
 
-            // 채팅창 자동 오픈
+            // 채팅창 자동 오픈 (visible 보장)
             setTimeout(() => { 
-                if(!document.getElementById('messenger-drawer').classList.contains('open')) toggleMessengerDrawer(); 
-                openMessengerChat(st.seller); 
-            }, 600);
+                const drawer = document.getElementById('messenger-drawer');
+                if(drawer && !drawer.classList.contains('open')) {
+                    if(typeof toggleMessengerDrawer === 'function') toggleMessengerDrawer();
+                }
+                if(typeof openMessengerChat === 'function') openMessengerChat(st.seller); 
+            }, 700);
         };
+
+        // 🚀 [v7] 상품 보기 모달 (단일 상품 + 패키지 + PLY/DICOM/3D 모두 지원)
+        async function openUniversalViewer(id, allowDownload) {
+            try {
+                const res = await fetch(`${API_URL}/api/product/detail/${id}`);
+                const p = await res.json();
+                if(!p || !p.id) return showToast('상품 정보를 찾을 수 없습니다.');
+                const titleEl = document.getElementById('modal-product-title');
+                if(titleEl) titleEl.innerText = p.name || '상품';
+                document.getElementById('universal-modal').style.display = 'flex';
+                const display = document.getElementById('modal-viewer-display');
+                display.innerHTML = '<div style="color:#fff; font-weight:bold; font-size:18px;">⏳ 디코딩 중...</div>';
+
+                const btn = document.getElementById('btn-download-original');
+                btn.style.display = allowDownload ? 'block' : 'none';
+
+                setTimeout(async () => {
+                    try {
+                        // 패키지 상품 — 카드 그리드로 렌더
+                        if(p.is_package && p.package_data) {
+                            try {
+                                const pkg = JSON.parse(p.package_data);
+                                const files = pkg.files || [];
+                                if(files.length === 0) { display.innerHTML = '<div style="color:#fff;">파일이 비어 있습니다.</div>'; return; }
+                                if(!window.__chatFileRegistry) window.__chatFileRegistry = {};
+                                let html = '<div style="width:100%; height:100%; overflow-y:auto; padding:20px;"><div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px;">';
+                                files.forEach((f, idx) => {
+                                    const key = 'pv_' + p.id + '_' + idx;
+                                    window.__chatFileRegistry[key] = { filename: f.filename, mime: f.type, content: f.content };
+                                    const fn = (f.filename||'').toLowerCase();
+                                    const isImg = /^image\//.test(f.type||'') || /\.(png|jpg|jpeg|gif|webp)$/.test(fn);
+                                    const isVid = /^video\//.test(f.type||'') || /\.(mp4|webm|mov)$/.test(fn);
+                                    let prevHtml;
+                                    if(isImg) prevHtml = `<img src="${f.content}" style="width:100%; height:140px; object-fit:cover;">`;
+                                    else if(isVid) prevHtml = `<video src="${f.content}" muted style="width:100%; height:140px; object-fit:cover;"></video>`;
+                                    else if(/pdf/i.test(f.type) || /\.pdf$/.test(fn)) prevHtml = `<div style="height:140px; background:#fef3c7; display:flex; align-items:center; justify-content:center; font-size:48px;">📄</div>`;
+                                    else if(/\.(ply|obj|stl|gltf|glb)$/.test(fn)) prevHtml = `<div style="height:140px; background:#252628; display:flex; align-items:center; justify-content:center; font-size:48px; color:#00ADB5;">🧊</div>`;
+                                    else if(/dicom/i.test(f.type) || /\.(dcm|dicom)$/.test(fn)) prevHtml = `<div style="height:140px; background:#1e293b; display:flex; align-items:center; justify-content:center; font-size:48px; color:#fbbf24;">🏥</div>`;
+                                    else prevHtml = `<div style="height:140px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; font-size:48px;">📎</div>`;
+                                    const escFn = (f.filename||'').replace(/</g,'&lt;');
+                                    html += `<div style="background:#fff; border-radius:10px; overflow:hidden; cursor:pointer;" onclick="openChatFilePreview('${key}')">
+                                        ${prevHtml}
+                                        <div style="padding:10px;">
+                                            <div style="font-size:12px; font-weight:600; word-break:break-all;">${escFn}</div>
+                                            <div style="font-size:11px; color:#94a3b8; margin-top:4px;">클릭하여 미리보기</div>
+                                        </div>
+                                    </div>`;
+                                });
+                                html += '</div></div>';
+                                display.innerHTML = html;
+                            } catch(e) { display.innerHTML = '<div style="color:var(--danger);">패키지 데이터 파싱 실패</div>'; }
+                        }
+                        // 단일 파일 (encryptedPayload)
+                        else if(p.encryptedPayload) {
+                            const parts = p.encryptedPayload.split(',');
+                            const head = parts[0]+',';
+                            const body = parts[1];
+                            const decryptedBody = await processSecureDataAsync(body);
+                            const finalUrl = head + decryptedBody;
+                            const ext = (p.name||'').split('.').pop().toLowerCase();
+
+                            if(['png','jpg','jpeg','gif','webp','bmp'].includes(ext) || head.includes('image/')) {
+                                display.innerHTML = `<img src="${finalUrl}" style="max-width:100%; max-height:100%; object-fit:contain; border-radius:8px;">`;
+                            } else if(['mp4','webm','mov','m4v'].includes(ext) || head.includes('video/')) {
+                                display.innerHTML = `<video src="${finalUrl}" controls autoplay playsinline style="max-width:100%; max-height:100%; border-radius:12px;"></video>`;
+                            } else if(['mp3','wav','ogg','m4a'].includes(ext) || head.includes('audio/')) {
+                                display.innerHTML = `<div style="text-align:center; color:#fff;"><div style="font-size:80px; margin-bottom:20px;">🎵</div><audio src="${finalUrl}" controls autoplay style="width:400px; max-width:90vw;"></audio></div>`;
+                            } else if(['pdf'].includes(ext) || head.includes('application/pdf')) {
+                                try {
+                                    const bs = atob(finalUrl.split(',')[1] || '');
+                                    const ab = new ArrayBuffer(bs.length);
+                                    const ia = new Uint8Array(ab);
+                                    for(let i=0; i<bs.length; i++) ia[i] = bs.charCodeAt(i);
+                                    const blob = new Blob([ab], { type:'application/pdf' });
+                                    const url = URL.createObjectURL(blob);
+                                    display.innerHTML = `<iframe src="${url}" style="width:100%; height:100%; border:none; background:#fff; border-radius:8px;"></iframe>`;
+                                } catch(e) {
+                                    display.innerHTML = `<iframe src="${finalUrl}" style="width:100%; height:100%; border:none; background:#fff; border-radius:8px;"></iframe>`;
+                                }
+                            } else if(['html','htm'].includes(ext) || head.includes('text/html')) {
+                                display.innerHTML = `<iframe src="${finalUrl}" style="width:100%; height:100%; border:none; background:#fff; border-radius:8px;"></iframe>`;
+                            } else if(['ply','obj','stl','gltf','glb'].includes(ext)) {
+                                if(allowDownload) {
+                                    display.innerHTML = `<div style="text-align:center; color:#fff;"><div style="font-size:80px; margin-bottom:20px;">🧊</div><b style="color:#00ADB5; font-size:14px; letter-spacing:1px; text-transform:uppercase;">3D MODEL · ${ext.toUpperCase()}</b><br><br><b style="font-size:20px;">${(p.name||'').replace(/</g,'&lt;')}</b><br><br><span style="color:#94a3b8;">3D 뷰어 앱에서 열어 회전·확대해 보세요</span><br><br><a href="${finalUrl}" download="${(p.name||'').replace(/"/g,'&quot;')}" style="background:#00ADB5; color:#fff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;">💾 원본 다운로드</a></div>`;
+                                } else {
+                                    display.innerHTML = `<div style="text-align:center; color:#fff;"><div style="font-size:80px; margin-bottom:20px;">🔒</div><b style="color:var(--danger); font-size:18px;">3D 파일은 스트리밍 미리보기를 지원하지 않습니다.</b><br><br><span style="color:#94a3b8;">원본 구매 후 다운로드해 전용 뷰어 앱에서 열어 주세요.</span></div>`;
+                                }
+                            } else if(['dcm','dicom'].includes(ext) || head.includes('dicom')) {
+                                if(allowDownload) {
+                                    display.innerHTML = `<div style="text-align:center; color:#fff;"><div style="font-size:80px; margin-bottom:20px;">🏥</div><b style="color:#fbbf24;">DICOM</b><br><br><b style="font-size:20px;">${(p.name||'').replace(/</g,'&lt;')}</b><br><br><a href="${finalUrl}" download="${(p.name||'').replace(/"/g,'&quot;')}" style="background:#fbbf24; color:#1f2937; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;">💾 원본 다운로드</a></div>`;
+                                } else {
+                                    display.innerHTML = `<div style="text-align:center; color:#fff;"><div style="font-size:80px;">🔒</div><br><b style="color:var(--danger);">DICOM 스트리밍 미리보기 미지원</b></div>`;
+                                }
+                            } else {
+                                if(allowDownload) {
+                                    display.innerHTML = `<div style="text-align:center; color:#fff;"><span style="font-size:60px;">📄</span><br><br><b style="font-size:20px;">${(p.name||'').replace(/</g,'&lt;')}</b><br><br>미리보기 미지원 형식<br>우측 상단 다운로드 버튼 이용</div>`;
+                                } else {
+                                    display.innerHTML = `<div style="text-align:center; color:#fff;"><span style="font-size:60px;">🔒</span><br><br><b style="color:var(--danger); font-size:20px;">스트리밍 전용 상품입니다.</b></div>`;
+                                }
+                            }
+
+                            if(allowDownload) {
+                                btn.onclick = function() {
+                                    const ctx = { seller: p.seller, timestamp: new Date().toLocaleString('ko-KR'), purchaseInfo: { amount: p.price_original || 0, purchaseType: 'original' } };
+                                    const htmlContent = buildStandaloneViewerHTML(p, ctx);
+                                    const blob = new Blob([htmlContent], { type: 'text/html' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    // 🚀 [v7] 상품명을 파일명으로 (파일 이름이 아니라)
+                                    const safe = (p.name || 'asset').replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ_.-]/g, '_');
+                                    a.download = `${safe}_Bundle.html`;
+                                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                                    showToast("원본 다운로드 완료");
+                                };
+                            }
+                        }
+                        else {
+                            display.innerHTML = `<div style="color:var(--danger);">상품 데이터가 비어 있습니다.</div>`;
+                        }
+                    } catch(err){
+                        if(window.__earthDiag) window.__earthDiag('openUniversalViewer inner: ' + (err.message||err), true);
+                        display.innerHTML = `<div style="color:var(--danger); font-weight:bold;">파싱 오류: ${(err.message||'').replace(/</g,'&lt;')}</div>`;
+                    }
+                }, 50);
+            } catch(e){
+                if(window.__earthDiag) window.__earthDiag('openUniversalViewer outer: ' + (e.message||e), true);
+                showToast("자산 로드 실패");
+            }
+        }
+        window.openUniversalViewer = openUniversalViewer;
+        function closeUniversalModal() { document.getElementById('modal-viewer-display').innerHTML = ''; document.getElementById('universal-modal').style.display = 'none'; }
+        window.closeUniversalModal = closeUniversalModal;
 
         // 자체완결 HTML 생성 (대표파일 뷰어 + PDF 텍스트 답변 + 구매자 첨부 + 대화방 다이렉트 링크)
         // 🚀 ============ [v7] UNIFIED RAYCLOUD-STYLE BUNDLE BUILDER ============
