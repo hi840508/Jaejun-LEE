@@ -14,7 +14,7 @@
         :root { 
             --bg-main: #f9f9f9; 
             --panel-bg: #ffffff; 
-            --text-main: #0f0f0f; ㅁ
+            --text-main: #0f0f0f; 
             --text-sub: #606060; 
             --primary: #2563eb; 
             --primary-hover: #1d4ed8; 
@@ -686,7 +686,7 @@
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="color:var(--primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
                         <span style="font-size: 18px; font-weight: 900; color: var(--text-main); letter-spacing: -0.5px;">Earth</span>
                         <span id="admin-indicator" style="display:none; background: var(--danger); color: white; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: bold;">Root Admin</span>
-                        <span style="background: #0f0f0f; color: white; padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold;">v7p</span>
+                        <span style="background: #0f0f0f; color: white; padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold;">v7p2</span>
                     </div>
                 </div>
                 <div class="yt-search-bar">
@@ -1349,18 +1349,15 @@
     <div class="toast" id="toast">알림</div>
 
     <script>
-        // 🚀 ============ EARTH PATCH v7+ (2026-05-27) — YouTube UI + 깨끗한 아이콘 ============
-        // v7+ 핵심 수정 (이번 라운드):
-        //   1. [신규] 사이드바·하단네비 SVG 아이콘 (이모지 제거)
-        //   2. [신규] 모바일 좌상단 햄버거 + 검색 아이콘 (YouTube 모바일 패턴)
-        //   3. [신규] 검색 패널 접힘 박스(<details>) — 상품 우선 표시 (콘텐츠 first)
-        //   4. [신규] 계정 설정 모달 자동 핏 (max-height + overflow + 모바일 풀스크린)
-        //   5. [개선] 카테고리 라벨 이모지 제거 (작은 점으로 변경)
-        //   6. [개선] 모달 헤더/메인 버튼 이모지 정리
-        //   7. [개선] 마켓 카드 버튼 — 💎/▶/🛒 이모지 제거, SVG 카트 아이콘
-        //   8. [수정] inquireCurrentBrandOwner — 친구 자동 등록 + 즉시 채팅 오픈
-        //   9. [수정] "생성자와 채팅하기" → "판매자와 채팅하기" (bundle HTML)
-        window.__EARTH_VERSION = 'v7p-2026-05-27';
+        // 🚀 ============ EARTH PATCH v7p2 (2026-05-27) — 주문 흐름 정리 + 승인 알림 폴링 ============
+        // v7p2 핵심 수정:
+        //   1. [수정] PDF 주문서 있는 패키지만 채팅 승인 흐름. PDF 없으면 즉시 결제
+        //   2. [신규] 판매자 측 5초마다 pending 주문 폴링 + 화면 상단 깜빡이는 배너
+        //   3. [신규] 비프음 알림 (WebAudio API)
+        //   4. [신규] /api/orders/pending/:userName 엔드포인트 (서버 polling용)
+        //   5. [수정] API_URL 프로토콜 자동 매칭 (http/https) + 서버 핑 진단
+        //   6. [개선] 승인/거절/취소 시 즉시 pending 재확인 (배너 즉시 사라짐)
+        window.__EARTH_VERSION = 'v7p2-2026-05-27';
         console.log('%c🌍 Earth Commerce — PATCH ' + window.__EARTH_VERSION, 'background:#0f0f0f;color:#fff;padding:4px 10px;border-radius:4px;font-weight:bold;');
 
         // 🚀 손상된 최근 이모지 localStorage 일회성 정리 (이전 버전이 null을 저장했을 수 있음)
@@ -1449,7 +1446,28 @@
         }
 
         // AWS 강제 터널링 (접속 불능 해결)
-        const API_URL = (window.location.protocol === 'file:' || window.location.hostname === '') ? 'http://54.180.125.166:4000' : 'http://' + window.location.hostname + ':4000';
+        // 🚀 [v7p+] API_URL: same-origin 우선 (프로토콜 자동 매칭), 파일 모드는 기본 EC2
+        const API_URL = (function(){
+            if(window.location.protocol === 'file:' || window.location.hostname === '') return 'http://54.180.125.166:4000';
+            // 동일 출처(서버에서 같은 포트로 서비스 중)이면 빈 문자열로 같은 origin 호출
+            // 그렇지 않으면 같은 host의 4000 포트 (proto는 현재와 동일하게 맞춤)
+            const proto = window.location.protocol; // 'http:' or 'https:'
+            return proto + '//' + window.location.hostname + ':4000';
+        })();
+        console.log('[Earth] API_URL =', API_URL);
+
+        // 🚀 [v7p+] 서버 health-check + 진단 (Failed to fetch 발생 시 즉시 알림)
+        (async function pingServer() {
+            try {
+                const r = await fetch(`${API_URL}/api/users/_ping_check_`, { method:'GET' });
+                if(!r.ok && r.status !== 404) throw new Error('status ' + r.status);
+                if(window.__earthDiag) window.__earthDiag('서버 연결 OK: ' + API_URL);
+            } catch(e) {
+                const msg = '⚠️ 서버 연결 실패 (' + API_URL + '): ' + (e.message||e) + '\n→ relay.js가 실행 중인지, 포트 4000이 열려 있는지, 같은 프로토콜(http/https)인지 확인하세요.';
+                if(window.__earthDiag) window.__earthDiag(msg, true);
+                console.error('[Earth] 서버 핑 실패', e);
+            }
+        })();
         
         let socket = null, currentUser = null, scannedFiles = [];
         let activeChatFriend = null, currentChatRoomId = null;
@@ -1621,6 +1639,8 @@
             updateUserBalance(); switchTab('market'); loadFriendList(); loadChatList();
             // 🚀 [v7] 사이드바 초기 렌더
             try { renderSidebarCategories(); renderMobileChips(); } catch(e){}
+            // 🚀 [v7p+] 승인 대기 주문 5초마다 폴링 시작
+            try { startPendingOrdersPolling(); } catch(e){}
 
             // 🚀 QR 스캔 진입 처리 (다른 모든 초기화 후 실행)
             setTimeout(() => { processPendingStoreEntry(); }, 600);
@@ -3716,20 +3736,39 @@
         async function adminForceDeleteProduct(id) { if(!isAdmin) return; if(!confirm("🚨 마스터 권한으로 타인의 디지털 상품을 영구 블라인드 처리 하십니까?")) return; await fetch(`${API_URL}/api/admin/product/delete`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id, adminSecret: 'mars' }) }); showToast("강제 파기 완결"); loadMarketplace(); }
         
         async function buyAsset(id, name, amount, seller, purchaseType) {
-            // 🚀 패키지 상품인지 먼저 확인 (주문서 양식이 있으면 폼 모달로 분기)
+            // 🚀 [v7p+] PDF 주문서가 있는 패키지 상품만 채팅 승인 흐름으로 라우팅
             try {
                 const detRes = await fetch(`${API_URL}/api/product/detail/${id}`);
                 const p = await detRes.json();
                 if(p && p.is_package && purchaseType === 'original') {
-                    // 패키지 상품 + 원본 구매 → 주문 폼 열기
-                    openOrderFormModal(p, amount, seller, purchaseType);
-                    return;
+                    // PDF 주문서가 포함됐는지 확인
+                    let hasPdfForm = false;
+                    try {
+                        const pkg = JSON.parse(p.package_data || '{}');
+                        const files = pkg.files || [];
+                        hasPdfForm = files.some(f => f.role === 'order_form' || /\.pdf$/i.test(f.filename||''));
+                    } catch(e){}
+                    if(hasPdfForm) {
+                        // PDF 양식 있음 → 주문서 작성 모달 → 판매자 승인 흐름
+                        openOrderFormModal(p, amount, seller, purchaseType);
+                        return;
+                    }
+                    // PDF 없는 패키지 상품 → 즉시 결제 (fall through)
                 }
-            } catch(e) { console.warn('패키지 검증 실패:', e); }
-            // 일반 구매 흐름
+            } catch(e) {
+                console.warn('패키지 검증 실패:', e);
+                if(window.__earthDiag) window.__earthDiag('buyAsset detail fetch fail: ' + (e.message||e), true);
+            }
+            // 일반 즉시 결제 흐름
             if(!confirm(`[${name}] 상품을 결제합니까?`)) return;
-            const res = await fetch(`${API_URL}/api/buy`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ buyer: currentUser.name, seller, productId: id, productName: name, amount, purchaseType }) });
-            if(res.ok) { showToast("결제 완료. 상품 뷰어가 열립니다."); loadMarketplace(); updateUserBalance(); switchTab('history'); setTimeout(() => openUniversalViewer(id, purchaseType==='original'), 400); } else { const d = await res.json(); showToast(d.error); }
+            try {
+                const res = await fetch(`${API_URL}/api/buy`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ buyer: currentUser.name, seller, productId: id, productName: name, amount, purchaseType }) });
+                if(res.ok) { showToast("결제 완료. 상품 뷰어가 열립니다."); loadMarketplace(); updateUserBalance(); switchTab('history'); setTimeout(() => openUniversalViewer(id, purchaseType==='original'), 400); }
+                else { const d = await res.json().catch(()=>({error:'서버 응답 오류'})); showToast(d.error || '결제 실패'); }
+            } catch(e) {
+                if(window.__earthDiag) window.__earthDiag('buyAsset POST fail: ' + (e.message||e), true);
+                showToast('네트워크 오류 — 서버 연결 확인 필요');
+            }
         }
 
         // 🚀 ============ 패키지 상품 주문 폼 (구매 확정 시 전체 HTML 묶음 → 판매자에게 전달) ============
@@ -4048,6 +4087,9 @@
 
             closeModal('order-form-modal');
             showToast(`📤 주문서 + HTML 파일이 ${st.seller}님에게 전달되었습니다. 승인 대기 중...`);
+
+            // 🚀 [v7p+] 본인 pending 즉시 갱신
+            if(window.checkPendingOrders) window.checkPendingOrders();
 
             // 채팅창 자동 오픈 (visible 보장)
             setTimeout(() => { 
@@ -4707,6 +4749,124 @@
             } catch(e) { showToast('나가기 실패: ' + (e.message || e)); }
         };
 
+        // 🚀 [v7p+] ============ 승인 대기 주문 폴링 (5초마다) ============
+        // 판매자에게 pending 주문이 있으면 5초마다 토스트 + 음성 알림 (승인할 때까지 지속)
+        window.__pendingOrdersPoll = { lastNotified: 0, prevSellerCount: 0, intervalId: null };
+
+        // 알림용 짧은 비프음 (Base64 인코딩된 작은 wav 데이터 — 외부 의존성 없음)
+        window.__notifSound = (function() {
+            try {
+                // 800Hz 0.2초 sine wave
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                return function play() {
+                    try {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.frequency.value = 880;
+                        osc.connect(gain); gain.connect(ctx.destination);
+                        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+                        osc.start(); osc.stop(ctx.currentTime + 0.22);
+                    } catch(e){}
+                };
+            } catch(e) { return function(){}; }
+        })();
+
+        window.checkPendingOrders = async function() {
+            if(!currentUser) return;
+            try {
+                const r = await fetch(`${API_URL}/api/orders/pending/${encodeURIComponent(currentUser.name)}`);
+                if(!r.ok) return;
+                const data = await r.json();
+                const sellerCount = data.sellerPending || 0;
+                const buyerCount = data.buyerPending || 0;
+
+                // 판매자 측 — pending 주문이 있으면 알림 지속
+                if(sellerCount > 0) {
+                    // 판매자 시점: 5초마다 알림
+                    showOrderApprovalBanner(sellerCount, data.sellerPendingOrders);
+                    window.__notifSound();
+                    // 첫 도착 또는 새 주문 도착 시 강한 토스트
+                    if(sellerCount > window.__pendingOrdersPoll.prevSellerCount) {
+                        showToast(`📥 새 주문서 도착! 승인 대기 중 ${sellerCount}건`);
+                    }
+                } else {
+                    hideOrderApprovalBanner();
+                }
+                window.__pendingOrdersPoll.prevSellerCount = sellerCount;
+
+                // 구매자 측 — 본인이 보낸 주문 pending 표시 (작은 배지)
+                const myBadge = document.getElementById('my-pending-orders-badge');
+                if(myBadge) {
+                    myBadge.style.display = buyerCount > 0 ? 'inline-flex' : 'none';
+                    myBadge.textContent = buyerCount;
+                }
+            } catch(e) { /* 조용히 실패 */ }
+        };
+
+        window.startPendingOrdersPolling = function() {
+            if(window.__pendingOrdersPoll.intervalId) clearInterval(window.__pendingOrdersPoll.intervalId);
+            // 즉시 1번 실행 + 이후 5초마다
+            window.checkPendingOrders();
+            window.__pendingOrdersPoll.intervalId = setInterval(window.checkPendingOrders, 5000);
+        };
+
+        window.stopPendingOrdersPolling = function() {
+            if(window.__pendingOrdersPoll.intervalId) clearInterval(window.__pendingOrdersPoll.intervalId);
+            window.__pendingOrdersPoll.intervalId = null;
+        };
+
+        // 판매자 승인 배너 (화면 상단 고정, 5초마다 깜빡임)
+        window.showOrderApprovalBanner = function(count, orders) {
+            let banner = document.getElementById('order-approval-banner');
+            if(!banner) {
+                banner = document.createElement('div');
+                banner.id = 'order-approval-banner';
+                banner.style.cssText = `
+                    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+                    background: linear-gradient(135deg, #f59e0b, #ef4444);
+                    color: #fff; padding: 12px 22px; border-radius: 30px;
+                    font-size: 13px; font-weight: bold;
+                    box-shadow: 0 8px 24px rgba(239, 68, 68, 0.5);
+                    z-index: 9990; cursor: pointer;
+                    animation: pulseOrder 2s infinite;
+                    display: flex; align-items: center; gap: 10px;
+                    max-width: calc(100vw - 30px);
+                `;
+                document.body.appendChild(banner);
+                // 깜빡임 keyframes 추가
+                if(!document.getElementById('order-banner-anim')) {
+                    const s = document.createElement('style');
+                    s.id = 'order-banner-anim';
+                    s.textContent = `@keyframes pulseOrder {
+                        0%, 100% { transform: translateX(-50%) scale(1); box-shadow: 0 8px 24px rgba(239,68,68,0.5); }
+                        50% { transform: translateX(-50%) scale(1.05); box-shadow: 0 12px 32px rgba(239,68,68,0.8); }
+                    }`;
+                    document.head.appendChild(s);
+                }
+            }
+            const firstOrder = orders && orders[0];
+            const buyerName = firstOrder ? firstOrder.buyer : '';
+            const productName = firstOrder ? (firstOrder.productName || '상품') : '';
+            banner.innerHTML = `
+                <span style="font-size:18px;">📥</span>
+                <span>승인 대기 주문 <b style="font-size:16px;">${count}건</b> — ${buyerName} 외 (${productName.substring(0,20)})</span>
+                <span style="background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:20px; font-size:11px; font-weight:bold;">클릭하여 채팅 열기 ▶</span>
+            `;
+            banner.onclick = function() {
+                if(firstOrder) {
+                    const drawer = document.getElementById('messenger-drawer');
+                    if(drawer && !drawer.classList.contains('open')) drawer.classList.add('open');
+                    setTimeout(() => openMessengerChat(firstOrder.buyer), 100);
+                }
+            };
+        };
+
+        window.hideOrderApprovalBanner = function() {
+            const banner = document.getElementById('order-approval-banner');
+            if(banner) banner.remove();
+        };
+
         async function loadChatList() {
             if(!currentUser) return;
             try {
@@ -5070,6 +5230,8 @@
                     socket.emit('send_message', { roomId: currentChatRoomId, sender: '__system__', senderPic: null, message: `[ORDER_APPROVED]${productName}|${amount}` });
                 }
                 appendMainMessage('__system__', `[ORDER_APPROVED]${productName}|${amount}`, null);
+                // 🚀 [v7p+] 즉시 pending 재확인 — 배너 사라지게
+                if(window.checkPendingOrders) window.checkPendingOrders();
             } catch(e) { showToast('승인 처리 실패: ' + (e.message || e)); }
         };
 
@@ -5089,6 +5251,7 @@
                     socket.emit('send_message', { roomId: currentChatRoomId, sender: '__system__', senderPic: null, message: `[ORDER_REJECTED]${pName}|${reason || ''}` });
                 }
                 appendMainMessage('__system__', `[ORDER_REJECTED]${pName}|${reason || ''}`, null);
+                if(window.checkPendingOrders) window.checkPendingOrders();
             } catch(e) { showToast('거절 실패: ' + (e.message || e)); }
         };
 
@@ -5099,6 +5262,7 @@
                 const data = await res.json();
                 if(!res.ok) return showToast(data.error || '취소 실패');
                 showToast(`✕ 주문 취소됨`);
+                if(window.checkPendingOrders) window.checkPendingOrders();
             } catch(e) { showToast('취소 실패: ' + (e.message || e)); }
         };
 
