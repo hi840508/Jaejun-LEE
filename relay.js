@@ -31,7 +31,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 
 function initTables() {
     db.serialize(() => {
-        db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, realname TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT, phone TEXT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, realname TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT, phone TEXT, email TEXT, shipping_address TEXT, reset_otp TEXT, reset_otp_expiry INTEGER, reset_otp_used INTEGER DEFAULT 0, force_pwd_change INTEGER DEFAULT 0)`);
         db.run(`CREATE TABLE IF NOT EXISTS friends (userName TEXT, friendName TEXT, UNIQUE(userName, friendName))`);
         db.run(`CREATE TABLE IF NOT EXISTS stores (id TEXT PRIMARY KEY, name TEXT, owner TEXT, logo TEXT, status TEXT DEFAULT 'active', background TEXT, description TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, storeId TEXT, type TEXT, name TEXT, description TEXT, price_stream INTEGER DEFAULT 0, price_original INTEGER DEFAULT 0, stream_time INTEGER DEFAULT 0, stream_unit TEXT DEFAULT 'd', seller TEXT, thumbnail TEXT, encryptedPayload TEXT, compression_ratio INTEGER DEFAULT 0, block_hash TEXT, ecc_signature TEXT)`);
@@ -49,6 +49,12 @@ function initTables() {
         db.run(`ALTER TABLE stores ADD COLUMN description TEXT`, () => {});
         db.run(`ALTER TABLE transactions ADD COLUMN refunded INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
+        db.run(`ALTER TABLE users ADD COLUMN email TEXT`, () => {});
+        db.run(`ALTER TABLE users ADD COLUMN shipping_address TEXT`, () => {});
+        db.run(`ALTER TABLE users ADD COLUMN reset_otp TEXT`, () => {});
+        db.run(`ALTER TABLE users ADD COLUMN reset_otp_expiry INTEGER`, () => {});
+        db.run(`ALTER TABLE users ADD COLUMN reset_otp_used INTEGER DEFAULT 0`, () => {});
+        db.run(`ALTER TABLE users ADD COLUMN force_pwd_change INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE transfers ADD COLUMN rawDate TEXT`, () => {});
         db.run(`ALTER TABLE deposits ADD COLUMN rawDate TEXT`, () => {});
         db.run(`ALTER TABLE withdrawals ADD COLUMN rawDate TEXT`, () => {});
@@ -69,29 +75,45 @@ app.post('/api/auth/verify', (req, res) => {
     db.get(`SELECT * FROM users WHERE name = ?`, [req.body.name], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (row) {
-            if (row.password === req.body.password) res.json({ exists: true, user: row });
+            if (row.password === req.body.password) {
+                res.json({ exists: true, user: row, mustChangePassword: !!row.force_pwd_change });
+            }
             else res.status(401).json({ exists: true, error: "비밀번호가 불일치합니다." });
         } else res.json({ exists: false });
     });
 });
 
 app.post('/api/auth/register', (req, res) => {
-    const { name, password, realname, bank, account, phone } = req.body;
-    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone) VALUES (?, ?, ?, ?, ?, 10000, ?)`, [name, password, realname, bank, account, phone || ''], (err) => {
+    const { name, password, realname, bank, account, phone, email, shipping_address } = req.body;
+    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address) VALUES (?, ?, ?, ?, ?, 10000, ?, ?, ?)`,
+        [name, password, realname, bank, account, phone || '', email || '', shipping_address || ''], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
-        // 🚀 가입 축하금 거래 장부 기록 (절대 누락 방지)
-        // 컨벤션: 사용자가 돈을 받으므로 seller=사용자, buyer=Earth(Root) — 보안수표 환원과 동일
+        // 🚀 가입 축하금 거래 장부 기록 (컨벤션: 받는 쪽이 seller)
         const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
         db.run(`INSERT INTO transactions (buyer, seller, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             ['Earth(Root)', name, '신규 가입 정산 한도 축하금', 10000, 'signup_bonus', rawDate, date]);
-        res.json({ name, password, realname, bank, account, phone: phone || '', balance: 10000, profilePic: null });
+        res.json({ name, password, realname, bank, account, phone: phone || '', email: email || '', shipping_address: shipping_address || '', balance: 10000, profilePic: null });
     });
 });
 
 app.post('/api/user/update', (req, res) => {
-    db.run(`UPDATE users SET password = ?, realname = ?, bank = ?, account = ?, profilePic = ?, phone = ? WHERE name = ?`, [req.body.password, req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.name], () => res.json({success: true}));
+    db.run(`UPDATE users SET password = ?, realname = ?, bank = ?, account = ?, profilePic = ?, phone = ?, email = ?, shipping_address = ? WHERE name = ?`,
+        [req.body.password, req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.email || '', req.body.shipping_address || '', req.body.name],
+        () => res.json({success: true}));
 });
-// 🚀 회원 검색 (이름/실명/전화로 부분 매칭) - 친구 등록용. 반드시 /:name 라우트보다 먼저 등록 (라우트 우선순위)
+
+// 🚀 비밀번호 변경 후 force_pwd_change 플래그 해제
+app.post('/api/user/change-password', (req, res) => {
+    const { name, newPassword } = req.body;
+    if(!newPassword || newPassword.length < 4) return res.status(400).json({ error: "비밀번호는 4자 이상이어야 합니다." });
+    db.run(`UPDATE users SET password = ?, force_pwd_change = 0, reset_otp = NULL, reset_otp_expiry = NULL, reset_otp_used = 0 WHERE name = ?`,
+        [newPassword, name], (err) => {
+            if(err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
+});
+
+// 🚀 회원 검색 (이름/실명/전화로 부분 매칭) - 친구 등록용
 app.get('/api/users/search', (req, res) => {
     const q = (req.query.q || '').trim(); const exclude = req.query.exclude || '';
     if(!q || q.length < 1) return res.json([]);
@@ -99,8 +121,79 @@ app.get('/api/users/search', (req, res) => {
     db.all(`SELECT name, profilePic, phone, realname FROM users WHERE (name LIKE ? OR realname LIKE ? OR phone LIKE ?) AND name != ? LIMIT 20`,
         [like, like, like, exclude], (err, rows) => res.json(rows || []));
 });
-// 🚀 전체 사용자 정보 (잔액 + 프로필 + 전화)
-app.get('/api/users/:name', (req, res) => { db.get(`SELECT name, balance, profilePic, phone, realname FROM users WHERE name = ?`, [req.params.name], (err, row) => res.json(row || { balance: 0 })); });
+// 🚀 전체 사용자 정보 (잔액 + 프로필 + 전화 + 이메일 + 주소)
+app.get('/api/users/:name', (req, res) => { db.get(`SELECT name, balance, profilePic, phone, email, shipping_address, realname FROM users WHERE name = ?`, [req.params.name], (err, row) => res.json(row || { balance: 0 })); });
+
+// 🚀 ============ 비밀번호 찾기 (OTP 흐름) ============
+// Step 1: ID로 가입된 이메일 조회 (마스킹된 형태 반환)
+app.post('/api/auth/find-email', (req, res) => {
+    const { name } = req.body;
+    db.get(`SELECT email FROM users WHERE name = ?`, [name], (err, row) => {
+        if(!row) return res.status(404).json({ error: "해당 ID로 가입된 회원이 없습니다." });
+        if(!row.email) return res.status(400).json({ error: "등록된 이메일이 없습니다. 관리자(Admin)에게 비밀번호 복구를 요청해 주세요." });
+        // 이메일 마스킹: a***@domain.com
+        const masked = row.email.replace(/^(.{1,2})(.*)(@.*)$/, (m, p1, p2, p3) => p1 + '*'.repeat(Math.max(p2.length, 3)) + p3);
+        res.json({ name, maskedEmail: masked });
+    });
+});
+
+// Step 2: OTP 생성 및 (이메일 발송 시뮬레이션) - 데모 환경이므로 응답에 OTP 동봉
+app.post('/api/auth/send-otp', (req, res) => {
+    const { name } = req.body;
+    db.get(`SELECT email FROM users WHERE name = ?`, [name], (err, row) => {
+        if(!row || !row.email) return res.status(404).json({ error: "사용자 또는 이메일 정보가 없습니다." });
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiry = Date.now() + 10 * 60 * 1000; // 10분
+        db.run(`UPDATE users SET reset_otp = ?, reset_otp_expiry = ?, reset_otp_used = 0 WHERE name = ?`,
+            [otp, expiry, name], (e2) => {
+                if(e2) return res.status(500).json({ error: e2.message });
+                console.log(`[OTP 발송] ${name} (${row.email}) → ${otp}  (10분 유효)`);
+                // 실제 운영 환경에서는 이메일 발송 (SES, sendgrid 등). 데모 환경에서는 응답에 동봉.
+                res.json({ success: true, email: row.email, demo_otp: otp, expires_in_minutes: 10 });
+            });
+    });
+});
+
+// Step 3: OTP로 로그인 → 1회용 토큰 검증 + force_pwd_change 플래그 ON
+app.post('/api/auth/login-with-otp', (req, res) => {
+    const { name, otp } = req.body;
+    db.get(`SELECT * FROM users WHERE name = ?`, [name], (err, row) => {
+        if(!row) return res.status(404).json({ error: "ID를 찾을 수 없습니다." });
+        if(!row.reset_otp) return res.status(400).json({ error: "발급된 OTP가 없습니다. 먼저 OTP를 요청해 주세요." });
+        if(row.reset_otp_used) return res.status(400).json({ error: "이미 사용된 OTP입니다." });
+        if(Date.now() > Number(row.reset_otp_expiry || 0)) return res.status(400).json({ error: "OTP가 만료되었습니다. 다시 요청해 주세요." });
+        if(row.reset_otp !== String(otp).trim()) return res.status(401).json({ error: "OTP가 일치하지 않습니다." });
+        // OTP 사용 처리 + 비밀번호 강제 변경 플래그 설정
+        db.run(`UPDATE users SET reset_otp_used = 1, force_pwd_change = 1 WHERE name = ?`, [name], (e2) => {
+            row.force_pwd_change = 1;
+            res.json({ success: true, user: row, mustChangePassword: true });
+        });
+    });
+});
+
+// 🚀 Admin 전용: 모든 회원 정보 조회 (복구 목적)
+app.post('/api/admin/all-users', (req, res) => {
+    if(req.body.adminSecret !== 'mars') return res.status(403).json({ error: "Admin 인증 실패" });
+    db.all(`SELECT name, password, realname, bank, account, phone, email, shipping_address, balance,
+            CASE WHEN profilePic IS NOT NULL AND profilePic != '' THEN '있음' ELSE '없음' END as hasPic
+            FROM users ORDER BY name`, [], (err, rows) => {
+        if(err) return res.status(500).json({ error: err.message });
+        res.json(rows || []);
+    });
+});
+
+// 🚀 Admin 전용: 특정 회원 비밀번호 강제 재설정 (복구 목적)
+app.post('/api/admin/reset-password', (req, res) => {
+    if(req.body.adminSecret !== 'mars') return res.status(403).json({ error: "Admin 인증 실패" });
+    const { targetName, newPassword } = req.body;
+    if(!targetName || !newPassword) return res.status(400).json({ error: "필수 필드 누락" });
+    db.run(`UPDATE users SET password = ?, force_pwd_change = 0, reset_otp = NULL, reset_otp_expiry = NULL, reset_otp_used = 0 WHERE name = ?`,
+        [newPassword, targetName], function(err) {
+            if(err) return res.status(500).json({ error: err.message });
+            if(this.changes === 0) return res.status(404).json({ error: "회원을 찾을 수 없습니다." });
+            res.json({ success: true });
+        });
+});
 
 app.post('/api/friend/add', (req, res) => {
     const { userName, friendName } = req.body;
@@ -124,19 +217,34 @@ app.get('/api/friends/:userName', (req, res) => { db.all(`SELECT u.name, u.profi
 
 app.get('/api/chat/active-rooms/:name', (req, res) => {
     const name = req.params.name;
+    // 🚀 INSTR로 안전하게 참여자 매칭. roomId 형식 = room_msg_userA_userB (정렬됨)
+    // '_' + roomId + '_' 안에 '_userName_' 부분문자열이 있으면 참여 → 양쪽 모두 정확히 매칭
     const query = `
-        SELECT roomId, sender, message as lastMsg, date as lastDate,
-        (SELECT profilePic FROM users WHERE name = (CASE WHEN sender = ? THEN REPLACE(roomId, 'room_msg_', '') ELSE sender END)) as partnerPic
-        FROM chats 
-        WHERE id IN (SELECT MAX(id) FROM chats WHERE roomId LIKE ? OR roomId LIKE ? GROUP BY roomId)
+        SELECT roomId, sender, message, date, senderPic
+        FROM chats
+        WHERE id IN (SELECT MAX(id) FROM chats GROUP BY roomId)
+          AND INSTR('_' || roomId || '_', '_' || ? || '_') > 0
         ORDER BY id DESC`;
-    db.all(query, [name, `%_${name}`, `${name}_%`], (err, rows) => {
-        if(err) return res.status(500).json([]);
-        let result = (rows || []).map(r => {
-            let pName = r.roomId.replace('room_msg_', '').split('_').filter(n => n !== name)[0] || '이재준';
-            return { roomId: r.roomId, partnerName: pName, lastMsg: r.lastMsg, lastDate: r.lastDate, partnerPic: r.partnerPic };
-        });
-        res.json(result);
+    db.all(query, [name], (err, rows) => {
+        if(err) { console.error('active-rooms query error:', err); return res.json([]); }
+        if(!rows || rows.length === 0) return res.json([]);
+        // 각 방의 상대방 프로필 사진을 별도 조회 (정확한 partnerName으로)
+        const tasks = rows.map(r => new Promise(resolve => {
+            // roomId에서 'room_msg_' 제거 후 사용자명 분리. 본인이 아닌 쪽이 상대방.
+            const stripped = r.roomId.replace('room_msg_', '');
+            const parts = stripped.split('_');
+            const partnerName = parts.filter(n => n !== name)[0] || '이재준';
+            db.get(`SELECT profilePic FROM users WHERE name = ?`, [partnerName], (e, u) => {
+                resolve({
+                    roomId: r.roomId,
+                    partnerName,
+                    lastMsg: r.message,
+                    lastDate: r.date,
+                    partnerPic: u ? u.profilePic : null
+                });
+            });
+        }));
+        Promise.all(tasks).then(result => res.json(result)).catch(() => res.json([]));
     });
 });
 
