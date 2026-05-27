@@ -247,9 +247,12 @@
             <div id="form-login-only">
                 <div class="input-group"><label>접속 ID</label><input type="text" id="login-name" placeholder="ID를 입력하세요"></div>
                 <div class="input-group"><label>비밀번호</label><input type="password" id="login-password" placeholder="비밀번호를 입력하세요"></div>
-                <div style="margin-bottom:15px; display:flex; align-items:center; gap:8px;">
-                    <input type="checkbox" id="auto-login-check" style="width:16px; height:16px; cursor:pointer;" checked>
-                    <label for="auto-login-check" style="font-size:13px; color:var(--text-main); cursor:pointer;">자동 로그인 유지</label>
+                <div style="margin-bottom:15px; display:flex; align-items:center; gap:8px; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="auto-login-check" style="width:16px; height:16px; cursor:pointer;" checked>
+                        <label for="auto-login-check" style="font-size:13px; color:var(--text-main); cursor:pointer;">자동 로그인 유지</label>
+                    </div>
+                    <span style="font-size:13px; color:var(--primary); cursor:pointer; text-decoration:underline;" onclick="openPasswordRecovery()">비밀번호 찾기</span>
                 </div>
                 <button class="btn" style="width: 100%; padding:14px; font-size:15px;" onclick="verifyUser()">접속하기</button>
             </div>
@@ -260,7 +263,9 @@
                 </div>
                 <div class="input-group"><label>사용할 접속 ID</label><input type="text" id="reg-name" placeholder="ID 지정"></div>
                 <div class="input-group"><label>비밀번호</label><input type="password" id="reg-password" placeholder="비밀번호 지정"></div>
+                <div class="input-group"><label>이메일 <span style="color:var(--danger);">*</span> <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(비밀번호 분실 시 OTP 수신용)</span></label><input type="email" id="reg-email" placeholder="example@email.com"></div>
                 <div class="input-group"><label>휴대전화번호</label><input type="tel" id="reg-phone" placeholder="예: 010-1234-5678"></div>
+                <div class="input-group"><label>배송지 주소</label><input type="text" id="reg-shipping" placeholder="예: 서울시 강남구 테헤란로 123, 101호"></div>
                 <div style="height:1px; background:var(--border-color); margin:10px 0;"></div>
                 <div class="input-group"><label>예금주 실명</label><input type="text" id="reg-realname" placeholder="예: 홍길동"></div>
                 <div class="input-group"><label>정산 은행명</label><input type="text" id="reg-bank" placeholder="예: 우리은행"></div>
@@ -441,6 +446,10 @@
                             <tbody id="admin-action-tbody"></tbody>
                         </table>
                     </div>
+                    <div style="margin-top:12px; padding-top:12px; border-top:1px dashed var(--danger); display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="btn btn-danger" style="padding:10px 16px; font-size:13px;" onclick="loadAdminUsers(); openModal('admin-users-modal');">👥 전체 회원 정보 보기 (복구용)</button>
+                        <span style="font-size:11px; color:#7f1d1d; align-self:center;">⚠️ 회원 비밀번호 분실 시 복구를 위한 Admin 전용 도구입니다.</span>
+                    </div>
                 </div>
             </div>
 
@@ -583,12 +592,103 @@
             
             <div style="height:1px; background:var(--border-color); margin:5px 0;"></div>
             <div class="input-group"><label>예금주 실명</label><input type="text" id="modal-realname"></div>
+            <div class="input-group"><label>이메일 <span style="font-size:11px; color:var(--text-sub);">(비밀번호 분실 시 OTP 수신용)</span></label><input type="email" id="modal-email" placeholder="example@email.com"></div>
             <div class="input-group"><label>휴대전화번호</label><input type="tel" id="modal-phone" placeholder="010-0000-0000"></div>
+            <div class="input-group"><label>배송지 주소</label><input type="text" id="modal-shipping" placeholder="배송 받을 주소"></div>
             <div class="input-group"><label>정산 연동 은행</label><input type="text" id="modal-bank"></div>
             <div class="input-group"><label>정산 계좌번호</label><input type="text" id="modal-account"></div>
             <button class="btn btn-success" style="width:100%; padding:14px;" onclick="saveProfile()">설정 저장</button>
             
             <button class="btn btn-danger" id="admin-db-reset-btn" style="width:100%; padding:12px; display:none; margin-top:5px; background:#7f1d1d;" onclick="adminForceResetDB()">⚠️ 전체 데이터 초기화 (DB 초기화)</button>
+        </div>
+    </div>
+
+    <!-- 🚀 비밀번호 찾기 모달 (3단계 OTP 흐름) -->
+    <div class="modal-overlay" id="pwd-recovery-modal">
+        <div class="modal-content" style="max-width:400px;">
+            <div class="modal-header"><span>🔑 비밀번호 찾기</span><button class="close-btn-x" onclick="closeModal('pwd-recovery-modal')">&times;</button></div>
+
+            <!-- Step 1: ID 입력 -->
+            <div id="pwd-recovery-step-1">
+                <div style="background:#eff6ff; padding:10px 12px; border-radius:8px; font-size:12px; color:#1e40af; line-height:1.5; margin-bottom:12px;">
+                    1️⃣ 가입 시 등록한 ID를 입력하면 연결된 이메일 일부를 알려드립니다.
+                </div>
+                <div class="input-group"><label>접속 ID</label><input type="text" id="pwd-recovery-id" placeholder="ID 입력"></div>
+                <button class="btn" style="width:100%; padding:12px; font-size:14px;" onclick="recoveryStepFindEmail()">📧 이메일 확인</button>
+            </div>
+
+            <!-- Step 2: 이메일 확인 후 OTP 발송 -->
+            <div id="pwd-recovery-step-2" style="display:none;">
+                <div style="background:#fef3c7; padding:12px; border-radius:8px; font-size:13px; color:#78350f; line-height:1.5; margin-bottom:12px;">
+                    2️⃣ 다음 이메일로 1회용 비밀번호를 발송합니다:<br>
+                    <span id="pwd-recovery-masked-email" style="font-weight:bold; font-size:15px; color:#1e40af; word-break:break-all;"></span>
+                </div>
+                <button class="btn btn-success" style="width:100%; padding:12px; font-size:14px;" onclick="recoveryStepSendOTP()">✉️ 이 이메일로 OTP 발송</button>
+                <button class="btn btn-outline" style="width:100%; padding:8px; font-size:12px; margin-top:6px;" onclick="recoveryReset()">◀ ID 다시 입력</button>
+            </div>
+
+            <!-- Step 3: OTP 입력 -->
+            <div id="pwd-recovery-step-3" style="display:none;">
+                <div style="background:#dcfce7; padding:12px; border-radius:8px; font-size:13px; color:#166534; line-height:1.5; margin-bottom:12px;">
+                    3️⃣ OTP가 발송되었습니다. (유효시간 10분)<br>
+                    <span style="font-size:11px; color:#166534;">📧 이메일 수신함을 확인하세요.</span>
+                </div>
+                <!-- 데모 환경 안내 -->
+                <div id="pwd-recovery-demo-otp" style="background:#fee2e2; border:2px dashed #ef4444; padding:14px; border-radius:8px; margin-bottom:12px; text-align:center;">
+                    <div style="font-size:10px; color:#991b1b; font-weight:bold; margin-bottom:4px;">⚠️ [DEMO 환경] 실제 운영에서는 이메일로 발송됩니다</div>
+                    <div style="font-size:13px; color:#7f1d1d; margin-bottom:6px;">발급된 OTP</div>
+                    <div id="pwd-recovery-demo-otp-value" style="font-size:28px; font-weight:900; color:#991b1b; letter-spacing:6px; font-family:monospace;"></div>
+                </div>
+                <div class="input-group"><label>1회용 비밀번호 (6자리)</label><input type="text" id="pwd-recovery-otp" placeholder="OTP 입력" maxlength="6" style="font-size:18px; letter-spacing:6px; text-align:center; font-family:monospace;"></div>
+                <button class="btn" style="width:100%; padding:12px; font-size:14px; background:var(--gradient-btn);" onclick="recoveryStepLoginWithOTP()">🔓 OTP로 로그인</button>
+                <button class="btn btn-outline" style="width:100%; padding:8px; font-size:12px; margin-top:6px;" onclick="recoveryStepSendOTP()">🔄 OTP 다시 발송</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🚀 비밀번호 강제 변경 모달 (OTP 로그인 후) -->
+    <div class="modal-overlay" id="force-pwd-change-modal">
+        <div class="modal-content" style="max-width:380px;">
+            <div class="modal-header"><span>🔐 비밀번호 변경 필수</span></div>
+            <div style="background:#fef3c7; padding:12px; border-radius:8px; font-size:13px; color:#78350f; line-height:1.5; margin-bottom:12px;">
+                ⚠️ 1회용 비밀번호로 접속하셨습니다. 보안을 위해 새 비밀번호를 설정해 주세요. 설정 완료 후 정상 접속됩니다.
+            </div>
+            <div class="input-group"><label>새 비밀번호 (4자 이상)</label><input type="password" id="force-pwd-new1" placeholder="새 비밀번호"></div>
+            <div class="input-group"><label>새 비밀번호 확인</label><input type="password" id="force-pwd-new2" placeholder="동일하게 한 번 더"></div>
+            <button class="btn btn-success" style="width:100%; padding:12px; font-size:14px;" onclick="submitForcePwdChange()">변경 완료 후 접속</button>
+        </div>
+    </div>
+
+    <!-- 🚀 Admin 전용: 전체 회원 정보 모달 (복구 목적) -->
+    <div class="modal-overlay" id="admin-users-modal">
+        <div class="modal-content" style="max-width:95vw; width:1100px; max-height:90vh; display:flex; flex-direction:column;">
+            <div class="modal-header"><span>👥 전체 회원 정보 (Admin · 복구 목적)</span><button class="close-btn-x" onclick="closeModal('admin-users-modal')">&times;</button></div>
+            <div style="background:#fee2e2; padding:8px 12px; border-radius:6px; font-size:11px; color:#991b1b; margin-bottom:8px;">
+                ⚠️ 민감 정보입니다. 외부 유출 금지. 비밀번호 분실/복구 목적으로만 사용하세요.
+            </div>
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <input type="text" id="admin-users-search" placeholder="🔍 ID / 실명 / 이메일 / 전화 검색..." style="flex:1; padding:8px 12px; border-radius:6px; border:1px solid var(--border-color);" oninput="filterAdminUsersTable()">
+                <button class="btn btn-outline" style="padding:8px 12px; font-size:12px;" onclick="loadAdminUsers()">🔄 새로고침</button>
+            </div>
+            <div style="flex:1; overflow:auto; border:1px solid var(--border-color); border-radius:8px;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px;" id="admin-users-table">
+                    <thead style="background:#f8fafc; position:sticky; top:0;">
+                        <tr>
+                            <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">ID</th>
+                            <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">비밀번호</th>
+                            <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">실명</th>
+                            <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">이메일</th>
+                            <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">전화</th>
+                            <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">배송지</th>
+                            <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">은행/계좌</th>
+                            <th style="padding:8px; text-align:right; border-bottom:1px solid var(--border-color);">잔액</th>
+                            <th style="padding:8px; text-align:center; border-bottom:1px solid var(--border-color);">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-users-tbody"></tbody>
+                </table>
+            </div>
+            <div style="font-size:11px; color:var(--text-sub); margin-top:8px;" id="admin-users-count">총 0명</div>
         </div>
     </div>
 
@@ -774,6 +874,12 @@
                 const data = await res.json();
                 if(data.exists) { 
                     if(res.ok) {
+                        // 🚀 비밀번호 강제 변경 플래그 확인
+                        if(data.mustChangePassword) {
+                            window.pendingLoginUser = data.user;
+                            openModal('force-pwd-change-modal');
+                            return;
+                        }
                         if(document.getElementById('auto-login-check').checked) localStorage.setItem('earth_auto_login', JSON.stringify(data.user));
                         loginSuccess(data.user); 
                     } else showToast(data.error); 
@@ -785,9 +891,13 @@
             const name = document.getElementById('reg-name').value.trim(); const password = document.getElementById('reg-password').value.trim();
             const realname = document.getElementById('reg-realname').value.trim(); const bank = document.getElementById('reg-bank').value.trim(); const account = document.getElementById('reg-account').value.trim();
             const phone = document.getElementById('reg-phone').value.trim();
-            if(!name || !password || !realname || !bank || !account) return showToast("모든 정보를 빠짐없이 기입해 주세요.");
+            const email = document.getElementById('reg-email').value.trim();
+            const shipping_address = document.getElementById('reg-shipping').value.trim();
+            if(!name || !password || !realname || !bank || !account) return showToast("ID/비밀번호/실명/은행/계좌는 필수입니다.");
+            if(!email) return showToast("이메일을 입력해 주세요. (비밀번호 분실 시 OTP 수신용)");
+            if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast("이메일 형식이 올바르지 않습니다.");
             try {
-                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone }) });
+                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone, email, shipping_address }) });
                 const data = await res.json(); if(res.ok) loginSuccess(data); else showToast(data.error);
             } catch(e) { showToast("서버 통신 오류"); }
         }
@@ -875,6 +985,8 @@
             if(!currentUser) return;
             document.getElementById('modal-name').value = currentUser.name; document.getElementById('modal-realname').value = currentUser.realname || ''; document.getElementById('modal-password').value = currentUser.password || ''; document.getElementById('modal-bank').value = currentUser.bank || ''; document.getElementById('modal-account').value = currentUser.account || '';
             const phoneEl = document.getElementById('modal-phone'); if(phoneEl) phoneEl.value = currentUser.phone || '';
+            const emailEl = document.getElementById('modal-email'); if(emailEl) emailEl.value = currentUser.email || '';
+            const shipEl = document.getElementById('modal-shipping'); if(shipEl) shipEl.value = currentUser.shipping_address || '';
             document.getElementById('modal-profile-pic').src = currentUser.profilePic || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>";
             tempProfilePicBase64 = currentUser.profilePic; openModal('profile-modal');
         }
@@ -883,11 +995,14 @@
         async function saveProfile() {
             const password = document.getElementById('modal-password').value.trim(); const realname = document.getElementById('modal-realname').value.trim(); const bank = document.getElementById('modal-bank').value.trim(); const account = document.getElementById('modal-account').value.trim();
             const phone = (document.getElementById('modal-phone') && document.getElementById('modal-phone').value.trim()) || '';
-            if(!password || !realname || !bank || !account) return showToast("모든 정보 기입 필수");
+            const email = (document.getElementById('modal-email') && document.getElementById('modal-email').value.trim()) || '';
+            const shipping_address = (document.getElementById('modal-shipping') && document.getElementById('modal-shipping').value.trim()) || '';
+            if(!password || !realname || !bank || !account) return showToast("ID/비밀번호/실명/은행/계좌는 필수입니다.");
+            if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast("이메일 형식이 올바르지 않습니다.");
             try {
-                const res = await fetch(`${API_URL}/api/user/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: currentUser.name, password, realname, bank, account, phone, profilePic: tempProfilePicBase64 }) });
+                const res = await fetch(`${API_URL}/api/user/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: currentUser.name, password, realname, bank, account, phone, email, shipping_address, profilePic: tempProfilePicBase64 }) });
                 if(res.ok) {
-                    currentUser.password = password; currentUser.realname = realname; currentUser.bank = bank; currentUser.account = account; currentUser.phone = phone; currentUser.profilePic = tempProfilePicBase64;
+                    currentUser.password = password; currentUser.realname = realname; currentUser.bank = bank; currentUser.account = account; currentUser.phone = phone; currentUser.email = email; currentUser.shipping_address = shipping_address; currentUser.profilePic = tempProfilePicBase64;
                     if(tempProfilePicBase64) document.getElementById('my-profile-pic').src = tempProfilePicBase64;
                     const str = `[${bank}] ${account} (${realname})`; const modalAccEl = document.getElementById('modal-withdraw-account-info'); if(modalAccEl) modalAccEl.innerText = str;
                     
@@ -910,6 +1025,162 @@
         async function adminForceResetDB() {
             if(!isAdmin) return; if(!confirm("⚠️ [경고] 시스템 전체 DB 원장을 강제로 초기화하십니까? 모든 데이터가 소멸됩니다.")) return;
             try { const res = await fetch(`${API_URL}/api/admin/db-reset`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ adminSecret: 'mars' }) }); if(res.ok) { alert("초기화 완료. 브라우저를 재시작합니다."); location.reload(); } } catch(e){}
+        }
+
+        // 🚀 ============ 비밀번호 찾기 (3단계 OTP 흐름) ============
+        window.recoveryState = { name: null, email: null };
+
+        window.openPasswordRecovery = function() {
+            // 초기화
+            recoveryReset();
+            const loginName = document.getElementById('login-name').value.trim();
+            if(loginName) document.getElementById('pwd-recovery-id').value = loginName;
+            openModal('pwd-recovery-modal');
+        }
+
+        window.recoveryReset = function() {
+            window.recoveryState = { name: null, email: null };
+            document.getElementById('pwd-recovery-step-1').style.display = 'block';
+            document.getElementById('pwd-recovery-step-2').style.display = 'none';
+            document.getElementById('pwd-recovery-step-3').style.display = 'none';
+            document.getElementById('pwd-recovery-otp').value = '';
+        }
+
+        // Step 1: 이메일 조회
+        window.recoveryStepFindEmail = async function() {
+            const name = document.getElementById('pwd-recovery-id').value.trim();
+            if(!name) return showToast("ID를 입력하세요.");
+            try {
+                const res = await fetch(`${API_URL}/api/auth/find-email`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error);
+                window.recoveryState.name = name;
+                window.recoveryState.email = data.maskedEmail;
+                document.getElementById('pwd-recovery-masked-email').innerText = data.maskedEmail;
+                document.getElementById('pwd-recovery-step-1').style.display = 'none';
+                document.getElementById('pwd-recovery-step-2').style.display = 'block';
+            } catch(e){ showToast("네트워크 오류"); }
+        }
+
+        // Step 2: OTP 발송
+        window.recoveryStepSendOTP = async function() {
+            const name = window.recoveryState.name;
+            if(!name) return showToast("ID 확인 단계를 먼저 진행하세요.");
+            try {
+                const res = await fetch(`${API_URL}/api/auth/send-otp`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error);
+                document.getElementById('pwd-recovery-step-2').style.display = 'none';
+                document.getElementById('pwd-recovery-step-3').style.display = 'block';
+                document.getElementById('pwd-recovery-demo-otp-value').innerText = data.demo_otp;
+                showToast(`✉️ OTP가 ${data.email}로 발송되었습니다.`);
+            } catch(e){ showToast("네트워크 오류"); }
+        }
+
+        // Step 3: OTP로 로그인
+        window.recoveryStepLoginWithOTP = async function() {
+            const name = window.recoveryState.name;
+            const otp = document.getElementById('pwd-recovery-otp').value.trim();
+            if(!otp || otp.length !== 6) return showToast("6자리 OTP를 입력하세요.");
+            try {
+                const res = await fetch(`${API_URL}/api/auth/login-with-otp`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name, otp }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error);
+                closeModal('pwd-recovery-modal');
+                // 비밀번호 강제 변경 모달로 전환
+                window.pendingLoginUser = data.user;
+                openModal('force-pwd-change-modal');
+            } catch(e){ showToast("네트워크 오류"); }
+        }
+
+        // 🚀 비밀번호 강제 변경 제출
+        window.submitForcePwdChange = async function() {
+            const p1 = document.getElementById('force-pwd-new1').value.trim();
+            const p2 = document.getElementById('force-pwd-new2').value.trim();
+            if(!p1 || p1.length < 4) return showToast("새 비밀번호는 4자 이상이어야 합니다.");
+            if(p1 !== p2) return showToast("두 비밀번호가 일치하지 않습니다.");
+            if(!window.pendingLoginUser) return showToast("세션 오류. 다시 로그인해 주세요.");
+            try {
+                const res = await fetch(`${API_URL}/api/user/change-password`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: window.pendingLoginUser.name, newPassword: p1 }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error);
+                // 새 비밀번호로 갱신 후 로그인 진행
+                window.pendingLoginUser.password = p1;
+                window.pendingLoginUser.force_pwd_change = 0;
+                closeModal('force-pwd-change-modal');
+                document.getElementById('force-pwd-new1').value = '';
+                document.getElementById('force-pwd-new2').value = '';
+                if(document.getElementById('auto-login-check') && document.getElementById('auto-login-check').checked) {
+                    localStorage.setItem('earth_auto_login', JSON.stringify(window.pendingLoginUser));
+                }
+                showToast("비밀번호 변경 완료. 자동 접속합니다.");
+                loginSuccess(window.pendingLoginUser);
+                window.pendingLoginUser = null;
+            } catch(e){ showToast("네트워크 오류"); }
+        }
+
+        // 🚀 ============ Admin 전체 회원 정보 ============
+        window.adminUsersData = [];
+
+        window.loadAdminUsers = async function() {
+            if(!isAdmin) return showToast("Admin 권한이 필요합니다.");
+            try {
+                const res = await fetch(`${API_URL}/api/admin/all-users`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ adminSecret: 'mars' }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error || "조회 실패");
+                window.adminUsersData = data;
+                renderAdminUsersTable(data);
+                document.getElementById('admin-users-count').innerText = `총 ${data.length}명`;
+            } catch(e){ showToast("네트워크 오류"); console.error(e); }
+        }
+
+        function renderAdminUsersTable(users) {
+            const tbody = document.getElementById('admin-users-tbody');
+            if(!users || users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:var(--text-sub);">조회된 회원이 없습니다.</td></tr>';
+                return;
+            }
+            let h = '';
+            users.forEach(u => {
+                const esc = s => (s || '').toString().replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                h += `<tr style="border-bottom:1px solid var(--border-color);">
+                    <td style="padding:6px 8px; font-weight:bold; color:var(--primary);">${esc(u.name)}</td>
+                    <td style="padding:6px 8px; font-family:monospace; color:var(--danger);">${esc(u.password)}</td>
+                    <td style="padding:6px 8px;">${esc(u.realname)}</td>
+                    <td style="padding:6px 8px; font-size:11px;">${esc(u.email) || '<span style="color:#cbd5e1;">미등록</span>'}</td>
+                    <td style="padding:6px 8px; font-size:11px;">${esc(u.phone) || '<span style="color:#cbd5e1;">-</span>'}</td>
+                    <td style="padding:6px 8px; font-size:11px; max-width:200px; word-break:break-all;">${esc(u.shipping_address) || '<span style="color:#cbd5e1;">-</span>'}</td>
+                    <td style="padding:6px 8px; font-size:11px;">${esc(u.bank)} ${esc(u.account)}</td>
+                    <td style="padding:6px 8px; text-align:right; font-weight:bold; color:var(--success);">${Number(u.balance||0).toLocaleString()}원</td>
+                    <td style="padding:6px 8px; text-align:center;"><button class="btn btn-outline" style="padding:4px 8px; font-size:10px;" onclick="adminResetUserPassword('${esc(u.name).replace(/'/g, "\\'")}')">🔓 비밀번호 재설정</button></td>
+                </tr>`;
+            });
+            tbody.innerHTML = h;
+        }
+
+        window.filterAdminUsersTable = function() {
+            const q = (document.getElementById('admin-users-search').value || '').toLowerCase().trim();
+            if(!q) { renderAdminUsersTable(window.adminUsersData); document.getElementById('admin-users-count').innerText = `총 ${window.adminUsersData.length}명`; return; }
+            const filtered = window.adminUsersData.filter(u =>
+                (u.name && u.name.toLowerCase().includes(q)) ||
+                (u.realname && u.realname.toLowerCase().includes(q)) ||
+                (u.email && u.email.toLowerCase().includes(q)) ||
+                (u.phone && u.phone.toLowerCase().includes(q))
+            );
+            renderAdminUsersTable(filtered);
+            document.getElementById('admin-users-count').innerText = `검색 결과 ${filtered.length}명 / 전체 ${window.adminUsersData.length}명`;
+        }
+
+        window.adminResetUserPassword = async function(targetName) {
+            const newPwd = prompt(`[${targetName}] 회원의 새 비밀번호를 입력하세요. (4자 이상)\n(설정 후 본인이 직접 변경하도록 안내해 주세요.)`, '');
+            if(!newPwd || newPwd.length < 4) return showToast("4자 이상 입력하세요.");
+            try {
+                const res = await fetch(`${API_URL}/api/admin/reset-password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminSecret: 'mars', targetName, newPassword: newPwd }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error);
+                showToast(`✅ ${targetName}의 비밀번호가 재설정되었습니다.`);
+                loadAdminUsers();
+            } catch(e){ showToast("네트워크 오류"); }
         }
 
         function switchTab(id) {
