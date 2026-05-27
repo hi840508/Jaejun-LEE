@@ -44,12 +44,24 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS favorite_stores (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, targetStore TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS refund_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, txId INTEGER, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, status TEXT DEFAULT 'pending', reason TEXT, request_date TEXT, decision_date TEXT)`);
 
-        // 🚀 상품 주문 제출 (구매자가 폼 작성/파일 첨부 → 판매자에게 채팅으로 전달)
-        db.run(`CREATE TABLE IF NOT EXISTS product_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, productId TEXT, buyer TEXT, seller TEXT, txId INTEGER, bundle_html TEXT, memo TEXT, form_data TEXT, created_at TEXT)`);
+        // 🚀 [v6] 상품 주문 양식 + 보류 결제 (판매자 승인 필요)
+        // status: 'pending' (작성 완료, 판매자 승인 대기) | 'approved' (결제 완료) | 'rejected' (거절) | 'cancelled' (구매자 취소)
+        db.run(`CREATE TABLE IF NOT EXISTS product_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, productId TEXT, buyer TEXT, seller TEXT, txId INTEGER, bundle_html TEXT, memo TEXT, form_data TEXT, pdf_filled_data TEXT, buyer_info TEXT, status TEXT DEFAULT 'approved', amount INTEGER DEFAULT 0, created_at TEXT)`);
+
+        // 🚀 [v6] 구매로 자동 생성된 대화방 메타 (브랜드명 + 최신 상품명 + 양측 표시 동기화)
+        // type: 'order' (구매 후 자동 생성, 한쪽이 leave 시 양측 종료) | 'normal' (수동 친구 추가)
+        db.run(`CREATE TABLE IF NOT EXISTS chat_rooms (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT UNIQUE, type TEXT DEFAULT 'normal', buyer TEXT, seller TEXT, storeId TEXT, storeName TEXT, lastProductId TEXT, lastProductName TEXT, ended INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)`);
 
         // 🚀 기존 DB 호환을 위한 마이그레이션 (컬럼 추가; 이미 있으면 에러 무시)
         db.run(`ALTER TABLE stores ADD COLUMN background TEXT`, () => {});
         db.run(`ALTER TABLE stores ADD COLUMN description TEXT`, () => {});
+        // 🚀 [v6] 상점 카테고리 (브랜드 정체성)
+        db.run(`ALTER TABLE stores ADD COLUMN category TEXT DEFAULT 'general'`, () => {});
+        // 🚀 [v6] order_orders 컬럼 추가 (구버전 DB 호환)
+        db.run(`ALTER TABLE product_orders ADD COLUMN pdf_filled_data TEXT`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN buyer_info TEXT`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN status TEXT DEFAULT 'approved'`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN amount INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE transactions ADD COLUMN refunded INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN email TEXT`, () => {});
@@ -71,7 +83,7 @@ initTables();
 app.post('/api/admin/db-reset', (req, res) => {
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
     db.serialize(() => {
-        const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores', 'refund_requests', 'product_orders'];
+        const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores', 'refund_requests', 'product_orders', 'chat_rooms'];
         tables.forEach(t => db.run(`DROP TABLE IF EXISTS ${t}`));
         initTables(); res.json({ success: true });
     });
@@ -291,13 +303,14 @@ app.post('/api/transfer', (req, res) => {
 app.post('/api/store/create', (req, res) => {
     db.get(`SELECT id FROM stores WHERE name = ?`, [req.body.name], (err, row) => {
         if (row) return res.status(400).json({ error: "이미 존재하는 명칭의 상점입니다." });
-        db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description) VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-            ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || ''],
+        const category = req.body.category || 'general';
+        db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description, category) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
+            ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || '', category],
             () => res.json({ success: true }));
     });
 });
 
-// 🚀 상점 배경/소개 업데이트
+// 🚀 상점 배경/소개/카테고리 업데이트
 app.post('/api/store/update', (req, res) => {
     db.get(`SELECT owner FROM stores WHERE id = ?`, [req.body.id], (err, row) => {
         if(!row) return res.status(404).json({ error: "상점이 존재하지 않습니다." });
@@ -306,6 +319,7 @@ app.post('/api/store/update', (req, res) => {
         if(req.body.background !== undefined) { fields.push('background = ?'); values.push(req.body.background); }
         if(req.body.description !== undefined) { fields.push('description = ?'); values.push(req.body.description); }
         if(req.body.logo !== undefined && req.body.logo) { fields.push('logo = ?'); values.push(req.body.logo); }
+        if(req.body.category !== undefined) { fields.push('category = ?'); values.push(req.body.category); }
         if(fields.length === 0) return res.json({ success: true });
         values.push(req.body.id);
         db.run(`UPDATE stores SET ${fields.join(', ')} WHERE id = ?`, values, () => res.json({ success: true }));
@@ -374,18 +388,149 @@ app.post('/api/products/encrypt-build', (req, res) => {
 });
 
 // 🚀 구매 확정 시 작성된 폼 데이터 + 첨부 파일을 판매자에게 채팅으로 전달
+// 🚀 [v6] 주문서 제출 (구매 확정 X → 'pending' 상태로 판매자 승인 대기)
 app.post('/api/product/submit-order', (req, res) => {
-    const { productId, buyer, seller, txId, bundle_html, memo, form_data } = req.body;
+    const { productId, buyer, seller, bundle_html, memo, form_data, pdf_filled_data, buyer_info, amount, status } = req.body;
     const date = new Date().toLocaleString('ko-KR');
-    db.run(`INSERT INTO product_orders (productId, buyer, seller, txId, bundle_html, memo, form_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [productId, buyer, seller, txId || null, bundle_html || '', memo || '', JSON.stringify(form_data || {}), date],
+    const ordStatus = status || 'pending'; // 기본은 pending
+    db.run(`INSERT INTO product_orders (productId, buyer, seller, bundle_html, memo, form_data, pdf_filled_data, buyer_info, status, amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [productId, buyer, seller, bundle_html || '', memo || '', JSON.stringify(form_data || {}), pdf_filled_data || '', JSON.stringify(buyer_info || {}), ordStatus, amount || 0, date],
         function(err) {
             if(err) return res.status(500).json({ error: err.message });
             res.json({ success: true, orderId: this.lastID });
         });
 });
+
+// 🚀 [v6] 판매자가 주문 승인 → 결제 처리 + status='approved'
+app.post('/api/order/approve', (req, res) => {
+    const { orderId, seller } = req.body;
+    db.get(`SELECT * FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+        if(err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        if(ord.seller !== seller) return res.status(403).json({ error: '본인에게 온 주문만 승인할 수 있습니다.' });
+        if(ord.status === 'approved') return res.json({ success: true, message: '이미 승인됨', txId: ord.txId });
+        if(ord.status === 'rejected' || ord.status === 'cancelled') return res.status(400).json({ error: '취소/거절된 주문은 승인 불가' });
+
+        const amount = ord.amount || 0;
+        // 잔액 확인 + 이동
+        db.get(`SELECT balance FROM users WHERE name = ?`, [ord.buyer], (e2, bRow) => {
+            if(!bRow || bRow.balance < amount) return res.status(400).json({ error: '구매자 잔액 부족' });
+            db.serialize(() => {
+                db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, ord.buyer]);
+                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, ord.seller]);
+                const productName = ord.productId; // 정확한 이름은 별도 조회
+                db.get(`SELECT name FROM products WHERE id = ?`, [ord.productId], (e3, pRow) => {
+                    const pName = (pRow && pRow.name) || productName;
+                    const date = new Date().toLocaleString('ko-KR');
+                    db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, 'original', ?, ?)`,
+                        [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date],
+                        function() {
+                            const txId = this.lastID;
+                            db.run(`UPDATE product_orders SET status = 'approved', txId = ? WHERE id = ?`, [txId, orderId]);
+                            res.json({ success: true, txId, amount });
+                        });
+                });
+            });
+        });
+    });
+});
+
+// 🚀 [v6] 판매자가 주문 거절
+app.post('/api/order/reject', (req, res) => {
+    const { orderId, seller, reason } = req.body;
+    db.get(`SELECT seller FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+        if(err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        if(ord.seller !== seller) return res.status(403).json({ error: '본인에게 온 주문만 거절할 수 있습니다.' });
+        db.run(`UPDATE product_orders SET status = 'rejected', memo = COALESCE(memo, '') || ? WHERE id = ?`, ['\n[거절 사유] ' + (reason||''), orderId], () => res.json({ success: true }));
+    });
+});
+
+// 🚀 [v6] 구매자가 자신의 pending 주문 취소
+app.post('/api/order/cancel', (req, res) => {
+    const { orderId, buyer } = req.body;
+    db.get(`SELECT buyer, status FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+        if(err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        if(ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 취소 가능' });
+        if(ord.status !== 'pending') return res.status(400).json({ error: 'pending 상태만 취소 가능' });
+        db.run(`UPDATE product_orders SET status = 'cancelled' WHERE id = ?`, [orderId], () => res.json({ success: true }));
+    });
+});
+
+// 🚀 [v6] 단일 주문 조회 (orderId 기준; 채팅 카드 클릭 시 사용)
+app.get('/api/order/:orderId', (req, res) => {
+    db.get(`SELECT * FROM product_orders WHERE id = ?`, [req.params.orderId], (err, row) => {
+        if(err || !row) return res.status(404).json({ error: '주문 없음' });
+        res.json(row);
+    });
+});
+
 app.get('/api/product/orders/:seller', (req, res) => {
     db.all(`SELECT * FROM product_orders WHERE seller = ? ORDER BY id DESC LIMIT 100`, [req.params.seller], (err, rows) => res.json(rows || []));
+});
+
+// 🚀 [v6] 채팅방 메타 upsert (주문 채팅방 생성/업데이트)
+app.post('/api/chat-room/upsert', (req, res) => {
+    const { roomId, type, buyer, seller, storeId, storeName, lastProductId, lastProductName } = req.body;
+    const now = new Date().toISOString();
+    db.get(`SELECT id FROM chat_rooms WHERE roomId = ?`, [roomId], (err, row) => {
+        if(row) {
+            // 업데이트
+            db.run(`UPDATE chat_rooms SET storeName = COALESCE(?, storeName), lastProductId = ?, lastProductName = ?, updated_at = ?, ended = 0 WHERE roomId = ?`,
+                [storeName, lastProductId || null, lastProductName || null, now, roomId],
+                () => res.json({ success: true, updated: true }));
+        } else {
+            db.run(`INSERT INTO chat_rooms (roomId, type, buyer, seller, storeId, storeName, lastProductId, lastProductName, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [roomId, type || 'order', buyer, seller, storeId || null, storeName || null, lastProductId || null, lastProductName || null, now, now],
+                () => res.json({ success: true, created: true }));
+        }
+    });
+});
+
+// 🚀 [v6] 사용자의 채팅방 메타 일괄 조회 (양측 동기화 정보)
+app.get('/api/chat-rooms/:user', (req, res) => {
+    const user = req.params.user;
+    db.all(`SELECT * FROM chat_rooms WHERE (buyer = ? OR seller = ?) AND ended = 0 ORDER BY updated_at DESC`, [user, user], (err, rows) => {
+        res.json(rows || []);
+    });
+});
+
+// 🚀 [v6] 채팅방 나가기 — order 타입은 양측 동시 종료
+app.post('/api/chat-room/leave', (req, res) => {
+    const { roomId, user } = req.body;
+    db.get(`SELECT * FROM chat_rooms WHERE roomId = ?`, [roomId], (err, row) => {
+        if(!row) {
+            // 메타 없는 일반 친구 채팅 — 그냥 friends 삭제
+            return res.json({ success: true, deleted: 'friend-only' });
+        }
+        if(row.type === 'order') {
+            // 주문 대화방: 한쪽이 나가면 양측 종료
+            db.serialize(() => {
+                db.run(`UPDATE chat_rooms SET ended = 1, updated_at = ? WHERE roomId = ?`, [new Date().toISOString(), roomId]);
+                // 양측 friends에서 서로 제거
+                db.run(`DELETE FROM friends WHERE (userName = ? AND friendName = ?) OR (userName = ? AND friendName = ?)`,
+                    [row.buyer, row.seller, row.seller, row.buyer], () => {
+                    res.json({ success: true, type: 'order', endedBothSides: true });
+                });
+            });
+        } else {
+            // 일반 친구 채팅: 본인 쪽만 friends 삭제
+            const other = row.buyer === user ? row.seller : row.buyer;
+            db.run(`DELETE FROM friends WHERE userName = ? AND friendName = ?`, [user, other], () => {
+                res.json({ success: true, type: 'normal' });
+            });
+        }
+    });
+});
+
+// 🚀 [v6] 통합 사용자/상점 검색 (ID/실명/전화번호/브랜드명)
+app.get('/api/search/users-and-stores', (req, res) => {
+    const q = (req.query.q || '').toLowerCase().trim();
+    if(!q) return res.json({ users: [], stores: [] });
+    const like = `%${q}%`;
+    db.all(`SELECT name, realname, phone, profilePic FROM users WHERE LOWER(name) LIKE ? OR LOWER(realname) LIKE ? OR phone LIKE ? LIMIT 20`, [like, like, like], (err, users) => {
+        db.all(`SELECT id, name, owner, logo, category, description FROM stores WHERE status = 'active' AND LOWER(name) LIKE ? LIMIT 20`, [like], (err2, stores) => {
+            res.json({ users: users || [], stores: stores || [] });
+        });
+    });
 });
 
 app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
@@ -487,6 +632,58 @@ app.post('/api/favorite/toggle', (req, res) => {
 });
 app.get('/api/favorites/:userName', (req, res) => { db.all(`SELECT targetStore FROM favorite_stores WHERE userName = ?`, [req.params.userName], (err, rows) => res.json(rows ? rows.map(r => r.targetStore) : [])); });
 app.get('/api/chat/:roomId', (req, res) => { db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => res.json(rows || [])); });
+
+// 🚀 [v5] 내 구매 목록 (구매자 관점, 상품 메타 + 환불 상태 JOIN)
+app.get('/api/purchases/:buyer', async (req, res) => {
+    const buyer = req.params.buyer;
+    try {
+        // 자산 거래만 (환불/보너스/수표 발행 등 제외)
+        const txs = await new Promise(r => db.all(
+            `SELECT t.id as txId, t.buyer, t.seller, t.productId, t.productName, t.amount, t.purchaseType, t.date, t.rawDate, t.refunded,
+                    p.thumbnail, p.is_package, p.package_data, p.description as product_description,
+                    p.encryptedPayload, p.stream_time, p.stream_unit, p.price_stream, p.price_original, p.storeId,
+                    (SELECT status FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refundStatus,
+                    (SELECT id FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refundRequestId
+             FROM transactions t
+             LEFT JOIN products p ON t.productId = p.id
+             WHERE t.buyer = ?
+               AND t.purchaseType IS NOT NULL
+               AND t.purchaseType != 'refund'
+               AND t.purchaseType != 'signup_bonus'
+               AND t.productId IS NOT NULL
+             ORDER BY t.id DESC`,
+            [buyer],
+            (e, rows) => r(rows || [])
+        ));
+
+        // 각 구매에 연관된 주문서(product_orders) 조회
+        for(let t of txs) {
+            const order = await new Promise(r => db.get(
+                `SELECT id, bundle_html, memo, form_data, created_at FROM product_orders WHERE buyer = ? AND productId = ? ORDER BY id DESC LIMIT 1`,
+                [buyer, t.productId],
+                (e, row) => r(row || null)
+            ));
+            if(order) {
+                t.orderId = order.id;
+                t.orderMemo = order.memo;
+                t.orderFormData = order.form_data;
+                t.orderCreatedAt = order.created_at;
+                t.hasBundle = !!order.bundle_html;
+            }
+        }
+        res.json(txs);
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 🚀 [v5] 특정 주문의 bundle_html 만 가져오기 (재다운로드용)
+app.get('/api/order/bundle/:orderId', (req, res) => {
+    db.get(`SELECT bundle_html, productId, buyer, seller FROM product_orders WHERE id = ?`, [req.params.orderId], (err, row) => {
+        if(err || !row) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        res.json(row);
+    });
+});
 
 app.get('/api/transactions/:name', async (req, res) => {
     const name = req.params.name;
