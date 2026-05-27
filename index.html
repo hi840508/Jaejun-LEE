@@ -10,40 +10,177 @@
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
     <style>
-        /* 🌍 Earth Light Theme - 당근마켓 벤치마킹 및 깔끔한 UI */
-        :root { --bg-main: #f1f5f9; --panel-bg: #ffffff; --text-main: #0f172a; --text-sub: #64748b; --primary: #3b82f6; --primary-hover: #2563eb; --border-color: #cbd5e1; --success: #10b981; --danger: #ef4444; --warning: #f59e0b; --gradient-btn: linear-gradient(135deg, #60a5fa 0%, #2563eb 100%); }
+        /* 🌍 Earth v6 — YouTube 스타일 시원시원한 디자인 + 데스크톱/모바일 분리 */
+        :root { 
+            --bg-main: #f9f9f9; 
+            --panel-bg: #ffffff; 
+            --text-main: #0f0f0f; 
+            --text-sub: #606060; 
+            --primary: #2563eb; 
+            --primary-hover: #1d4ed8; 
+            --border-color: #e5e5e5; 
+            --success: #10b981; 
+            --danger: #cc0000; 
+            --warning: #f59e0b; 
+            --gradient-btn: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-main); color: var(--text-main); padding: 15px; display: flex; flex-direction: column; align-items: center; -webkit-overflow-scrolling: touch; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif; 
+            background: var(--bg-main); 
+            color: var(--text-main); 
+            -webkit-overflow-scrolling: touch; 
+            min-height: 100vh;
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* 🚀 [v6] 데스크톱 와이드 레이아웃 (YouTube 처럼 너비 활용) */
+        body { padding: 0; display: block; }
+        .container { 
+            width: 100%; 
+            max-width: 1400px;  /* 데스크톱 시원시원 */
+            margin: 0 auto;
+            padding: 16px 24px 60px;
+            display: flex; 
+            flex-direction: column; 
+            gap: 18px; 
+        }
         
-        .container { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 15px; }
-        .panel { background: var(--panel-bg); padding: 20px; border-radius: 16px; border: 1px solid var(--border-color); box-shadow: 0 4px 10px rgba(0,0,0,0.03); margin-bottom: 10px; }
+        /* 🚀 [v6] 모바일에서는 컴팩트 */
+        @media (max-width: 768px) {
+            .container { max-width: 100%; padding: 12px 12px 80px; gap: 12px; }
+            body { padding: 0; }
+        }
+
+        .panel { 
+            background: var(--panel-bg); 
+            padding: 20px; 
+            border-radius: var(--radius-lg); 
+            border: 1px solid var(--border-color); 
+            box-shadow: var(--shadow-sm); 
+        }
+        @media (max-width: 768px) {
+            .panel { padding: 14px; border-radius: var(--radius-md); }
+        }
         .input-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
         .input-group label { font-size: 13px; font-weight: 600; color: var(--text-sub); }
-        .input-group input, .input-group textarea, .input-group select { padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: #f8fafc; font-size: 14px; color: var(--text-main); outline: none; transition: 0.2s; }
-        .input-group input:focus { border-color: var(--primary); background: #fff; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        .input-group input, .input-group textarea, .input-group select { padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: #ffffff; font-size: 14px; color: var(--text-main); outline: none; transition: 0.2s; font-family: inherit; }
+        .input-group input:focus, .input-group textarea:focus, .input-group select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12); }
         
-        .btn { background: var(--gradient-btn); color: #fff; border: none; padding: 12px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 13px; text-align: center; box-shadow: 0 4px 6px rgba(59,130,246,0.15); }
-        .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(59,130,246,0.25); }
-        .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 6px rgba(239,68,68,0.15); }
-        .btn-success { background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 4px 6px rgba(16,185,129,0.15); }
-        .btn-secondary { background: #64748b; box-shadow: none; } .btn-secondary:hover { background: #475569; }
-        .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); box-shadow: none; }
-        .close-btn-x { background: #ef4444; color: #ffffff; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 16px; font-weight: bold; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s; flex-shrink: 0; }
-        .close-btn-x:hover { background: #dc2626; transform: scale(1.1); }
+        .btn { 
+            background: var(--gradient-btn); 
+            color: #fff; 
+            border: none; 
+            padding: 10px 18px; 
+            border-radius: var(--radius-sm); 
+            font-weight: 600; 
+            cursor: pointer; 
+            transition: 0.15s; 
+            font-size: 13px; 
+            text-align: center; 
+            box-shadow: var(--shadow-sm); 
+            white-space: nowrap;
+            font-family: inherit;
+        }
+        .btn:hover { filter: brightness(1.08); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .btn-success { background: linear-gradient(135deg, #10b981, #059669); }
+        .btn-secondary { background: #f0f0f0; color: var(--text-main); box-shadow: none; } 
+        .btn-secondary:hover { background: #e5e5e5; }
+        .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--border-color); box-shadow: none; }
+        .btn-outline:hover { background: #f5f5f5; border-color: var(--primary); }
+        .btn-warning { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .close-btn-x { background: transparent; color: var(--text-sub); border: none; border-radius: 50%; width: 36px; height: 36px; font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.15s; flex-shrink: 0; }
+        .close-btn-x:hover { background: #f0f0f0; color: var(--text-main); }
 
-        .tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 15px; overflow-x: auto; white-space: nowrap; }
-        .tab { padding: 12px 16px; cursor: pointer; color: var(--text-sub); border-bottom: 3px solid transparent; transition: 0.2s; font-weight: 600; font-size: 14px; }
-        .tab.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
+        /* 🚀 [v6] YouTube 스타일 헤더 (sticky) */
+        .yt-header {
+            position: sticky;
+            top: 0;
+            z-index: 90;
+            background: rgba(255,255,255,0.96);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 24px;
+        }
+        @media (max-width: 768px) { .yt-header { padding: 8px 12px; } }
+
+        /* 🚀 [v6] 탭 - YouTube 스타일 (둥근 칩) */
+        .tabs { 
+            display: flex; 
+            gap: 8px; 
+            margin-bottom: 18px; 
+            overflow-x: auto; 
+            white-space: nowrap; 
+            padding-bottom: 4px;
+        }
+        .tab { 
+            padding: 8px 16px; 
+            cursor: pointer; 
+            color: var(--text-main); 
+            background: #f0f0f0;
+            border: none;
+            border-radius: 20px; 
+            transition: 0.15s; 
+            font-weight: 600; 
+            font-size: 14px; 
+            flex-shrink: 0;
+        }
+        .tab:hover { background: #e0e0e0; }
+        .tab.active { color: #fff; background: #0f0f0f; }
+        @media (max-width: 768px) {
+            .tab { padding: 7px 14px; font-size: 13px; }
+        }
         .tab-content { display: none; flex-direction: column; gap: 15px; }
         .tab-content.active { display: flex; }
-        .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        @media (max-width: 768px) { .grid-2col { grid-template-columns: 1fr; } }
+        .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .grid-2col { grid-template-columns: 1fr; gap: 12px; } }
         
-        /* 🚀 당근마켓 리스트 뷰 디자인 (모바일 최적화) */
-        .karrot-list { display: flex; flex-direction: column; background: #ffffff; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
+        /* 🚀 [v6] YouTube 스타일 카드 그리드 (디지털 거래소) */
+        .yt-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .yt-grid { grid-template-columns: 1fr; gap: 12px; }
+        }
+        @media (min-width: 1280px) {
+            .yt-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+        }
+
+        /* 🚀 [v6] 카테고리 칩 (YouTube 스타일) */
+        .cat-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 14px;
+            background: #f0f0f0;
+            color: var(--text-main);
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: 0.15s;
+            font-family: inherit;
+            white-space: nowrap;
+        }
+        .cat-chip:hover { background: #e0e0e0; }
+        .cat-chip.active { background: #0f0f0f; color: #fff; }
+
+        /* 당근마켓 리스트 뷰 디자인 (모바일 최적화) */
+        .karrot-list { display: flex; flex-direction: column; background: #ffffff; border-radius: var(--radius-md); border: 1px solid var(--border-color); overflow: hidden; }
         .karrot-card { display: flex; flex-direction: row; padding: 15px; border-bottom: 1px solid #f1f5f9; gap: 12px; position: relative; transition: 0.2s; align-items: stretch; }
         .karrot-card:last-child { border-bottom: none; }
         .karrot-card:hover { background: #f8fafc; }
@@ -66,6 +203,7 @@
 
         .dropzone { border: 2px dashed var(--primary); border-radius: 12px; padding: 30px 15px; text-align: center; background: #f0f6ff; color: var(--text-sub); transition: 0.2s; cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1.6; }
         .dropzone.dragover { background: #e0f2fe; border-color: var(--primary-hover); color: var(--primary-hover); }
+        .dropzone.filled { background:#f0fdf4; border-color:var(--success); border-style:solid; }
         /* 🚀 미니 드롭존 (상품 등록 폼 안) */
         .mini-dropzone { border:2px dashed #94a3b8; border-radius:8px; padding:14px 8px; text-align:center; background:#fff; cursor:pointer; transition:0.2s; min-height:90px; display:flex; flex-direction:column; justify-content:center; align-items:center; color:var(--text-sub); }
         .mini-dropzone:hover, .mini-dropzone.dragover { background:#eff6ff; border-color:var(--primary); }
@@ -108,15 +246,21 @@
         
         /* 🚀 카카오톡 스타일 채팅 UI */
         .chat-body { flex: 1; padding: 14px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; background: #abc1d1; position: relative; }
-        .chat-input-area { padding: 10px; border-top: 1px solid #d4dde5; display: flex; gap: 8px; align-items: center; background: #f4f6f8; flex-shrink: 0; }
-        .chat-input-area input { flex: 1; padding: 10px 15px; border-radius: 22px; border: 1px solid #d4dde5; background: #ffffff; outline: none; color: #1f2937; font-size:14px; }
+        .chat-input-area { padding: 10px 8px 12px; border-top: 1px solid #d4dde5; display: flex; gap: 6px; align-items: center; background: #f4f6f8; flex-shrink: 0; }
+        .chat-input-area input { flex: 1; padding: 11px 16px; border-radius: 22px; border: 1px solid #d4dde5; background: #ffffff; outline: none; color: #1f2937; font-size:14px; min-width: 0; }
+        /* 🚀 채팅 입력바 아이콘 버튼은 모바일 터치 영역 강화 */
+        .chat-input-area > button.btn-outline { width: 40px !important; height: 40px !important; }
+        @media (max-width: 480px) {
+            .chat-input-area > button.btn-outline { width: 38px !important; height: 38px !important; font-size: 18px !important; }
+            .chat-input-area input { padding: 10px 14px; font-size: 15px; }
+        }
 
         /* 🚀 카톡 스타일 드래그 오버레이 (채팅창 위에 파일 드래그 시) */
-        .chat-drag-overlay { position:absolute; inset:8px; border-radius:14px; background:rgba(254, 229, 0, 0.92); border:3px dashed #1f2937; display:none; align-items:center; justify-content:center; z-index:50; pointer-events:none; }
+        .chat-drag-overlay { position:absolute; inset:0; border-radius:0; background:rgba(254, 229, 0, 0.92); border:4px dashed #1f2937; display:none; align-items:center; justify-content:center; z-index:50; pointer-events:none; }
         .chat-drag-overlay.active { display:flex; }
         .chat-drag-overlay .inner { text-align:center; color:#1f2937; }
-        .chat-drag-overlay .inner .icon { font-size:48px; margin-bottom:8px; }
-        .chat-drag-overlay .inner b { display:block; font-size:18px; }
+        .chat-drag-overlay .inner .icon { font-size:60px; margin-bottom:10px; }
+        .chat-drag-overlay .inner b { display:block; font-size:20px; }
 
         /* 🚀 채팅 첨부 파일 프리뷰 칩 (전송 전) */
         .chat-attach-strip { display:none; padding:8px 10px; gap:6px; flex-wrap:wrap; background:#fef9e7; border-top:1px solid #fde047; align-items:center; }
@@ -307,6 +451,7 @@
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style="color:var(--primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
                     <span style="font-size: 20px; font-weight: 900; color: var(--text-main); letter-spacing: -0.5px;">Earth</span>
                     <span id="admin-indicator" style="display:none; background: var(--danger); color: white; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; box-shadow: 0 2px 4px rgba(239,68,68,0.2);">Root Admin</span>
+                    <span style="background: #0f0f0f; color: white; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: bold;" title="v6: 주문 승인 흐름 + 카테고리 + YouTube 스타일 UI">PATCH v6</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <div style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:6px 14px; border-radius:30px; background:#f8fafc; border:1px solid var(--border-color); transition:0.2s;" onclick="openProfileModal()">
@@ -321,6 +466,7 @@
             <div class="tabs">
                 <div class="tab active" onclick="switchTab('market')">디지털 거래소</div>
                 <div class="tab" onclick="switchTab('my-store')">내 상점</div>
+                <div class="tab" onclick="switchTab('my-purchases')">🛍️ 내 구매</div>
                 <div class="tab" onclick="switchTab('wallet')">내 지갑</div>
                 <div class="tab" onclick="switchTab('history')">거래내역</div>
             </div>
@@ -328,12 +474,18 @@
             <div id="tab-market" class="tab-content active">
 
                 <div class="panel" style="padding:15px; background:#f8fafc; position:relative;">
-                    <div style="font-size:14px; font-weight:bold; margin-bottom:10px; color:var(--text-main);">🔍 검색</div>
+                    <div style="font-size:14px; font-weight:bold; margin-bottom:10px; color:var(--text-main);">🔍 통합 검색</div>
                     <div style="display:flex; gap:10px;">
-                        <input type="text" id="partner-search-input" placeholder="브랜드 명칭 키워드 검색 후 Enter..." style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border-color); outline:none;" onkeyup="if(event.key==='Enter') searchPartnerStores(true); else filterShowcaseInline()">
-                        <button class="btn btn-secondary" onclick="searchPartnerStores(true)">브랜드 검색</button>
+                        <input type="text" id="partner-search-input" placeholder="브랜드명 · ID · 실명 · 전화번호로 검색..." style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border-color); outline:none;" onkeyup="if(event.key==='Enter') performGlobalSearch(true); else filterShowcaseInline()">
+                        <button class="btn btn-secondary" onclick="performGlobalSearch(true)">검색</button>
                     </div>
-                    <div style="font-size:11px; color:var(--text-sub); margin-top:8px;">💡 검색 결과의 브랜드 칩을 <b>클릭</b>하면 해당 브랜드 상점으로 즉시 입장합니다. ★ 즐겨찾기 등록 시 아래 목록에서 빠르게 입장할 수 있습니다.</div>
+                    <div style="font-size:11px; color:var(--text-sub); margin-top:8px;">💡 검색은 <b>브랜드명, 회원 ID, 실명, 전화번호</b>를 모두 살핍니다. 검색 결과 칩 클릭 시 입장 또는 채팅 가능합니다.</div>
+
+                    <!-- 🚀 [v6] 카테고리 필터 칩 -->
+                    <div id="brand-category-chips" style="margin-top:12px; display:flex; flex-wrap:wrap; gap:6px;"></div>
+
+                    <!-- 🚀 통합 검색 결과 (사용자 + 상점) -->
+                    <div id="global-search-results" style="margin-top:12px; display:none;"></div>
 
                     <!-- 🚀 즐겨찾는 브랜드 리스트 -->
                     <div id="fav-brands-section" style="margin-top:12px; display:none;">
@@ -399,6 +551,31 @@
                     <div class="panel" style="padding:15px;">
                         <h4 style="margin-bottom:10px; font-size:14px;">브랜드 상점 개설</h4>
                         <div class="input-group"><input type="text" id="new-brand-name" placeholder="상점 고유 명칭"></div>
+                        <div class="input-group">
+                            <label>🏷️ 브랜드 카테고리 (정체성)</label>
+                            <select id="new-brand-category" style="padding:10px; border-radius:8px; border:1px solid var(--border-color); background:#f8fafc; font-family:inherit; font-size:13px; width:100%;">
+                                <option value="general">🏪 일반 상점</option>
+                                <option value="food">🍽️ 음식점 · 카페</option>
+                                <option value="dental_lab">🦷 치과 기공소</option>
+                                <option value="medical">🏥 병원 · 의원</option>
+                                <option value="fashion">👗 패션 · 의류</option>
+                                <option value="beauty">💄 뷰티 · 미용</option>
+                                <option value="education">📚 교육 · 강의</option>
+                                <option value="art">🎨 아트 · 디자인</option>
+                                <option value="music">🎵 음악 · 음원</option>
+                                <option value="game">🎮 게임 · IT</option>
+                                <option value="craft">🛠️ 공예 · 수공</option>
+                                <option value="construction">🏗️ 건설 · 시공</option>
+                                <option value="real_estate">🏠 부동산</option>
+                                <option value="auto">🚗 자동차 · 운송</option>
+                                <option value="pet">🐾 반려동물</option>
+                                <option value="sports">⚽ 스포츠 · 레저</option>
+                                <option value="book">📖 도서 · 출판</option>
+                                <option value="legal">⚖️ 법률 · 자문</option>
+                                <option value="finance">💰 금융 · 컨설팅</option>
+                                <option value="other">📦 기타</option>
+                            </select>
+                        </div>
                         <div class="input-group"><label>상점 로고 (정사각형 추천)</label><input type="file" id="new-brand-logo" accept="image/*"></div>
                         <div class="input-group"><label>상점 배경 이미지 (브랜드 입장 시 표시)</label><input type="file" id="new-brand-background" accept="image/*"></div>
                         <div class="input-group"><label>상점 소개 문구 (선택)</label><textarea id="new-brand-description" placeholder="고객에게 보여질 상점 소개" rows="2" style="padding:10px; border-radius:8px; border:1px solid var(--border-color); background:#f8fafc; font-family:inherit; font-size:13px;"></textarea></div>
@@ -442,7 +619,7 @@
                                 <div style="font-size:36px;">📂</div>
                                 <div style="font-size:14px; margin-top:6px;">파일을 여기에 드래그 앤 드롭</div>
                                 <div style="font-size:11px; color:var(--text-sub); font-weight:normal; margin-top:4px;">또는 <span style="color:var(--primary); text-decoration:underline; font-weight:bold;">클릭하여 선택</span> · 여러 번 추가 가능 · 이미지/영상/PDF/HTML 등</div>
-                                <input type="file" id="prod-files-input" multiple style="display:none;" onchange="onProdFilesSelected(event.target.files)">
+                                <input type="file" id="prod-files-input" multiple style="display:none;" onchange="window.onProdFilesSelected && window.onProdFilesSelected(event.target.files)">
                             </div>
                             <div id="prod-files-list" style="margin-top:8px;"></div>
                         </div>
@@ -452,7 +629,7 @@
                             <div id="prod-pdf-dropzone" class="mini-dropzone" style="min-height:60px;">
                                 <div style="font-size:20px;">📋</div>
                                 <div style="font-size:11px; margin-top:2px;">주문 양식 PDF를 드래그 또는 클릭</div>
-                                <input type="file" id="prod-pdf-file" accept="application/pdf" style="display:none;" onchange="onProdPdfFileSelected(event.target.files[0])">
+                                <input type="file" id="prod-pdf-file" accept="application/pdf" style="display:none;" onchange="window.onProdPdfFileSelected && window.onProdPdfFileSelected(event.target.files[0])">
                                 <div id="prod-pdf-status" style="font-size:11px; color:var(--success); font-weight:bold; margin-top:4px;"></div>
                             </div>
                         </div>
@@ -474,6 +651,34 @@
                         <button class="btn btn-success" style="padding:8px 12px; font-size:12px;" onclick="bundleToHTMLAndDownload()">📦 선택 항목 병합 HTML 패키징 추출</button>
                     </div>
                     <div class="karrot-list" id="my-store-grid"></div>
+                </div>
+            </div>
+
+            <!-- 🚀 [v5 신규] 내 구매 탭: 결제한 상품 일괄 관리 -->
+            <div id="tab-my-purchases" class="tab-content">
+                <div class="panel" style="padding:14px 16px; background:linear-gradient(135deg, #fef3c7, #fde68a); border:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                        <div>
+                            <h3 style="font-size:18px; color:#78350f; font-weight:900; margin-bottom:4px;">🛍️ 내가 구매한 상품</h3>
+                            <div style="font-size:12px; color:#78350f;">결제한 상품을 다시 열람 · 추가 주문 · 판매자 채팅으로 연결합니다.</div>
+                        </div>
+                        <button class="btn btn-outline" style="padding:8px 14px; font-size:12px; border-color:#92400e; color:#92400e;" onclick="loadMyPurchases()">🔄 새로고침</button>
+                    </div>
+                </div>
+                <div class="panel" style="padding:0; overflow:hidden;">
+                    <div style="padding:10px 14px; background:#f8fafc; border-bottom:1px solid var(--border-color); display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                        <input type="text" id="my-purchases-search" placeholder="🔍 상품명 / 판매자 검색..." style="flex:1; min-width:200px; padding:8px 12px; border-radius:6px; border:1px solid var(--border-color); outline:none;" oninput="filterMyPurchases()">
+                        <select id="my-purchases-filter" style="padding:8px 12px; border-radius:6px; border:1px solid var(--border-color);" onchange="filterMyPurchases()">
+                            <option value="all">전체</option>
+                            <option value="package">📦 패키지만</option>
+                            <option value="single">단일 상품만</option>
+                            <option value="refundable">환불 가능</option>
+                            <option value="refunded">환불 완료</option>
+                        </select>
+                    </div>
+                    <div id="my-purchases-list" style="min-height:200px;">
+                        <div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">⏳ 구매 내역 로딩 중...</div>
+                    </div>
                 </div>
             </div>
 
@@ -575,7 +780,7 @@
     <div class="messenger-drawer" id="messenger-drawer">
         <div class="drawer-header"><span>보안 메신저</span><button class="close-btn-x" style="width:26px; height:26px; font-size:14px;" onclick="toggleMessengerDrawer()">&times;</button></div>
         <div class="messenger-tabs">
-            <div class="m-tab active" onclick="switchDrawerTab('friends')">친구 연락처</div>
+            <div class="m-tab active" onclick="switchDrawerTab('friends')">연락처</div>
             <div class="m-tab" onclick="switchDrawerTab('chats')">대화방 <span id="chat-tab-count" style="color:var(--danger); font-weight:bold; margin-left:2px;"></span></div>
         </div>
         
@@ -583,7 +788,7 @@
             <div class="messenger-view active" id="view-friend-list">
                 <div style="padding:15px; background:#f8fafc; border-bottom:1px solid var(--border-color);">
                     <div style="position:relative; margin-bottom:10px;">
-                        <input type="text" id="friend-search-input" placeholder="🔍 회원 ID / 실명 / 전화번호 검색..." style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border-color); outline:none;" oninput="searchUsersForFriend()">
+                        <input type="text" id="friend-search-input" placeholder="🔍 회원 ID · 실명 · 전화번호 · 상점 브랜드명 검색..." style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border-color); outline:none;" oninput="searchUsersForFriend()">
                         <div id="friend-search-results" style="display:none; position:absolute; left:0; right:0; top:100%; background:#fff; border:1px solid var(--border-color); border-top:none; border-radius:0 0 8px 8px; max-height:240px; overflow-y:auto; z-index:5; box-shadow:0 8px 20px rgba(0,0,0,0.1);"></div>
                     </div>
                     <button class="btn btn-outline" style="width:100%; padding:8px; font-size:12px; border-style:dashed;" onclick="copyInviteLink()">🔗 초대 링크 복사 (접속 시 자동 친구 맺기)</button>
@@ -596,20 +801,20 @@
             </div>
 
             <div class="messenger-view" id="view-chat-room">
+                <!-- 🚀 카톡 스타일 드래그 오버레이 — view-chat-room 전체를 덮어서 input/emoji 영역에서도 작동 -->
+                <div class="chat-drag-overlay" id="chat-drag-overlay">
+                    <div class="inner">
+                        <div class="icon">📎</div>
+                        <b>파일을 여기에 놓으세요</b>
+                        <div style="font-size:12px; margin-top:6px; opacity:0.8;">파일이 채팅 메시지로 전송됩니다</div>
+                    </div>
+                </div>
                 <div class="kt-chat-header">
                     <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px; border-radius:15px;" onclick="backToDrawerList()">◀</button>
                     <b id="active-chat-title">대화방</b>
+                    <button class="btn btn-outline" style="padding:4px 10px; font-size:11px; margin-left:auto;" onclick="leaveCurrentChatRoom()" title="대화방 나가기">🚪 나가기</button>
                 </div>
-                <div class="chat-body" id="main-chat-body">
-                    <!-- 🚀 카톡 스타일 드래그 오버레이 -->
-                    <div class="chat-drag-overlay" id="chat-drag-overlay">
-                        <div class="inner">
-                            <div class="icon">📎</div>
-                            <b>파일을 여기에 놓으세요</b>
-                            <div style="font-size:12px; margin-top:6px; opacity:0.8;">파일이 채팅 메시지로 전송됩니다</div>
-                        </div>
-                    </div>
-                </div>
+                <div class="chat-body" id="main-chat-body"></div>
 
                 <!-- 🚀 첨부 대기 파일 프리뷰 -->
                 <div class="chat-attach-strip" id="chat-attach-strip"></div>
@@ -629,7 +834,7 @@
                 </div>
 
                 <!-- 🚀 카톡 스타일 입력 바 (+, 사진, 이모지, 메시지, 전송) -->
-                <input type="file" id="chat-quick-attach" multiple style="display:none;" onchange="handleChatFileAttach(event.target.files)">
+                <input type="file" id="chat-quick-attach" multiple style="display:none;" onchange="window.handleChatFileAttach && window.handleChatFileAttach(event.target.files)">
                 <div class="chat-input-area">
                     <button class="btn btn-outline" style="border-radius:50%; width:36px; height:36px; padding:0; font-size:20px; flex-shrink:0;" onclick="toggleChatActionMenu()" title="더보기">+</button>
                     <button class="btn btn-outline" style="border-radius:50%; width:36px; height:36px; padding:0; font-size:18px; flex-shrink:0;" onclick="document.getElementById('chat-quick-attach').click()" title="파일 첨부">📎</button>
@@ -783,12 +988,12 @@
 
     <!-- 🚀 주문 확정 폼 모달 (패키지 상품 구매 시) -->
     <div class="modal-overlay" id="order-form-modal">
-        <div class="modal-content" style="max-width:760px; max-height:92vh; display:flex; flex-direction:column;">
-            <div class="modal-header"><span>🛒 주문 확정</span><button class="close-btn-x" onclick="closeModal('order-form-modal')">&times;</button></div>
+        <div class="modal-content" style="max-width:880px; max-height:94vh; display:flex; flex-direction:column;">
+            <div class="modal-header"><span>📝 주문서 작성</span><button class="close-btn-x" onclick="closeModal('order-form-modal')">&times;</button></div>
             <div id="order-form-body" style="flex:1; overflow-y:auto; padding-right:6px;"></div>
             <div style="border-top:2px solid var(--border-color); padding-top:12px; margin-top:10px; display:flex; gap:8px;">
                 <button class="btn btn-outline" style="flex:1; padding:12px;" onclick="closeModal('order-form-modal')">취소</button>
-                <button class="btn" style="flex:2; padding:12px; font-size:14px; font-weight:bold; background:linear-gradient(135deg, #f59e0b, #ef4444);" onclick="confirmOrderAndCheckout()">💳 결제하고 판매자에게 주문서 전달</button>
+                <button class="btn" style="flex:2; padding:12px; font-size:14px; font-weight:bold; background:linear-gradient(135deg, #f59e0b, #ef4444);" onclick="submitOrderForApproval()">📤 주문서 보내기 (판매자 승인 시 결제됩니다)</button>
             </div>
         </div>
     </div>
@@ -849,6 +1054,66 @@
     <div class="toast" id="toast">알림</div>
 
     <script>
+        // 🚀 ============ EARTH PATCH v6 (2026-05-27) — 주문 승인 + 카테고리 + 모던 UI ============
+        // v6 핵심 수정:
+        //   1. [신규] 주문서 제출 → pending 상태 → 판매자가 채팅에서 ✅ 승인 시 결제 완료
+        //   2. [신규] PDF 답변 작성 모달 (큰 화면 PDF + 측면 답변 입력 → 저장 시 메인 폼 반영)
+        //   3. [신규] 상점 카테고리 (음식점/기공소/병원/패션 등 20개) + 거래소 필터
+        //   4. [신규] 구매자 정보(이름·연락처·주소) 주문서 HTML에 자동 포함
+        //   5. [신규] 대화방 이름 "브랜드명 / 상품명" + 주문 대화방 양측 동기화 (한쪽 나가면 양측 종료)
+        //   6. [개선] UI YouTube 스타일 (둥근 칩 탭, 와이드 데스크톱, 모바일 컴팩트)
+        //   7. [개선] 통합 검색: 브랜드명/ID/실명/전화번호 동시 검색
+        //   8. [개선] "친구 연락처" → "연락처"로 라벨 변경
+        //   9. [백엔드] /api/order/approve, /api/order/reject, /api/order/cancel, /api/chat-room/upsert,
+        //              /api/chat-room/leave, /api/search/users-and-stores
+        window.__EARTH_VERSION = 'v6-2026-05-27';
+        console.log('%c🌍 Earth Commerce — PATCH ' + window.__EARTH_VERSION, 'background:#0f0f0f;color:#fff;padding:4px 10px;border-radius:4px;font-weight:bold;');
+
+        // 🚀 손상된 최근 이모지 localStorage 일회성 정리 (이전 버전이 null을 저장했을 수 있음)
+        try {
+            const _re = localStorage.getItem('earth_recent_emojis');
+            if(_re) {
+                const _arr = JSON.parse(_re);
+                if(Array.isArray(_arr) && _arr.some(x => !x)) {
+                    localStorage.setItem('earth_recent_emojis', JSON.stringify(_arr.filter(x => x && typeof x === 'string')));
+                }
+            }
+        } catch(_) { try { localStorage.removeItem('earth_recent_emojis'); } catch(_) {} }
+
+        // 🚀 ============ 전역 에러 캐처 (디버그 패널) ============
+        // 어디서든 JS 에러가 발생하면 화면에 표시 → 사용자가 콘솔을 열지 않고도 원인 파악
+        (function setupErrorCatcher() {
+            const errors = [];
+            function showDiag(msg, isErr) {
+                let panel = document.getElementById('__earth_diag');
+                if(!panel) {
+                    panel = document.createElement('div');
+                    panel.id = '__earth_diag';
+                    panel.style.cssText = 'position:fixed; bottom:8px; left:8px; max-width:480px; max-height:200px; overflow-y:auto; background:rgba(0,0,0,0.85); color:#fff; font-family:monospace; font-size:11px; padding:8px 12px; border-radius:8px; z-index:99999; line-height:1.5; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer;';
+                    panel.title = '클릭하면 닫힘';
+                    panel.onclick = () => panel.remove();
+                    document.body && document.body.appendChild(panel);
+                }
+                if(!panel.parentNode && document.body) document.body.appendChild(panel);
+                const line = document.createElement('div');
+                line.style.color = isErr ? '#fca5a5' : '#a7f3d0';
+                line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+                panel.appendChild(line);
+            }
+            window.__earthDiag = showDiag;
+            window.addEventListener('error', (e) => {
+                const msg = `❌ ${e.message} @ ${(e.filename||'').split('/').pop()}:${e.lineno}:${e.colno}`;
+                errors.push(msg);
+                showDiag(msg, true);
+            });
+            window.addEventListener('unhandledrejection', (e) => {
+                const msg = `⚠️ Promise reject: ${e.reason && e.reason.message || e.reason || ''}`;
+                errors.push(msg);
+                showDiag(msg, true);
+            });
+            window.__earthErrors = errors;
+        })();
+
         // 🚀 데이터 로드 실패 완전 해결: 콜스택 프리징 방어용 비동기 대칭 Shift 코덱
         const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         function processSecureData(b64Str) {
@@ -1306,6 +1571,7 @@
                 try { searchPartnerStores(); } catch(e){ console.error(e); }
             }
             if(id === 'my-store') { loadMyStore(); loadMyBrandStores(); }
+            if(id === 'my-purchases') { loadMyPurchases(); }
             if(id === 'history') { loadHistory(); loadIncomingRefunds(); }
             if(id === 'wallet' && currentUser) { updateUserBalance(); if(isAdmin) loadAdminActions(); }
         }
@@ -1534,28 +1800,128 @@
         async function executeRedeem(payload) { try { const res = await fetch(`${API_URL}/api/check/redeem`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ redeemer: currentUser.name, ...payload }) }); const data = await res.json(); if(res.ok) { showToast(`충전 완결: +${Number(data.amount).toLocaleString()} KRW`); document.getElementById('wallet-check-input').value = ''; updateUserBalance(); switchTab('history'); } else showToast(data.error); } catch(e){} }
         async function executeRedeemDirect(checkId, secretKey, signature) { await executeRedeem({ checkId, secretKey, signature }); }
 
+        // --- 🚀 [v6] 브랜드 카테고리 라벨/아이콘 매핑 (상점 표시, 필터 등 공용) ---
+        window.BRAND_CATEGORIES = [
+            { id: 'general', label: '🏪 일반 상점' },
+            { id: 'food', label: '🍽️ 음식점 · 카페' },
+            { id: 'dental_lab', label: '🦷 치과 기공소' },
+            { id: 'medical', label: '🏥 병원 · 의원' },
+            { id: 'fashion', label: '👗 패션 · 의류' },
+            { id: 'beauty', label: '💄 뷰티 · 미용' },
+            { id: 'education', label: '📚 교육 · 강의' },
+            { id: 'art', label: '🎨 아트 · 디자인' },
+            { id: 'music', label: '🎵 음악 · 음원' },
+            { id: 'game', label: '🎮 게임 · IT' },
+            { id: 'craft', label: '🛠️ 공예 · 수공' },
+            { id: 'construction', label: '🏗️ 건설 · 시공' },
+            { id: 'real_estate', label: '🏠 부동산' },
+            { id: 'auto', label: '🚗 자동차 · 운송' },
+            { id: 'pet', label: '🐾 반려동물' },
+            { id: 'sports', label: '⚽ 스포츠 · 레저' },
+            { id: 'book', label: '📖 도서 · 출판' },
+            { id: 'legal', label: '⚖️ 법률 · 자문' },
+            { id: 'finance', label: '💰 금융 · 컨설팅' },
+            { id: 'other', label: '📦 기타' }
+        ];
+        window.getCategoryLabel = function(id) {
+            const c = window.BRAND_CATEGORIES.find(x => x.id === id);
+            return c ? c.label : '🏪 일반 상점';
+        };
+        window.activeCategoryFilter = 'all'; // 'all' 또는 카테고리 id
+
+        // 🚀 [v6] 카테고리 칩 렌더 (디지털 거래소 검색 박스 아래)
+        window.renderCategoryChips = function() {
+            const wrap = document.getElementById('brand-category-chips');
+            if(!wrap) return;
+            let h = `<button class="cat-chip ${window.activeCategoryFilter==='all'?'active':''}" onclick="setCategoryFilter('all')">전체</button>`;
+            window.BRAND_CATEGORIES.forEach(c => {
+                h += `<button class="cat-chip ${window.activeCategoryFilter===c.id?'active':''}" onclick="setCategoryFilter('${c.id}')">${c.label}</button>`;
+            });
+            wrap.innerHTML = h;
+        };
+
+        window.setCategoryFilter = function(catId) {
+            window.activeCategoryFilter = catId;
+            window.renderCategoryChips();
+            window.filterShowcaseInline && window.filterShowcaseInline();
+        };
+
+        // 🚀 [v6] 통합 검색 (브랜드 + 회원)
+        window.performGlobalSearch = async function(focusSearch) {
+            const q = document.getElementById('partner-search-input').value.trim();
+            const wrap = document.getElementById('global-search-results');
+            if(!q) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+            try {
+                const res = await fetch(`${API_URL}/api/search/users-and-stores?q=${encodeURIComponent(q)}`);
+                const data = await res.json() || { users: [], stores: [] };
+                let users = (data.users || []).filter(u => u.name !== currentUser.name);
+                let stores = (data.stores || []);
+                let h = '';
+                // focusSearch=true 이고 상점 1개만 매치되면 즉시 입장
+                if(focusSearch && stores.length === 1) {
+                    enterBrandStoreById(stores[0].id);
+                    wrap.style.display = 'none';
+                    return;
+                }
+                if(stores.length > 0) {
+                    h += `<div style="background:#fff; border:1px solid var(--border-color); border-radius:${`var(--radius-md)`}; padding:14px; margin-bottom:10px;">
+                        <div style="font-size:12px; font-weight:bold; color:var(--text-sub); margin-bottom:8px;">🏪 상점 브랜드 (${stores.length})</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">`;
+                    stores.forEach(s => {
+                        const logo = s.logo ? `<img src="${s.logo}" style="width:24px; height:24px; border-radius:50%; object-fit:cover; margin-right:6px;">` : '';
+                        const cat = (window.getCategoryLabel && window.getCategoryLabel(s.category)) || '🏪';
+                        h += `<button class="cat-chip" style="background:#dbeafe; color:#1e40af;" onclick="enterBrandStoreById('${s.id}')">${logo}${(s.name||'').replace(/</g,'&lt;')} <span style="opacity:0.7; margin-left:4px; font-weight:normal;">· ${cat.split(' ')[0]}</span></button>`;
+                    });
+                    h += `</div></div>`;
+                }
+                if(users.length > 0) {
+                    h += `<div style="background:#fff; border:1px solid var(--border-color); border-radius:${`var(--radius-md)`}; padding:14px;">
+                        <div style="font-size:12px; font-weight:bold; color:var(--text-sub); margin-bottom:8px;">👤 회원 (${users.length})</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">`;
+                    users.forEach(u => {
+                        const meta = [u.realname, u.phone].filter(x => x).join(' · ');
+                        h += `<button class="cat-chip" style="background:#fef3c7; color:#78350f;" onclick="openMessengerChatFromSearch('${u.name.replace(/'/g, "\\'")}')">👤 ${u.name}${meta ? ` <span style="opacity:0.7; margin-left:4px; font-weight:normal;">(${meta})</span>` : ''}</button>`;
+                    });
+                    h += `</div></div>`;
+                }
+                if(!h) h = '<div style="padding:14px; text-align:center; color:var(--text-sub); font-size:13px;">검색 결과가 없습니다.</div>';
+                wrap.innerHTML = h;
+                wrap.style.display = 'block';
+            } catch(e) {
+                if(window.__earthDiag) window.__earthDiag('globalSearch error: ' + (e.message || e), true);
+            }
+        };
+
+        window.openMessengerChatFromSearch = async function(name) {
+            try { await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: name }) }); } catch(_){}
+            if(!document.getElementById('messenger-drawer').classList.contains('open')) toggleMessengerDrawer();
+            setTimeout(() => openMessengerChat(name), 200);
+        };
+
         // --- 내 상점 관리 및 D&D 출하 시스템 ---
         function registerNewBrandStore() {
             const storeName = document.getElementById('new-brand-name').value.trim();
             const logoFile = document.getElementById('new-brand-logo').files[0];
             const bgFile = document.getElementById('new-brand-background').files[0];
             const desc = document.getElementById('new-brand-description').value.trim();
+            const category = document.getElementById('new-brand-category').value || 'general';
             if(!storeName) return showToast("명칭 누락");
             // 🚀 로고/배경을 병렬 base64 로딩 후 통합 전송
             const toB64 = (file) => new Promise(res => { if(!file) return res(''); const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(file); });
             Promise.all([toB64(logoFile), toB64(bgFile)]).then(([logo, background]) => {
-                sendBrandStorePayload(storeName, logo, background, desc);
+                sendBrandStorePayload(storeName, logo, background, desc, category);
             });
         }
-        async function sendBrandStorePayload(name, logo, background, description) {
+        async function sendBrandStorePayload(name, logo, background, description, category) {
             try {
-                const res = await fetch(`${API_URL}/api/store/create`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, owner: currentUser.name, logo, background, description }) });
+                const res = await fetch(`${API_URL}/api/store/create`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, owner: currentUser.name, logo, background, description, category: category || 'general' }) });
                 if(res.ok) {
                     showToast("브랜드 상점 개설 완결");
                     document.getElementById('new-brand-name').value = '';
                     document.getElementById('new-brand-logo').value = '';
                     document.getElementById('new-brand-background').value = '';
                     document.getElementById('new-brand-description').value = '';
+                    if(document.getElementById('new-brand-category')) document.getElementById('new-brand-category').value = 'general';
                     loadMyBrandStores();
                 } else { const d=await res.json(); showToast(d.error); }
             } catch(e){}
@@ -1585,9 +1951,13 @@
 
         async function loadMyBrandStores() {
             try {
-                const res = await fetch(`${API_URL}/api/stores/owned/${currentUser.name}`); const stores = await res.json() || [];
+                if(!currentUser || !currentUser.name) return;
+                const res = await fetch(`${API_URL}/api/stores/owned/${currentUser.name}`);
+                if(!res.ok) throw new Error(`HTTP ${res.status} from /api/stores/owned`);
+                const stores = await res.json() || [];
                 const listZone = document.getElementById('my-brands-list-zone'); const selector = document.getElementById('target-brand-selector');
-                if(stores.length === 0) { listZone.innerHTML = '<div style="color:gray; font-size:13px;">상점이 없습니다.</div>'; selector.innerHTML = '<option value="">출하 대상 상점 선택</option>'; return; }
+                if(!listZone || !selector) return;
+                if(stores.length === 0) { listZone.innerHTML = '<div style="color:gray; font-size:13px;">상점이 없습니다. 상단의 "새 브랜드 만들기" 폼으로 개설하세요.</div>'; selector.innerHTML = '<option value="">출하 대상 상점 선택</option>'; return; }
                 let h = ''; let s = '<option value="">출하 대상 상점 선택</option>';
                 stores.forEach(st => {
                     let logoHtml = st.logo ? `<img src="${st.logo}">` : `<span>N/A</span>`;
@@ -1598,6 +1968,7 @@
                         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
                             <div style="display:flex; align-items:center; gap:10px;"><div class="brand-logo-circle">${logoHtml}</div><div><b style="font-size:15px;">${st.name}</b><div style="font-size:11px; color:var(--text-sub);">${st.status === 'active' ? '🟢 운영중' : '🟡 편집중'}</div></div></div>
                             <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                                <button class="btn" style="padding:6px 10px; font-size:11px; background:linear-gradient(135deg, #3b82f6, #2563eb); color:#fff;" onclick="enterBrandStoreById('${st.id}')">🚪 내 상점 입장</button>
                                 <button class="btn" style="padding:6px 10px; font-size:11px; background:linear-gradient(135deg, #f59e0b, #ef4444); color:#fff;" onclick="openPromoQR('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🎁 홍보 QR</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="uploadStoreBackground('${st.id}')">🖼️ 배경 ${hasBg?'변경':'등록'}</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="editStoreDescription('${st.id}', \`${descStr}\`)">📝 소개</button>
@@ -1611,7 +1982,10 @@
                     s += `<option value="${st.id}">${st.name}</option>`;
                 });
                 listZone.innerHTML = h; selector.innerHTML = s;
-            } catch(e){}
+            } catch(e){
+                if(window.__earthDiag) window.__earthDiag('loadMyBrandStores error: ' + (e.message || e), true);
+                console.error('loadMyBrandStores error:', e);
+            }
         }
 
         async function toggleBrandStatus(storeId, currentStatus) { const newStatus = currentStatus === 'active' ? 'editing' : 'active'; await fetch(`${API_URL}/api/store/status`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: storeId, status: newStatus }) }); loadMyBrandStores(); }
@@ -1700,16 +2074,21 @@
             } catch(e) { console.error('store entry error:', e); showToast("상점 입장 처리 실패"); }
         }
 
-        // 🚀 안전한 dropzone 바인딩 (요소 미존재 시 무시)
-        (function bindLegacyDropzone() {
+        // 🚀 안전한 dropzone 바인딩 (요소 미존재 시 무시) — 함수는 window.X로 늦은 조회
+        ;(function bindLegacyDropzone() {
             const dz = document.getElementById('my-store-dropzone');
             if(!dz) return;
             dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
             dz.addEventListener('dragleave', e => { e.preventDefault(); dz.classList.remove('dragover'); });
-            dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); if(e.dataTransfer.files && e.dataTransfer.files.length > 0) handleFilesSelected(e.dataTransfer.files); });
+            dz.addEventListener('drop', e => {
+                e.preventDefault(); dz.classList.remove('dragover');
+                if(e.dataTransfer.files && e.dataTransfer.files.length > 0 && typeof window.handleFilesSelected === 'function') {
+                    window.handleFilesSelected(e.dataTransfer.files);
+                }
+            });
         })();
 
-        async function handleFilesSelected(files) {
+        window.handleFilesSelected = async function(files) {
             scannedFiles = Array.from(files); if(scannedFiles.length === 0) return; const storeId = document.getElementById('target-brand-selector').value; if(!storeId) return showToast("상향 콤보박스에서 상점을 선택하세요.");
             showToast("Zlib 압축 및 보안 인코딩 변환 개시...");
             for(let i=0; i<scannedFiles.length; i++) { await uploadProductToServer(scannedFiles[i], 1000, 10000, 7, 'd', storeId); }
@@ -1756,9 +2135,9 @@
             });
         }
 
-        // 초기 바인딩 (메인 파일 통합 드롭존 + PDF)
-        bindProdDropzone('prod-files-dropzone', 'prod-files-input', onProdFilesSelected);
-        bindProdDropzone('prod-pdf-dropzone', 'prod-pdf-file', (files) => onProdPdfFileSelected(files[0]));
+        // 🚀 초기 바인딩 — 화살표 함수로 wrap해서 호출 시점에 window.X를 조회 (late binding으로 race 회피)
+        bindProdDropzone('prod-files-dropzone', 'prod-files-input', (files) => window.onProdFilesSelected(files));
+        bindProdDropzone('prod-pdf-dropzone', 'prod-pdf-file', (files) => window.onProdPdfFileSelected(files[0]));
 
         // 🚀 여러 파일 누적 추가 (드래그 또는 탐색기에서 여러 번 호출되어도 합쳐짐)
         window.onProdFilesSelected = function(fileList) {
@@ -1775,6 +2154,8 @@
             if(nameInput && !nameInput.value.trim() && window.prodFormState.files[0]) {
                 nameInput.value = window.prodFormState.files[0].name.replace(/\.[^.]+$/, '');
             }
+            // 사용자 피드백: 파일이 정상 추가되었음을 시각·청각적으로 알림
+            if(arr.length > 0) showToast(`📂 ${arr.length}개 파일 추가됨 (총 ${window.prodFormState.files.length}개)`);
             // input 초기화 → 다음 선택도 같은 파일 가능
             const inp = document.getElementById('prod-files-input'); if(inp) inp.value = '';
         }
@@ -1783,8 +2164,11 @@
             if(!file) return;
             if(!file.name.toLowerCase().endsWith('.pdf')) return showToast("PDF 파일만 업로드 가능합니다.");
             window.prodFormState.pdfFile = file;
-            document.getElementById('prod-pdf-status').innerText = `✓ ${file.name} (${(file.size/1024).toFixed(1)}KB)`;
-            document.getElementById('prod-pdf-dropzone').classList.add('filled');
+            const stat = document.getElementById('prod-pdf-status');
+            if(stat) stat.innerText = `✓ ${file.name} (${(file.size/1024).toFixed(1)}KB)`;
+            const dz = document.getElementById('prod-pdf-dropzone');
+            if(dz) dz.classList.add('filled');
+            showToast(`📋 주문서 PDF 설정: ${file.name}`);
         }
 
         window.removeProdFile = function(idx) {
@@ -1810,17 +2194,31 @@
             const list = document.getElementById('prod-files-list');
             if(!list) return;
             const files = window.prodFormState.files;
+            // 🚀 [신규] 메인 드롭존 시각 피드백 — 파일이 들어오면 초록 테두리로 전환
+            const mainDz = document.getElementById('prod-files-dropzone');
+            if(mainDz) {
+                if(files.length > 0) mainDz.classList.add('filled');
+                else mainDz.classList.remove('filled');
+            }
             if(files.length === 0) { list.innerHTML = ''; return; }
-            let h = `<div style="font-size:11px; color:var(--text-sub); margin-bottom:6px; font-weight:bold;">📋 선택된 파일 ${files.length}개 · 첫 번째가 대표 파일</div>`;
+            const totalSize = files.reduce((s,f) => s+f.size, 0);
+            const totalKB = (totalSize/1024).toFixed(1);
+            const totalMB = (totalSize/1048576).toFixed(2);
+            const sizeStr = totalSize > 1048576 ? `${totalMB}MB` : `${totalKB}KB`;
+            const overLimit = totalSize > 8 * 1048576;
+            let h = `<div style="font-size:12px; color:${overLimit?'var(--danger)':'var(--text-main)'}; margin-bottom:6px; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">
+                <span>📋 선택된 파일 <b style="color:var(--primary);">${files.length}개</b> · 첫 번째가 대표 파일</span>
+                <span style="font-size:11px; color:var(--text-sub);">총 ${sizeStr}${overLimit?' ⚠️ 8MB 초과':''}</span>
+            </div>`;
             files.forEach((f, i) => {
                 const isMain = i === 0;
-                const sizeStr = (f.size/1024).toFixed(1) + 'KB';
+                const fSizeStr = f.size > 1048576 ? (f.size/1048576).toFixed(2) + 'MB' : (f.size/1024).toFixed(1) + 'KB';
                 const escName = f.name.replace(/</g, '&lt;');
                 h += `<div style="display:flex; align-items:center; gap:8px; background:${isMain?'#fef3c7':'#f8fafc'}; border:1px solid ${isMain?'#f59e0b':'#e2e8f0'}; padding:6px 10px; border-radius:8px; margin-bottom:4px;">
                     <span style="font-size:18px;">${isMain?'🎯':'📎'}</span>
                     <div style="flex:1; min-width:0;">
                         <div style="font-size:12px; font-weight:bold; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${isMain?'<span style="color:#92400e;">[대표]</span> ':''}${escName}</div>
-                        <div style="font-size:10px; color:var(--text-sub);">${sizeStr}</div>
+                        <div style="font-size:10px; color:var(--text-sub);">${fSizeStr}</div>
                     </div>
                     ${!isMain ? `<button style="background:#fff; border:1px solid var(--border-color); padding:4px 8px; border-radius:6px; font-size:10px; cursor:pointer;" onclick="markAsMainFile(${i})">대표 지정</button>` : ''}
                     <button style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:16px;" onclick="removeProdFile(${i})">✕</button>
@@ -1943,30 +2341,67 @@
         }
 
         const KAKAO_EMOJI_SET = {
-            '자주 쓰는': ['😀','😂','🥰','😎','😭','😡','👍','👏','🙏','❤️','🔥','✨','🎉','👋','💯'],
-            '기분': ['😊','😄','😆','😍','🤩','🥳','😴','🤔','😬','😅','🤗','🙄','😇','🤤','😏','😌','😋','😜','🤪','😝'],
-            '제스처': ['👍','👎','👌','✌️','🤞','🤘','🤙','👏','🙌','🤝','🙏','💪','✊','👊','🫵','🫶'],
-            '하트': ['❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💕','💞','💓','💗','💖','💘','💝','💟'],
-            '음식': ['🍕','🍔','🍟','🍣','🍜','🍱','🍰','🍦','🍫','🍿','🍩','🍪','🥤','☕','🍺','🍣']
+            '기분': ['😀','😂','🥰','😎','😭','😡','😊','😄','😆','😍','🤩','🥳','😴','🤔','😬','😅','🤗','🙄','😇','🤤','😏','😌','😋','😜','🤪','😝','🥲','😢','😩','🤯','🥺','😱','😳','🙃','😉','😘'],
+            '제스처': ['👍','👎','👌','✌️','🤞','🤘','🤙','👏','🙌','🤝','🙏','💪','✊','👊','🫵','🫶','👋','🤚','🖐️','✋','👐','🫳','🫴','🫰','🤌','🤏'],
+            '하트/감정': ['❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💕','💞','💓','💗','💖','💘','💝','💟','💔','❣️','💯','💢','💥','💫','💦','💨','🔥','✨','🎉','🎊','🎁','🌟','⭐'],
+            '음식/일상': ['🍕','🍔','🍟','🍣','🍜','🍱','🍰','🍦','🍫','🍿','🍩','🍪','🥤','☕','🍺','🍷','🍶','🍻','🧋','🍵','🍎','🍊','🍋','🍌','🍉','🍇','🍓','🥑','🥕','🌽'],
+            '활동/물건': ['📎','📷','📸','🎥','🎬','📱','💻','⌨️','🖥️','🖨️','📺','📻','📞','📧','📨','📥','📤','📦','🛒','💳','💰','💵','💴','💶','💷','🏠','🚗','✈️','🚀','🛩️','🚦','🚥','📍','🗺️']
         };
+
+        // 🚀 최근 사용 이모지 localStorage 추적 (UX 강화 + null 방어)
+        function loadRecentEmojis() {
+            try {
+                const arr = JSON.parse(localStorage.getItem('earth_recent_emojis') || '[]');
+                if(!Array.isArray(arr)) return [];
+                // null/undefined/빈 문자열 필터링
+                return arr.filter(x => x && typeof x === 'string' && x.length > 0);
+            } catch(e) { return []; }
+        }
+        function pushRecentEmoji(emo) {
+            if(!emo || typeof emo !== 'string') return;
+            try {
+                let arr = loadRecentEmojis();
+                arr = [emo, ...arr.filter(x => x !== emo)].slice(0, 16);
+                localStorage.setItem('earth_recent_emojis', JSON.stringify(arr));
+            } catch(e) {}
+        }
+
+        function buildEmojiPicker() {
+            const picker = document.getElementById('emoji-picker');
+            if(!picker) return;
+            const recent = loadRecentEmojis();
+            let h = '';
+            if(recent.length > 0) {
+                h += `<div class="group-title">🕒 최근 사용</div><div class="row">`;
+                recent.forEach(e => { h += `<span class="emoji" data-emoji="${e}">${e}</span>`; });
+                h += '</div>';
+            }
+            Object.keys(KAKAO_EMOJI_SET).forEach(group => {
+                h += `<div class="group-title">${group}</div><div class="row">`;
+                KAKAO_EMOJI_SET[group].forEach(e => {
+                    h += `<span class="emoji" data-emoji="${e}">${e}</span>`;
+                });
+                h += '</div>';
+            });
+            picker.innerHTML = h;
+            // 🚀 이벤트 위임 (한 번만 바인딩, onclick HTML 인젝션 의존성 제거)
+            if(!picker.dataset.bound) {
+                picker.addEventListener('click', (ev) => {
+                    const t = ev.target.closest('[data-emoji]');
+                    if(!t) return;
+                    window.insertEmoji(t.dataset.emoji);
+                });
+                picker.dataset.bound = '1';
+            }
+        }
 
         window.toggleEmojiPicker = function() {
             const picker = document.getElementById('emoji-picker');
+            if(!picker) { console.warn('emoji-picker element missing'); return; }
             const isActive = picker.classList.contains('active');
             if(isActive) { picker.classList.remove('active'); return; }
-            // 첫 호출 시 빌드
-            if(!picker.dataset.built) {
-                let h = '';
-                Object.keys(KAKAO_EMOJI_SET).forEach(group => {
-                    h += `<div class="group-title">${group}</div><div class="row">`;
-                    KAKAO_EMOJI_SET[group].forEach(e => {
-                        h += `<span class="emoji" onclick="insertEmoji('${e}')">${e}</span>`;
-                    });
-                    h += '</div>';
-                });
-                picker.innerHTML = h;
-                picker.dataset.built = '1';
-            }
+            // 매번 재빌드 (최근 이모지 변경 반영)
+            buildEmojiPicker();
             picker.classList.add('active');
             // 액션 메뉴 닫기
             const am = document.getElementById('chat-action-menu'); if(am) am.classList.remove('open');
@@ -1974,40 +2409,151 @@
         window.insertEmoji = function(e) {
             const input = document.getElementById('main-chat-input');
             if(!input) return;
-            input.value = (input.value || '') + e;
+            // 커서 위치에 삽입 (단순 append가 아니라)
+            const start = input.selectionStart, end = input.selectionEnd;
+            const before = input.value.substring(0, start);
+            const after = input.value.substring(end);
+            input.value = before + e + after;
             input.focus();
-        }
+            // 커서 위치 복원
+            const newPos = start + e.length;
+            try { input.setSelectionRange(newPos, newPos); } catch(_){}
+            pushRecentEmoji(e);
+        };
 
-        // 채팅창 드래그앤드롭 바인딩 (탐색기에서 파일 끌어다 놓기)
-        (function bindChatDragDrop() {
-            const body = document.getElementById('main-chat-body');
+        // 채팅창 드래그앤드롭 바인딩 (탐색기에서 파일 끌어다 놓기) + 클립보드 이미지 붙여넣기
+        // 🚀 [v5 수정] main-chat-body가 아닌 view-chat-room 전체에 바인딩 → input/emoji 영역에서도 드롭 가능
+        ;(function bindChatDragDrop() {
+            const room = document.getElementById('view-chat-room');
             const overlay = document.getElementById('chat-drag-overlay');
-            if(!body || !overlay) return;
+            if(!room || !overlay) {
+                if(window.__earthDiag) window.__earthDiag('bindChatDragDrop: room/overlay not found', true);
+                return;
+            }
             let dragCounter = 0;
-            // window 전체에서 dragenter를 감지하지만 채팅창 위에서만 오버레이 표시
-            body.addEventListener('dragenter', e => {
-                if(!e.dataTransfer || !Array.from(e.dataTransfer.types).includes('Files')) return;
-                e.preventDefault(); dragCounter++; overlay.classList.add('active');
+            const isFileDrag = (e) => {
+                if(!e.dataTransfer) return false;
+                try {
+                    const types = e.dataTransfer.types;
+                    if(!types) return false;
+                    // DOMStringList나 Array 모두 호환
+                    for(let i=0; i<types.length; i++) {
+                        if(types[i] === 'Files' || types[i] === 'application/x-moz-file') return true;
+                    }
+                    return false;
+                } catch(_){ return false; }
+            };
+
+            room.addEventListener('dragenter', e => {
+                if(!isFileDrag(e)) return;
+                e.preventDefault(); e.stopPropagation();
+                dragCounter++;
+                overlay.classList.add('active');
             });
-            body.addEventListener('dragleave', e => {
-                e.preventDefault(); dragCounter--;
+            room.addEventListener('dragleave', e => {
+                if(!isFileDrag(e)) return;
+                e.preventDefault(); e.stopPropagation();
+                dragCounter--;
                 if(dragCounter <= 0) { overlay.classList.remove('active'); dragCounter = 0; }
             });
-            body.addEventListener('dragover', e => { e.preventDefault(); });
-            body.addEventListener('drop', e => {
-                e.preventDefault(); dragCounter = 0; overlay.classList.remove('active');
-                if(e.dataTransfer.files && e.dataTransfer.files.length > 0) handleChatFileAttach(e.dataTransfer.files);
+            // dragover는 반드시 preventDefault 해야 drop 이벤트가 발생
+            room.addEventListener('dragover', e => {
+                if(!isFileDrag(e)) return;
+                e.preventDefault(); e.stopPropagation();
+                if(e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+            });
+            room.addEventListener('drop', e => {
+                if(!e.dataTransfer || !e.dataTransfer.files) return;
+                e.preventDefault(); e.stopPropagation();
+                dragCounter = 0;
+                overlay.classList.remove('active');
+                if(e.dataTransfer.files.length > 0 && typeof window.handleChatFileAttach === 'function') {
+                    window.handleChatFileAttach(e.dataTransfer.files);
+                }
+            });
+
+            // 🚀 [신규] 채팅 입력창에 이미지 붙여넣기 (Ctrl+V / Cmd+V)
+            const chatInput = document.getElementById('main-chat-input');
+            if(chatInput) {
+                chatInput.addEventListener('paste', async (e) => {
+                    if(!activeChatFriend) return;
+                    const items = (e.clipboardData || window.clipboardData || {}).items;
+                    if(!items) return;
+                    const fileList = [];
+                    for(let i=0; i<items.length; i++) {
+                        const it = items[i];
+                        if(it.kind === 'file') {
+                            const f = it.getAsFile();
+                            if(f) {
+                                const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0,19);
+                                const renamed = new File([f], `paste_${ts}.${(f.type.split('/')[1]||'bin')}`, { type: f.type });
+                                fileList.push(renamed);
+                            }
+                        }
+                    }
+                    if(fileList.length > 0) {
+                        e.preventDefault();
+                        showToast(`📋 클립보드에서 ${fileList.length}개 이미지 첨부`);
+                        if(typeof window.handleChatFileAttach === 'function') window.handleChatFileAttach(fileList);
+                    }
+                });
+            }
+
+            // 🚀 [신규 v5] 안전망: window 전역에 dragover preventDefault → 브라우저가 파일을 열어버리는 사고 방지
+            window.addEventListener('dragover', e => { 
+                // 채팅창이 열려 있을 때만 preventDefault (다른 dropzone 방해 안 함)
+                const drawer = document.getElementById('messenger-drawer');
+                const chatRoomActive = document.getElementById('view-chat-room');
+                if(drawer && drawer.classList.contains('open') && chatRoomActive && chatRoomActive.classList.contains('active')) {
+                    e.preventDefault();
+                }
+            });
+            window.addEventListener('drop', e => {
+                const drawer = document.getElementById('messenger-drawer');
+                const chatRoomActive = document.getElementById('view-chat-room');
+                // 채팅창 영역 밖에 떨어뜨려도 브라우저가 파일을 열지 않도록 차단
+                if(drawer && drawer.classList.contains('open') && chatRoomActive && chatRoomActive.classList.contains('active')) {
+                    if(!room.contains(e.target)) e.preventDefault();
+                }
             });
         })();
 
         // 카톡식 파일 첨부 → 미리보기 → 전송
+        // 🚀 [개선] 8MB 초과 파일은 자동으로 1:1 비공개 상품 등록 안내
         window.handleChatFileAttach = async function(files) {
             if(!activeChatFriend) return showToast("먼저 대화방을 여세요.");
             const arr = Array.from(files);
-            // 단순 파일 첨부 전송 (1:1 비공개 상품과는 별개; 무료 파일 공유)
             for(let f of arr) {
                 if(f.size > 8 * 1024 * 1024) {
-                    showToast(`⚠️ ${f.name} (${(f.size/1048576).toFixed(1)}MB): 8MB 이상 파일은 1:1 상품 판매로 등록해 주세요.`);
+                    // 🚀 즉시 1:1 비공개 상품 등록 흐름 제안
+                    const sizeMB = (f.size/1048576).toFixed(1);
+                    const goSale = confirm(`📦 "${f.name}" (${sizeMB}MB)\n\n8MB 초과 파일은 채팅 직첨부가 불가합니다.\n→ 1:1 비공개 상품으로 등록해 ${activeChatFriend}님에게 바로 판매하시겠습니까?\n\n(가격은 다음 단계에서 입력)`);
+                    if(goSale) {
+                        // 가격 입력 후 즉시 등록
+                        const pStr = parseInt(prompt(`스트리밍 가격 (원, 기본 1000)`, '1000')) || 1000;
+                        const pOri = parseInt(prompt(`원본 구매 가격 (원, 기본 10000)`, '10000')) || 10000;
+                        showToast("1:1 비공개 상품 암호화 중...");
+                        try {
+                            const rawBase64 = await fileToBase64(f);
+                            const parts = rawBase64.split(','); const header = parts[0] + ','; const dataPart = parts[1];
+                            const encoded = await processSecureDataAsync(dataPart);
+                            const finalPayload = header + encoded;
+                            const thumb = await generateThumbnail(f);
+                            const res = await fetch(`${API_URL}/api/products/encrypt-build`, {
+                                method:'POST', headers:{'Content-Type':'application/json'},
+                                body: JSON.stringify({ name: f.name, price_stream: pStr, price_original: pOri, stream_time: 365, stream_unit: 'd', seller: currentUser.name, storeId: currentChatRoomId, thumbnail: thumb, encryptedPayload: finalPayload, description: '1:1 비공개 전용 상품' })
+                            });
+                            const dt = await res.json();
+                            if(res.ok) {
+                                const saleMsg = `[ITEM_SALE]${dt.productId}|${f.name}|${pStr}|${pOri}|365d`;
+                                socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: document.getElementById('my-profile-pic').src, message: saleMsg });
+                                appendMainMessage(currentUser.name, saleMsg, document.getElementById('my-profile-pic').src);
+                                showToast(`✅ 1:1 비공개 상품 등록 완료: ${f.name}`);
+                            } else showToast(dt.error || "등록 실패");
+                        } catch(e) { showToast("등록 실패: " + (e.message||e)); }
+                    } else {
+                        showToast(`⚠️ ${f.name} 첨부 취소됨 (8MB 초과)`);
+                    }
                     continue;
                 }
                 try {
@@ -2046,15 +2592,26 @@
 
         // 🚀 당근마켓 리스트 UI (내 상점)
         async function loadMyStore() {
+            const grid = document.getElementById('my-store-grid');
+            if(!grid) return;
+            grid.innerHTML = '<div style="color:gray; font-size:13px; text-align:center; padding:20px;">⏳ 내 상점 상품 로딩 중...</div>';
             try {
-                const res = await fetch(`${API_URL}/api/products`); let prods = await res.json() || []; prods = prods.filter(p => p.seller === currentUser.name);
-                const grid = document.getElementById('my-store-grid'); if(prods.length === 0) { grid.innerHTML = '<div style="color:gray; font-size:13px; text-align:center; padding:20px;">자산을 드래그 앤 드롭으로 업로드 하세요.</div>'; return; }
+                if(!currentUser || !currentUser.name) {
+                    grid.innerHTML = '<div style="color:var(--danger); font-size:13px; text-align:center; padding:20px;">로그인 정보가 없습니다. 새로고침 후 다시 로그인하세요.</div>';
+                    return;
+                }
+                const res = await fetch(`${API_URL}/api/products`);
+                if(!res.ok) throw new Error(`HTTP ${res.status} from /api/products`);
+                let prods = await res.json() || [];
+                prods = prods.filter(p => p.seller === currentUser.name);
+                if(prods.length === 0) { grid.innerHTML = '<div style="color:gray; font-size:13px; text-align:center; padding:20px;">📦 등록한 상품이 없습니다. 위의 폼에서 첫 상품을 등록해 보세요.</div>'; return; }
                 let b = ''; prods.forEach(p => {
                     let unitStr = p.stream_unit === 'h' ? '시간' : p.stream_unit === 'y' ? '년' : '일'; const isSel = window.selectedProductsForBundle.has(p.id); const ratio = p.compression_ratio || getCompressionRatio(p.id + p.name);
+                    const pkgBadge = p.is_package ? `<span style="background:#7c3aed; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:4px;">📦 패키지</span>` : '';
                     b += `<div class="karrot-card ${isSel?'selected':''}" id="card-${p.id}">
                         <div class="karrot-thumb" onclick="openUniversalViewer('${p.id}', true)"><img src="${p.thumbnail}"><div class="compression-badge">🔒 Zlib: ${ratio}%</div></div>
                         <div class="karrot-info">
-                            <div id="name-${p.id}" class="editable-field karrot-title" contenteditable="false">${p.name}</div>
+                            <div id="name-${p.id}" class="editable-field karrot-title" contenteditable="false">${p.name}${pkgBadge}</div>
                             <div class="karrot-seller">상점 ID: ${p.storeId}</div>
                             <div id="desc-${p.id}" class="editable-field karrot-desc" contenteditable="false">${p.description || '상품 설명 추가...'}</div>
                             <div style="font-size:12px; margin-bottom:4px;">스트리밍 (<span id="dur-${p.id}" class="editable-field" style="display:inline;">${p.stream_time}</span><span id="unit-${p.id}" class="editable-field" style="display:inline;">${unitStr}</span>): <span id="p_str-${p.id}" class="editable-field" style="color:var(--primary); font-weight:bold;">${p.price_stream}</span>원</div>
@@ -2064,7 +2621,11 @@
                         <div class="check-circle" onclick="toggleProductSelect('${p.id}', this, event)">${isSel?'✔':''}</div>
                     </div>`;
                 }); grid.innerHTML = b;
-            } catch(e){}
+            } catch(e){
+                if(window.__earthDiag) window.__earthDiag('loadMyStore error: ' + (e.message || e), true);
+                console.error('loadMyStore error:', e);
+                grid.innerHTML = `<div style="color:var(--danger); font-size:13px; text-align:center; padding:20px; background:#fff7ed; border:1px solid var(--warning); border-radius:8px;">⚠️ 상품 목록 로딩 실패: <code style="font-size:11px;">${(e.message||String(e)).replace(/</g,'&lt;')}</code><br><button class="btn btn-outline" onclick="loadMyStore()" style="margin-top:8px; padding:6px 14px; font-size:12px;">🔄 다시 시도</button></div>`;
+            }
         }
 
         window.selectedProductsForBundle = new Set();
@@ -2278,7 +2839,11 @@
         async function searchPartnerStores(focusSearch) {
             try {
                 const res = await fetch(`${API_URL}/api/stores/active`); const stores = await res.json() || [];
-                const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`); const favs = await favRes.json() || [];
+                let favs = [];
+                if(currentUser && currentUser.name) {
+                    try { const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`); favs = await favRes.json() || []; }
+                    catch(e) { console.warn('fav fetch fail', e); }
+                }
                 window.allStoreCache = stores; window.favoriteStoreIds = favs;
 
                 const query = document.getElementById('partner-search-input').value.toLowerCase().trim();
@@ -2287,8 +2852,8 @@
                 // 🚀 즐겨찾는 브랜드 섹션 렌더링
                 renderFavoriteBrands(stores, favs);
 
-                // 본인 상점은 일반 탐색에서 제외, 검색어가 있으면 필터
-                let fil = stores.filter(st => st.owner !== currentUser.name);
+                // 🚀 [수정] 본인 상점도 결과에 포함하여 즉시 진입 가능 (이전 버전은 필터로 제외했음)
+                let fil = stores.slice();
                 if(query) fil = fil.filter(st => st.name.toLowerCase().includes(query) || (st.owner||'').toLowerCase().includes(query));
 
                 // 🚀 검색어가 있고 정확히 1개 매칭 시: 즉시 해당 브랜드 입장
@@ -2299,31 +2864,49 @@
                 }
 
                 if(fil.length === 0) {
-                    zone.innerHTML = `<span style="font-size:13px; color:var(--text-sub);">${query ? '검색 결과 없음' : '등록된 외부 브랜드 상점이 없습니다.'}</span>`;
+                    zone.innerHTML = `<span style="font-size:13px; color:var(--text-sub);">${query ? '검색 결과 없음' : '등록된 브랜드 상점이 없습니다.'}</span>`;
                     return;
                 }
+
+                // 본인 상점이 검색에 있으면 맨 앞에 정렬
+                const myName = (currentUser && currentUser.name) || '';
+                fil.sort((a, b) => {
+                    const aMine = a.owner === myName ? 0 : 1;
+                    const bMine = b.owner === myName ? 0 : 1;
+                    return aMine - bMine;
+                });
 
                 let h = '';
                 fil.forEach(st => {
                     const isFav = favs.includes(st.id);
+                    const isMine = st.owner === myName;
                     let admCloseBtn = isAdmin ? `<button class="btn btn-danger" style="padding:2px 8px; font-size:10px; border-radius:6px; margin-left:6px;" onclick="adminForceCloseStore('${st.id}', event)">Admin 강제폐쇄</button>` : '';
-                    // 🚀 단일 클릭으로 브랜드 입장 (1:1문의는 상점 입장 후에만 표시)
-                    h += `<div style="display:inline-flex; align-items:center; background:#fff; padding:8px 14px; border-radius:30px; border:1px solid var(--border-color); font-size:14px; font-weight:bold; box-shadow:0 2px 6px rgba(0,0,0,0.05); color:var(--text-main); cursor:pointer; user-select:none;" onclick="enterBrandStoreById('${st.id}')">
-                        <span style="color:var(--primary); margin-right:6px; font-size:12px;">[입장]</span>
+                    // 🚀 본인 상점은 별도 배경색 + [내 상점] 태그
+                    const bg = isMine ? 'linear-gradient(135deg,#dbeafe,#bfdbfe)' : '#fff';
+                    const border = isMine ? '1px solid #2563eb' : '1px solid var(--border-color)';
+                    const mineTag = isMine ? `<span style="background:var(--primary); color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; margin-right:6px;">내 상점</span>` : '';
+                    // 단일 클릭으로 브랜드 입장
+                    h += `<div style="display:inline-flex; align-items:center; background:${bg}; padding:8px 14px; border-radius:30px; border:${border}; font-size:14px; font-weight:bold; box-shadow:0 2px 6px rgba(0,0,0,0.05); color:var(--text-main); cursor:pointer; user-select:none;" onclick="enterBrandStoreById('${st.id}')">
+                        ${mineTag}<span style="color:var(--primary); margin-right:6px; font-size:12px;">[입장]</span>
                         <b>${st.name}</b> <span style="font-size:11px; color:gray; margin-left:6px;">(${st.owner})</span>
-                        <span style="margin-left:10px; cursor:pointer; color:${isFav?'var(--warning)':'#cbd5e1'}; font-size:18px;" onclick="toggleFavoriteStore('${st.id}', event)">★</span>
+                        ${!isMine ? `<span style="margin-left:10px; cursor:pointer; color:${isFav?'var(--warning)':'#cbd5e1'}; font-size:18px;" onclick="toggleFavoriteStore('${st.id}', event)">★</span>` : ''}
                         ${admCloseBtn}
                     </div>`;
                 });
                 zone.innerHTML = h;
-            } catch(e){}
+            } catch(e){ 
+                if(window.__earthDiag) window.__earthDiag('searchPartnerStores error: ' + (e.message || e), true);
+                console.error('searchPartnerStores error:', e);
+            }
         }
 
         // 🚀 즐겨찾는 브랜드 칩 렌더링 (상단 별도 노출)
         function renderFavoriteBrands(stores, favs) {
             const sec = document.getElementById('fav-brands-section');
             const list = document.getElementById('fav-brands-list');
-            const favStores = (stores || []).filter(st => favs.includes(st.id) && st.owner !== currentUser.name);
+            if(!sec || !list) return;
+            const myName = (currentUser && currentUser.name) || '';
+            const favStores = (stores || []).filter(st => favs.includes(st.id) && st.owner !== myName);
             if(favStores.length === 0) { sec.style.display = 'none'; list.innerHTML = ''; return; }
             sec.style.display = 'block';
             let h = '';
@@ -2455,28 +3038,57 @@
         window.filterShowcaseInline = function() {
             if(window.currentMarketFilter) return; // 입장 중일 때는 적용 안 함
             const q = (document.getElementById('partner-search-input').value || '').toLowerCase().trim();
+            const cat = window.activeCategoryFilter || 'all';
             const cards = document.querySelectorAll('#brand-showcase-grid > .brand-showcase-card');
+            let visibleCount = 0;
             cards.forEach(card => {
                 const name = (card.getAttribute('data-store-name') || '').toLowerCase();
                 const owner = (card.getAttribute('data-owner') || '').toLowerCase();
-                card.style.display = (!q || name.includes(q) || owner.includes(q)) ? 'block' : 'none';
+                const cardCat = card.getAttribute('data-category') || 'general';
+                const matchQ = !q || name.includes(q) || owner.includes(q);
+                const matchCat = cat === 'all' || cardCat === cat;
+                const show = matchQ && matchCat;
+                card.style.display = show ? 'block' : 'none';
+                if(show) visibleCount++;
             });
+            // 결과 안내
+            const wrap = document.getElementById('brand-showcase-grid');
+            let info = document.getElementById('showcase-filter-info');
+            if(cat !== 'all' || q) {
+                if(!info) {
+                    info = document.createElement('div');
+                    info.id = 'showcase-filter-info';
+                    info.style.cssText = 'text-align:center; padding:10px; color:var(--text-sub); font-size:12px;';
+                    wrap.parentElement.insertBefore(info, wrap);
+                }
+                info.innerText = `${visibleCount}개 결과 (필터: ${cat === 'all' ? '전체' : (window.getCategoryLabel ? window.getCategoryLabel(cat) : cat)}${q ? ` / "${q}"` : ''})`;
+            } else if(info) {
+                info.remove();
+            }
         }
 
-        // 🚀 최신 등록 브랜드 쇼케이스 로드
+        // 🚀 최신 등록 브랜드 쇼케이스 로드 (방어 코드 + 명확한 에러 메시지)
         async function loadShowcase() {
             const wrap = document.getElementById('brand-showcase-grid');
             if(!wrap) { console.warn('brand-showcase-grid not found (구버전 HTML?)'); return; }
+            // 로딩 상태 명시
+            wrap.innerHTML = `<div style="text-align:center; padding:30px 20px; color:var(--primary); font-size:13px; background:#fff; border:1px dashed var(--border-color); border-radius:12px;">⏳ 브랜드 데이터 로딩 중...</div>`;
             try {
                 const res = await fetch(`${API_URL}/api/stores/showcase`);
-                if(!res.ok) throw new Error('showcase fetch failed: ' + res.status);
+                if(!res.ok) throw new Error(`HTTP ${res.status} from ${API_URL}/api/stores/showcase`);
                 const showcase = await res.json() || [];
                 window.showcaseCache = showcase;
+                // 🚀 [수정] allStoreCache도 함께 채워서 enterBrandStoreById 즉시 동작
+                window.allStoreCache = showcase;
+
+                // currentUser가 없으면 빈 favs 사용 (방어)
                 let favs = [];
-                try {
-                    const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`);
-                    if(favRes.ok) favs = await favRes.json() || [];
-                } catch(e) { console.warn('favorites fetch failed:', e); }
+                if(currentUser && currentUser.name) {
+                    try {
+                        const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`);
+                        if(favRes.ok) favs = await favRes.json() || [];
+                    } catch(e) { console.warn('favorites fetch failed:', e); }
+                }
                 window.favoriteStoreIds = favs;
                 renderFavoriteBrands(showcase, favs);
 
@@ -2488,6 +3100,8 @@
                     return;
                 }
 
+                const myUserName = (currentUser && currentUser.name) || '';
+
                 let h = '';
                 showcase.forEach(st => {
                     const isFav = favs.includes(st.id);
@@ -2497,8 +3111,9 @@
                     // 썸네일 스트립 (최대 4칸; 부족하면 placeholder)
                     let stripHtml = '';
                     const slots = 4;
+                    const latestArr = st.latestProducts || [];
                     for(let i=0; i<slots; i++) {
-                        const p = st.latestProducts[i];
+                        const p = latestArr[i];
                         if(p) {
                             const priceText = Number(p.price_stream||0).toLocaleString() + '원~';
                             const isNew = i === 0 ? '<div class="new-tag">NEW</div>' : '';
@@ -2507,7 +3122,7 @@
                                 ${isNew}
                                 <div class="price-overlay">${priceText}</div>
                             </div>`;
-                        } else if(i === 0 && st.latestProducts.length === 0) {
+                        } else if(i === 0 && latestArr.length === 0) {
                             stripHtml += `<div class="empty-state">📭 등록된 상품 없음</div>`;
                             break;
                         } else {
@@ -2519,13 +3134,15 @@
                         ? `<div class="brand-logo-circle"><img src="${st.logo}"></div>`
                         : `<div class="brand-logo-circle" style="background:linear-gradient(135deg,#60a5fa,#2563eb); color:#fff; font-weight:bold;">${(st.name||'?').substring(0,1)}</div>`;
 
-                    h += `<div class="brand-showcase-card" data-store-name="${safeName}" data-owner="${safeOwner}">
+                    const isMine = st.owner === myUserName;
+                    const catLabel = (window.getCategoryLabel && window.getCategoryLabel(st.category)) || '🏪 일반 상점';
+                    h += `<div class="brand-showcase-card" data-store-name="${safeName}" data-owner="${safeOwner}" data-category="${st.category || 'general'}">
                         <div class="brand-thumb-strip">${stripHtml}</div>
                         <div class="brand-showcase-info">
                             ${logoHtml}
                             <div class="brand-meta">
-                                <div class="brand-name-row">${st.name}${st.owner === currentUser.name ? '<span style="font-size:10px; background:#dbeafe; color:#1e40af; padding:2px 6px; border-radius:6px;">내 상점</span>' : ''}</div>
-                                <div class="brand-owner-row">운영자 ${st.owner} · 상품 ${st.productCount}개${st.description ? ' · ' + (st.description.length>30 ? st.description.substring(0,30)+'…' : st.description) : ''}</div>
+                                <div class="brand-name-row">${st.name||'(이름 없음)'}${isMine ? '<span style="font-size:10px; background:#dbeafe; color:#1e40af; padding:2px 6px; border-radius:6px;">내 상점</span>' : ''}</div>
+                                <div class="brand-owner-row"><span style="font-size:11px; background:#f0f0f0; color:var(--text-main); padding:2px 6px; border-radius:4px; margin-right:4px;">${catLabel}</span>운영자 ${st.owner||'?'} · 상품 ${st.productCount||0}개${st.description ? ' · ' + (st.description.length>30 ? st.description.substring(0,30)+'…' : st.description) : ''}</div>
                             </div>
                             <div class="brand-actions">
                                 <button class="mini-btn ${isFav?'fav-on':''}" onclick="toggleFavoriteStoreShowcase('${st.id}', event)">${isFav?'★':'☆'}</button>
@@ -2535,12 +3152,17 @@
                     </div>`;
                 });
                 wrap.innerHTML = h;
+                // 🚀 [v6] 카테고리 칩 렌더
+                if(window.renderCategoryChips) window.renderCategoryChips();
                 filterShowcaseInline();
             } catch(e) {
                 console.error('Showcase load error:', e);
+                if(window.__earthDiag) window.__earthDiag('Showcase load error: ' + (e.message || e), true);
+                // 🚀 [수정] 실제 에러 메시지를 노출해 진단 가능하도록
                 wrap.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--danger); font-size:13px; background:#fff7ed; border:1px solid var(--warning); border-radius:12px;">
                     ⚠️ 브랜드 데이터를 불러오지 못했습니다.<br>
-                    <span style="font-size:11px; color:var(--text-sub);">잠시 후 자동 재시도되거나, 위의 🔄 새로고침을 눌러 주세요.</span><br>
+                    <code style="font-size:11px; color:var(--text-sub); background:#f8fafc; padding:4px 8px; border-radius:4px; display:inline-block; margin-top:8px; word-break:break-all;">${(e.message||String(e)).replace(/</g,'&lt;')}</code><br>
+                    <div style="font-size:11px; color:var(--text-sub); margin-top:6px;">API: ${API_URL.replace(/</g,'&lt;')}</div>
                     <button class="btn btn-outline" style="margin-top:10px; padding:6px 14px; font-size:12px;" onclick="loadShowcase()">🔄 지금 다시 시도</button>
                 </div>`;
             }
@@ -2701,72 +3323,79 @@
         }
 
         // 🚀 ============ 패키지 상품 주문 폼 (구매 확정 시 전체 HTML 묶음 → 판매자에게 전달) ============
-        window.orderFormState = { product: null, amount: 0, seller: null, purchaseType: null, packageFiles: [], buyerFiles: [], buyerMemo: '', pdfFormText: '' };
+        window.orderFormState = { product: null, amount: 0, seller: null, purchaseType: null, packageFiles: [], buyerFiles: [], buyerMemo: '', pdfFormText: '', pdfFilledData: null, pdfFile: null };
 
+        // 🚀 [v6] PDF 위에 직접 그릴 수 있는 fabric-less 간단 오버레이 + 텍스트 박스 작성
         function openOrderFormModal(product, amount, seller, purchaseType) {
             const pkgRaw = product.package_data;
             let pkg = { files: [], memo: '' };
             try { pkg = JSON.parse(pkgRaw || '{}'); } catch(e){}
-            window.orderFormState = { product, amount, seller, purchaseType, packageFiles: pkg.files || [], buyerFiles: [], buyerMemo: '', pdfFormText: '' };
+            window.orderFormState = { product, amount, seller, purchaseType, packageFiles: pkg.files || [], buyerFiles: [], buyerMemo: '', pdfFormText: '', pdfFilledData: null, pdfFile: pkg.files.find(f => f.role === 'order_form') || pkg.files.find(f => /\.pdf$/i.test(f.filename||'')) };
 
-            // 모달 콘텐츠 빌드
-            const modal = document.getElementById('order-form-modal');
             const body = document.getElementById('order-form-body');
-
-            const mainFile = pkg.files.find(f => f.role === 'main');
-            const pdfFile = pkg.files.find(f => f.role === 'order_form');
-            const extras = pkg.files.filter(f => f.role === 'extra');
+            const mainFile = pkg.files.find(f => f.role === 'main') || pkg.files[0];
+            const pdfFile = window.orderFormState.pdfFile;
+            const extras = pkg.files.filter(f => f !== mainFile && f !== pdfFile);
 
             let mainPreview = '';
             if(mainFile) {
-                if(/^image\//.test(mainFile.type)) mainPreview = `<img src="${mainFile.content}" style="max-width:100%; max-height:300px; border-radius:8px;">`;
-                else if(/^video\//.test(mainFile.type)) mainPreview = `<video src="${mainFile.content}" controls style="max-width:100%; max-height:300px; border-radius:8px;"></video>`;
-                else mainPreview = `<iframe src="${mainFile.content}" style="width:100%; height:300px; border:1px solid #cbd5e1; border-radius:8px;"></iframe>`;
+                if(/^image\//.test(mainFile.type)) mainPreview = `<img src="${mainFile.content}" style="max-width:100%; max-height:260px; border-radius:8px;">`;
+                else if(/^video\//.test(mainFile.type)) mainPreview = `<video src="${mainFile.content}" controls style="max-width:100%; max-height:260px; border-radius:8px;"></video>`;
+                else mainPreview = `<iframe src="${mainFile.content}" style="width:100%; height:260px; border:1px solid #cbd5e1; border-radius:8px;"></iframe>`;
             }
 
-            let pdfPreview = '';
-            if(pdfFile) {
-                pdfPreview = `<div style="margin-top:14px;">
-                    <div style="font-size:13px; font-weight:bold; color:var(--text-main); margin-bottom:6px;">📋 주문서 양식 (확인 후 아래 메모/요청 사항에 작성)</div>
-                    <iframe src="${pdfFile.content}" style="width:100%; height:380px; border:1px solid #cbd5e1; border-radius:8px; background:#fff;"></iframe>
+            // 🚀 [v6] 구매자 정보 자동 입력 영역
+            const cu = currentUser || {};
+            const buyerInfoBox = `
+                <div style="background:#fff7ed; border:1px solid #fdba74; padding:12px 14px; border-radius:8px; margin-bottom:14px;">
+                    <div style="font-size:12px; font-weight:bold; color:#7c2d12; margin-bottom:8px;">📇 구매자 정보 (판매자에게 자동 전달)</div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                        <div><label style="font-size:11px; color:var(--text-sub);">이름</label><input id="order-buyer-name" type="text" value="${(cu.realname||cu.name||'').replace(/"/g,'&quot;')}" style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"></div>
+                        <div><label style="font-size:11px; color:var(--text-sub);">전화번호</label><input id="order-buyer-phone" type="tel" value="${(cu.phone||'').replace(/"/g,'&quot;')}" placeholder="연락처" style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"></div>
+                        <div style="grid-column:1/-1;"><label style="font-size:11px; color:var(--text-sub);">배송지/주소</label><input id="order-buyer-address" type="text" value="${(cu.shipping_address||'').replace(/"/g,'&quot;')}" placeholder="주소 입력 (선택)" style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"></div>
+                    </div>
                 </div>`;
-            }
-
-            let extrasList = '';
-            if(extras.length > 0) {
-                extrasList = `<div style="margin-top:12px; background:#f8fafc; padding:10px; border-radius:8px;"><div style="font-size:12px; font-weight:bold; color:var(--text-main); margin-bottom:6px;">📂 첨부 자료 (${extras.length}개)</div>` +
-                    extras.map((f, i) => `<a href="${f.content}" download="${(f.filename||'').replace(/"/g,'&quot;')}" style="display:inline-block; margin:3px; background:#fff; border:1px solid #cbd5e1; padding:5px 10px; border-radius:6px; font-size:11px; text-decoration:none; color:#1f2937;">📎 ${(f.filename||'').replace(/</g,'&lt;')}</a>`).join('') + '</div>';
-            }
 
             body.innerHTML = `
                 <div style="background:linear-gradient(135deg, #60a5fa, #2563eb); color:#fff; padding:14px 18px; border-radius:10px; margin-bottom:14px;">
                     <div style="font-size:18px; font-weight:900;">${(product.name||'').replace(/</g,'&lt;')}</div>
-                    <div style="font-size:12px; opacity:0.95; margin-top:4px;">운영자: ${seller} · 결제 예정: <b>${Number(amount).toLocaleString()}원</b></div>
+                    <div style="font-size:12px; opacity:0.95; margin-top:4px;">판매자: ${seller} · 결제 예정: <b>${Number(amount).toLocaleString()}원</b></div>
+                    <div style="font-size:11px; opacity:0.85; margin-top:6px; background:rgba(255,255,255,0.18); padding:6px 10px; border-radius:6px;">⏳ 이 주문서는 보내신 후 <b>판매자가 채팅창에서 승인</b>해야 결제가 완료됩니다.</div>
                 </div>
                 ${product.description ? `<div style="background:#f8fafc; padding:10px 14px; border-radius:8px; font-size:13px; color:var(--text-main); margin-bottom:14px; line-height:1.5;">${(product.description||'').replace(/</g,'&lt;')}</div>` : ''}
                 ${mainPreview ? `<div style="margin-bottom:14px; text-align:center;">${mainPreview}</div>` : ''}
-                ${pdfPreview}
-                ${extrasList}
+
+                ${buyerInfoBox}
+
+                ${pdfFile ? `
+                    <div style="margin-bottom:14px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
+                            <div style="font-size:14px; font-weight:bold; color:var(--text-main);">📋 주문서 양식 — 큰 화면에서 보기</div>
+                            <button class="btn" style="padding:8px 14px; font-size:12px; background:linear-gradient(135deg,#f59e0b,#ef4444); color:#fff;" onclick="openPdfFillModal()">🖊️ PDF 보고 답변 작성하기</button>
+                        </div>
+                        <iframe src="${pdfFile.content}" style="width:100%; height:360px; border:1px solid #cbd5e1; border-radius:8px; background:#fff;"></iframe>
+                        <div id="pdf-filled-status" style="margin-top:6px; font-size:11px; color:var(--text-sub);">아직 답변을 작성하지 않았습니다.</div>
+                    </div>` : ''}
+
+                ${extras.length > 0 ? `<div style="margin-bottom:14px; background:#f8fafc; padding:10px; border-radius:8px;">
+                    <div style="font-size:12px; font-weight:bold; color:var(--text-main); margin-bottom:6px;">📂 판매자 제공 첨부 자료 (${extras.length}개)</div>
+                    ${extras.map(f => `<a href="${f.content}" download="${(f.filename||'').replace(/"/g,'&quot;')}" style="display:inline-block; margin:3px; background:#fff; border:1px solid #cbd5e1; padding:5px 10px; border-radius:6px; font-size:11px; text-decoration:none; color:#1f2937;">📎 ${(f.filename||'').replace(/</g,'&lt;')}</a>`).join('')}
+                </div>` : ''}
 
                 <hr style="margin:18px 0; border:none; border-top:1px solid var(--border-color);">
 
-                <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin-bottom:8px;">📝 구매자 메모 / 요청 사항</div>
-                <textarea id="order-buyer-memo" placeholder="상품 주문 시 필요한 정보를 작성하세요. (배송 옵션, 사이즈, 색상, 추가 요청 등)" rows="4" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-family:inherit; font-size:13px;"></textarea>
-
-                ${pdfFile ? `<div style="font-size:14px; font-weight:bold; color:var(--text-main); margin:14px 0 8px;">📋 주문서 입력 사항 (위 PDF 양식 참고)</div>
-                <textarea id="order-pdf-text" placeholder="PDF 양식의 각 항목 답변을 여기에 정리해 주세요. 판매자에게 그대로 전달됩니다." rows="6" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-family:inherit; font-size:13px;"></textarea>` : ''}
+                <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin-bottom:8px;">📝 요청 사항 / 메모</div>
+                <textarea id="order-buyer-memo" placeholder="배송 옵션, 사이즈, 색상, 기타 요청 등" rows="3" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-family:inherit; font-size:13px;"></textarea>
 
                 <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin:14px 0 8px;">📂 추가 파일 첨부 (선택)</div>
                 <div id="order-buyer-dropzone" class="dropzone" style="padding:20px;">
                     <div style="font-size:24px;">📁</div>
                     <div style="font-size:13px; margin-top:4px;">파일을 드래그 앤 드롭하거나 클릭하여 선택</div>
-                    <div style="font-size:11px; color:var(--text-sub); font-weight:normal; margin-top:4px;">여러 개 가능 · 사진, 영상, 문서 등 무엇이든</div>
                 </div>
                 <input type="file" id="order-buyer-files" multiple style="display:none;">
                 <div id="order-buyer-files-list" style="margin-top:8px;"></div>
             `;
 
-            // 드롭존 바인딩
             const obDz = document.getElementById('order-buyer-dropzone');
             const obIn = document.getElementById('order-buyer-files');
             obDz.addEventListener('click', () => obIn.click());
@@ -2777,6 +3406,57 @@
 
             openModal('order-form-modal');
         }
+
+        // 🚀 [v6] PDF 답변 작성 모달 (큰 화면 PDF + 답변 텍스트 + 저장 → 메인 폼에 반영)
+        window.openPdfFillModal = function() {
+            const st = window.orderFormState;
+            if(!st.pdfFile) return showToast('PDF 양식이 없습니다.');
+            const pdf = st.pdfFile;
+            // 모달이 없으면 생성
+            let m = document.getElementById('pdf-fill-modal');
+            if(!m) {
+                m = document.createElement('div');
+                m.id = 'pdf-fill-modal';
+                m.className = 'modal-overlay';
+                m.innerHTML = `<div class="modal-content" style="max-width:1200px; max-height:96vh; padding:0; display:flex; flex-direction:column;">
+                    <div class="modal-header" style="margin:0; padding:14px 18px;"><span>📋 주문서 양식 작성</span><button class="close-btn-x" onclick="closeModal('pdf-fill-modal')">&times;</button></div>
+                    <div style="display:grid; grid-template-columns:1fr 380px; gap:0; flex:1; min-height:0;">
+                        <iframe id="pdf-fill-iframe" style="width:100%; height:100%; border:none; background:#1e293b;"></iframe>
+                        <div style="border-left:1px solid var(--border-color); padding:16px; overflow-y:auto; background:#f8fafc; display:flex; flex-direction:column;">
+                            <div style="font-size:13px; font-weight:bold; color:var(--text-main); margin-bottom:6px;">✍️ PDF의 각 항목 답변</div>
+                            <div style="font-size:11px; color:var(--text-sub); margin-bottom:10px;">왼쪽 PDF를 보면서 항목별로 답변을 작성하세요. 저장 시 메인 주문서에 자동 반영됩니다.</div>
+                            <textarea id="pdf-fill-textarea" rows="20" style="flex:1; padding:12px; border:1px solid var(--border-color); border-radius:8px; font-family:inherit; font-size:13px; resize:none; min-height:300px;" placeholder="예시:\n1. 환자명: \n2. 보철 종류: \n3. 색상: \n..."></textarea>
+                            <div style="margin-top:12px; display:flex; gap:8px;">
+                                <button class="btn btn-outline" style="flex:1; padding:10px;" onclick="closeModal('pdf-fill-modal')">취소</button>
+                                <button class="btn" style="flex:2; padding:10px; background:linear-gradient(135deg,#10b981,#059669); font-weight:bold;" onclick="savePdfFillAnswers()">💾 저장 후 주문서에 반영</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+                document.body.appendChild(m);
+            }
+            document.getElementById('pdf-fill-iframe').src = pdf.content;
+            const ta = document.getElementById('pdf-fill-textarea');
+            ta.value = st.pdfFilledData || '';
+            openModal('pdf-fill-modal');
+        };
+
+        window.savePdfFillAnswers = function() {
+            const ta = document.getElementById('pdf-fill-textarea');
+            const val = (ta.value || '').trim();
+            window.orderFormState.pdfFilledData = val;
+            const stat = document.getElementById('pdf-filled-status');
+            if(stat) {
+                if(val) {
+                    const lines = val.split('\n').filter(l => l.trim()).length;
+                    stat.innerHTML = `<span style="color:var(--success); font-weight:bold;">✓ 답변 작성 완료 (${lines}줄)</span> · 메인 주문서에 자동 반영됩니다.`;
+                } else {
+                    stat.innerText = '아직 답변을 작성하지 않았습니다.';
+                }
+            }
+            closeModal('pdf-fill-modal');
+            showToast(val ? '✅ PDF 답변이 저장되었습니다.' : 'PDF 답변이 비어 있습니다.');
+        };
 
         function addBuyerFiles(fileList) {
             const arr = Array.from(fileList);
@@ -2798,24 +3478,35 @@
             renderBuyerFilesList();
         }
 
-        window.confirmOrderAndCheckout = async function() {
+        // 🚀 [v6] 주문서 보내기 — 결제 X, pending 상태로 채팅에 카드 전송
+        window.submitOrderForApproval = async function() {
             const st = window.orderFormState;
             if(!st.product) return;
             const memo = (document.getElementById('order-buyer-memo').value || '').trim();
-            const pdfText = (document.getElementById('order-pdf-text') ? document.getElementById('order-pdf-text').value : '') || '';
+            const pdfText = window.orderFormState.pdfFilledData || '';
+            const buyerInfo = {
+                name: (document.getElementById('order-buyer-name').value || '').trim(),
+                phone: (document.getElementById('order-buyer-phone').value || '').trim(),
+                address: (document.getElementById('order-buyer-address').value || '').trim(),
+                userId: currentUser.name
+            };
 
-            if(!confirm(`주문을 확정합니다.\n\n결제 금액: ${Number(st.amount).toLocaleString()}원\n\n결제 즉시 판매자에게 작성하신 내용과 첨부 파일이 채팅방으로 전달됩니다.\n계속하시겠습니까?`)) return;
+            // 사전 잔액 확인
+            try {
+                const balRes = await fetch(`${API_URL}/api/users/${encodeURIComponent(currentUser.name)}`);
+                if(balRes.ok) {
+                    const balData = await balRes.json();
+                    if(balData.balance < st.amount) {
+                        if(!confirm(`현재 잔액(${Number(balData.balance).toLocaleString()}원)이 결제 예정 금액(${Number(st.amount).toLocaleString()}원)보다 적습니다.\n\n판매자가 승인할 때까지 결제는 진행되지 않으므로 보낼 수 있지만, 승인 시점에 잔액이 부족하면 결제가 실패할 수 있습니다.\n\n계속하시겠습니까?`)) return;
+                    }
+                }
+            } catch(_){}
 
-            // 1. 결제
-            showToast("결제 진행 중...");
-            const payRes = await fetch(`${API_URL}/api/buy`, {
-                method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ buyer: currentUser.name, seller: st.seller, productId: st.product.id, productName: st.product.name, amount: st.amount, purchaseType: st.purchaseType })
-            });
-            if(!payRes.ok) { const d = await payRes.json(); return showToast(d.error || "결제 실패"); }
+            if(!confirm(`📤 주문서를 ${st.seller}님에게 보냅니다.\n\n결제 예정: ${Number(st.amount).toLocaleString()}원\n(판매자가 채팅에서 ✅ 승인하면 자동 결제됩니다)\n\n계속하시겠습니까?`)) return;
 
-            // 2. 구매자 파일들을 base64로 변환
             showToast("주문서 패키징 중...");
+
+            // 구매자 파일들 → base64
             const buyerFilesB64 = [];
             for(let f of st.buyerFiles) {
                 try {
@@ -2824,41 +3515,67 @@
                 } catch(e){}
             }
 
-            // 3. 전체 패키지 HTML 생성 (판매자/구매자가 함께 열람할 수 있는 자체완결 HTML)
-            const orderHtml = buildOrderConfirmationHTML(st.product, st, memo, pdfText, buyerFilesB64);
+            // 자체완결 주문서 HTML 생성 (구매자 정보 + 메모 + PDF 답변 + 첨부 파일 모두 포함)
+            const orderHtml = buildOrderConfirmationHTML(st.product, st, memo, pdfText, buyerFilesB64, buyerInfo);
 
-            // 4. 판매자에게 채팅으로 전달 — 친구 추가 + 채팅방 자동 개설
-            await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: st.seller }) });
+            // 친구 등록 + 채팅방 자동 개설
+            try { await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: st.seller }) }); } catch(_){}
             const roomId = createRoomId(currentUser.name, st.seller);
             if(socket && socket.connected) socket.emit('join_room', roomId);
 
-            // 5. ORDER_CONFIRM 메시지 (작은 카드 + 전체 HTML 다운로드 링크)
-            // bundle HTML이 너무 크면 메시지 자체에는 메타만 보내고 서버에 저장
-            const summaryMsg = `[ORDER_CONFIRM]${st.product.id}|${(st.product.name||'').replace(/\|/g, ' ')}|${st.amount}|${buyerFilesB64.length}|${(memo||'').replace(/\|/g, ' ').substring(0, 100)}`;
+            // 상점 정보 조회 (대화방 이름에 사용)
+            let storeName = '', storeId = '';
+            try {
+                const prod = st.product;
+                if(prod.storeId) {
+                    const sRes = await fetch(`${API_URL}/api/store/${prod.storeId}`);
+                    const sData = await sRes.json();
+                    storeName = (sData && sData.name) || '';
+                    storeId = (sData && sData.id) || prod.storeId;
+                }
+            } catch(_){}
+
+            // 채팅방 메타 upsert (브랜드명 + 최신 상품명)
+            try {
+                await fetch(`${API_URL}/api/chat-room/upsert`, {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ roomId, type: 'order', buyer: currentUser.name, seller: st.seller, storeId, storeName, lastProductId: st.product.id, lastProductName: st.product.name })
+                });
+            } catch(_){}
+
+            // 서버에 pending 주문 저장
+            const submitRes = await fetch(`${API_URL}/api/product/submit-order`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({
+                    productId: st.product.id, buyer: currentUser.name, seller: st.seller,
+                    bundle_html: orderHtml, memo, form_data: { pdfText, buyerFilesMeta: buyerFilesB64.map(f => ({ filename: f.filename, type: f.type })) },
+                    pdf_filled_data: pdfText, buyer_info: buyerInfo,
+                    amount: st.amount, status: 'pending'
+                })
+            });
+            const submitData = await submitRes.json();
+            if(!submitRes.ok) return showToast(submitData.error || '주문 전송 실패');
+
+            // 채팅 카드 전송 — orderId 포함
+            const summaryMsg = `[ORDER_PENDING]${submitData.orderId}|${st.product.id}|${(st.product.name||'').replace(/\|/g, ' ')}|${st.amount}|${buyerFilesB64.length}|${(memo||'').replace(/\|/g, ' ').substring(0, 60)}`;
             const pic = document.getElementById('my-profile-pic').src;
             if(socket && socket.connected) {
                 socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: summaryMsg });
             }
 
-            // 6. 서버에 주문 전체 HTML 저장 (다운로드용)
-            await fetch(`${API_URL}/api/product/submit-order`, {
-                method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({
-                    productId: st.product.id, buyer: currentUser.name, seller: st.seller,
-                    bundle_html: orderHtml, memo, form_data: { pdfText, buyerFiles: buyerFilesB64.map(f => ({ filename: f.filename, type: f.type })) }
-                })
-            });
-
             closeModal('order-form-modal');
-            showToast(`✅ 주문 확정 + ${Number(st.amount).toLocaleString()}원 결제 완료. 판매자(${st.seller})에게 채팅방으로 전달되었습니다.`);
-            updateUserBalance(); loadMarketplace();
+            showToast(`📤 주문서가 ${st.seller}님에게 전달되었습니다. 승인 대기 중...`);
 
-            // 7. 채팅창 자동 오픈
-            setTimeout(() => { toggleMessengerDrawer(); openMessengerChat(st.seller); }, 600);
-        }
+            // 채팅창 자동 오픈
+            setTimeout(() => { 
+                if(!document.getElementById('messenger-drawer').classList.contains('open')) toggleMessengerDrawer(); 
+                openMessengerChat(st.seller); 
+            }, 600);
+        };
 
         // 자체완결 HTML 생성 (대표파일 뷰어 + PDF 텍스트 답변 + 구매자 첨부 + 대화방 다이렉트 링크)
-        function buildOrderConfirmationHTML(product, st, memo, pdfText, buyerFilesB64) {
+        function buildOrderConfirmationHTML(product, st, memo, pdfText, buyerFilesB64, buyerInfo) {
+            buyerInfo = buyerInfo || {};
             const buyerName = currentUser.name;
             const sellerName = st.seller;
             const chatLink = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(buyerName)}`;
@@ -2874,13 +3591,15 @@
             const orderData = JSON.stringify({
                 product: { name: product.name, description: product.description || '' },
                 buyer: buyerName, seller: sellerName,
+                buyerInfo: buyerInfo, // 🚀 [v6] 이름·전화·주소
                 amount: st.amount,
                 timestamp: timeStr,
                 memo: memo || '',
                 pdfText: pdfText || '',
                 pkgFiles: st.packageFiles || [],
                 buyerFiles: buyerFilesB64 || [],
-                chatLink
+                chatLink,
+                status: 'pending'
             }).replace(/<\/script/gi, '<\\/script');
 
             return [
@@ -2930,6 +3649,7 @@
                 '</div>',
                 '<div class="container">',
                 '<div id="descCard" class="card" style="display:none;"><h3>📝 상품 설명</h3><div id="descBox"></div></div>',
+                '<div id="buyerInfoCard" class="card" style="display:none; background:#fff7ed; border:1px solid #fdba74;"><h3 style="color:#7c2d12;">📇 구매자 정보</h3><div id="buyerInfoBox" style="font-size:13px; line-height:1.8;"></div></div>',
                 '<div class="card"><h3>🎯 상품 대표 파일</h3><div id="mainViewer" class="viewer-box"><div class="fallback">로딩 중...</div></div></div>',
                 '<div id="pkgCard" class="card" style="display:none;"><h3>📋 판매자 제공 자료</h3><div id="pkgFiles" class="file-list"></div></div>',
                 '<div id="memoCard" class="card" style="display:none;"><h3>💬 구매자 메모 / 요청 사항</h3><div id="memoBox" class="memo-box"></div></div>',
@@ -2944,6 +3664,17 @@
                 '(function(){',
                 '  var data; try { data = JSON.parse(document.getElementById("orderData").textContent); } catch(e) { return; }',
                 '  if(data.product.description) { document.getElementById("descBox").textContent = data.product.description; document.getElementById("descCard").style.display = "block"; }',
+                '  /* 🚀 [v6] 구매자 정보 표시 (이름·전화·주소) */',
+                '  if(data.buyerInfo && (data.buyerInfo.name || data.buyerInfo.phone || data.buyerInfo.address)) {',
+                '    var bi = data.buyerInfo;',
+                '    var html = "";',
+                '    if(bi.name) html += "<div><b>이름:</b> " + bi.name + "</div>";',
+                '    if(bi.userId) html += "<div><b>ID:</b> " + bi.userId + "</div>";',
+                '    if(bi.phone) html += "<div><b>연락처:</b> " + bi.phone + "</div>";',
+                '    if(bi.address) html += "<div><b>주소:</b> " + bi.address + "</div>";',
+                '    document.getElementById("buyerInfoBox").innerHTML = html;',
+                '    document.getElementById("buyerInfoCard").style.display = "block";',
+                '  }',
                 '  function renderMain(box, file) {',
                 '    if(!file || !file.content) { box.innerHTML = "<div class=\\"fallback\\">파일 없음</div>"; return; }',
                 '    var t = (file.type || "").toLowerCase(); var fn = (file.filename || "").toLowerCase();',
@@ -3022,7 +3753,16 @@
                         if(allowDownload) {
                             btn.onclick = function() {
                                 // 🚀 안전한 자체완결 HTML 생성 (JSON 임베드 + 분리된 디코더 스크립트)
-                                const htmlContent = buildStandaloneViewerHTML(p);
+                                // 🚀 [신규] 구매 컨텍스트를 같이 전달 — 영수증 + 판매자 채팅 CTA가 자동 포함됨
+                                const ctx = {
+                                    seller: p.seller,
+                                    timestamp: new Date().toLocaleString('ko-KR'),
+                                    purchaseInfo: {
+                                        amount: p.price_original || p.price_stream || 0,
+                                        purchaseType: 'original'
+                                    }
+                                };
+                                const htmlContent = buildStandaloneViewerHTML(p, ctx);
                                 const blob = new Blob([htmlContent], { type: 'text/html' });
                                 const url = URL.createObjectURL(blob);
                                 const a = document.createElement('a');
@@ -3031,7 +3771,7 @@
                                 a.download = `${safeFileName}_EarthView.html`;
                                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
                                 setTimeout(() => URL.revokeObjectURL(url), 1000);
-                                showToast("원본 상품 다운로드 완료");
+                                showToast("원본 상품 다운로드 완료 (영수증 + 판매자 채팅 링크 포함)");
                             };
                         }
                     } catch(err){ display.innerHTML = `<div style="color:var(--danger); font-weight:bold;">데이터 파싱 손상 오류 발생</div>`; }
@@ -3040,11 +3780,14 @@
         }
         function closeUniversalModal() { document.getElementById('modal-viewer-display').innerHTML = ''; document.getElementById('universal-modal').style.display = 'none'; }
 
-        // 🚀 ============ 자체완결 HTML 뷰어 빌더 (JSON-embed 패턴, escape 안전) ============
-        // 첨부하신 RAYCloud 뷰어와 동일하게 데이터는 <script type="application/json">로 임베드
-        // 디코더 JS는 그 JSON을 DOM에서 읽음 → 템플릿 중첩/escape 깨짐 없음
-        function buildStandaloneViewerHTML(product) {
-            // 패키지 상품이면 package_data 활용, 아니면 단일 파일
+        // 🚀 ============ 자체완결 HTML 뷰어 빌더 (RAYCloud "모바일 뷰어 만들기" 포맷 기반) ============
+        // 참조한 mergeModelsToSingleHtml 함수의 단순 순차 포맷을 그대로 따름:
+        //   다크 테마 + 파일마다 <h3>제목</h3> + 콘텐츠 인라인
+        // 동영상 재생 지원 추가 (참조 원본은 OBJ/STL/이미지만), 판매자 채팅 CTA 임베드
+        function buildStandaloneViewerHTML(product, ctx) {
+            ctx = ctx || {};
+
+            // 파일 목록 모으기 (패키지 또는 단일)
             let allFiles = [];
             if(product.is_package && product.package_data) {
                 try {
@@ -3052,12 +3795,10 @@
                     allFiles = pkg.files || [];
                 } catch(e) { console.warn('package parse fail', e); }
             }
-            // 단일 파일 모드: encryptedPayload를 시프트 해제해서 원본 data URL을 만듦
             if(allFiles.length === 0 && product.encryptedPayload) {
                 const parts = product.encryptedPayload.split(',');
                 const head = parts[0] + ',';
                 const body = parts[1] || '';
-                // 시프트 +32 해제 (대칭 변환)
                 const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
                 let dec = '';
                 for(let i=0; i<body.length; i++) {
@@ -3074,109 +3815,121 @@
                 });
             }
 
-            // 데이터 JSON 빌드. closing-script 문자열이 데이터 안에 있을 가능성 차단
-            const dataJson = JSON.stringify({
-                title: product.name || '상품',
-                description: product.description || '',
-                files: allFiles
-            }).replace(/<\/script/gi, '<\\/script');
+            // 판매자 채팅 링크
+            const sellerName = product.seller || ctx.seller || '';
+            const buyerName = (currentUser && currentUser.name) || '';
+            const sellerChatLink = sellerName
+                ? `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(sellerName)}`
+                : '';
+            const purchaseTimestamp = ctx.timestamp || new Date().toLocaleString('ko-KR');
+            const receiptInfo = ctx.purchaseInfo || null;
 
-            const titleSafe = (product.name || '상품').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            // HTML escape 헬퍼
+            const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+            const titleSafe = esc(product.name || '상품');
+            const sellerSafe = esc(sellerName);
+            const buyerSafe = esc(buyerName);
 
-            // 디코더/뷰어 JS는 별도 문자열로 작성 (백틱/달러 없음)
-            return [
-                '<!DOCTYPE html>',
-                '<html lang="ko"><head>',
-                '<meta charset="UTF-8">',
-                '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-                '<title>' + titleSafe + ' - Earth Viewer</title>',
-                '<style>',
-                '* { box-sizing: border-box; margin: 0; padding: 0; }',
-                'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", sans-serif; background: #f1f5f9; color: #0f172a; min-height: 100vh; }',
-                '.header { background: linear-gradient(135deg, #60a5fa, #2563eb); color: #fff; padding: 22px 18px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }',
-                '.header h1 { font-size: 22px; font-weight: 900; word-break: break-all; }',
-                '.header .sub { font-size: 12px; opacity: 0.92; margin-top: 4px; }',
-                '.container { max-width: 900px; margin: 0 auto; padding: 20px 14px 80px; }',
-                '.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }',
-                '.card h3 { font-size: 15px; color: #0f172a; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #f1f5f9; }',
-                '.viewer-box { text-align: center; min-height: 80px; }',
-                '.viewer-box img { max-width: 100%; max-height: 600px; border-radius: 8px; }',
-                '.viewer-box video { max-width: 100%; max-height: 600px; border-radius: 8px; background: #000; }',
-                '.viewer-box iframe { width: 100%; height: 480px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; }',
-                '.viewer-box .fallback { padding: 30px; color: #64748b; }',
-                '.viewer-box .fallback .icon { font-size: 60px; margin-bottom: 10px; }',
-                '.file-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }',
-                '.file-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; text-align: center; }',
-                '.file-item .icon { font-size: 36px; margin-bottom: 6px; }',
-                '.file-item .name { font-size: 11px; font-weight: bold; word-break: break-all; margin-bottom: 8px; color: #1f2937; }',
-                '.file-item img, .file-item video { max-width: 100%; max-height: 120px; border-radius: 6px; margin-bottom: 6px; }',
-                '.btn-dl { background: linear-gradient(135deg, #60a5fa, #2563eb); color: #fff; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-size: 11px; font-weight: bold; display: inline-block; border: none; cursor: pointer; }',
-                '.btn-dl:hover { transform: translateY(-1px); }',
-                '.desc-box { background: #f8fafc; padding: 12px 14px; border-radius: 8px; font-size: 13px; color: #475569; line-height: 1.6; }',
-                '.toast { position: fixed; bottom: 25px; left: 50%; transform: translateX(-50%); background: rgba(15,23,42,0.92); color: #fff; padding: 12px 24px; border-radius: 30px; font-size: 13px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 9999; }',
-                '.toast.show { opacity: 1; }',
-                '</style></head><body>',
-                '<div class="header"><h1>📦 ' + titleSafe + '</h1><div class="sub">Earth Standalone Viewer · 자체완결 HTML</div></div>',
-                '<div class="container">',
-                '<div id="descCard" class="card" style="display:none;"><h3>📝 상품 설명</h3><div id="descBox" class="desc-box"></div></div>',
-                '<div class="card"><h3>🎯 메인 콘텐츠</h3><div id="mainViewer" class="viewer-box"><div class="fallback"><div class="icon">⏳</div>로딩 중...</div></div></div>',
-                '<div id="extrasCard" class="card" style="display:none;"><h3>📂 추가 자료</h3><div id="extrasList" class="file-list"></div></div>',
-                '</div>',
-                '<div id="toast" class="toast"></div>',
-                '<scr' + 'ipt id="earthData" type="application/json">',
-                dataJson,
-                '</scr' + 'ipt>',
-                '<scr' + 'ipt>',
-                '(function(){',
-                '  function showToast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(function(){t.classList.remove("show");},2500);}',
-                '  var data;',
-                '  try { data = JSON.parse(document.getElementById("earthData").textContent); } catch(e){ document.getElementById("mainViewer").innerHTML = "<div class=\\"fallback\\"><div class=\\"icon\\">⚠️</div>데이터 파싱 실패</div>"; return; }',
-                '  function renderViewer(box, file) {',
-                '    if(!file || !file.content) { box.innerHTML = "<div class=\\"fallback\\"><div class=\\"icon\\">❌</div>파일 데이터 없음</div>"; return; }',
-                '    var type = (file.type || "").toLowerCase();',
-                '    var fn = (file.filename || "").toLowerCase();',
-                '    var isImg = /^image\\//.test(type) || /\\.(png|jpg|jpeg|gif|webp|svg|bmp)$/.test(fn);',
-                '    var isVid = /^video\\//.test(type) || /\\.(mp4|webm|mov|m4v|ogv)$/.test(fn);',
-                '    var isPdf = /pdf/i.test(type) || /\\.pdf$/.test(fn);',
-                '    var isHtml = /html/i.test(type) || /\\.html?$/.test(fn);',
-                '    var isAudio = /^audio\\//.test(type) || /\\.(mp3|wav|ogg|m4a)$/.test(fn);',
-                '    if(isImg) { box.innerHTML = ""; var img = document.createElement("img"); img.src = file.content; box.appendChild(img); }',
-                '    else if(isVid) { box.innerHTML = ""; var vid = document.createElement("video"); vid.src = file.content; vid.controls = true; vid.playsInline = true; box.appendChild(vid); }',
-                '    else if(isAudio) { box.innerHTML = ""; var au = document.createElement("audio"); au.src = file.content; au.controls = true; box.appendChild(au); }',
-                '    else if(isPdf || isHtml) { box.innerHTML = ""; var ifr = document.createElement("iframe"); ifr.src = file.content; box.appendChild(ifr); }',
-                '    else { box.innerHTML = "<div class=\\"fallback\\"><div class=\\"icon\\">📄</div><b>" + (file.filename || "파일") + "</b><br><br><a class=\\"btn-dl\\" href=\\"" + file.content + "\\" download=\\"" + (file.filename || "asset") + "\\">💾 다운로드</a></div>"; }',
-                '  }',
-                '  function renderExtra(container, file) {',
-                '    var type = (file.type || "").toLowerCase();',
-                '    var fn = (file.filename || "").toLowerCase();',
-                '    var isImg = /^image\\//.test(type) || /\\.(png|jpg|jpeg|gif|webp)$/.test(fn);',
-                '    var isVid = /^video\\//.test(type) || /\\.(mp4|webm|mov)$/.test(fn);',
-                '    var isPdf = /pdf/i.test(type) || /\\.pdf$/.test(fn);',
-                '    var item = document.createElement("div"); item.className = "file-item";',
-                '    var prev = "";',
-                '    if(isImg) prev = "<img alt=\\"\\">";',
-                '    else if(isVid) prev = "<video controls></video>";',
-                '    else prev = "<div class=\\"icon\\">" + (isPdf ? "📄" : "📎") + "</div>";',
-                '    item.innerHTML = prev + "<div class=\\"name\\">" + (file.filename || "(이름없음)") + "</div><a class=\\"btn-dl\\" download=\\"" + (file.filename || "asset") + "\\">💾 저장</a>";',
-                '    if(isImg) item.querySelector("img").src = file.content;',
-                '    else if(isVid) item.querySelector("video").src = file.content;',
-                '    item.querySelector("a").href = file.content;',
-                '    container.appendChild(item);',
-                '  }',
-                '  if(data.description) { document.getElementById("descBox").textContent = data.description; document.getElementById("descCard").style.display = "block"; }',
-                '  var files = data.files || [];',
-                '  var main = files.find(function(f){ return f.role === "main"; }) || files[0];',
-                '  renderViewer(document.getElementById("mainViewer"), main);',
-                '  var extras = files.filter(function(f){ return f !== main; });',
-                '  if(extras.length > 0) {',
-                '    document.getElementById("extrasCard").style.display = "block";',
-                '    var list = document.getElementById("extrasList");',
-                '    extras.forEach(function(f) { renderExtra(list, f); });',
-                '  }',
-                '  showToast("Earth 뷰어 로드 완료");',
-                '})();',
-                '</scr' + 'ipt></body></html>'
-            ].join('\n');
+            // 🚀 mergeModelsToSingleHtml 패턴: 각 파일을 순차로 h3 헤더 + 콘텐츠로 렌더
+            let bodyHtml = '';
+
+            // 헤더
+            bodyHtml += `<div style="background:linear-gradient(135deg,#0f172a,#1e293b); padding:24px 20px; margin:-20px -20px 24px; border-bottom:2px solid #334155;">`;
+            bodyHtml += `<h1 style="font-size:24px; font-weight:900; color:#fff; word-break:break-all; margin-bottom:6px;">📦 ${titleSafe}</h1>`;
+            bodyHtml += `<div style="font-size:12px; color:#94a3b8;">Earth Standalone Bundle · ${esc(purchaseTimestamp)}</div>`;
+            bodyHtml += `</div>`;
+
+            // 영수증
+            if(receiptInfo && receiptInfo.amount) {
+                const typeLabel = receiptInfo.purchaseType === 'original' ? '원본 구매' : '스트리밍 구매';
+                bodyHtml += `<div style="background:#064e3b; border-left:4px solid #10b981; padding:12px 16px; border-radius:0 8px 8px 0; margin-bottom:20px; color:#a7f3d0; font-size:13px;">`;
+                bodyHtml += `<b style="font-size:14px;">🧾 구매 영수증</b><br>`;
+                bodyHtml += `${esc(purchaseTimestamp)} · ${typeLabel} · <b>${Number(receiptInfo.amount).toLocaleString()}원</b>`;
+                if(buyerName) bodyHtml += ` · 구매자 ${buyerSafe}`;
+                bodyHtml += `</div>`;
+            }
+
+            // 상품 설명
+            if(product.description) {
+                bodyHtml += `<div style="background:#1e293b; padding:14px 18px; border-radius:8px; margin-bottom:20px; font-size:13px; color:#cbd5e1; line-height:1.6; border:1px solid #334155;">📝 ${esc(product.description)}</div>`;
+            }
+
+            // 각 파일을 RAYCloud 패턴(h3 + 콘텐츠)으로 순차 렌더
+            allFiles.forEach((f, idx) => {
+                const filename = f.filename || `file_${idx+1}`;
+                const fileType = (f.type || '').toLowerCase();
+                const fileLower = filename.toLowerCase();
+                const escName = esc(filename);
+                const isMain = idx === 0 || f.role === 'main';
+                const badge = isMain ? '<span style="background:#f59e0b; color:#000; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold; margin-left:8px;">대표</span>' : '';
+
+                // RAYCloud 패턴: <h3>${name}</h3> 으로 시작
+                bodyHtml += `<h3 style="font-size:16px; color:#fff; margin:24px 0 10px; padding:8px 12px; background:#1e293b; border-left:4px solid #2563eb; border-radius:0 6px 6px 0;">📄 ${escName}${badge}</h3>`;
+
+                const isImg = /^image\//.test(fileType) || /\.(png|jpg|jpeg|gif|webp|svg|bmp)$/.test(fileLower);
+                const isVid = /^video\//.test(fileType) || /\.(mp4|webm|mov|m4v|ogv)$/.test(fileLower);
+                const isAud = /^audio\//.test(fileType) || /\.(mp3|wav|ogg|m4a|flac)$/.test(fileLower);
+                const isPdf = /pdf/i.test(fileType) || /\.pdf$/.test(fileLower);
+                const isHtml = /html/i.test(fileType) || /\.html?$/.test(fileLower);
+                const isObj = /\.obj$/.test(fileLower);
+                const isStl = /\.stl$/.test(fileLower);
+
+                if(isImg) {
+                    // mergeModelsToSingleHtml 원본: <img src='${base64}' style='max-width:300px; ...'>
+                    // 더 크게 보이도록 확장
+                    bodyHtml += `<div style="text-align:center; background:#000; padding:10px; border-radius:8px; margin-bottom:10px;"><img src="${f.content}" style="max-width:100%; max-height:600px; border:1px solid #444; border-radius:4px;"></div>`;
+                } else if(isVid) {
+                    // 🚀 [신규 추가] 동영상은 별도 재생 — 원본에 없던 기능
+                    bodyHtml += `<div style="text-align:center; background:#000; padding:10px; border-radius:8px; margin-bottom:10px;"><video src="${f.content}" controls playsinline style="max-width:100%; max-height:600px; border-radius:4px; background:#000;"></video></div>`;
+                } else if(isAud) {
+                    bodyHtml += `<div style="background:#1e293b; padding:14px; border-radius:8px; margin-bottom:10px; text-align:center;"><audio src="${f.content}" controls style="width:100%;"></audio></div>`;
+                } else if(isPdf || isHtml) {
+                    bodyHtml += `<iframe src="${f.content}" style="width:100%; height:520px; border:1px solid #444; border-radius:8px; background:#fff; margin-bottom:10px;"></iframe>`;
+                } else if(isObj) {
+                    // RAYCloud 원본 패턴: 텍스트로 미리보기
+                    bodyHtml += `<div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:14px; margin-bottom:10px;"><div style="font-size:11px; color:#94a3b8; margin-bottom:6px;">3D 모델 (OBJ) — 텍스트 미리보기:</div><pre style="max-height:200px; overflow:auto; background:#000; color:#10b981; padding:10px; border-radius:4px; font-size:11px;">데이터 로딩 시 표시</pre></div>`;
+                } else if(isStl) {
+                    bodyHtml += `<div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:14px; margin-bottom:10px;"><div style="font-size:11px; color:#94a3b8; margin-bottom:6px;">3D 모델 (STL) — Base64 캡슐:</div><textarea readonly style="width:100%; height:80px; background:#000; color:#10b981; font-size:10px; border:none; padding:8px; border-radius:4px;">${f.content.substring(0, 500)}...</textarea></div>`;
+                } else {
+                    // 기타 포맷: 아이콘 + 다운로드
+                    bodyHtml += `<div style="background:#1e293b; padding:24px; border-radius:8px; margin-bottom:10px; text-align:center; border:1px solid #334155;"><div style="font-size:48px; margin-bottom:8px;">📎</div><div style="color:#cbd5e1; font-size:13px;">${escName}</div></div>`;
+                }
+
+                // 모든 파일에 다운로드 버튼
+                bodyHtml += `<div style="text-align:center; margin-bottom:24px;"><a href="${f.content}" download="${escName}" style="background:linear-gradient(135deg,#60a5fa,#2563eb); color:#fff; padding:10px 22px; border-radius:8px; text-decoration:none; font-size:13px; font-weight:bold; display:inline-block;">💾 ${escName} 다운로드</a></div>`;
+            });
+
+            // 빈 컬렉션 처리
+            if(allFiles.length === 0) {
+                bodyHtml += `<div style="background:#1e293b; padding:40px 20px; border-radius:8px; text-align:center; color:#94a3b8;">파일이 비어 있습니다.</div>`;
+            }
+
+            // 판매자 채팅 CTA (플로팅)
+            let chatCtaHtml = '';
+            if(sellerChatLink) {
+                chatCtaHtml = `<div style="position:fixed; bottom:20px; right:20px; z-index:100;"><a href="${sellerChatLink}" target="_blank" style="background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#fff; padding:14px 22px; border-radius:30px; font-size:13px; font-weight:bold; box-shadow:0 6px 18px rgba(245,158,11,0.45); text-decoration:none; display:inline-flex; align-items:center; gap:8px;">💬 판매자(${sellerSafe})와 대화하기</a></div>`;
+            }
+
+            // 최종 HTML 조립 — RAYCloud 원본과 동일한 단순 구조
+            return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${titleSafe}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#0f172a;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo",sans-serif;line-height:1.5;padding:20px;padding-bottom:100px;min-height:100vh;}
+.wrap{max-width:900px;margin:0 auto;}
+</style>
+</head>
+<body>
+<div class="wrap">
+${bodyHtml}
+</div>
+${chatCtaHtml}
+</body>
+</html>`;
         }
 
         // --- 🚀 우측 플로팅 메신저 서랍 구조 (친구목록 / 대화방 분리) ---
@@ -3222,23 +3975,46 @@
             if(!q || q.length < 1) { box.style.display = 'none'; box.innerHTML = ''; return; }
             _friendSearchTimer = setTimeout(async () => {
                 try {
-                    const res = await fetch(`${API_URL}/api/users/search?q=${encodeURIComponent(q)}&exclude=${encodeURIComponent(currentUser.name)}`);
-                    const list = await res.json() || [];
+                    // 🚀 [v6] 통합 검색: 회원 + 상점 브랜드명
+                    const res = await fetch(`${API_URL}/api/search/users-and-stores?q=${encodeURIComponent(q)}`);
+                    const data = await res.json() || { users: [], stores: [] };
+                    let users = (data.users || []).filter(u => u.name !== currentUser.name);
+                    let stores = (data.stores || []).filter(s => s.owner !== currentUser.name);
                     const myFriendsRes = await fetch(`${API_URL}/api/friends/${currentUser.name}`);
                     const myFriends = (await myFriendsRes.json() || []).map(f => f.name);
-                    if(list.length === 0) { box.innerHTML = '<div style="padding:14px; text-align:center; color:var(--text-sub); font-size:12px;">검색 결과가 없습니다.</div>'; box.style.display = 'block'; return; }
+                    if(users.length === 0 && stores.length === 0) { box.innerHTML = '<div style="padding:14px; text-align:center; color:var(--text-sub); font-size:12px;">검색 결과가 없습니다.</div>'; box.style.display = 'block'; return; }
                     let h = '';
-                    list.forEach(u => {
-                        const isFriend = myFriends.includes(u.name);
-                        const pic = u.profilePic ? `<img class="profile-pic" src="${u.profilePic}" style="width:36px; height:36px;">` : `<div class="profile-pic" style="width:36px; height:36px; background:#cbd5e1;"></div>`;
-                        const meta = [u.realname, u.phone].filter(x => x).join(' · ') || '추가 정보 없음';
-                        const btn = isFriend ? `<button class="add-btn added">이미 친구</button>` : `<button class="add-btn" onclick="addFriendByName('${u.name.replace(/'/g,"\\'")}')">+ 친구추가</button>`;
-                        h += `<div class="friend-search-result">${pic}<div style="flex:1; min-width:0;"><b style="font-size:13px;">${u.name}</b><div class="meta">${meta}</div></div>${btn}</div>`;
-                    });
+                    if(stores.length > 0) {
+                        h += '<div style="padding:8px 14px; background:#f1f5f9; font-size:11px; color:var(--text-sub); font-weight:bold;">🏪 상점 브랜드</div>';
+                        stores.forEach(s => {
+                            const logo = s.logo ? `<img class="profile-pic" src="${s.logo}" style="width:36px; height:36px;">` : `<div class="profile-pic" style="width:36px; height:36px; background:linear-gradient(135deg,#60a5fa,#2563eb); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:13px;">${(s.name||'?').substring(0,1)}</div>`;
+                            const catLabel = (window.getCategoryLabel && window.getCategoryLabel(s.category)) || '🏪 일반';
+                            h += `<div class="friend-search-result" style="cursor:pointer;" onclick="closeFriendSearchAndEnterStore('${s.id}')">${logo}<div style="flex:1; min-width:0;"><b style="font-size:13px;">${(s.name||'').replace(/</g,'&lt;')}</b><div class="meta">${catLabel} · 운영자 ${s.owner || '?'}</div></div><button class="add-btn" style="background:linear-gradient(135deg,#60a5fa,#2563eb); color:#fff; border:none;">입장 →</button></div>`;
+                        });
+                    }
+                    if(users.length > 0) {
+                        h += '<div style="padding:8px 14px; background:#f1f5f9; font-size:11px; color:var(--text-sub); font-weight:bold;">👤 회원</div>';
+                        users.forEach(u => {
+                            const isFriend = myFriends.includes(u.name);
+                            const pic = u.profilePic ? `<img class="profile-pic" src="${u.profilePic}" style="width:36px; height:36px;">` : `<div class="profile-pic" style="width:36px; height:36px; background:#cbd5e1;"></div>`;
+                            const meta = [u.realname, u.phone].filter(x => x).join(' · ') || '추가 정보 없음';
+                            const btn = isFriend ? `<button class="add-btn added">이미 연결됨</button>` : `<button class="add-btn" onclick="addFriendByName('${u.name.replace(/'/g,"\\'")}')">+ 추가</button>`;
+                            h += `<div class="friend-search-result">${pic}<div style="flex:1; min-width:0;"><b style="font-size:13px;">${u.name}</b><div class="meta">${meta}</div></div>${btn}</div>`;
+                        });
+                    }
                     box.innerHTML = h; box.style.display = 'block';
-                } catch(e) { console.error('user search err', e); }
+                } catch(e) { console.error('search err', e); }
             }, 250);
         }
+
+        window.closeFriendSearchAndEnterStore = function(storeId) {
+            const drawer = document.getElementById('messenger-drawer');
+            if(drawer) drawer.classList.remove('open');
+            document.getElementById('friend-search-input').value = '';
+            document.getElementById('friend-search-results').style.display = 'none';
+            switchTab('market');
+            setTimeout(() => { if(window.enterBrandStoreById) window.enterBrandStoreById(storeId); }, 200);
+        };
 
         window.addFriendByName = async function(friendName) {
             if(!friendName || friendName === currentUser.name) return;
@@ -3272,19 +4048,84 @@
             updateTabBadge();
         }
 
+        // 🚀 [v6] 대화방 나가기 — 주문 대화방은 양측 동시 종료
+        window.leaveCurrentChatRoom = async function() {
+            if(!activeChatFriend || !currentChatRoomId) return showToast('나갈 대화방이 없습니다.');
+            // 메타 조회
+            let isOrderRoom = false;
+            try {
+                const metaRes = await fetch(`${API_URL}/api/chat-rooms/${encodeURIComponent(currentUser.name)}`);
+                const metaList = await metaRes.json() || [];
+                const meta = metaList.find(m => m.roomId === currentChatRoomId);
+                isOrderRoom = meta && meta.type === 'order';
+            } catch(_){}
+            
+            const warnText = isOrderRoom
+                ? `🚪 이 대화방은 상품 구매로 자동 생성된 대화방입니다.\n\n나가시면 ${activeChatFriend}님의 화면에서도 이 대화방이 함께 사라집니다.\n\n계속하시겠습니까?`
+                : `🚪 ${activeChatFriend}님과의 대화방에서 나가시겠습니까?\n\n(상대방 화면에는 그대로 남습니다)`;
+            if(!confirm(warnText)) return;
+
+            try {
+                const res = await fetch(`${API_URL}/api/chat-room/leave`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roomId: currentChatRoomId, user: currentUser.name }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error || '나가기 실패');
+                if(data.endedBothSides) {
+                    showToast(`✅ 양측 대화방 종료됨`);
+                } else {
+                    showToast(`✅ 대화방에서 나갔습니다`);
+                }
+                backToDrawerList();
+                loadFriendList(); loadChatList();
+            } catch(e) { showToast('나가기 실패: ' + (e.message || e)); }
+        };
+
         async function loadChatList() {
             if(!currentUser) return;
             try {
-                const res = await fetch(`${API_URL}/api/chat/active-rooms/${currentUser.name}`); const rooms = await res.json() || [];
+                const res = await fetch(`${API_URL}/api/chat/active-rooms/${currentUser.name}`); 
+                let rooms = await res.json() || [];
+                // 🚀 [v6] 채팅방 메타 가져와서 브랜드명/상품명 표시
+                let roomMetas = {};
+                try {
+                    const metaRes = await fetch(`${API_URL}/api/chat-rooms/${encodeURIComponent(currentUser.name)}`);
+                    const metaList = await metaRes.json() || [];
+                    metaList.forEach(m => { roomMetas[m.roomId] = m; });
+                } catch(_){}
+
                 const container = document.getElementById('chat-list-container'); container.innerHTML = '';
                 if(rooms.length === 0) { container.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-sub); font-size:13px;">진행 중인 대화가 없습니다.</div>'; return; }
                 rooms.forEach(r => {
+                    const meta = roomMetas[r.roomId];
                     const badge = unreadCounts[r.roomId] ? `<div class="unread-badge" style="display:block;">${unreadCounts[r.roomId]}</div>` : `<div class="unread-badge"></div>`;
                     let picHtml = r.partnerPic ? `<img class="profile-pic" src="${r.partnerPic}">` : `<div class="profile-pic"></div>`;
                     if(r.partnerName === '이재준') picHtml = `<div class="profile-pic" style="background:var(--danger); color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px;">CS</div>`;
-                    container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${r.partnerName}')">${picHtml}<div style="flex:1; min-width:0;"><div style="display:flex; justify-content:space-between;"><b style="font-size:14px;">${r.partnerName==='이재준'?'Root Admin':r.partnerName}</b><span style="font-size:10px; color:var(--text-sub);">${r.lastDate}</span></div><div style="font-size:12px; color:var(--text-sub); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-top:4px;">${r.lastMsg.includes('[PRIVATE_ASSET]')?'📦 1:1 비공개 상품':r.lastMsg.includes('[FILE_ATTACH]')?'📎 파일 전송':r.lastMsg.includes('[ORDER_CONFIRM]')?'🛒 주문 확정 도착':r.lastMsg.includes('[TRANSFER]')?'💸 [송금 영수증]':r.lastMsg.includes('[META_QR]')?'🎫 [상품권 도착]':r.lastMsg}</div></div>${badge}</div>`;
+
+                    // 🚀 [v6] 주문 채팅방이면 "브랜드명 / 상품명" 표시
+                    let titleHtml;
+                    if(meta && meta.type === 'order') {
+                        const brandLabel = meta.storeName ? `<span style="background:#dbeafe; color:#1e40af; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:bold; margin-right:4px;">${meta.storeName}</span>` : '';
+                        const productLabel = meta.lastProductName ? ` / ${meta.lastProductName}` : '';
+                        const partnerDisplay = r.partnerName === '이재준' ? 'Root Admin' : r.partnerName;
+                        titleHtml = `<b style="font-size:13px;">${brandLabel}${partnerDisplay}${productLabel}</b>`;
+                    } else {
+                        titleHtml = `<b style="font-size:14px;">${r.partnerName==='이재준'?'Root Admin':r.partnerName}</b>`;
+                    }
+
+                    const lastMsgPreview = r.lastMsg.includes('[PRIVATE_ASSET]')?'📦 1:1 비공개 상품'
+                        : r.lastMsg.includes('[FILE_ATTACH]')?'📎 파일 전송'
+                        : r.lastMsg.includes('[ORDER_PENDING]')?'📝 주문서 도착 — 승인 대기'
+                        : r.lastMsg.includes('[ORDER_APPROVED]')?'✅ 주문 승인 완료'
+                        : r.lastMsg.includes('[ORDER_REJECTED]')?'✕ 주문 거절됨'
+                        : r.lastMsg.includes('[ORDER_CONFIRM]')?'🛒 주문 확정 도착'
+                        : r.lastMsg.includes('[TRANSFER]')?'💸 [송금 영수증]'
+                        : r.lastMsg.includes('[META_QR]')?'🎫 [상품권 도착]'
+                        : r.lastMsg;
+
+                    container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${r.partnerName.replace(/'/g, "\\'")}')">${picHtml}<div style="flex:1; min-width:0;"><div style="display:flex; justify-content:space-between;">${titleHtml}<span style="font-size:10px; color:var(--text-sub);">${r.lastDate}</span></div><div style="font-size:12px; color:var(--text-sub); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-top:4px;">${lastMsgPreview}</div></div>${badge}</div>`;
                 });
-            } catch(e){}
+            } catch(e){
+                if(window.__earthDiag) window.__earthDiag('loadChatList error: '+(e.message||e), true);
+            }
         }
 
         function updateTabBadge() {
@@ -3364,6 +4205,53 @@
                     const icon = /pdf/i.test(mime) ? '📄' : '📎';
                     displayHtml = `<div style="padding:8px 4px; min-width:180px;"><div style="display:flex; align-items:center; gap:8px;"><div style="font-size:30px;">${icon}</div><div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:bold; word-break:break-all;">${escFname}</div><div style="font-size:11px; color:#52677a; margin-top:2px;">${sizeKB}KB</div></div></div><a href="${dataUrl}" download="${escFname}" style="display:block; margin-top:8px; background:#fff; padding:6px 10px; border-radius:6px; text-align:center; font-size:11px; font-weight:bold; color:#1f2937; text-decoration:none; border:1px solid #d4dde5;">💾 다운로드</a></div>`;
                 }
+            } else if(text.startsWith('[ORDER_PENDING]')) {
+                // 🚀 [v6] 승인 대기 주문 카드
+                // [ORDER_PENDING]orderId|productId|productName|amount|fileCount|memoPreview
+                const parts = text.replace('[ORDER_PENDING]', '').split('|');
+                const orderId = parts[0]; const pId = parts[1]; const pName = parts[2]; const amt = Number(parts[3])||0;
+                const fileCnt = Number(parts[4])||0; const memo = parts.slice(5).join('|');
+                const safePName = (pName||'').replace(/</g,'&lt;');
+                const safeMemo = (memo||'').replace(/</g,'&lt;');
+                // 받는 사람(판매자) 관점: 승인/거절 버튼
+                // 보낸 사람(구매자) 관점: 취소 버튼
+                const isSeller = !isMe; // 판매자에게 표시 시
+                const actionButtons = isSeller
+                    ? `<div style="display:flex; gap:6px; margin-top:8px;">
+                        <button onclick="rejectPendingOrder('${orderId}')" style="flex:1; background:#fff; color:#ef4444; border:1px solid #ef4444; padding:8px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">✕ 거절</button>
+                        <button onclick="approvePendingOrder('${orderId}', '${safePName.replace(/'/g, "\\'")}', ${amt})" style="flex:2; background:linear-gradient(135deg,#10b981,#059669); color:#fff; border:none; padding:8px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">✅ 승인 + 결제 처리</button>
+                    </div>`
+                    : `<button onclick="cancelPendingOrder('${orderId}')" style="width:100%; background:#fff; color:#64748b; border:1px solid #cbd5e1; padding:8px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; margin-top:6px;">✕ 주문 취소</button>`;
+                displayHtml = `<div style="padding:10px 6px; width:260px;">
+                    <div style="background:linear-gradient(135deg, #f59e0b, #ef4444); color:#fff; padding:10px 12px; border-radius:8px 8px 0 0; margin:-10px -6px 8px;">
+                        <div style="font-size:11px; opacity:0.95;">📝 주문서 도착 — 승인 대기</div>
+                        <div style="font-size:14px; font-weight:bold; margin-top:2px; word-break:break-all;">${safePName}</div>
+                    </div>
+                    <div style="font-size:18px; font-weight:900; color:#ef4444; text-align:center; margin:6px 0;">${amt.toLocaleString()}원</div>
+                    ${safeMemo ? `<div style="background:#fef3c7; padding:6px 8px; border-radius:6px; font-size:11px; color:#78350f; margin:6px 0;">📝 ${safeMemo}${memo.length > 60 ? '…' : ''}</div>` : ''}
+                    ${fileCnt > 0 ? `<div style="font-size:11px; color:#64748b; margin:4px 0;">📂 첨부 파일 ${fileCnt}개</div>` : ''}
+                    <button onclick="viewPendingOrderHtml('${orderId}')" style="width:100%; background:#1f2937; color:#fff; border:none; padding:8px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; margin-top:6px;">📄 전체 주문서 + 구매자 정보 열기</button>
+                    ${actionButtons}
+                </div>`;
+            } else if(text.startsWith('[ORDER_APPROVED]')) {
+                // 🚀 [v6] 승인 완료 알림 (양측 채팅에 자동 게시)
+                const parts = text.replace('[ORDER_APPROVED]', '').split('|');
+                const pName = parts[0]; const amt = Number(parts[1])||0;
+                displayHtml = `<div style="padding:8px; width:220px; text-align:center;">
+                    <div style="font-size:24px;">✅</div>
+                    <div style="font-size:13px; font-weight:bold; color:#059669; margin:4px 0;">주문 승인 + 결제 완료</div>
+                    <div style="font-size:11px; color:#64748b; word-break:break-all;">${(pName||'').replace(/</g,'&lt;')}</div>
+                    <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin-top:4px;">${amt.toLocaleString()}원</div>
+                </div>`;
+            } else if(text.startsWith('[ORDER_REJECTED]')) {
+                const parts = text.replace('[ORDER_REJECTED]', '').split('|');
+                const pName = parts[0]; const reason = parts.slice(1).join('|');
+                displayHtml = `<div style="padding:8px; width:220px; text-align:center;">
+                    <div style="font-size:24px;">✕</div>
+                    <div style="font-size:13px; font-weight:bold; color:#ef4444; margin:4px 0;">주문 거절됨</div>
+                    <div style="font-size:11px; color:#64748b; word-break:break-all;">${(pName||'').replace(/</g,'&lt;')}</div>
+                    ${reason ? `<div style="font-size:11px; color:var(--text-sub); margin-top:6px; background:#fef2f2; padding:6px; border-radius:6px;">사유: ${reason.replace(/</g,'&lt;')}</div>` : ''}
+                </div>`;
             } else if(text.startsWith('[ORDER_CONFIRM]')) {
                 // [ORDER_CONFIRM]productId|productName|amount|fileCount|memoPreview
                 const parts = text.replace('[ORDER_CONFIRM]', '').split('|');
@@ -3417,6 +4305,64 @@
             if(res.ok) { showToast("결제가 완료되었습니다. 상품 소유권이 인증되었습니다."); updateUserBalance(); switchTab('history'); setTimeout(()=>openUniversalViewer(id, purchaseType==='original'), 400); } else { const d = await res.json(); showToast(d.error); }
         }
 
+        // 🚀 [v6] 주문 승인/거절/취소 + 전체 보기
+        window.approvePendingOrder = async function(orderId, productName, amount) {
+            if(!confirm(`📦 ${productName} 주문을 승인하시겠습니까?\n\n구매자에게서 ${Number(amount).toLocaleString()}원이 즉시 결제됩니다.`)) return;
+            try {
+                const res = await fetch(`${API_URL}/api/order/approve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, seller: currentUser.name }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error || '승인 실패');
+                showToast(`✅ 승인 완료 + ${Number(amount).toLocaleString()}원 결제 처리됨`);
+                updateUserBalance();
+                // 채팅에 승인 알림
+                if(socket && socket.connected) {
+                    socket.emit('send_message', { roomId: currentChatRoomId, sender: '__system__', senderPic: null, message: `[ORDER_APPROVED]${productName}|${amount}` });
+                }
+                appendMainMessage('__system__', `[ORDER_APPROVED]${productName}|${amount}`, null);
+            } catch(e) { showToast('승인 처리 실패: ' + (e.message || e)); }
+        };
+
+        window.rejectPendingOrder = async function(orderId) {
+            const reason = prompt('거절 사유를 입력해 주세요 (선택):', '');
+            if(reason === null) return; // cancel
+            try {
+                const res = await fetch(`${API_URL}/api/order/reject`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, seller: currentUser.name, reason: reason || '' }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error || '거절 실패');
+                showToast(`✕ 주문 거절됨`);
+                // 채팅에 거절 알림
+                const ordRes = await fetch(`${API_URL}/api/order/${orderId}`);
+                const ord = await ordRes.json();
+                const pName = ord.productId ? ord.productId : '';
+                if(socket && socket.connected) {
+                    socket.emit('send_message', { roomId: currentChatRoomId, sender: '__system__', senderPic: null, message: `[ORDER_REJECTED]${pName}|${reason || ''}` });
+                }
+                appendMainMessage('__system__', `[ORDER_REJECTED]${pName}|${reason || ''}`, null);
+            } catch(e) { showToast('거절 실패: ' + (e.message || e)); }
+        };
+
+        window.cancelPendingOrder = async function(orderId) {
+            if(!confirm('주문을 취소하시겠습니까?')) return;
+            try {
+                const res = await fetch(`${API_URL}/api/order/cancel`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, buyer: currentUser.name }) });
+                const data = await res.json();
+                if(!res.ok) return showToast(data.error || '취소 실패');
+                showToast(`✕ 주문 취소됨`);
+            } catch(e) { showToast('취소 실패: ' + (e.message || e)); }
+        };
+
+        window.viewPendingOrderHtml = async function(orderId) {
+            try {
+                const res = await fetch(`${API_URL}/api/order/${orderId}`);
+                const ord = await res.json();
+                if(!ord || !ord.bundle_html) return showToast('주문 HTML을 찾을 수 없습니다.');
+                const w = window.open('', '_blank');
+                if(!w) return showToast('팝업 차단을 해제해 주세요.');
+                w.document.write(ord.bundle_html);
+                w.document.close();
+            } catch(e) { showToast('주문서 로드 실패: ' + (e.message || e)); }
+        };
+
         // 글로벌 소켓 브로드캐스트 (실시간 친구 개설 연동)
         function handleReceiveMessage(data) {
             // 시스템 메시지는 알림 없이 처리
@@ -3439,6 +4385,188 @@
                 fireMobileNotification(data.sender, data.message);
             }
         }
+
+        // ========== 🚀 [v5 신규] 내 구매 탭 — 결제한 상품 통합 관리 ==========
+        window.myPurchasesAll = [];
+
+        async function loadMyPurchases() {
+            const list = document.getElementById('my-purchases-list');
+            if(!list) return;
+            list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">⏳ 구매 내역 로딩 중...</div>`;
+            try {
+                if(!currentUser || !currentUser.name) {
+                    list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--danger);">로그인 정보 없음</div>`;
+                    return;
+                }
+                const res = await fetch(`${API_URL}/api/purchases/${encodeURIComponent(currentUser.name)}`);
+                if(!res.ok) throw new Error(`HTTP ${res.status}`);
+                const purchases = await res.json() || [];
+                window.myPurchasesAll = purchases;
+                renderMyPurchases(purchases);
+            } catch(e) {
+                if(window.__earthDiag) window.__earthDiag('loadMyPurchases error: ' + (e.message || e), true);
+                list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--danger); font-size:13px;">⚠️ 구매 내역 로딩 실패: <code>${(e.message||'').replace(/</g,'&lt;')}</code><br><button class="btn btn-outline" onclick="loadMyPurchases()" style="margin-top:8px; padding:6px 14px; font-size:12px;">🔄 다시 시도</button></div>`;
+            }
+        }
+
+        function renderMyPurchases(purchases) {
+            const list = document.getElementById('my-purchases-list');
+            if(!list) return;
+            if(!purchases || purchases.length === 0) {
+                list.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--text-sub); font-size:13px;">🛒 아직 구매한 상품이 없습니다.<br><span style="font-size:11px;">"디지털 거래소"에서 상품을 둘러보세요!</span></div>`;
+                return;
+            }
+
+            // 같은 productId의 여러 구매를 묶음(가장 최신 구매 + 합계 카운트)
+            const grouped = {};
+            purchases.forEach(p => {
+                const key = p.productId;
+                if(!grouped[key]) grouped[key] = { latest: p, all: [], totalSpent: 0 };
+                grouped[key].all.push(p);
+                grouped[key].totalSpent += (p.amount || 0);
+                // 최신 구매를 latest로 (rawDate/date 내림차순; 첫 번째가 이미 가장 큰 ID라 보통 최신)
+            });
+
+            let h = '';
+            Object.values(grouped).forEach(group => {
+                const p = group.latest;
+                const count = group.all.length;
+                const escName = (p.productName || '(이름 없음)').replace(/</g,'&lt;');
+                const escSeller = (p.seller || '').replace(/</g,'&lt;');
+                const typeLabel = p.purchaseType === 'original' ? '<span style="background:#fef3c7; color:#92400e; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold;">💎 원본</span>' : '<span style="background:#dbeafe; color:#1e40af; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold;">📺 스트리밍</span>';
+                const pkgBadge = p.is_package ? '<span style="background:#7c3aed; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; margin-left:4px;">📦 패키지</span>' : '';
+                const refundedBadge = p.refunded ? '<span style="background:#fee2e2; color:#991b1b; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; margin-left:4px;">환불됨</span>' : '';
+                const pendingBadge = p.refundStatus === 'pending' ? '<span style="background:#fef3c7; color:#92400e; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; margin-left:4px;">환불 대기</span>' : '';
+                const repurchaseInfo = count > 1 ? `<span style="background:#dcfce7; color:#166534; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; margin-left:4px;">${count}회 구매</span>` : '';
+
+                // 패키지 PDF 존재 여부
+                let hasPdf = false;
+                try {
+                    if(p.is_package && p.package_data) {
+                        const pkg = JSON.parse(p.package_data);
+                        hasPdf = (pkg.files || []).some(f => f.role === 'order_form' || /\.pdf$/i.test(f.filename||''));
+                    }
+                } catch(_) {}
+
+                const thumb = p.thumbnail || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'><rect fill=\'%23f1f5f9\' width=\'100\' height=\'100\'/></svg>';
+                const date = p.date || '';
+                const canRefund = !p.refunded && p.refundStatus !== 'pending' && p.purchaseType !== 'refund';
+
+                h += `<div class="my-purchase-card" data-name="${escName.toLowerCase()}" data-seller="${escSeller.toLowerCase()}" data-pkg="${p.is_package?1:0}" data-refunded="${p.refunded?1:0}" data-refundable="${canRefund?1:0}" style="display:flex; gap:14px; padding:14px 16px; border-bottom:1px solid #f1f5f9; align-items:flex-start;">
+                    <div style="width:80px; height:80px; flex-shrink:0; background:#f1f5f9; border-radius:10px; overflow:hidden; border:1px solid #e2e8f0; cursor:pointer;" onclick="window.openUniversalViewer && window.openUniversalViewer('${p.productId}', ${p.purchaseType==='original'?'true':'false'})">
+                        <img src="${thumb}" style="width:100%; height:100%; object-fit:cover;">
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin-bottom:4px;">
+                            <b style="font-size:14px; color:var(--text-main);">${escName}</b>${pkgBadge}${refundedBadge}${pendingBadge}${repurchaseInfo}
+                        </div>
+                        <div style="font-size:11px; color:var(--text-sub); margin-bottom:6px;">판매자 <b>${escSeller}</b> · ${date} · ${typeLabel}</div>
+                        <div style="font-size:13px; font-weight:900; color:var(--primary); margin-bottom:8px;">${Number(p.amount||0).toLocaleString()}원${count>1?` <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(누계 ${Number(group.totalSpent).toLocaleString()}원)</span>`:''}</div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openUniversalViewer && window.openUniversalViewer('${p.productId}', ${p.purchaseType==='original'?'true':'false'})">${p.purchaseType==='original'?'📺 미리보기':'📺 스트리밍 재생'}</button>
+                            ${p.purchaseType==='original' ? `<button class="btn" style="padding:6px 12px; font-size:11px; background:linear-gradient(135deg,#60a5fa,#2563eb); color:#fff;" onclick="window.redownloadPurchaseBundle('${p.productId}', '${escName.replace(/'/g, "\\'")}')">📥 HTML 묶음 재다운로드</button>` : ''}
+                            ${hasPdf ? `<button class="btn" style="padding:6px 12px; font-size:11px; background:linear-gradient(135deg,#f59e0b,#ef4444); color:#fff;" onclick="window.openPackagePdf('${p.productId}')">📋 주문서 PDF 보기</button>` : ''}
+                            ${p.is_package ? `<button class="btn" style="padding:6px 12px; font-size:11px; background:linear-gradient(135deg,#10b981,#059669); color:#fff;" onclick="window.placeAdditionalOrder('${p.productId}')">➕ 추가 주문 / 재주문</button>` : ''}
+                            <button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.contactSellerFromPurchase('${escSeller.replace(/'/g, "\\'")}')">💬 판매자 채팅</button>
+                            ${canRefund ? `<button class="btn btn-danger" style="padding:6px 12px; font-size:11px;" onclick="window.requestRefund(${p.txId}, '${escName.replace(/'/g, "\\'")}')">🔄 환불 요청</button>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+            });
+            list.innerHTML = h;
+        }
+
+        window.filterMyPurchases = function() {
+            const q = (document.getElementById('my-purchases-search').value || '').toLowerCase().trim();
+            const filter = document.getElementById('my-purchases-filter').value;
+            const cards = document.querySelectorAll('.my-purchase-card');
+            cards.forEach(c => {
+                const name = c.getAttribute('data-name') || '';
+                const seller = c.getAttribute('data-seller') || '';
+                const isPkg = c.getAttribute('data-pkg') === '1';
+                const isRefunded = c.getAttribute('data-refunded') === '1';
+                const isRefundable = c.getAttribute('data-refundable') === '1';
+                let show = !q || name.includes(q) || seller.includes(q);
+                if(filter === 'package' && !isPkg) show = false;
+                if(filter === 'single' && isPkg) show = false;
+                if(filter === 'refunded' && !isRefunded) show = false;
+                if(filter === 'refundable' && !isRefundable) show = false;
+                c.style.display = show ? 'flex' : 'none';
+            });
+        };
+
+        // 🚀 [v5] 구매한 상품 → 자체완결 HTML 재생성 + 다운로드 (영수증 + 판매자 채팅 링크 포함)
+        window.redownloadPurchaseBundle = async function(productId, productName) {
+            showToast("⏳ HTML 묶음 재컴파일 중...");
+            try {
+                const res = await fetch(`${API_URL}/api/product/detail/${productId}`);
+                const p = await res.json();
+                if(!p || !p.id) return showToast("상품 정보를 찾을 수 없습니다.");
+                // 구매 정보로부터 ctx 구성
+                const purchase = (window.myPurchasesAll || []).find(x => x.productId === productId && x.purchaseType === 'original');
+                const ctx = {
+                    seller: p.seller,
+                    timestamp: purchase ? purchase.date : new Date().toLocaleString('ko-KR'),
+                    purchaseInfo: purchase ? { amount: purchase.amount, purchaseType: purchase.purchaseType } : null
+                };
+                const html = buildStandaloneViewerHTML(p, ctx);
+                const blob = new Blob([html], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const safe = (productName || 'asset').replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ_.-]/g, '_');
+                a.download = `${safe}_Bundle.html`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                showToast(`📥 ${productName} 묶음 HTML 다운로드 완료 (판매자 채팅 링크 포함)`);
+            } catch(e) {
+                if(window.__earthDiag) window.__earthDiag('redownload error: '+(e.message||e), true);
+                showToast("재다운로드 실패: " + (e.message||e));
+            }
+        };
+
+        // 🚀 [v5] 패키지에 포함된 주문서 PDF를 새 창에서 바로 열기
+        window.openPackagePdf = async function(productId) {
+            try {
+                const res = await fetch(`${API_URL}/api/product/detail/${productId}`);
+                const p = await res.json();
+                if(!p || !p.package_data) return showToast("이 상품은 주문서 PDF가 없습니다.");
+                const pkg = JSON.parse(p.package_data);
+                const pdfFile = (pkg.files || []).find(f => f.role === 'order_form' || /\.pdf$/i.test(f.filename||''));
+                if(!pdfFile || !pdfFile.content) return showToast("PDF 파일이 패키지에 없습니다.");
+                // 새 창에 iframe으로 PDF 열기
+                const w = window.open('', '_blank');
+                if(!w) return showToast("팝업 차단을 해제해 주세요.");
+                w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${(pdfFile.filename||'주문서').replace(/</g,'&lt;')}</title><style>body{margin:0;background:#1e293b;}iframe{width:100vw;height:100vh;border:none;}</style></head><body><iframe src="${pdfFile.content}"></iframe></body></html>`);
+                w.document.close();
+            } catch(e) { showToast("PDF 로드 실패: " + (e.message||e)); }
+        };
+
+        // 🚀 [v5] 동일 상품 추가/재주문 (주문서 폼 다시 열기)
+        window.placeAdditionalOrder = async function(productId) {
+            try {
+                const res = await fetch(`${API_URL}/api/product/detail/${productId}`);
+                const p = await res.json();
+                if(!p || !p.id) return showToast("상품 정보를 찾을 수 없습니다.");
+                if(!p.is_package) return showToast("이 상품은 추가 주문 폼이 없습니다.");
+                // 마켓 흐름과 동일하게 주문 폼 모달 열기 (원본 가격으로)
+                openOrderFormModal(p, p.price_original || 0, p.seller, 'original');
+            } catch(e) { showToast("추가 주문 처리 실패: " + (e.message||e)); }
+        };
+
+        // 🚀 [v5] 구매 카드에서 판매자에게 즉시 채팅
+        window.contactSellerFromPurchase = async function(sellerName) {
+            if(!sellerName) return showToast("판매자 정보가 없습니다.");
+            if(sellerName === currentUser.name) return showToast("본인 상점입니다.");
+            // 친구로 자동 등록
+            try {
+                await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: sellerName }) });
+            } catch(_){}
+            // 메신저 열고 채팅 시작
+            const drawer = document.getElementById('messenger-drawer');
+            if(drawer && !drawer.classList.contains('open')) drawer.classList.add('open');
+            setTimeout(() => openMessengerChat(sellerName), 100);
+        };
 
         // --- 🚀 자금 변동 거래 장부 (장부 역할: 절대 누락 없음 + 기간 필터 + PDF 출력) ---
         window.historyAll = [];          // 서버에서 받은 전체 기록 (캐시)
