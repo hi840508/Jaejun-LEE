@@ -69,6 +69,10 @@ function initTables() {
         db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN email TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN business_type TEXT DEFAULT 'individual'`, () => {});
+        // 🚀 [v8+] 자격증 + 승인 워크플로우
+        db.run(`ALTER TABLE users ADD COLUMN license_doc TEXT`, () => {});       // base64 자격증 이미지
+        db.run(`ALTER TABLE users ADD COLUMN approval_status TEXT DEFAULT 'approved'`, () => {});  // approved | pending | rejected
+        db.run(`ALTER TABLE users ADD COLUMN approval_note TEXT`, () => {});      // 승인/거절 사유
         db.run(`ALTER TABLE users ADD COLUMN shipping_address TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN reset_otp TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN reset_otp_expiry INTEGER`, () => {});
@@ -105,15 +109,78 @@ app.post('/api/auth/verify', (req, res) => {
     });
 });
 
+// 🚀 [v8+] ID 중복 검사
+app.post('/api/auth/check-id', (req, res) => {
+    const name = (req.body.name || '').trim();
+    if(!name) return res.json({ available: false, reason: 'ID를 입력해 주세요.' });
+    if(name.length < 3) return res.json({ available: false, reason: 'ID는 3자 이상이어야 합니다.' });
+    if(!/^[a-zA-Z0-9_가-힣]{3,}$/.test(name)) return res.json({ available: false, reason: '영문/숫자/한글/언더바만 사용 가능합니다.' });
+    db.get(`SELECT name FROM users WHERE name = ?`, [name], (err, row) => {
+        if(err) return res.status(500).json({ error: err.message });
+        if(row) return res.json({ available: false, reason: '이미 사용 중인 ID입니다.' });
+        res.json({ available: true });
+    });
+});
+
 app.post('/api/auth/register', (req, res) => {
-    const { name, password, realname, bank, account, phone, email, shipping_address, business_type } = req.body;
-    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type) VALUES (?, ?, ?, ?, ?, 10000, ?, ?, ?, ?)`,
-        [name, password, realname, bank, account, phone || '', email || '', shipping_address || '', business_type || 'individual'], (err) => {
+    const { name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc } = req.body;
+    // 🚀 [v8+] 의료·약무 관련 업종은 자격증 필수 + Admin 승인 대기
+    const regulated = ['dental_lab', 'medical', 'pharmacy', 'medical_wholesale'];
+    const needsApproval = regulated.includes(business_type);
+    if(needsApproval && !license_doc) return res.status(400).json({ error: '해당 업종은 자격증 업로드가 필수입니다.' });
+    const approvalStatus = needsApproval ? 'pending' : 'approved';
+
+    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_doc, approval_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, password, realname, bank, account, needsApproval ? 0 : 10000, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
-        const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
-        db.run(`INSERT INTO transactions (buyer, seller, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            ['Earth(Root)', name, '신규 가입 정산 한도 축하금', 10000, 'signup_bonus', rawDate, date]);
-        res.json({ name, password, realname, bank, account, phone: phone || '', email: email || '', shipping_address: shipping_address || '', business_type: business_type || 'individual', balance: 10000, profilePic: null });
+        // 승인 대기는 보너스 X. 자동 승인 회원만 10,000원 정산 한도 축하금
+        if(!needsApproval) {
+            const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                ['Earth(Root)', name, '신규 가입 정산 한도 축하금', 10000, 'signup_bonus', rawDate, date]);
+        }
+        res.json({ 
+            name, password, realname, bank, account, 
+            phone: phone || '', email: email || '', shipping_address: shipping_address || '', 
+            business_type: business_type || 'individual', 
+            approval_status: approvalStatus,
+            balance: needsApproval ? 0 : 10000, 
+            profilePic: null,
+            needsApproval
+        });
+    });
+});
+
+// 🚀 [v8+] Admin: 가입 승인 대기 회원 목록
+app.get('/api/admin/pending-users', (req, res) => {
+    db.all(`SELECT name, realname, business_type, phone, email, license_doc, approval_status, approval_note FROM users WHERE approval_status = 'pending' ORDER BY name`, [], (err, rows) => {
+        if(err) return res.status(500).json({ error: err.message });
+        res.json(rows || []);
+    });
+});
+
+// 🚀 [v8+] Admin: 승인 / 반려
+app.post('/api/admin/approve-user', (req, res) => {
+    const { name, decision, note, adminSecret } = req.body;
+    if(adminSecret !== 'mars') return res.status(403).json({ error: 'Admin 권한 필요' });
+    if(!['approved', 'rejected'].includes(decision)) return res.status(400).json({ error: '잘못된 결정값' });
+    db.run(`UPDATE users SET approval_status = ?, approval_note = ? WHERE name = ?`, [decision, note || '', name], function(err) {
+        if(err) return res.status(500).json({ error: err.message });
+        if(this.changes === 0) return res.status(404).json({ error: '회원을 찾을 수 없음' });
+        // 승인 시 가입 축하금 지급 (지급 이력이 없을 때만)
+        if(decision === 'approved') {
+            db.get(`SELECT id FROM transactions WHERE seller = ? AND purchaseType = 'signup_bonus'`, [name], (gerr, existing) => {
+                if(!existing) {
+                    const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
+                    db.run(`INSERT INTO transactions (buyer, seller, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                        ['Earth(Root)', name, '신규 가입 정산 한도 축하금', 10000, 'signup_bonus', rawDate, date]);
+                    db.run(`UPDATE users SET balance = COALESCE(balance, 0) + 10000 WHERE name = ?`, [name]);
+                }
+                res.json({ success: true, decision });
+            });
+        } else {
+            res.json({ success: true, decision });
+        }
     });
 });
 
@@ -656,6 +723,14 @@ app.post('/api/product/edit', (req, res) => { db.run(`UPDATE products SET name =
 app.post('/api/admin/product/delete', (req, res) => { 
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
     db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); 
+});
+// 🚀 [v8+] Admin이 임의 상점을 강제 폐쇄 (소유자 무관)
+app.post('/api/admin/store/delete', (req, res) => {
+    if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
+    db.serialize(() => {
+        db.run(`DELETE FROM products WHERE storeId = ?`, [req.body.id]);
+        db.run(`DELETE FROM stores WHERE id = ?`, [req.body.id], () => res.json({ success: true }));
+    });
 });
 app.post('/api/product/delete', (req, res) => { db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); });
 
