@@ -995,9 +995,8 @@
                     <!-- 폴더 탐색기 드래그 안내 (간소화된 본문 dropzone) -->
                     <div id="my-store-dropzone" class="dropzone" style="display:none;"></div>
                     
-                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:10px; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:10px; margin-bottom:10px;">
                         <span style="font-size:11px; color:var(--text-sub);">상품 카드의 텍스트 영역을 클릭하여 인라인 수정하세요.</span>
-                        <button class="btn btn-success" style="padding:8px 12px; font-size:12px;" onclick="bundleToHTMLAndDownload()">선택 항목 병합 HTML 패키징 추출</button>
                     </div>
                     <div class="karrot-list" id="my-store-grid"></div>
                 </div>
@@ -1052,14 +1051,14 @@
                     <div style="font-size: 13px; opacity: 0.9; margin-bottom: 5px; font-weight:bold;">Total Available Balance</div>
                     <div style="font-size: 40px; font-weight: 900; margin:5px 0;"><span id="display-balance">0</span> <span style="font-size:20px;">KRW</span></div>
                     <div style="display: flex; gap: 10px; margin-top: 15px; justify-content: center;">
-                        <button class="btn" style="background:#fff; color:var(--primary); font-size:13px; padding:10px 20px; box-shadow:0 2px 5px rgba(0,0,0,0.1);" onclick="openModal('deposit-modal')">📥 자금 입금</button>
-                        <button class="btn" style="background:rgba(255,255,255,0.2); color:#fff; border:1px solid rgba(255,255,255,0.4); font-size:13px; padding:10px 20px;" onclick="openModal('withdraw-modal')">정산 출금</button>
+                        <button class="btn" style="background:#fff; color:var(--primary); font-size:13px; padding:10px 20px; box-shadow:0 2px 5px rgba(0,0,0,0.1);" onclick="openModal('deposit-modal')">입금</button>
+                        <button class="btn" style="background:rgba(255,255,255,0.2); color:#fff; border:1px solid rgba(255,255,255,0.4); font-size:13px; padding:10px 20px;" onclick="openModal('withdraw-modal')">출금</button>
                         <span id="withdraw-account-info" style="display:none;"></span>
                     </div>
                 </div>
 
                 <div class="panel">
-                    <h4 style="margin-bottom:15px; font-size:14px;">🎫 암호화폐/상품권 발행 및 받기</h4>
+                    <h4 style="margin-bottom:15px; font-size:14px;">QR 입/출금</h4>
                     <div class="grid-2col">
                         <div style="background:#f8fafc; padding:15px; border-radius:12px; border:1px solid var(--border-color);">
                             <div class="input-group"><input type="number" id="wallet-check-amount" placeholder="발행할 금액 (원)"></div>
@@ -1196,9 +1195,23 @@
                 <div class="kt-chat-header">
                     <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px; border-radius:15px;" onclick="backToDrawerList()">◀</button>
                     <b id="active-chat-title">대화방</b>
-                    <button class="btn" id="complete-purchase-btn" style="padding:6px 12px; font-size:11px; margin-left:auto; background:linear-gradient(135deg,#10b981,#059669); color:#fff; border:none; border-radius:15px; font-weight:bold;" onclick="completePurchaseFlow()" title="구매를 완료하고 리뷰 작성">완료</button>
+                    <button class="btn btn-outline" id="video-chat-btn" style="padding:6px 10px; font-size:11px; margin-left:auto; border-radius:15px; display:flex; align-items:center; gap:4px;" onclick="startVideoChat()" title="화상 채팅 시작">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            <rect x="8" y="8" width="6" height="6" rx="1" fill="currentColor"/>
+                            <polygon points="14,11 18,9 18,13" fill="currentColor"/>
+                        </svg>
+                        화상
+                    </button>
+                    <button class="btn" id="complete-purchase-btn" style="padding:6px 12px; font-size:11px; background:linear-gradient(135deg,#10b981,#059669); color:#fff; border:none; border-radius:15px; font-weight:bold;" onclick="completePurchaseFlow()" title="구매를 완료하고 리뷰 작성">완료</button>
                 </div>
                 <div class="chat-body" id="main-chat-body"></div>
+
+                <!-- 🚀 [v8+] 화상 회의 iframe 영역 (시작 시 표시) -->
+                <div id="video-meeting-area" style="display:none; position:absolute; inset:0; background:#0f172a; z-index:50;">
+                    <iframe id="video-meeting-frame" allow="camera; microphone; display-capture; autoplay; fullscreen;" style="width:100%; height:100%; border:none;"></iframe>
+                    <button onclick="stopVideoChat()" style="position:absolute; top:12px; right:12px; z-index:1001; background:#ef4444; color:#fff; border:none; border-radius:50%; width:38px; height:38px; cursor:pointer; font-size:18px; font-weight:bold; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(0,0,0,0.4);" title="회의 종료">&times;</button>
+                </div>
 
                 <!-- 🚀 첨부 대기 파일 프리뷰 -->
                 <div class="chat-attach-strip" id="chat-attach-strip"></div>
@@ -1207,21 +1220,17 @@
                 <div class="emoji-picker" id="emoji-picker"></div>
 
                 <div class="chat-action-menu" id="chat-action-menu">
-                    <h5 style="color:var(--success);">💰 1:1 간편 송금</h5>
+                    <h5 style="color:var(--success);">1:1 간편 송금</h5>
                     <div style="display:flex; gap:5px;"><input type="number" id="chat-transfer-amount" placeholder="송금액 (원)"><button class="btn btn-success" style="padding:6px; font-size:12px; flex-shrink:0;" onclick="sendTransferInChat()">이체</button></div>
-                    
-                    <h5 style="color:var(--warning); margin-top:15px;">📎 1:1 비공개 상품 판매 (검색 비노출)</h5>
-                    <div style="display:flex; gap:5px; margin-bottom:5px;"><input type="number" id="chat-file-p-str" placeholder="스트리밍가"><input type="number" id="chat-file-p-ori" placeholder="원본구매가"></div>
-                    <div style="display:flex; gap:5px;"><input type="number" id="chat-file-dur" placeholder="기간" value="7"><select id="chat-file-unit"><option value="d">일</option><option value="h">시간</option><option value="y">년</option></select></div>
-                    <input type="file" id="chat-file-attach" style="display:none;" onchange="encryptAndSellFileInChat(event)">
-                    <button class="btn btn-warning" style="width:100%; padding:6px; font-size:12px; margin-top:5px;" onclick="document.getElementById('chat-file-attach').click()">상품 첨부 및 판매</button>
                 </div>
 
-                <!-- 🚀 카톡 스타일 입력 바 (+, 사진, 이모지, 메시지, 전송) -->
+                <!-- 🚀 [v8+] 채팅 파일 첨부 — 원본 절대 첨부 X, 항상 HTML 번들로 변환 -->
                 <input type="file" id="chat-quick-attach" multiple style="display:none;" onchange="window.handleChatFileAttach && window.handleChatFileAttach(event.target.files)">
                 <div class="chat-input-area">
                     <button class="btn btn-outline" style="border-radius:50%; width:36px; height:36px; padding:0; font-size:20px; flex-shrink:0;" onclick="toggleChatActionMenu()" title="더보기">+</button>
-                    <button class="btn btn-outline" style="border-radius:50%; width:36px; height:36px; padding:0; font-size:18px; flex-shrink:0;" onclick="document.getElementById('chat-quick-attach').click()" title="파일 첨부">📎</button>
+                    <button class="btn btn-outline" style="border-radius:50%; width:36px; height:36px; padding:0; flex-shrink:0;" onclick="document.getElementById('chat-quick-attach').click()" title="파일 첨부 (자동 HTML 변환)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block; margin:auto;"><path d="M21 12.79V13a8 8 0 1 1-15.95-1.59"/><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    </button>
                     <button class="btn btn-outline" style="border-radius:50%; width:36px; height:36px; padding:0; font-size:18px; flex-shrink:0;" onclick="toggleEmojiPicker()" title="이모지">😀</button>
                     <input type="text" id="main-chat-input" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendMainMessage()">
                     <button class="btn" onclick="sendMainMessage()" style="padding:8px 15px; flex-shrink:0;">전송</button>
@@ -1232,7 +1241,7 @@
 
     <div class="modal-overlay" id="deposit-modal">
         <div class="modal-content">
-            <div class="modal-header"><span>자금 입금 신청</span><button class="close-btn-x" onclick="closeModal('deposit-modal')">&times;</button></div>
+            <div class="modal-header"><span>입금 신청</span><button class="close-btn-x" onclick="closeModal('deposit-modal')">&times;</button></div>
             <div style="background:#ecfdf5; border:1px solid var(--success); padding:12px; border-radius:8px; font-size:12px; color:#166534; line-height:1.5;">
                 <strong style="font-size:14px;">우리은행 1002-338-118610 (이재준)</strong><br>송금하신 금액을 기입해 주십시오. 로그인 계정과 매칭됩니다.
             </div>
@@ -1243,7 +1252,7 @@
 
     <div class="modal-overlay" id="withdraw-modal">
         <div class="modal-content">
-            <div class="modal-header"><span>정산 출금 신청</span><button class="close-btn-x" onclick="closeModal('withdraw-modal')">&times;</button></div>
+            <div class="modal-header"><span>출금 신청</span><button class="close-btn-x" onclick="closeModal('withdraw-modal')">&times;</button></div>
             <div style="background:#fef2f2; border:1px solid var(--danger); padding:12px; border-radius:8px; font-size:12px; color:#991b1b; line-height:1.5;">
                 * 가용 잔액 <b>10,000원 초과</b> 시 <b>1만 원 단위</b>로만 출금됩니다.<br>계좌: <strong id="modal-withdraw-account-info"></strong>
             </div>
@@ -3573,54 +3582,179 @@
 
         // 카톡식 파일 첨부 → 미리보기 → 전송
         // 🚀 [개선] 8MB 초과 파일은 자동으로 1:1 비공개 상품 등록 안내
+        // 🚀 [v8+] ============ 화상 채팅 (Jitsi Meet) ============
+        // 두 참여자가 같은 방 이름을 사용하도록 currentChatRoomId 기반으로 결정적 방 생성
+        window.__videoMeetingActive = false;
+
+        window.startVideoChat = function() {
+            if(!activeChatFriend || !currentChatRoomId) return showToast("먼저 대화방을 여세요.");
+
+            // 방 이름은 채팅방 ID 기반 (양측 동일하게 매칭)
+            // currentChatRoomId 예: "room_msg_userA_userB"
+            const safeRoom = (currentChatRoomId || ('room_' + Date.now()))
+                .replace(/[^a-zA-Z0-9_-]/g, '_');
+            const meetUrl = `https://meet.jit.si/Oreum_${safeRoom}#config.prejoinPageEnabled=false&userInfo.displayName="${encodeURIComponent(currentUser.name)}"`;
+
+            const area = document.getElementById('video-meeting-area');
+            const frame = document.getElementById('video-meeting-frame');
+            if(!area || !frame) return;
+            frame.src = meetUrl;
+            area.style.display = 'block';
+            window.__videoMeetingActive = true;
+
+            // 상대방에게 초대 링크 채팅 메시지로 전송 (참여 가능하게)
+            const inviteMsg = `[VIDEO_INVITE]${meetUrl}`;
+            const pic = document.getElementById('my-profile-pic').src;
+            if(socket && socket.connected) {
+                socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: inviteMsg });
+            }
+            appendMainMessage(currentUser.name, inviteMsg, pic);
+            showToast("화상 회의를 시작합니다. 상대방에게 초대 링크를 보냈습니다.");
+        };
+
+        window.stopVideoChat = function() {
+            if(!confirm('화상 회의를 종료하시겠습니까?')) return;
+            const area = document.getElementById('video-meeting-area');
+            const frame = document.getElementById('video-meeting-frame');
+            if(frame) frame.src = '';  // 카메라/마이크 즉시 해제
+            if(area) area.style.display = 'none';
+            window.__videoMeetingActive = false;
+            showToast("화상 회의가 종료되었습니다.");
+        };
+
+        // 화상 초대 링크 수신 시 채팅 버블에 클릭 가능한 링크 카드로 표시
+        window.joinVideoChatFromInvite = function(url) {
+            if(!url) return;
+            const area = document.getElementById('video-meeting-area');
+            const frame = document.getElementById('video-meeting-frame');
+            if(!area || !frame) return;
+            frame.src = url;
+            area.style.display = 'block';
+            window.__videoMeetingActive = true;
+            showToast("화상 회의에 참여합니다.");
+        };
+
+
+        // 🚀 [v8+] 채팅 파일 첨부: 단일/다중 무관 항상 HTML 번들로 변환하여 업로드
+        //   원본 파일은 절대 첨부되지 않음. 모든 파일은 buildUnifiedBundleHTML로 패키징
         window.handleChatFileAttach = async function(files) {
             if(!activeChatFriend) return showToast("먼저 대화방을 여세요.");
             const arr = Array.from(files);
-            for(let f of arr) {
-                if(f.size > 8 * 1024 * 1024) {
-                    // 🚀 즉시 1:1 비공개 상품 등록 흐름 제안
-                    const sizeMB = (f.size/1048576).toFixed(1);
-                    const goSale = confirm(`📦 "${f.name}" (${sizeMB}MB)\n\n8MB 초과 파일은 채팅 직첨부가 불가합니다.\n→ 1:1 비공개 상품으로 등록해 ${activeChatFriend}님에게 바로 판매하시겠습니까?\n\n(가격은 다음 단계에서 입력)`);
-                    if(goSale) {
-                        // 가격 입력 후 즉시 등록
-                        const pStr = parseInt(prompt(`스트리밍 가격 (원, 기본 1000)`, '1000')) || 1000;
-                        const pOri = parseInt(prompt(`원본 구매 가격 (원, 기본 10000)`, '10000')) || 10000;
-                        showToast("1:1 비공개 상품 암호화 중...");
-                        try {
-                            const rawBase64 = await fileToBase64(f);
-                            const parts = rawBase64.split(','); const header = parts[0] + ','; const dataPart = parts[1];
-                            const encoded = await processSecureDataAsync(dataPart);
-                            const finalPayload = header + encoded;
-                            const thumb = await generateThumbnail(f);
-                            const res = await fetch(`${API_URL}/api/products/encrypt-build`, {
-                                method:'POST', headers:{'Content-Type':'application/json'},
-                                body: JSON.stringify({ name: f.name, price_stream: pStr, price_original: pOri, stream_time: 365, stream_unit: 'd', seller: currentUser.name, storeId: currentChatRoomId, thumbnail: thumb, encryptedPayload: finalPayload, description: '1:1 비공개 전용 상품' })
-                            });
-                            const dt = await res.json();
-                            if(res.ok) {
-                                const saleMsg = `[ITEM_SALE]${dt.productId}|${f.name}|${pStr}|${pOri}|365d`;
-                                socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: document.getElementById('my-profile-pic').src, message: saleMsg });
-                                appendMainMessage(currentUser.name, saleMsg, document.getElementById('my-profile-pic').src);
-                                showToast(`✅ 1:1 비공개 상품 등록 완료: ${f.name}`);
-                            } else showToast(dt.error || "등록 실패");
-                        } catch(e) { showToast("등록 실패: " + (e.message||e)); }
-                    } else {
-                        showToast(`⚠️ ${f.name} 첨부 취소됨 (8MB 초과)`);
-                    }
-                    continue;
+            if(arr.length === 0) return;
+
+            // 용량 사전 점검 (HTML로 변환되면 base64 인코딩으로 약 33% 증가)
+            const totalSize = arr.reduce((s, f) => s + f.size, 0);
+            const totalMB = (totalSize / 1048576).toFixed(1);
+            if(totalSize > 12 * 1024 * 1024) {
+                return showToast(`전체 파일 크기가 ${totalMB}MB로 12MB를 초과합니다. 파일을 줄여서 전송해 주세요.`);
+            }
+
+            const toast = arr.length === 1
+                ? `${arr[0].name} HTML 번들로 변환 중...`
+                : `${arr.length}개 파일을 HTML 번들로 변환 중...`;
+            showToast(toast);
+
+            try {
+                // 모든 파일을 base64로 변환
+                const filePayloads = [];
+                for(const f of arr) {
+                    const b64 = await fileToBase64(f);
+                    filePayloads.push({
+                        filename: f.name,
+                        type: f.type || 'application/octet-stream',
+                        size: f.size,
+                        data: b64
+                    });
                 }
-                try {
-                    const base64 = await fileToBase64(f);
-                    const isImage = /^image\//.test(f.type);
-                    const isVideo = /^video\//.test(f.type);
-                    const sizeKB = (f.size/1024).toFixed(0);
-                    // [FILE_ATTACH]name|size|mime|base64
-                    const msg = `[FILE_ATTACH]${f.name}|${sizeKB}|${f.type || 'application/octet-stream'}|${base64}`;
-                    const pic = document.getElementById('my-profile-pic').src;
+
+                // HTML 번들 생성 (단일/다중 무관 동일 처리)
+                const bundleName = arr.length === 1
+                    ? arr[0].name.replace(/\.[^.]+$/, '') + '.html'
+                    : `attachments_${Date.now()}.html`;
+                const titleSafe = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+                const bundleTitle = arr.length === 1 ? arr[0].name : `첨부 파일 ${arr.length}개`;
+
+                // 내장 HTML 뷰어: 각 파일을 카드로 표시 + 다운로드/미리보기 지원
+                const dataJson = JSON.stringify({ files: filePayloads, title: bundleTitle, sender: currentUser.name, sentAt: new Date().toISOString() })
+                    .replace(/[\u2028\u2029]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4,'0'))
+                    .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+
+                const bundleHtml = [
+                    '<!DOCTYPE html>',
+                    '<html lang="ko"><head><meta charset="UTF-8">',
+                    '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+                    '<title>' + titleSafe(bundleTitle) + '</title>',
+                    '<style>',
+                    '*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;}',
+                    'body{background:#0f172a;color:#e2e8f0;padding:20px;min-height:100vh;}',
+                    '.wrap{max-width:900px;margin:0 auto;}',
+                    '.header{background:linear-gradient(135deg,#1e293b,#334155);border-radius:14px;padding:20px 24px;margin-bottom:20px;border:1px solid #475569;}',
+                    '.header h1{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:4px;}',
+                    '.header .meta{font-size:12px;color:#94a3b8;}',
+                    '.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin-bottom:12px;}',
+                    '.card .name{font-size:14px;font-weight:700;color:#f1f5f9;word-break:break-all;}',
+                    '.card .meta{font-size:11px;color:#94a3b8;margin:4px 0;}',
+                    '.preview{margin:10px 0;border-radius:8px;overflow:hidden;background:#0f172a;}',
+                    '.preview img{max-width:100%;display:block;}',
+                    '.preview video,.preview audio{width:100%;}',
+                    '.preview iframe{width:100%;height:480px;border:none;background:#fff;}',
+                    '.btn{display:inline-block;padding:8px 14px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;}',
+                    '.btn:hover{background:#2563eb;}',
+                    '.btn.gray{background:#475569;}',
+                    '.btn.gray:hover{background:#334155;}',
+                    '</style></head><body>',
+                    '<div class="wrap">',
+                    '<div class="header">',
+                    '<h1>' + titleSafe(bundleTitle) + '</h1>',
+                    '<div class="meta">발신: ' + titleSafe(currentUser.name) + ' · 파일 ' + arr.length + '개</div>',
+                    '</div>',
+                    '<div id="cards"></div>',
+                    '</div>',
+                    '<script type="application/json" id="bundle-data">' + dataJson + '<' + '/script>',
+                    '<script>',
+                    'const data = JSON.parse(document.getElementById("bundle-data").textContent);',
+                    'const cards = document.getElementById("cards");',
+                    'data.files.forEach((f, i) => {',
+                    '  const card = document.createElement("div"); card.className = "card";',
+                    '  const sizeKB = (f.size/1024).toFixed(0);',
+                    '  let html = "<div class=\\"name\\">" + escapeHTML(f.filename) + "</div>";',
+                    '  html += "<div class=\\"meta\\">" + sizeKB + " KB · " + escapeHTML(f.type) + "</div>";',
+                    '  if(/^image\\//.test(f.type)) {',
+                    '    html += "<div class=\\"preview\\"><img src=\\"" + f.data + "\\"></div>";',
+                    '  } else if(/^video\\//.test(f.type)) {',
+                    '    html += "<div class=\\"preview\\"><video src=\\"" + f.data + "\\" controls></video></div>";',
+                    '  } else if(/^audio\\//.test(f.type)) {',
+                    '    html += "<div class=\\"preview\\"><audio src=\\"" + f.data + "\\" controls></audio></div>";',
+                    '  } else if(/pdf$/i.test(f.type)) {',
+                    '    html += "<div class=\\"preview\\"><iframe src=\\"" + f.data + "\\"></iframe></div>";',
+                    '  }',
+                    '  html += "<a class=\\"btn\\" href=\\"" + f.data + "\\" download=\\"" + escapeAttr(f.filename) + "\\">다운로드</a>";',
+                    '  card.innerHTML = html; cards.appendChild(card);',
+                    '});',
+                    'function escapeHTML(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}',
+                    'function escapeAttr(s){return String(s||"").replace(/"/g,"&quot;");}',
+                    '<' + '/script>',
+                    '</body></html>'
+                ].join('\n');
+
+                const bundleSize = new Blob([bundleHtml]).size;
+                if(bundleSize > 12 * 1024 * 1024) {
+                    return showToast(`HTML 번들 크기가 ${(bundleSize/1048576).toFixed(1)}MB로 12MB를 초과합니다.`);
+                }
+
+                // base64 인코딩하여 메시지로 전송
+                const bundleB64 = 'data:text/html;base64,' + btoa(unescape(encodeURIComponent(bundleHtml)));
+                const sizeKB = (bundleSize / 1024).toFixed(0);
+                const msg = `[FILE_ATTACH]${bundleName}|${sizeKB}|text/html|${bundleB64}`;
+                const pic = document.getElementById('my-profile-pic').src;
+                if(socket && socket.connected) {
                     socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
-                    appendMainMessage(currentUser.name, msg, pic);
-                    showToast(`📎 ${f.name} 전송 완료`);
-                } catch(e) { showToast("파일 전송 실패: " + (e.message || e)); }
+                }
+                appendMainMessage(currentUser.name, msg, pic);
+                showToast(`HTML 번들 전송 완료 · ${arr.length}개 파일 · ${sizeKB}KB`);
+            } catch(e) {
+                showToast('전송 실패: ' + (e.message || e));
+                if(window.__earthDiag) window.__earthDiag('handleChatFileAttach error: ' + e.message, true);
             }
             const ca = document.getElementById('chat-quick-attach'); if(ca) ca.value = '';
         }
@@ -5983,7 +6117,21 @@
             let displayHtml = text;
 
             if(text.startsWith('[TRANSFER]')) {
-                displayHtml = `<div style="padding:4px;"><div style="font-size:11px; opacity:0.7;">💸 자산 이체</div><div style="font-size:18px; font-weight:900; margin-top:2px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</div></div>`;
+                displayHtml = `<div style="padding:4px;"><div style="font-size:11px; opacity:0.7;">자산 이체</div><div style="font-size:18px; font-weight:900; margin-top:2px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</div></div>`;
+            } else if(text.startsWith('[VIDEO_INVITE]')) {
+                // 🚀 [v8+] 화상 회의 초대 카드
+                const url = text.replace('[VIDEO_INVITE]', '');
+                const safeUrl = url.replace(/'/g, '%27').replace(/"/g, '%22');
+                displayHtml = `<div class="kt-card-msg" style="max-width:280px;">
+                    <div style="background:linear-gradient(135deg, #3b82f6, #2563eb); color:#fff; padding:14px;">
+                        <div style="font-size:11px; opacity:0.95;">화상 회의 초대</div>
+                        <div style="font-size:14px; font-weight:700; margin-top:4px;">실시간 영상 통화</div>
+                    </div>
+                    <div style="padding:12px 14px;">
+                        <div style="font-size:11px; color:var(--text-sub); margin-bottom:8px;">${isMe ? '내가 회의를 시작했습니다.' : '회의에 참여해 보세요.'}</div>
+                        <button onclick="joinVideoChatFromInvite('${safeUrl}')" style="width:100%; background:var(--success); color:#fff; border:none; padding:10px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">회의 참여하기</button>
+                    </div>
+                </div>`;
             } else if(text.startsWith('[FILE_ATTACH]')) {
                 // [FILE_ATTACH]name|sizeKB|mime|dataUrl
                 // 🚀 [v7] split(|, 4)로 안전하게 분리 — base64에 |는 없지만 limit으로 명시
