@@ -52,6 +52,9 @@ function initTables() {
         // type: 'order' (구매 후 자동 생성, 한쪽이 leave 시 양측 종료) | 'normal' (수동 친구 추가)
         db.run(`CREATE TABLE IF NOT EXISTS chat_rooms (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT UNIQUE, type TEXT DEFAULT 'normal', buyer TEXT, seller TEXT, storeId TEXT, storeName TEXT, lastProductId TEXT, lastProductName TEXT, ended INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)`);
 
+        // 🚀 [v7p3] 상품 리뷰 (별점 + 텍스트). 한 구매자가 한 상품에 1회 작성 가능
+        db.run(`CREATE TABLE IF NOT EXISTS product_reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, productId TEXT, buyer TEXT, seller TEXT, rating INTEGER, review_text TEXT, skipped INTEGER DEFAULT 0, created_at TEXT)`);
+
         // 🚀 기존 DB 호환을 위한 마이그레이션 (컬럼 추가; 이미 있으면 에러 무시)
         db.run(`ALTER TABLE stores ADD COLUMN background TEXT`, () => {});
         db.run(`ALTER TABLE stores ADD COLUMN description TEXT`, () => {});
@@ -65,6 +68,7 @@ function initTables() {
         db.run(`ALTER TABLE transactions ADD COLUMN refunded INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN email TEXT`, () => {});
+        db.run(`ALTER TABLE users ADD COLUMN business_type TEXT DEFAULT 'individual'`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN shipping_address TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN reset_otp TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN reset_otp_expiry INTEGER`, () => {});
@@ -83,7 +87,7 @@ initTables();
 app.post('/api/admin/db-reset', (req, res) => {
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
     db.serialize(() => {
-        const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores', 'refund_requests', 'product_orders', 'chat_rooms'];
+        const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores', 'refund_requests', 'product_orders', 'chat_rooms', 'product_reviews'];
         tables.forEach(t => db.run(`DROP TABLE IF EXISTS ${t}`));
         initTables(); res.json({ success: true });
     });
@@ -102,15 +106,14 @@ app.post('/api/auth/verify', (req, res) => {
 });
 
 app.post('/api/auth/register', (req, res) => {
-    const { name, password, realname, bank, account, phone, email, shipping_address } = req.body;
-    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address) VALUES (?, ?, ?, ?, ?, 10000, ?, ?, ?)`,
-        [name, password, realname, bank, account, phone || '', email || '', shipping_address || ''], (err) => {
+    const { name, password, realname, bank, account, phone, email, shipping_address, business_type } = req.body;
+    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type) VALUES (?, ?, ?, ?, ?, 10000, ?, ?, ?, ?)`,
+        [name, password, realname, bank, account, phone || '', email || '', shipping_address || '', business_type || 'individual'], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
-        // 🚀 가입 축하금 거래 장부 기록 (컨벤션: 받는 쪽이 seller)
         const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
         db.run(`INSERT INTO transactions (buyer, seller, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             ['Earth(Root)', name, '신규 가입 정산 한도 축하금', 10000, 'signup_bonus', rawDate, date]);
-        res.json({ name, password, realname, bank, account, phone: phone || '', email: email || '', shipping_address: shipping_address || '', balance: 10000, profilePic: null });
+        res.json({ name, password, realname, bank, account, phone: phone || '', email: email || '', shipping_address: shipping_address || '', business_type: business_type || 'individual', balance: 10000, profilePic: null });
     });
 });
 
@@ -328,6 +331,17 @@ app.post('/api/store/update', (req, res) => {
 
 app.get('/api/stores/owned/:owner', (req, res) => { db.all(`SELECT * FROM stores WHERE owner = ?`, [req.params.owner], (err, rows) => res.json(rows || [])); });
 app.post('/api/store/status', (req, res) => { db.run(`UPDATE stores SET status = ? WHERE id = ?`, [req.body.status, req.body.id], () => res.json({ success: true })); });
+
+// 🚀 [v7p4] 상점 카테고리 변경 (본인 상점만)
+app.post('/api/store/category', (req, res) => {
+    const { id, category, owner } = req.body;
+    if(!id || !category || !owner) return res.status(400).json({ error: 'id, category, owner 필수' });
+    db.get(`SELECT owner FROM stores WHERE id = ?`, [id], (err, row) => {
+        if(err || !row) return res.status(404).json({ error: '상점을 찾을 수 없음' });
+        if(row.owner !== owner) return res.status(403).json({ error: '본인 상점만 수정 가능' });
+        db.run(`UPDATE stores SET category = ? WHERE id = ?`, [category, id], (uerr) => uerr ? res.status(500).json({ error: uerr.message }) : res.json({ success: true }));
+    });
+});
 app.get('/api/stores/active', (req, res) => { db.all(`SELECT * FROM stores WHERE status = 'active'`, [], (err, rows) => res.json(rows || [])); });
 // 🚀 단일 상점 상세 (배경/소개 포함)
 app.get('/api/store/:id', (req, res) => { db.get(`SELECT * FROM stores WHERE id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
@@ -484,6 +498,86 @@ app.get('/api/orders/pending/:userName', (req, res) => {
                 sellerPending: asSeller.length, sellerPendingOrders: asSeller,
                 buyerPending: asBuyer.length, buyerPendingOrders: asBuyer
             });
+        }
+    );
+});
+
+// 🚀 [v7p4] 자신의 pending 주문 일괄 정리 (사용자가 수동으로 호출 — "내 화면의 알림 모두 끄기")
+app.post('/api/orders/dismiss-all', (req, res) => {
+    const { userName } = req.body;
+    if(!userName) return res.status(400).json({ error: 'userName 필수' });
+    // 본인이 판매자인 pending 주문을 dismissed 상태로 변경 (실제 거절은 아니지만 알림에서 제외)
+    db.run(
+        `UPDATE product_orders SET status = 'dismissed' WHERE seller = ? AND status = 'pending'`,
+        [userName],
+        function(err) {
+            if(err) return res.status(500).json({ error: err.message });
+            res.json({ success: true, dismissed: this.changes });
+        }
+    );
+});
+
+// 🚀 [v7p4] 판매자가 자신에게 온 모든 주문 보기 (대기/승인/거절/취소 포함, 거래 상태 확인용)
+app.get('/api/orders/seller/:seller', (req, res) => {
+    const seller = req.params.seller;
+    db.all(
+        `SELECT po.*,
+                (SELECT name FROM products WHERE id = po.productId) as productName
+         FROM product_orders po WHERE seller = ? ORDER BY id DESC LIMIT 200`,
+        [seller],
+        (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json(rows || [])
+    );
+});
+
+// 🚀 [v7p3] 상품 리뷰 등록 (구매 완료 시)
+app.post('/api/review/submit', (req, res) => {
+    const { productId, buyer, seller, rating, review_text, skipped } = req.body;
+    if(!productId || !buyer) return res.status(400).json({ error: 'productId, buyer 필수' });
+    const r = Math.max(1, Math.min(5, Number(rating) || 3));
+    const now = new Date().toISOString();
+    // 같은 구매자가 같은 상품에 이미 리뷰 작성했는지 확인 — 중복 허용 X
+    db.get(`SELECT id FROM product_reviews WHERE productId = ? AND buyer = ?`, [productId, buyer], (gerr, existing) => {
+        if(existing) {
+            // 업데이트
+            db.run(`UPDATE product_reviews SET rating = ?, review_text = ?, skipped = ?, created_at = ? WHERE id = ?`,
+                [r, review_text || '', skipped ? 1 : 0, now, existing.id],
+                (uerr) => uerr ? res.status(500).json({ error: uerr.message }) : res.json({ ok: true, updated: true })
+            );
+        } else {
+            db.run(`INSERT INTO product_reviews (productId, buyer, seller, rating, review_text, skipped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [productId, buyer, seller || null, r, review_text || '', skipped ? 1 : 0, now],
+                function(ierr) { ierr ? res.status(500).json({ error: ierr.message }) : res.json({ ok: true, id: this.lastID }); }
+            );
+        }
+    });
+});
+
+// 🚀 [v7p3] 상품의 리뷰 목록 + 평균 별점 조회
+app.get('/api/reviews/:productId', (req, res) => {
+    const pid = req.params.productId;
+    db.all(`SELECT * FROM product_reviews WHERE productId = ? ORDER BY id DESC LIMIT 100`, [pid], (err, rows) => {
+        if(err) return res.status(500).json({ error: err.message });
+        const list = rows || [];
+        const total = list.length;
+        const sum = list.reduce((s, r) => s + (Number(r.rating) || 0), 0);
+        const avg = total > 0 ? (sum / total).toFixed(2) : null;
+        res.json({ reviews: list, total, average: avg ? Number(avg) : null });
+    });
+});
+
+// 🚀 [v7p3] 여러 상품의 평점 일괄 조회 (마켓 그리드용)
+app.post('/api/reviews/summary', (req, res) => {
+    const ids = req.body.productIds || [];
+    if(!Array.isArray(ids) || ids.length === 0) return res.json({});
+    const placeholders = ids.map(() => '?').join(',');
+    db.all(
+        `SELECT productId, AVG(rating) as avg_rating, COUNT(*) as count FROM product_reviews WHERE productId IN (${placeholders}) GROUP BY productId`,
+        ids,
+        (err, rows) => {
+            if(err) return res.status(500).json({ error: err.message });
+            const m = {};
+            (rows || []).forEach(r => { m[r.productId] = { average: Number(Number(r.avg_rating).toFixed(2)), count: r.count }; });
+            res.json(m);
         }
     );
 });
