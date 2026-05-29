@@ -597,9 +597,13 @@
         .brand-bar .acts { display:flex; gap:6px; }
         .brand-bar .acts .mini-btn { padding:6px 11px; font-size:11px; border-radius:var(--radius-sm); border:1px solid var(--border-color); background:#fff; cursor:pointer; font-weight:600; transition:0.15s; color:var(--text-main); }
         .brand-bar .acts .mini-btn:hover { background:var(--primary-soft); border-color:var(--primary); }
-        .brand-bar .acts .mini-btn.fav-on { background:#fef3c7; border-color:#f59e0b; color:#92400e; }
+        .brand-bar .acts .mini-btn.fav-on { background:var(--primary-soft); border-color:var(--primary); color:var(--text-main); }
         .brand-bar .acts .mini-btn.enter { background:var(--primary); color:#fff; border-color:var(--primary); }
         .brand-bar .acts .mini-btn.enter:hover { background:var(--primary-hover); }
+        /* 🚀 [v8+] 북마크형 즐겨찾기 아이콘 (별 글리프 대체) */
+        .fav-ico { width:16px; height:16px; display:inline-block; vertical-align:middle; }
+        .fav-ico svg { width:100%; height:100%; display:block; }
+        .fav-btn-ico { display:inline-flex; align-items:center; justify-content:center; }
         /* 추가 상품 썸네일 미니 스트립 (호버 시 살짝 보임) */
         .mini-thumbs { display:flex; gap:2px; padding:0 14px 10px; background:#fff; }
         .mini-thumbs .mt-cell { flex:1; aspect-ratio:1; border-radius:6px; background:#f1f5f9; overflow:hidden; cursor:pointer; transition:0.15s; position:relative; }
@@ -876,7 +880,7 @@
                     <button id="admin-logo-btn" style="display:none; background:var(--primary-soft); color:var(--primary); border:1px solid var(--border-color); border-radius:6px; padding:4px 8px; font-size:10px; cursor:pointer; margin-left:4px;" onclick="document.getElementById('admin-logo-upload').click()" title="로고 변경 (Admin)">로고 변경</button>
                 </div>
                 <div class="yt-search-bar">
-                    <input type="text" id="topbar-global-search" placeholder="상품·상점·회원 검색" onkeyup="if(event.key==='Enter') doTopbarSearch()">
+                    <input type="text" id="topbar-global-search" placeholder="통합 검색 (상품·상점·회원)" onkeyup="if(event.key==='Enter') doTopbarSearch()">
                     <button onclick="doTopbarSearch()" aria-label="검색"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
@@ -948,7 +952,7 @@
                 <div id="market-filter-nav" style="display:none; margin-bottom:10px; align-items:center; gap:10px; background:#fff; padding:10px; border-radius:8px; border:1px solid var(--border-color); flex-wrap:wrap;">
                     <button class="btn btn-secondary" style="padding:6px 12px; font-size:12px; border-radius:20px;" onclick="clearMarketFilter()">◀ 검색 결과로 돌아가기</button>
                     <span id="market-filter-title" style="font-weight:bold; font-size:14px; color:var(--primary);"></span>
-                    <button class="btn btn-outline" id="market-filter-fav-btn" style="padding:6px 10px; font-size:11px; border-radius:20px;" onclick="toggleFavoriteCurrentBrand()">★ 즐겨찾기</button>
+                    <button class="btn btn-outline fav-btn-ico" id="market-filter-fav-btn" style="padding:6px 10px; font-size:11px; border-radius:20px; gap:5px;" onclick="toggleFavoriteCurrentBrand()"><span class="fav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></span>즐겨찾기</button>
                     <button class="btn btn-outline" id="market-filter-inquire-btn" style="padding:6px 10px; font-size:11px; border-radius:20px; display:none;" onclick="inquireCurrentBrandOwner()">1:1 문의</button>
                     <button class="btn" id="market-filter-cart-btn" style="padding:6px 12px; font-size:11px; border-radius:20px; margin-left:auto; background:var(--gradient-btn); color:#fff; position:relative;" onclick="openCart()">장바구니 <span id="cart-count-badge" style="display:none; background:#ef4444; color:#fff; font-size:10px; padding:2px 6px; border-radius:30px; margin-left:4px;">0</span></button>
                 </div>
@@ -984,11 +988,6 @@
                         <span class="filter-chip active" data-sort="latest" onclick="setSortFilter('latest', this)">신상순</span>
                         <span class="filter-chip" data-sort="price_asc" onclick="setSortFilter('price_asc', this)">가격 낮은순</span>
                         <span class="filter-chip" data-sort="price_desc" onclick="setSortFilter('price_desc', this)">가격 높은순</span>
-                        <span class="chip-label" style="margin-left:8px;">유형 ·</span>
-                        <span class="filter-chip active" data-type="all" onclick="setTypeFilter('all', this)">전체</span>
-                        <span class="filter-chip" data-type="image" onclick="setTypeFilter('image', this)">이미지</span>
-                        <span class="filter-chip" data-type="video" onclick="setTypeFilter('video', this)">영상</span>
-                        <span class="filter-chip" data-type="doc" onclick="setTypeFilter('doc', this)">문서/HTML</span>
                     </div>
                     <div class="input-group" style="margin-bottom:10px;">
                         <input type="text" id="market-search" placeholder="상품명·설명 검색" style="width:100%;" onkeyup="loadMarketplace()">
@@ -1348,15 +1347,13 @@
                 <div class="kt-chat-header">
                     <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px; border-radius:15px;" onclick="backToDrawerList()">◀</button>
                     <b id="active-chat-title">대화방</b>
-                    <button class="btn btn-outline" id="video-chat-btn" style="padding:6px 10px; font-size:11px; margin-left:auto; border-radius:15px; display:flex; align-items:center; gap:4px;" onclick="startVideoChat()" title="화상 채팅 시작">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                            <rect x="8" y="8" width="6" height="6" rx="1" fill="currentColor"/>
-                            <polygon points="14,11 18,9 18,13" fill="currentColor"/>
+                    <button id="video-chat-btn" style="width:40px; height:40px; margin-left:auto; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--primary); color:#fff; border:none; cursor:pointer; flex-shrink:0;" onclick="startVideoChat()" title="화상 채팅 시작" aria-label="화상 채팅">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M23 7l-7 5 7 5V7z"/>
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
                         </svg>
-                        화상
                     </button>
-                    <button class="btn" id="complete-purchase-btn" style="padding:6px 12px; font-size:11px; background:linear-gradient(135deg,#10b981,#059669); color:#fff; border:none; border-radius:15px; font-weight:bold;" onclick="completePurchaseFlow()" title="구매를 완료하고 리뷰 작성">완료</button>
+                    <button class="btn" id="complete-purchase-btn" style="padding:8px 14px; font-size:12px; background:var(--primary); color:#fff; border:none; border-radius:20px; font-weight:700;" onclick="completePurchaseFlow()" title="구매를 완료하고 리뷰 작성">구매 완료</button>
                 </div>
                 <div class="chat-body" id="main-chat-body"></div>
 
@@ -1480,14 +1477,32 @@
                 <button class="btn btn-outline" style="padding:4px 10px; font-size:11px;" onclick="document.getElementById('modal-pic-upload').click()">사진 변경</button>
             </div>
             <div class="input-group"><label>접속 ID (변경 불가)</label><input type="text" id="modal-name" readonly style="background:#f1f5f9; color:#64748b;"></div>
-            
-            <div class="input-group">
-                <label>비밀번호 변경 및 Admin 권한 락해제</label>
-                <input type="password" id="modal-password" placeholder="비밀번호 기입 (Admin 해제키: mars)">
+
+            <!-- 🚀 [v8+] Admin 권한 활성화 영역 -->
+            <div id="admin-activate-box" style="background:#f4f4f5; border:1px solid var(--border-color); border-radius:10px; padding:12px 14px; margin-bottom:12px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+                    <div style="font-size:13px; font-weight:700; color:var(--text-main);">Admin 권한</div>
+                    <span id="admin-state-pill" style="font-size:10px; font-weight:700; padding:3px 10px; border-radius:30px; background:#e4e4e7; color:#52525b;">비활성</span>
+                </div>
+                <div id="admin-activate-row">
+                    <div style="font-size:11px; color:var(--text-sub); margin-bottom:8px; line-height:1.5;">모든 계정은 Admin 권한을 가지고 있습니다. 아래에 권한 비밀번호를 입력하면 관리 기능이 활성화됩니다. <span style="color:var(--text-main);">(초기 비밀번호: mars)</span></div>
+                    <div style="display:flex; gap:6px;">
+                        <input type="password" id="admin-activate-pwd" placeholder="Admin 권한 비밀번호" style="flex:1; padding:9px 12px; border-radius:8px; border:1px solid var(--border-color); outline:none; font-size:13px;">
+                        <button class="btn btn-secondary" style="padding:9px 16px; font-size:12px; white-space:nowrap;" onclick="activateAdmin()">권한 활성화</button>
+                    </div>
+                </div>
+                <div id="admin-change-pwd-row" style="display:none;">
+                    <div style="font-size:11px; color:var(--text-sub); margin-bottom:8px; line-height:1.5;">Admin 권한이 활성화되었습니다. 아래에서 권한 비밀번호를 변경할 수 있습니다.</div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        <input type="password" id="admin-new-pwd" placeholder="새 Admin 비밀번호" style="flex:1; min-width:140px; padding:9px 12px; border-radius:8px; border:1px solid var(--border-color); outline:none; font-size:13px;">
+                        <button class="btn btn-secondary" style="padding:9px 16px; font-size:12px; white-space:nowrap;" onclick="changeAdminPassword()">비밀번호 변경</button>
+                        <button class="btn btn-outline" style="padding:9px 16px; font-size:12px; white-space:nowrap;" onclick="deactivateAdmin()">권한 잠금</button>
+                    </div>
+                </div>
             </div>
-            <button class="btn btn-danger" style="width:100%; padding:10px; margin-bottom:10px; font-size:12px;" onclick="activateAdmin()">Admin 마스터 권한 트리거 가동</button>
-            
+
             <div style="height:1px; background:var(--border-color); margin:5px 0;"></div>
+            <div class="input-group"><label>로그인 비밀번호</label><input type="password" id="modal-password" placeholder="로그인 비밀번호"></div>
             <div class="input-group"><label>예금주 실명</label><input type="text" id="modal-realname"></div>
             <div class="input-group"><label>이메일 <span style="font-size:11px; color:var(--text-sub);">(비밀번호 분실 시 OTP 수신용)</span></label><input type="email" id="modal-email" placeholder="example@email.com"></div>
             <div class="input-group"><label>휴대전화번호</label><input type="tel" id="modal-phone" placeholder="010-0000-0000"></div>
@@ -1786,6 +1801,11 @@
         let activeChatFriend = null, currentChatRoomId = null;
         let unreadCounts = {}; let tempProfilePicBase64 = null;
         let isAdmin = false; 
+        // 🚀 [v8+] 북마크형 즐겨찾기 아이콘 SVG (filled=등록됨, outline=미등록)
+        window.favIcon = function(filled) {
+            const fill = filled ? 'currentColor' : 'none';
+            return `<span class="fav-ico"><svg viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><polygon points="12,7 13.2,9.6 16,9.9 13.9,11.8 14.5,14.5 12,13.1 9.5,14.5 10.1,11.8 8,9.9 10.8,9.6" fill="${filled ? '#fff' : 'none'}" stroke="${filled ? '#fff' : 'currentColor'}" stroke-width="1"/></svg></span>`;
+        };
 
         // 🚀 자동 로그인 + QR(?store=) 진입 사전 저장 (비회원이 가입 후 처리되도록)
         window.onload = () => {
@@ -2017,18 +2037,10 @@
             const modalAccEl = document.getElementById('modal-withdraw-account-info');
             if(modalAccEl) modalAccEl.innerText = str;
 
-            // 계좌기반 관리자 인증 
-            const cleanAcc = data.account ? data.account.replace(/[^0-9]/g, '') : '';
-            if(cleanAcc === '1002338118610') {
-                isAdmin = true;
-                document.getElementById('admin-indicator').style.display = 'inline-block';
-                document.getElementById('admin-deposit-panel').style.display = 'block';
-                document.getElementById('admin-db-reset-btn').style.display = 'block';
-                const logoBtn = document.getElementById('admin-logo-btn');
-                if(logoBtn) logoBtn.style.display = 'inline-block';
-                // 🚀 [v8+] Admin은 모든 카테고리 표시 (제약 면제)
-                localStorage.setItem('earth_visible_cats', JSON.stringify(window.BRAND_CATEGORIES.map(c => c.id)));
-            }
+            // 🚀 [v8+] 모든 계정은 Admin 권한을 보유하지만, 기본은 잠금 상태.
+            // 프로필 > Admin 권한 영역에서 비밀번호(초기 mars)를 입력해야 활성화됨.
+            isAdmin = false;
+            if(window.applyAdminUIState) applyAdminUIState(false);
 
             socket = io(API_URL, { transports: ['websocket', 'polling'] });
             socket.on('receive_message', handleReceiveMessage);
@@ -2102,6 +2114,7 @@
             const shipEl = document.getElementById('modal-shipping'); if(shipEl) shipEl.value = currentUser.shipping_address || '';
             document.getElementById('modal-profile-pic').src = currentUser.profilePic || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>";
             tempProfilePicBase64 = currentUser.profilePic; openModal('profile-modal');
+            if(window.applyAdminUIState) applyAdminUIState(isAdmin);
         }
         function previewProfilePic(e) { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = function(evt) { tempProfilePicBase64 = evt.target.result; document.getElementById('modal-profile-pic').src = tempProfilePicBase64; }; reader.readAsDataURL(file); }
         
@@ -2194,18 +2207,78 @@
             showToast('기본 로고로 복원되었습니다.');
         };
 
-        function activateAdmin() {
-            const pwd = document.getElementById('modal-password').value;
-            if(pwd === 'mars') {
-                isAdmin = true;
-                document.getElementById('admin-indicator').style.display = 'inline-block';
-                document.getElementById('admin-deposit-panel').style.display = 'block';
-                document.getElementById('admin-db-reset-btn').style.display = 'block';
-                const logoBtn = document.getElementById('admin-logo-btn');
-                if(logoBtn) logoBtn.style.display = 'inline-block';
-                showToast("Admin 권한이 활성화되었습니다."); closeModal('profile-modal'); loadMarketplace(); loadAdminActions();
-            } else { showToast("인증 실패: 권한 코드가 다릅니다."); }
+        window.activateAdmin = async function() {
+            const pwd = document.getElementById('admin-activate-pwd').value;
+            if(!pwd) return showToast("Admin 비밀번호를 입력해 주세요.");
+            try {
+                const res = await fetch(`${API_URL}/api/admin/verify-password`, {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ password: pwd })
+                });
+                const data = await res.json();
+                if(data.ok) {
+                    isAdmin = true;
+                    applyAdminUIState(true);
+                    document.getElementById('admin-activate-pwd').value = '';
+                    showToast("Admin 권한이 활성화되었습니다.");
+                    loadMarketplace(); loadAdminActions();
+                } else {
+                    showToast("인증 실패: Admin 비밀번호가 다릅니다.");
+                }
+            } catch(e) { showToast("네트워크 오류로 인증에 실패했습니다."); }
+        };
+
+        window.changeAdminPassword = async function() {
+            if(!isAdmin) return showToast("먼저 Admin 권한을 활성화해 주세요.");
+            const newPwd = document.getElementById('admin-new-pwd').value;
+            if(!newPwd || newPwd.length < 2) return showToast("새 비밀번호를 2자 이상 입력해 주세요.");
+            const cur = prompt("현재 Admin 비밀번호를 입력하세요 (확인용):");
+            if(cur === null) return;
+            try {
+                const res = await fetch(`${API_URL}/api/admin/change-password`, {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ currentPassword: cur, newPassword: newPwd })
+                });
+                const data = await res.json();
+                if(res.ok && data.success) {
+                    document.getElementById('admin-new-pwd').value = '';
+                    showToast("Admin 비밀번호가 변경되었습니다.");
+                } else {
+                    showToast(data.error || "비밀번호 변경 실패");
+                }
+            } catch(e) { showToast("네트워크 오류로 변경에 실패했습니다."); }
+        };
+
+        window.deactivateAdmin = function() {
+            isAdmin = false;
+            applyAdminUIState(false);
+            showToast("Admin 권한이 잠금되었습니다.");
+            loadMarketplace();
+        };
+
+        // 🚀 [v8+] Admin UI 상태 일괄 적용 (활성/비활성)
+        function applyAdminUIState(active) {
+            const ind = document.getElementById('admin-indicator');
+            if(ind) ind.style.display = active ? 'inline-block' : 'none';
+            const dep = document.getElementById('admin-deposit-panel');
+            if(dep) dep.style.display = active ? 'block' : 'none';
+            const dbReset = document.getElementById('admin-db-reset-btn');
+            if(dbReset) dbReset.style.display = active ? 'block' : 'none';
+            const logoBtn = document.getElementById('admin-logo-btn');
+            if(logoBtn) logoBtn.style.display = active ? 'inline-block' : 'none';
+            // 모달 내 활성/변경 UI 토글
+            const actRow = document.getElementById('admin-activate-row');
+            const chgRow = document.getElementById('admin-change-pwd-row');
+            const pill = document.getElementById('admin-state-pill');
+            if(actRow) actRow.style.display = active ? 'none' : 'block';
+            if(chgRow) chgRow.style.display = active ? 'block' : 'none';
+            if(pill) {
+                pill.textContent = active ? '활성' : '비활성';
+                pill.style.background = active ? 'var(--notify)' : '#e4e4e7';
+                pill.style.color = active ? '#fff' : '#52525b';
+            }
         }
+        window.applyAdminUIState = applyAdminUIState;
 
         async function adminForceResetDB() {
             if(!isAdmin) return; if(!confirm("⚠️ [경고] 시스템 전체 DB 원장을 강제로 초기화하십니까? 모든 데이터가 소멸됩니다.")) return;
@@ -2373,7 +2446,7 @@
             window.currentMarketFilterStore = null;
             // 🚀 [v8+] 톱바 검색 placeholder도 기본값 복원 (상점 내부 검색 잔존 버그 수정)
             const _tbs = document.getElementById('topbar-global-search');
-            if(_tbs) { _tbs.value = ''; _tbs.placeholder = '상품·상점·회원 검색'; }
+            if(_tbs) { _tbs.value = ''; _tbs.placeholder = '통합 검색 (상품·상점·회원)'; }
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             // 🚀 [v7] 사이드바 + 하단 네비 active 동기화
@@ -2547,27 +2620,14 @@
             }, 200);
         };
 
-        // 🚀 [v8+] 톱바 통합 검색 - 상점 내부면 내부 상품, 외부면 전역(상점+상품+회원) 검색
+        // 🚀 [v8+] 톱바 = 항상 통합 검색 (상점/상품/회원). 상점 내부 상품 검색은 별도 market-search 사용
         window.doTopbarSearch = function() {
             const input = document.getElementById('topbar-global-search');
             if(!input) return;
             const q = input.value.trim();
             if(!q) return;
-            // 🚀 시각 가능한 brand-inner-wrap 이 보이면 상점 내부 상태로 판정 → 내부 상품 검색
-            const innerWrap = document.getElementById('brand-inner-wrap');
-            const insideStore = window.currentMarketFilter && window.currentMarketFilterStore
-                && innerWrap && innerWrap.style.display !== 'none';
-            if(insideStore) {
-                const marketSearchInput = document.getElementById('market-search');
-                if(marketSearchInput) {
-                    marketSearchInput.value = q;
-                    if(window.loadMarketplace) window.loadMarketplace();
-                }
-                return;
-            }
-            // 외부 (홈/마켓): 마켓 탭으로 이동하고 전역 검색 (상점/회원/상품명)
+            // 상점 안에 있더라도 톱바 검색은 통합 검색으로 동작 → 상점 컨텍스트 정리 후 마켓 홈에서 전역 검색
             if(window.currentMarketFilter || window.currentMarketFilterStore) {
-                // 상점 컨텍스트가 남아있다면 정리
                 if(window.clearMarketFilter) window.clearMarketFilter();
             }
             switchTab('market');
@@ -4443,7 +4503,7 @@
                     h += `<div style="display:inline-flex; align-items:center; background:${bg}; padding:8px 14px; border-radius:30px; border:${border}; font-size:14px; font-weight:bold; box-shadow:0 2px 6px rgba(0,0,0,0.05); color:var(--text-main); cursor:pointer; user-select:none;" onclick="enterBrandStoreById('${st.id}')">
                         ${mineTag}<span style="color:var(--primary); margin-right:6px; font-size:12px;">[입장]</span>
                         <b>${st.name}</b> <span style="font-size:11px; color:gray; margin-left:6px;">(${st.owner})</span>
-                        ${!isMine ? `<span style="margin-left:10px; cursor:pointer; color:${isFav?'var(--warning)':'#cbd5e1'}; font-size:18px;" onclick="toggleFavoriteStore('${st.id}', event)">★</span>` : ''}
+                        ${!isMine ? `<span style="margin-left:10px; cursor:pointer; color:${isFav?'var(--text-main)':'#cbd5e1'}; display:inline-flex; align-items:center;" onclick="toggleFavoriteStore('${st.id}', event)">${window.favIcon(isFav)}</span>` : ''}
                         ${admCloseBtn}
                     </div>`;
                 });
@@ -4466,9 +4526,9 @@
             let h = '';
             favStores.forEach(st => {
                 const logoChip = st.logo ? `<img src="${st.logo}" style="width:22px; height:22px; border-radius:50%; object-fit:cover; margin-right:6px; border:1px solid var(--border-color);">` : '';
-                h += `<div style="display:inline-flex; align-items:center; background:linear-gradient(135deg,#fef3c7,#fde68a); padding:6px 12px; border-radius:30px; border:1px solid #f59e0b; font-size:13px; font-weight:bold; color:#78350f; cursor:pointer; user-select:none;" onclick="enterBrandStoreById('${st.id}')">
+                h += `<div style="display:inline-flex; align-items:center; background:var(--primary-soft); padding:6px 12px; border-radius:30px; border:1px solid var(--border-color); font-size:13px; font-weight:bold; color:var(--text-main); cursor:pointer; user-select:none;" onclick="enterBrandStoreById('${st.id}')">
                     ${logoChip}${st.name}
-                    <span style="margin-left:8px; cursor:pointer; color:var(--warning); font-size:16px;" onclick="toggleFavoriteStore('${st.id}', event)">★</span>
+                    <span style="margin-left:8px; cursor:pointer; color:var(--text-main); display:inline-flex; align-items:center;" onclick="toggleFavoriteStore('${st.id}', event)">${window.favIcon(true)}</span>
                 </div>`;
             });
             list.innerHTML = h;
@@ -4491,12 +4551,12 @@
             document.getElementById('market-filter-nav').style.display = 'flex';
             document.getElementById('market-filter-title').innerText = `${store.name}`;
 
-            // 즐겨찾기 버튼 텍스트 상태 동기화
+            // 즐겨찾기 버튼 상태 동기화 (북마크 아이콘 + 텍스트)
             const favBtn = document.getElementById('market-filter-fav-btn');
             const isFav = (window.favoriteStoreIds || []).includes(store.id);
-            favBtn.innerText = isFav ? '★ 즐겨찾기 해제' : '☆ 즐겨찾기';
-            favBtn.style.color = isFav ? 'var(--warning)' : 'var(--primary)';
-            favBtn.style.borderColor = isFav ? 'var(--warning)' : 'var(--primary)';
+            favBtn.innerHTML = window.favIcon(isFav) + (isFav ? '즐겨찾기 해제' : '즐겨찾기');
+            favBtn.style.color = isFav ? 'var(--text-main)' : 'var(--primary)';
+            favBtn.style.borderColor = isFav ? 'var(--primary)' : 'var(--border-color)';
 
             // 🚀 1:1문의 버튼: 본인 상점이 아닐 때만 표시
             const inquireBtn = document.getElementById('market-filter-inquire-btn');
@@ -4522,9 +4582,9 @@
             document.getElementById('brand-showcase-wrap').style.display = 'none';
             document.getElementById('brand-inner-wrap').style.display = 'block';
             if(ms) ms.placeholder = `${store.name} 내부 상품 검색`;
-            // 🚀 [v8+] 톱바 검색도 상점 내부 검색으로 표시
+            // 🚀 [v8+] 톱바는 항상 통합 검색 — 상점 입장 시에도 placeholder 유지
             const topbarSearch = document.getElementById('topbar-global-search');
-            if(topbarSearch) { topbarSearch.value = ''; topbarSearch.placeholder = `${store.name} 내부 검색`; }
+            if(topbarSearch) { topbarSearch.value = ''; topbarSearch.placeholder = '상품·상점·회원 통합 검색'; }
 
             // 필터 초기화
             window.marketSortMode = 'latest'; window.marketTypeFilter = 'all';
@@ -4559,9 +4619,9 @@
             window.favoriteStoreIds = await favRes.json() || [];
             const isFav = window.favoriteStoreIds.includes(window.currentMarketFilterStore.id);
             const favBtn = document.getElementById('market-filter-fav-btn');
-            favBtn.innerText = isFav ? '★ 즐겨찾기 해제' : '☆ 즐겨찾기';
-            favBtn.style.color = isFav ? 'var(--warning)' : 'var(--primary)';
-            favBtn.style.borderColor = isFav ? 'var(--warning)' : 'var(--primary)';
+            favBtn.innerHTML = window.favIcon(isFav) + (isFav ? '즐겨찾기 해제' : '즐겨찾기');
+            favBtn.style.color = isFav ? 'var(--text-main)' : 'var(--primary)';
+            favBtn.style.borderColor = isFav ? 'var(--primary)' : 'var(--border-color)';
             renderFavoriteBrands(window.allStoreCache, window.favoriteStoreIds);
             showToast(isFav ? "즐겨찾기에 추가되었습니다." : "즐겨찾기에서 제거되었습니다.");
         }
@@ -4705,9 +4765,8 @@
 
                     const isMine = st.owner === myUserName;
                     const catLabel = (window.getCategoryLabel && window.getCategoryLabel(st.category)) || '일반 상점';
-                    const heroClickAttr = firstProduct
-                        ? `onclick="openProductFromShowcase('${firstProduct.id}', event)"`
-                        : `onclick="enterBrandStoreById('${st.id}')"`;
+                    // 🚀 [v8+] 상점 배경(히어로) 클릭 시 항상 상점으로 입장
+                    const heroClickAttr = `onclick="enterBrandStoreById('${st.id}')"`;
 
                     // 미니 썸네일 스트립 (1번째 제외한 2~4번째 상품)
                     let miniThumbsHtml = '';
@@ -4755,7 +4814,7 @@
                             <span class="cat-tag">${catLabel}</span>
                             <span class="count"></span>
                             <div class="acts">
-                                <button class="mini-btn ${isFav?'fav-on':''}" onclick="event.stopPropagation(); toggleFavoriteStoreShowcase('${st.id}', event)" title="즐겨찾기">${isFav?'★':'☆'}</button>
+                                <button class="mini-btn fav-btn-ico ${isFav?'fav-on':''}" onclick="event.stopPropagation(); toggleFavoriteStoreShowcase('${st.id}', event)" title="즐겨찾기">${window.favIcon(isFav)}</button>
                                 <button class="mini-btn enter" onclick="event.stopPropagation(); enterBrandStoreById('${st.id}')">입장 →</button>
                                 ${isAdmin && !isMine ? `<button class="mini-btn" style="background:var(--danger); color:#fff; border-color:var(--danger);" onclick="event.stopPropagation(); adminForceDeleteStore('${st.id}', '${safeName.replace(/'/g,"\\'")}', event)" title="Admin 강제 폐쇄">폐쇄</button>` : ''}
                             </div>
@@ -4786,12 +4845,12 @@
             const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`);
             window.favoriteStoreIds = await favRes.json() || [];
             renderFavoriteBrands(window.showcaseCache, window.favoriteStoreIds);
-            // 해당 카드의 별 버튼만 토글
+            // 해당 카드의 즐겨찾기 버튼만 토글
             const card = e && e.target ? e.target.closest('.brand-showcase-card') : null;
             if(card) {
-                const btn = card.querySelector('.brand-actions .mini-btn');
+                const btn = card.querySelector('.brand-bar .acts .mini-btn');
                 const isFav = window.favoriteStoreIds.includes(storeId);
-                btn.classList.toggle('fav-on', isFav); btn.innerText = isFav ? '★' : '☆';
+                if(btn) { btn.classList.toggle('fav-on', isFav); btn.innerHTML = window.favIcon(isFav); }
             }
         }
 
@@ -6480,20 +6539,31 @@
                     content.innerHTML = `<div style="color:#fff; padding:30px;">PDF 표시 실패</div>`;
                 }
             } else if(isHtml) {
-                // 🚀 [v8+] 일부 브라우저는 data:text/html iframe을 차단 → Blob URL로 변환
+                // 🚀 [v8+] HTML 미리보기 — srcdoc 사용 (blob/data URL보다 호환성 높음)
                 try {
                     const base64 = (f.content.split(',')[1] || '');
-                    const bs = atob(base64);
-                    // 유니코드 안전 디코딩: UTF-8 처리
-                    const u8 = new Uint8Array(bs.length);
-                    for(let i = 0; i < bs.length; i++) u8[i] = bs.charCodeAt(i);
-                    const blob = new Blob([u8], { type: 'text/html;charset=utf-8' });
-                    const url = URL.createObjectURL(blob);
-                    content.innerHTML = `<iframe src="${url}" sandbox="allow-scripts allow-same-origin allow-downloads allow-popups allow-forms" style="width:92vw; height:88vh; border:none; background:#fff; border-radius:8px;"></iframe>`;
-                    // 모달 닫힐 때 정리되도록 추적
-                    window.__lastHtmlBlobUrl = url;
+                    // UTF-8 안전 디코딩 (btoa(unescape(encodeURIComponent(...)))의 역순)
+                    const decoded = decodeURIComponent(escape(atob(base64)));
+                    const iframe = document.createElement('iframe');
+                    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox allow-forms');
+                    iframe.style.cssText = 'width:92vw; height:88vh; border:none; background:#fff; border-radius:8px;';
+                    iframe.srcdoc = decoded;
+                    content.innerHTML = '';
+                    content.appendChild(iframe);
                 } catch(e) {
-                    content.innerHTML = `<div style="color:#fff; padding:30px;">HTML 표시 실패: ${(e.message||'').replace(/</g,'&lt;')}</div>`;
+                    // 폴백: Blob URL 방식
+                    try {
+                        const base64 = (f.content.split(',')[1] || '');
+                        const bs = atob(base64);
+                        const u8 = new Uint8Array(bs.length);
+                        for(let i = 0; i < bs.length; i++) u8[i] = bs.charCodeAt(i);
+                        const blob = new Blob([u8], { type: 'text/html;charset=utf-8' });
+                        const url = URL.createObjectURL(blob);
+                        content.innerHTML = `<iframe src="${url}" sandbox="allow-scripts allow-same-origin allow-downloads allow-popups allow-forms" style="width:92vw; height:88vh; border:none; background:#fff; border-radius:8px;"></iframe>`;
+                        window.__lastHtmlBlobUrl = url;
+                    } catch(e2) {
+                        content.innerHTML = `<div style="color:#fff; padding:30px;">HTML 표시 실패: ${(e2.message||'').replace(/</g,'&lt;')}</div>`;
+                    }
                 }
             } else if(isText) {
                 try {
