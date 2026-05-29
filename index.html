@@ -11,6 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         /* 🌍 Earth v6 — YouTube 스타일 시원시원한 디자인 + 데스크톱/모바일 분리 */
         :root { 
@@ -614,12 +615,12 @@
         .fav-ico { width:16px; height:16px; display:inline-block; vertical-align:middle; }
         .fav-ico svg { width:100%; height:100%; display:block; }
         .fav-btn-ico { display:inline-flex; align-items:center; justify-content:center; }
-        /* 🚀 [v8+] 아이콘 자체가 버튼인 즐겨찾기 (텍스트 없음, 잘 보이게) */
-        .fav-icon-btn { width:40px; height:40px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; border:1px solid var(--border-color); background:#fff; color:var(--text-main); cursor:pointer; transition:0.18s; box-shadow:var(--shadow-sm); }
-        .fav-icon-btn .fav-ico { width:20px; height:20px; }
-        .fav-icon-btn:hover { background:var(--primary-soft); border-color:var(--primary); transform:translateY(-1px); }
+        /* 🚀 [v8+] 아이콘 자체가 버튼인 즐겨찾기 (텍스트 없음, 크고 잘 보이게) */
+        .fav-icon-btn { width:48px; height:48px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border-radius:14px; border:1.5px solid var(--primary); background:#fff; color:var(--primary); cursor:pointer; transition:0.18s; box-shadow:var(--shadow-md); }
+        .fav-icon-btn .fav-ico { width:26px; height:26px; }
+        .fav-icon-btn:hover { background:var(--primary-soft); transform:translateY(-1px); box-shadow:var(--shadow-lg); }
         .fav-icon-btn.fav-on { background:var(--gradient-btn); color:#fff; border-color:transparent; }
-        .fav-icon-btn.fav-on:hover { filter:brightness(1.08); }
+        .fav-icon-btn.fav-on:hover { filter:brightness(1.12); }
         /* 추가 상품 썸네일 미니 스트립 (호버 시 살짝 보임) */
         .mini-thumbs { display:flex; gap:2px; padding:0 14px 10px; background:#fff; }
         .mini-thumbs .mt-cell { flex:1; aspect-ratio:1; border-radius:6px; background:#f1f5f9; overflow:hidden; cursor:pointer; transition:0.15s; position:relative; }
@@ -2602,9 +2603,9 @@
             const favs = window.favoriteStoreIds || [];
             const stores = window.allStoreCache || [];
             const myName = (currentUser && currentUser.name) || '';
-            const favStores = stores.filter(s => favs.includes(s.id) && s.owner !== myName);
+            const favStores = stores.filter(s => favs.includes(s.id));
             if(favStores.length === 0) {
-                wrap.innerHTML = `<div style="font-size:11px; color:var(--text-sub); padding:8px 12px; line-height:1.5;">⭐ 상점을 즐겨찾기에 추가하면 여기에 표시됩니다.</div>`;
+                wrap.innerHTML = `<div style="font-size:11px; color:var(--text-sub); padding:8px 12px; line-height:1.5;">상점을 즐겨찾기에 추가하면 여기에 표시됩니다.</div>`;
                 return;
             }
             let h = '';
@@ -4040,6 +4041,8 @@
                 + '<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></scr'+'ipt>'
                 + '<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></scr'+'ipt>'
                 : '';
+            // 🚀 [v8+] PDF.js — 브라우저 내장 PDF 뷰어가 차단돼도 캔버스로 직접 렌더 (Edge 호환)
+            const pdfjsScript = '<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></scr'+'ipt>';
 
             const replyLinkSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 
@@ -4056,6 +4059,7 @@
 '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">',
 '<title>' + titleSafe(bundleTitle) + ' · 3D 뷰어</title>',
 threeScripts,
+pdfjsScript,
 '<style>',
 'body{margin:0;overflow:hidden;background:#252628;font-family:"Segoe UI",Tahoma,Geneva,Verdana,"Noto Sans KR",sans-serif;touch-action:none;-webkit-touch-callout:none;}',
 '#canvas-container{width:100vw;height:100vh;display:block;touch-action:none;position:absolute;top:0;left:0;z-index:1;}',
@@ -4138,11 +4142,14 @@ threeScripts,
 'var fill=document.getElementById("progress-fill"),txt=document.getElementById("progress-text"),cur=0,goal=0;',
 'function anim(){if(cur<goal){cur+=Math.max((goal-cur)*0.05,0.1);if(cur>100)cur=100;fill.style.width=cur+"%";txt.innerText="데이터 복원 중... "+Math.floor(cur)+"%";}if(cur<100)requestAnimationFrame(anim);}anim();',
 'function b64ToBuf(d){var b=atob((d.split(",")[1]||d));var n=b.length,a=new Uint8Array(n);for(var i=0;i<n;i++)a[i]=b.charCodeAt(i);return a.buffer;}',
+'function findTextureFor(fn,extra){if(!extra||!extra.length)return null;var base=(fn||"").replace(/\\.[^.]+$/,"").toLowerCase();var imgs=extra.filter(function(e){return e.type&&e.type.indexOf("image/")===0;});if(!imgs.length)return null;var exact=imgs.filter(function(e){return e.filename.replace(/\\.[^.]+$/,"").toLowerCase()===base;});if(exact.length)return exact[0].content;return imgs[0].content;}',
+'async function loadTexture(url){return new Promise(function(res){new THREE.TextureLoader().load(url,function(t){t.flipY=true;if(THREE.sRGBEncoding!==undefined)t.encoding=THREE.sRGBEncoding;res(t);},undefined,function(){res(null);});});}',
+'async function renderPdfInto(container,dataUrl,filename){var openBar=\'<div style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:5;"><a href="\'+dataUrl+\'" target="_blank" rel="noopener" download="\'+filename+\'" style="background:linear-gradient(135deg,#4a4a4e,#232326);color:#fff;padding:11px 22px;border-radius:24px;text-decoration:none;font-weight:700;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,0.4);">새 탭에서 열기 / 다운로드</a></div>\';container.innerHTML=\'<div style="position:relative;width:100%;height:100%;background:#fff;border-radius:8px;overflow:hidden;"><div id="pdf-scroll" style="width:100%;height:100%;overflow:auto;padding:14px 0 70px;box-sizing:border-box;text-align:center;background:#525659;"></div>\'+openBar+\'</div>\';var scroll=container.querySelector("#pdf-scroll");try{if(typeof pdfjsLib==="undefined")throw new Error("pdfjs not loaded");pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";var raw=atob(dataUrl.split(",")[1]);var arr=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);var pdf=await pdfjsLib.getDocument({data:arr}).promise;var maxP=Math.min(pdf.numPages,30);for(var p=1;p<=maxP;p++){var page=await pdf.getPage(p);var vw=scroll.clientWidth-28;var vp1=page.getViewport({scale:1});var scale=Math.min(2,Math.max(0.5,vw/vp1.width));var vp=page.getViewport({scale:scale});var cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;cv.style.cssText="display:block;margin:0 auto 12px;max-width:100%;box-shadow:0 4px 14px rgba(0,0,0,0.4);background:#fff;";scroll.appendChild(cv);await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;}}catch(e){scroll.innerHTML=\'<div style="color:#fff;padding:40px;font-size:14px;">PDF를 직접 표시할 수 없습니다.<br>아래 버튼으로 새 탭에서 열어 주세요.</div>\';}}',
 'async function init(){var data=JSON.parse(document.getElementById("modelsDataJson").textContent||"[]");var extra=JSON.parse(document.getElementById("extraDataJson").textContent||"[]");var total=data.length;var plyL=new THREE.PLYLoader(),stlL=new THREE.STLLoader(),objL=new THREE.OBJLoader();var listC=document.getElementById("objectListContainer");goal=15;await new Promise(function(r){setTimeout(r,400);});',
-'for(var i=0;i<total;i++){goal=15+(80/(total||1))*(i+1);await new Promise(function(r){setTimeout(r,40);});var fn=(data[i].filename||"").toLowerCase();var buf=b64ToBuf(data[i].content);var mesh;try{if(/\\.ply$/.test(fn)){var g=plyL.parse(buf);g.computeVertexNormals();var hc=g.attributes.color;var m=new THREE.MeshStandardMaterial({color:hc?0xffffff:0xc9ccd1,roughness:0.4,metalness:0.05,side:THREE.DoubleSide,vertexColors:!!hc,transparent:true,depthWrite:true});mesh=new THREE.Mesh(g,m);}else if(/\\.stl$/.test(fn)){var g2=stlL.parse(buf);g2.computeVertexNormals();var m2=new THREE.MeshStandardMaterial({color:0xc9ccd1,roughness:0.4,metalness:0.05,side:THREE.DoubleSide,transparent:true,depthWrite:true});mesh=new THREE.Mesh(g2,m2);}else if(/\\.obj$/.test(fn)){var txtData=new TextDecoder().decode(new Uint8Array(buf));var o=objL.parse(txtData);o.traverse(function(c){if(c.isMesh){c.material=new THREE.MeshStandardMaterial({color:0xc9ccd1,roughness:0.4,metalness:0.05,side:THREE.DoubleSide,transparent:true,depthWrite:true});}});mesh=o;}}catch(err){console.error("parse fail",fn,err);continue;}if(!mesh)continue;mesh.name=data[i].filename;group.add(mesh);',
+'for(var i=0;i<total;i++){goal=15+(80/(total||1))*(i+1);await new Promise(function(r){setTimeout(r,40);});var fn=(data[i].filename||"").toLowerCase();var buf=b64ToBuf(data[i].content);var mesh;try{if(/\\.ply$/.test(fn)){var g=plyL.parse(buf);g.computeVertexNormals();var hc=g.attributes.color;var hasUV=!!g.attributes.uv;var tex=null;if(!hc&&hasUV){var texUrl=findTextureFor(data[i].filename,extra);if(texUrl)tex=await loadTexture(texUrl);}var matOpt={roughness:0.85,metalness:0.0,side:THREE.DoubleSide,transparent:true,depthWrite:true};if(hc){matOpt.vertexColors=true;matOpt.color=0xffffff;}else if(tex){matOpt.map=tex;matOpt.color=0xffffff;}else{matOpt.color=0xc9ccd1;}var m=new THREE.MeshStandardMaterial(matOpt);mesh=new THREE.Mesh(g,m);}else if(/\\.stl$/.test(fn)){var g2=stlL.parse(buf);g2.computeVertexNormals();var m2=new THREE.MeshStandardMaterial({color:0xc9ccd1,roughness:0.85,metalness:0.0,side:THREE.DoubleSide,transparent:true,depthWrite:true});mesh=new THREE.Mesh(g2,m2);}else if(/\\.obj$/.test(fn)){var txtData=new TextDecoder().decode(new Uint8Array(buf));var o=objL.parse(txtData);var otex=null;var otexUrl=findTextureFor(data[i].filename,extra);if(otexUrl)otex=await loadTexture(otexUrl);o.traverse(function(c){if(c.isMesh){var oo={color:0xc9ccd1,roughness:0.85,metalness:0.0,side:THREE.DoubleSide,transparent:true,depthWrite:true};if(otex){oo.map=otex;oo.color=0xffffff;}c.material=new THREE.MeshStandardMaterial(oo);}});mesh=o;}}catch(err){console.error("parse fail",fn,err);continue;}if(!mesh)continue;mesh.name=data[i].filename;group.add(mesh);',
 'var item=document.createElement("div");item.className="obj-item";var hd=document.createElement("div");hd.className="obj-header";var ns=document.createElement("span");ns.className="obj-name";ns.innerText=data[i].filename.length>22?data[i].filename.substring(0,20)+"...":data[i].filename;var vb=document.createElement("button");vb.className="obj-vis-btn";var eo=\'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>\';var ec=\'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22"></path></svg>\';vb.innerHTML=eo;(function(mm,bb){bb.onclick=function(){mm.visible=!mm.visible;bb.innerHTML=mm.visible?eo:ec;bb.style.color=mm.visible?"#cbd5e1":"#666";};})(mesh,vb);hd.appendChild(ns);hd.appendChild(vb);item.appendChild(hd);',
 'var sw=document.createElement("div");sw.className="obj-slider-wrap";var sl=document.createElement("span");sl.className="obj-slider-label";sl.innerText="Opacity";var sli=document.createElement("input");sli.type="range";sli.className="exo-slider";sli.min="0.1";sli.max="1";sli.step="0.05";sli.value="1";(function(mm){sli.oninput=function(e){var v=parseFloat(e.target.value);mm.traverse?mm.traverse(function(c){if(c.isMesh){c.material.opacity=v;c.material.depthWrite=(v>=1);}}):0;if(mm.material){mm.material.opacity=v;mm.material.depthWrite=(v>=1);}};})(mesh);sw.appendChild(sl);sw.appendChild(sli);item.appendChild(sw);listC.appendChild(item);data[i].content=null;await new Promise(function(r){setTimeout(r,30);});}',
-'if(extra.length>0){var ah=document.createElement("div");ah.className="attach-head";ah.innerText="첨부 파일 (Attachments)";listC.appendChild(ah);extra.forEach(function(it){var d=document.createElement("div");d.className="attach-item";var ns2=document.createElement("span");ns2.className="attach-name";ns2.innerText=it.filename.length>20?it.filename.substring(0,18)+"...":it.filename;var bw=document.createElement("div");bw.className="attach-btns";if((it.type&&it.type.indexOf("image/")===0)||it.type==="application/pdf"){var vbtn=document.createElement("button");vbtn.innerHTML="\\uD83D\\uDC41";vbtn.className="extra-btn";vbtn.title="보기";vbtn.onclick=function(){var modal=document.getElementById("file-viewer-modal");var c=document.getElementById("file-viewer-content");if(it.type.indexOf("image/")===0){c.innerHTML=\'<img src="\'+it.content+\'" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">\';}else if(it.type==="application/pdf"){var bs=atob(it.content.split(",")[1]);var ab=new ArrayBuffer(bs.length);var ia=new Uint8Array(ab);for(var j=0;j<bs.length;j++)ia[j]=bs.charCodeAt(j);var u=URL.createObjectURL(new Blob([ab],{type:"application/pdf"}));var mob=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);var openBar=\'<div style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:5;"><a href="\'+u+\'" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#4a4a4e,#232326);color:#fff;padding:11px 22px;border-radius:24px;text-decoration:none;font-weight:700;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,0.4);">새 탭에서 열기 / 다운로드</a></div>\';if(mob){c.innerHTML=\'<div style="background:#fff;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;text-align:center;padding:20px;box-sizing:border-box;"><div style="font-size:50px;margin-bottom:15px;">\\uD83D\\uDCC4</div><div style="font-size:15px;font-weight:800;color:#1F2937;margin-bottom:8px;">\'+it.filename+\'</div><a href="\'+u+\'" target="_blank" rel="noopener" download="\'+it.filename+\'" style="background:linear-gradient(135deg,#4a4a4e,#232326);color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold;">문서 열기 / 다운로드</a></div>\';}else{c.innerHTML=\'<div style="position:relative;width:100%;height:100%;background:#fff;border-radius:8px;overflow:hidden;"><object data="\'+u+\'" type="application/pdf" style="width:100%;height:100%;border:none;"><embed src="\'+u+\'" type="application/pdf" style="width:100%;height:100%;border:none;"/></object>\'+openBar+\'</div>\';}}modal.style.display="flex";};bw.appendChild(vbtn);}var db=document.createElement("button");db.innerHTML="\\uD83D\\uDCBE";db.className="extra-btn";db.title="다운로드";db.onclick=function(){var a=document.createElement("a");a.href=it.content;a.download=it.filename;document.body.appendChild(a);a.click();document.body.removeChild(a);};bw.appendChild(db);d.appendChild(ns2);d.appendChild(bw);listC.appendChild(d);});}',
+'if(extra.length>0){var ah=document.createElement("div");ah.className="attach-head";ah.innerText="첨부 파일 (Attachments)";listC.appendChild(ah);extra.forEach(function(it){var d=document.createElement("div");d.className="attach-item";var ns2=document.createElement("span");ns2.className="attach-name";ns2.innerText=it.filename.length>20?it.filename.substring(0,18)+"...":it.filename;var bw=document.createElement("div");bw.className="attach-btns";if((it.type&&it.type.indexOf("image/")===0)||it.type==="application/pdf"){var vbtn=document.createElement("button");vbtn.innerHTML="\\uD83D\\uDC41";vbtn.className="extra-btn";vbtn.title="보기";vbtn.onclick=function(){var modal=document.getElementById("file-viewer-modal");var c=document.getElementById("file-viewer-content");if(it.type.indexOf("image/")===0){c.innerHTML=\'<img src="\'+it.content+\'" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">\';}else if(it.type==="application/pdf"){var modal2=document.getElementById("file-viewer-modal");var c2=document.getElementById("file-viewer-content");c2.innerHTML=\'<div style="color:#cbd5e1;padding:40px;">PDF 불러오는 중...</div>\';renderPdfInto(c2,it.content,it.filename);}modal.style.display="flex";};bw.appendChild(vbtn);}var db=document.createElement("button");db.innerHTML="\\uD83D\\uDCBE";db.className="extra-btn";db.title="다운로드";db.onclick=function(){var a=document.createElement("a");a.href=it.content;a.download=it.filename;document.body.appendChild(a);a.click();document.body.removeChild(a);};bw.appendChild(db);d.appendChild(ns2);d.appendChild(bw);listC.appendChild(d);});}',
 'goal=100;while(cur<99.5){await new Promise(function(r){setTimeout(r,40);});}document.getElementById("loading").style.display="none";document.getElementById("ui-container").style.display="flex";',
 'if(total>0){var box=new THREE.Box3().setFromObject(group);var ctr=box.getCenter(new THREE.Vector3());var sz=box.getSize(new THREE.Vector3());group.position.set(-ctr.x,-ctr.y,-ctr.z);var maxD=Math.max(sz.x,sz.y,sz.z)||1;var fr=camera.fov*(Math.PI/180);var dh=(maxD/2)/Math.tan(fr/2);var dw=dh/camera.aspect;var cz=Math.max(dh,dw)*1.3;camera.position.set(0,0,cz);camera.lookAt(0,0,0);baseOffset.copy(camera.position.clone().sub(cameraTarget));baseUp.copy(camera.up);}}',
 'init();function loop(){requestAnimationFrame(loop);renderer.render(scene,camera);}loop();',
@@ -4606,7 +4613,7 @@ threeScripts,
             const list = document.getElementById('fav-brands-list');
             if(!sec || !list) return;
             const myName = (currentUser && currentUser.name) || '';
-            const favStores = (stores || []).filter(st => favs.includes(st.id) && st.owner !== myName);
+            const favStores = (stores || []).filter(st => favs.includes(st.id));
             if(favStores.length === 0) { sec.style.display = 'none'; list.innerHTML = ''; return; }
             sec.style.display = 'block';
             let h = '';
@@ -4709,6 +4716,7 @@ threeScripts,
             favBtn.classList.toggle('fav-on', isFav);
             favBtn.title = isFav ? '즐겨찾기 해제' : '즐겨찾기';
             renderFavoriteBrands(window.allStoreCache, window.favoriteStoreIds);
+            try { renderSidebarFavs(); } catch(e){}
             showToast(isFav ? "즐겨찾기에 추가되었습니다." : "즐겨찾기에서 제거되었습니다.");
         }
 
@@ -4784,8 +4792,17 @@ threeScripts,
                 if(!res.ok) throw new Error(`HTTP ${res.status} from ${API_URL}/api/stores/showcase`);
                 const showcase = await res.json() || [];
                 window.showcaseCache = showcase;
-                // 🚀 [수정] allStoreCache도 함께 채워서 enterBrandStoreById 즉시 동작
-                window.allStoreCache = showcase;
+                // 🚀 [수정] allStoreCache는 활성 상점 전체로 채워 즐겨찾기/입장이 항상 동작하도록
+                let allActive = showcase.slice();
+                try {
+                    const actRes = await fetch(`${API_URL}/api/stores/active`);
+                    if(actRes.ok) {
+                        const active = await actRes.json() || [];
+                        const seen = new Set(allActive.map(s => s.id));
+                        active.forEach(s => { if(!seen.has(s.id)) { allActive.push(s); seen.add(s.id); } });
+                    }
+                } catch(e) {}
+                window.allStoreCache = allActive;
 
                 // currentUser가 없으면 빈 favs 사용 (방어)
                 let favs = [];
@@ -4796,7 +4813,7 @@ threeScripts,
                     } catch(e) { console.warn('favorites fetch failed:', e); }
                 }
                 window.favoriteStoreIds = favs;
-                renderFavoriteBrands(showcase, favs);
+                renderFavoriteBrands(window.allStoreCache, favs);
                 // 🚀 [v7] 사이드바 즐겨찾기 + 카테고리 갱신
                 try { renderSidebarFavs(); renderSidebarCategories(); renderMobileChips(); } catch(e){}
 
@@ -5773,6 +5790,7 @@ threeScripts,
                 '<meta charset="UTF-8">',
                 '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">',
                 '<title>' + titleSafe + '</title>',
+                '<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><' + '/script>',
                 '<style>',
                 '*{box-sizing:border-box;margin:0;padding:0;}',
                 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo",sans-serif;background:#1a1c20;color:#e2e8f0;line-height:1.5;min-height:100vh;padding-bottom:100px;}',
@@ -5914,7 +5932,8 @@ threeScripts,
                 '     if(isMob){',
                 '       content.innerHTML = "<div style=background:#fff;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;text-align:center;padding:30px><div style=font-size:60px;margin-bottom:20px>📄</div><div style=color:#1f2937;font-size:14px;font-weight:600;margin-bottom:20px>" + esc(f.filename||"") + "</div><a href=\\"" + url + "\\" target=_blank rel=noopener download=\\"" + esc(f.filename||"") + "\\" style=background:linear-gradient(135deg,#4a4a4e,#232326);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold>모바일 뷰어로 열기</a></div>";',
                 '     } else {',
-                '       content.innerHTML = "<div style=\'position:relative;width:100%;height:100%;background:#fff;border-radius:8px;overflow:hidden\'><object data=\\"" + url + "\\" type=\\"application/pdf\\" style=\'width:100%;height:100%;border:none\'><embed src=\\"" + url + "\\" type=\\"application/pdf\\" style=\'width:100%;height:100%;border:none\' /></object><div style=\'position:absolute;bottom:14px;left:50%;transform:translateX(-50%)\'><a href=\\"" + url + "\\" target=\\"_blank\\" rel=\\"noopener\\" style=\'background:linear-gradient(135deg,#4a4a4e,#232326);color:#fff;padding:11px 22px;border-radius:24px;text-decoration:none;font-weight:700;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,0.4)\'>새 탭에서 열기 / 다운로드</a></div></div>";',
+                '     content.innerHTML = "<div style=\'position:relative;width:100%;height:100%;background:#525659;border-radius:8px;overflow:hidden\'><div id=\\"uv-pdf-scroll\\" style=\'width:100%;height:100%;overflow:auto;padding:14px 0 70px;box-sizing:border-box;text-align:center\'><div style=color:#cbd5e1;padding:40px>PDF 불러오는 중...</div></div><div style=\'position:absolute;bottom:14px;left:50%;transform:translateX(-50%)\'><a href=\\"" + url + "\\" target=\\"_blank\\" rel=\\"noopener\\" download=\\"" + esc(f.filename||"") + "\\" style=\'background:linear-gradient(135deg,#4a4a4e,#232326);color:#fff;padding:11px 22px;border-radius:24px;text-decoration:none;font-weight:700;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,0.4)\'>새 탭에서 열기 / 다운로드</a></div></div>";',
+                '     (async function(){ var sc = document.getElementById("uv-pdf-scroll"); try { if(typeof pdfjsLib==="undefined") throw new Error("no pdfjs"); pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; var raw=atob(f.content.split(",")[1]||""); var a2=new Uint8Array(raw.length); for(var k=0;k<raw.length;k++) a2[k]=raw.charCodeAt(k); var pdf=await pdfjsLib.getDocument({data:a2}).promise; sc.innerHTML=""; var mx=Math.min(pdf.numPages,30); for(var pg=1;pg<=mx;pg++){ var page=await pdf.getPage(pg); var vw=sc.clientWidth-28; var v1=page.getViewport({scale:1}); var s=Math.min(2,Math.max(0.5,vw/v1.width)); var vp=page.getViewport({scale:s}); var cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height; cv.style.cssText="display:block;margin:0 auto 12px;max-width:100%;box-shadow:0 4px 14px rgba(0,0,0,0.4);background:#fff"; sc.appendChild(cv); await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise; } } catch(e){ if(sc) sc.innerHTML="<div style=color:#fff;padding:40px>PDF를 직접 표시할 수 없습니다. 아래 버튼으로 새 탭에서 열어 주세요.</div>"; } })();',
                 '     }',
                 '   } catch(e) { content.innerHTML = "<div style=color:#fff;padding:30px>PDF 표시 실패: " + esc(e.message) + "</div>"; }',
                 ' } else if(kind === "html"){',
@@ -6604,30 +6623,21 @@ threeScripts,
             } else if(isAudio) {
                 content.innerHTML = `<div style="background:#1e293b; padding:40px; border-radius:12px; text-align:center; color:#fff; max-width:500px;"><div style="font-size:60px; margin-bottom:20px;">🎵</div><div style="margin-bottom:20px; font-weight:600;">${(f.filename||'').replace(/</g,'&lt;')}</div><audio src="${f.content}" controls autoplay style="width:100%;"></audio></div>`;
             } else if(isPdf) {
-                // Blob URL로 변환 (모바일 안정성)
+                // 🚀 [v8+] PDF.js로 캔버스 렌더 (Edge 등에서 내장 뷰어 차단돼도 표시)
+                const isMob = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                let dlUrl = f.content;
                 try {
                     const bs = atob(f.content.split(',')[1] || '');
-                    const ab = new ArrayBuffer(bs.length);
-                    const ia = new Uint8Array(ab);
+                    const ab = new ArrayBuffer(bs.length); const ia = new Uint8Array(ab);
                     for(let i=0; i<bs.length; i++) ia[i] = bs.charCodeAt(i);
-                    const blob = new Blob([ab], { type: 'application/pdf' });
-                    const url = URL.createObjectURL(blob);
-                    const isMob = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                    if(isMob) {
-                        content.innerHTML = `<div style="background:#fff; padding:40px; border-radius:12px; text-align:center; max-width:90vw;">
-                            <div style="font-size:60px; margin-bottom:20px;">📄</div>
-                            <div style="color:#1f2937; font-size:14px; font-weight:600; margin-bottom:20px; word-break:break-all;">${(f.filename||'').replace(/</g,'&lt;')}</div>
-                            <a href="${url}" target="_blank" rel="noopener" download="${(f.filename||'').replace(/"/g,'&quot;')}" style="background:linear-gradient(135deg,#4a4a4e,#232326); color:#fff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;">모바일 뷰어로 열기</a>
-                        </div>`;
-                    } else {
-                        content.innerHTML = `<div style="position:relative; width:90vw; height:88vh; background:#fff; border-radius:8px; overflow:hidden;">
-                            <object data="${url}" type="application/pdf" style="width:100%; height:100%; border:none;"><embed src="${url}" type="application/pdf" style="width:100%; height:100%; border:none;" /></object>
-                            <div style="position:absolute; bottom:14px; left:50%; transform:translateX(-50%);"><a href="${url}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#4a4a4e,#232326); color:#fff; padding:11px 22px; border-radius:24px; text-decoration:none; font-weight:700; font-size:13px; box-shadow:0 6px 18px rgba(0,0,0,0.4);">새 탭에서 열기 / 다운로드</a></div>
-                        </div>`;
-                    }
-                } catch(e) {
-                    content.innerHTML = `<div style="color:#fff; padding:30px;">PDF 표시 실패</div>`;
-                }
+                    dlUrl = URL.createObjectURL(new Blob([ab], { type: 'application/pdf' }));
+                } catch(e) {}
+                const fnSafe = (f.filename||'').replace(/"/g,'&quot;');
+                content.innerHTML = `<div style="position:relative; width:90vw; height:88vh; background:#525659; border-radius:8px; overflow:hidden;">
+                    <div id="cfp-pdf-scroll" style="width:100%; height:100%; overflow:auto; padding:14px 0 70px; box-sizing:border-box; text-align:center;"><div style="color:#cbd5e1; padding:40px;">PDF 불러오는 중...</div></div>
+                    <div style="position:absolute; bottom:14px; left:50%; transform:translateX(-50%);"><a href="${dlUrl}" target="_blank" rel="noopener" download="${fnSafe}" style="background:linear-gradient(135deg,#4a4a4e,#232326); color:#fff; padding:11px 22px; border-radius:24px; text-decoration:none; font-weight:700; font-size:13px; box-shadow:0 6px 18px rgba(0,0,0,0.4);">새 탭에서 열기 / 다운로드</a></div>
+                </div>`;
+                window.renderPdfCanvasInto(document.getElementById('cfp-pdf-scroll'), f.content);
             } else if(isHtml) {
                 // 🚀 [v8+] HTML 미리보기 — srcdoc 사용 (blob/data URL보다 호환성 높음)
                 try {
@@ -6691,6 +6701,41 @@ threeScripts,
             }
             modal.style.display = 'flex';
         };
+        // 🚀 [v8+] PDF.js로 PDF를 캔버스에 직접 렌더 (브라우저 내장 PDF 뷰어 차단 대응)
+        window.renderPdfCanvasInto = async function(scrollEl, dataUrl) {
+            if(!scrollEl) return;
+            try {
+                if(typeof pdfjsLib === 'undefined') throw new Error('pdfjs not loaded');
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                const raw = atob(dataUrl.split(',')[1] || '');
+                const arr = new Uint8Array(raw.length);
+                for(let i=0;i<raw.length;i++) arr[i] = raw.charCodeAt(i);
+                const pdf = await pdfjsLib.getDocument({ data: arr }).promise;
+                scrollEl.innerHTML = '';
+                const maxP = Math.min(pdf.numPages, 30);
+                for(let p=1; p<=maxP; p++) {
+                    const page = await pdf.getPage(p);
+                    const vw = scrollEl.clientWidth - 28;
+                    const vp1 = page.getViewport({ scale: 1 });
+                    const scale = Math.min(2, Math.max(0.5, vw / vp1.width));
+                    const vp = page.getViewport({ scale });
+                    const cv = document.createElement('canvas');
+                    cv.width = vp.width; cv.height = vp.height;
+                    cv.style.cssText = 'display:block; margin:0 auto 12px; max-width:100%; box-shadow:0 4px 14px rgba(0,0,0,0.4); background:#fff;';
+                    scrollEl.appendChild(cv);
+                    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+                }
+                if(maxP < pdf.numPages) {
+                    const more = document.createElement('div');
+                    more.style.cssText = 'color:#cbd5e1; padding:14px; font-size:12px;';
+                    more.textContent = `(미리보기는 처음 ${maxP}페이지까지 표시됩니다 · 전체 ${pdf.numPages}페이지)`;
+                    scrollEl.appendChild(more);
+                }
+            } catch(e) {
+                scrollEl.innerHTML = '<div style="color:#fff; padding:40px; font-size:14px;">PDF를 직접 표시할 수 없습니다. 아래 버튼으로 새 탭에서 열어 주세요.</div>';
+            }
+        };
+
         window.closeChatFilePreview = function() {
             const modal = document.getElementById('chat-file-preview-modal');
             if(modal) { modal.style.display = 'none'; document.getElementById('cfp-content').innerHTML = ''; }
