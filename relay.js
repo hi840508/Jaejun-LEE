@@ -18,7 +18,7 @@ const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve:
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" }, maxHttpBufferSize: 20 * 1024 * 1024 }); // 🚀 20MB for file attachments
+const io = new Server(server, { cors: { origin: "*" }, maxHttpBufferSize: 300 * 1024 * 1024 }); // 🚀 [v8+] 대형 3D/첨부 번들 지원 (300MB)
 const PORT = 4000;
 
 // 🚀 [서버 크래시 해결] 권한 충돌이 없는 안전한 현재 폴더 경로 사용
@@ -1048,9 +1048,24 @@ io.on('connection', (socket) => {
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[0], users[1]]);
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[1], users[0]]);
         }
-        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], () => { 
-            io.emit('receive_message', data); 
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], function() { 
+            // 🚀 [v8+] 삽입된 메시지 id를 함께 브로드캐스트 → 클라이언트 수정/삭제 가능
+            io.emit('receive_message', Object.assign({}, data, { id: this.lastID })); 
         }); 
+    });
+    // 🚀 [v8+] 메시지 수정 (작성자만)
+    socket.on('edit_message', (data) => {
+        if(!data || !data.id) return;
+        db.run(`UPDATE chats SET message = ? WHERE id = ? AND sender = ?`, [data.message, data.id, data.sender], function() {
+            io.emit('message_edited', { id: data.id, roomId: data.roomId, message: data.message, sender: data.sender });
+        });
+    });
+    // 🚀 [v8+] 메시지 삭제 (작성자만)
+    socket.on('delete_message', (data) => {
+        if(!data || !data.id) return;
+        db.run(`DELETE FROM chats WHERE id = ? AND sender = ?`, [data.id, data.sender], function() {
+            io.emit('message_deleted', { id: data.id, roomId: data.roomId, sender: data.sender });
+        });
     });
 });
 
