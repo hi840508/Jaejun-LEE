@@ -84,9 +84,43 @@ function initTables() {
         // 🚀 products: 패키지 메타 (대표 파일 + PDF + 추가 파일 묶음 JSON)
         db.run(`ALTER TABLE products ADD COLUMN package_data TEXT`, () => {});
         db.run(`ALTER TABLE products ADD COLUMN is_package INTEGER DEFAULT 0`, () => {});
+
+        // 🚀 [v8+] 전역 설정 (Admin 권한 비밀번호 등) — 초기값 'mars'
+        db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`, () => {
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', 'mars')`, () => {});
+        });
     });
 }
 initTables();
+
+// 🚀 [v8+] Admin 비밀번호 헬퍼 — DB의 settings.admin_password 사용 (초기값 'mars')
+function getAdminPassword(cb) {
+    db.get(`SELECT value FROM settings WHERE key = 'admin_password'`, [], (err, row) => {
+        cb((row && row.value) || 'mars');
+    });
+}
+// adminSecret 검증 미들웨어 대용 — 'mars'(레거시) 또는 현재 설정된 비밀번호 모두 허용
+function verifyAdminSecret(secret, cb) {
+    getAdminPassword((pw) => cb(secret === pw || secret === 'mars'));
+}
+
+// Admin 권한 비밀번호 확인 (활성화용)
+app.post('/api/admin/verify-password', (req, res) => {
+    getAdminPassword((pw) => {
+        res.json({ ok: (req.body.password || '') === pw });
+    });
+});
+// Admin 권한 비밀번호 변경 (현재 비밀번호 확인 후)
+app.post('/api/admin/change-password', (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+    if(!newPassword || String(newPassword).length < 2) return res.status(400).json({ error: '새 비밀번호가 너무 짧습니다.' });
+    getAdminPassword((pw) => {
+        if((currentPassword || '') !== pw) return res.status(403).json({ error: '현재 Admin 비밀번호가 일치하지 않습니다.' });
+        db.run(`UPDATE settings SET value = ? WHERE key = 'admin_password'`, [String(newPassword)], () => {
+            res.json({ success: true });
+        });
+    });
+});
 
 app.post('/api/admin/db-reset', (req, res) => {
     if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
