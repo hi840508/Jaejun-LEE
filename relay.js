@@ -44,7 +44,7 @@ app.post('/api/share/create', (req, res) => {
         });
 });
 
-// 링크 접속: 만료 검사 후 공유 안내 페이지 표시
+// 링크 접속: 만료 검사 → 메타 미리보기 + PIN 인증 → 클라이언트 복호화 → 통합 뷰어 HTML 렌더
 app.get('/share/:token', (req, res) => {
     db.get(`SELECT payload, expiresAt FROM share_links WHERE token = ?`, [req.params.token], (err, row) => {
         if (err) return res.status(500).send('서버 오류');
@@ -56,18 +56,71 @@ app.get('/share/:token', (req, res) => {
         const exp = new Date(Number(row.expiresAt)).toLocaleString('ko-KR');
         const itemsHtml = (Array.isArray(p.items) ? p.items : [])
             .map(it => `<li>${_escapeHtml(it.name)} <span style="color:#9ca3af">(${_escapeHtml(it.modality||'')})</span></li>`).join('') || '<li style="color:#9ca3af">목록 없음</li>';
+        // 암호문(enc)을 페이지에 임베드. PIN은 서버에 저장/전송되지 않음 (E2E).
+        const encJson = JSON.stringify(p.enc || null).replace(/</g, '\\u003c');
         res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RAYCloud 공유</title></head>
-<body style="font-family:system-ui,'Pretendard',sans-serif;background:#f3f4f6;margin:0;padding:24px;">
-  <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px;">
-    <div style="font-size:18px;font-weight:800;color:#1f2937;margin-bottom:6px;">${_escapeHtml(p.title || 'RAYCloud 공유 데이터')}</div>
-    <div style="font-size:13px;color:#6b7280;margin-bottom:16px;">보낸 사람: ${_escapeHtml(p.by || '-')}${p.patient ? ' · 환자: ' + _escapeHtml(p.patient) : ''}</div>
-    <div style="font-size:13px;color:#374151;font-weight:700;margin-bottom:6px;">공유 항목</div>
-    <ul style="font-size:13px;color:#374151;line-height:1.7;margin:0 0 16px 18px;padding:0;">${itemsHtml}</ul>
-    <div style="font-size:12px;color:#9ca3af;border-top:1px solid #eee;padding-top:12px;">유효기간: ${exp} 까지</div>
+<body style="font-family:system-ui,'Pretendard',sans-serif;background:#f3f4f6;margin:0;padding:0;">
+  <div id="gate" style="padding:24px;">
+    <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px;">
+      <div style="font-size:18px;font-weight:800;color:#1f2937;margin-bottom:6px;">${_escapeHtml(p.title || 'RAYCloud 공유 데이터')}</div>
+      <div style="font-size:13px;color:#6b7280;margin-bottom:16px;">보낸 사람: ${_escapeHtml(p.by || '-')}${p.patient ? ' · 환자: ' + _escapeHtml(p.patient) : ''}</div>
+      <div style="font-size:13px;color:#374151;font-weight:700;margin-bottom:6px;">공유 항목</div>
+      <ul style="font-size:13px;color:#374151;line-height:1.7;margin:0 0 16px 18px;padding:0;">${itemsHtml}</ul>
+      <div id="pinBox" style="border-top:1px solid #eee;padding-top:16px;">
+        <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:8px;">🔒 PIN(비밀번호) 입력 후 열람</div>
+        <div style="display:flex;gap:8px;">
+          <input id="pin" type="password" inputmode="numeric" placeholder="보낸 사람이 알려준 PIN" style="flex:1;padding:11px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;outline:none;">
+          <button id="unlock" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:0 18px;font-size:14px;font-weight:700;cursor:pointer;">열람</button>
+        </div>
+        <div id="msg" style="font-size:12px;color:#b91c1c;margin-top:8px;min-height:16px;"></div>
+      </div>
+      <div style="font-size:12px;color:#9ca3af;border-top:1px solid #eee;padding-top:12px;margin-top:16px;">유효기간: ${exp} 까지</div>
+    </div>
   </div>
+  <iframe id="viewer" style="display:none;border:0;width:100%;height:100vh;"></iframe>
+  <script>
+    var ENC = ${encJson};
+    function b2u(s){ return Uint8Array.from(atob(s), function(c){ return c.charCodeAt(0); }); }
+    async function decryptShare(enc, pin){
+      var key = await crypto.subtle.deriveKey(
+        { name:'PBKDF2', salt:b2u(enc.salt), iterations:100000, hash:'SHA-256' },
+        await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveKey']),
+        { name:'AES-GCM', length:256 }, false, ['decrypt']);
+      var pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv:b2u(enc.iv) }, key, b2u(enc.ct));
+      return new TextDecoder().decode(pt);
+    }
+    async function doUnlock(){
+      var msg = document.getElementById('msg');
+      var pin = (document.getElementById('pin').value||'').trim();
+      if(!ENC){ msg.textContent='이 링크에는 암호화된 데이터가 없습니다.'; return; }
+      if(!pin){ msg.textContent='PIN을 입력하세요.'; return; }
+      if(!(window.crypto && crypto.subtle)){ msg.textContent='이 브라우저는 보안 복호화를 지원하지 않습니다(HTTPS 필요).'; return; }
+      msg.style.color='#6b7280'; msg.textContent='복호화 중...';
+      try{
+        var html = await decryptShare(ENC, pin);
+        document.getElementById('gate').style.display='none';
+        var f = document.getElementById('viewer');
+        f.style.display='block'; f.srcdoc = html;
+      }catch(e){ msg.style.color='#b91c1c'; msg.textContent='PIN이 올바르지 않거나 복호화에 실패했습니다.'; }
+    }
+    document.getElementById('unlock').addEventListener('click', doUnlock);
+    document.getElementById('pin').addEventListener('keydown', function(e){ if(e.key==='Enter') doUnlock(); });
+  </script>
 </body></html>`);
     });
+});
+
+// RAYCloud → Earth 채팅방으로 메시지 전송(공유 링크 등). 소켓 핸들러와 동일하게 저장+브로드캐스트.
+app.post('/api/chat/send', (req, res) => {
+    const { roomId, sender, senderPic, message } = req.body || {};
+    if (!roomId || !sender || !message) return res.status(400).json({ error: 'roomId/sender/message 필요' });
+    db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`,
+        [roomId, sender, senderPic || null, message, new Date().toLocaleString('ko-KR')], function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            io.emit('receive_message', { id: this.lastID, roomId, sender, senderPic: senderPic || null, message });
+            res.json({ success: true, id: this.lastID });
+        });
 });
 
 // #11: 첨부 없이 동일한 링크를 이메일로 전송. 발신은 사용자가 입력한 본인 이메일 계정으로.
