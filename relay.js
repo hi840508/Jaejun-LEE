@@ -59,7 +59,9 @@ app.get('/share/:token', (req, res) => {
         // 암호문(enc)을 페이지에 임베드. PIN은 서버에 저장/전송되지 않음 (E2E).
         const encJson = JSON.stringify(p.enc || null).replace(/</g, '\\u003c');
         res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RAYCloud 공유</title></head>
+<title>RAYCloud 공유</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script></head>
 <body style="font-family:system-ui,'Pretendard',sans-serif;background:#f3f4f6;margin:0;padding:0;">
   <div id="gate" style="padding:24px;">
     <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px;">
@@ -81,27 +83,27 @@ app.get('/share/:token', (req, res) => {
   <iframe id="viewer" style="display:none;border:0;width:100%;height:100vh;"></iframe>
   <script>
     var ENC = ${encJson};
-    function b2u(s){ return Uint8Array.from(atob(s), function(c){ return c.charCodeAt(0); }); }
-    async function decryptShare(enc, pin){
-      var key = await crypto.subtle.deriveKey(
-        { name:'PBKDF2', salt:b2u(enc.salt), iterations:100000, hash:'SHA-256' },
-        await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveKey']),
-        { name:'AES-GCM', length:256 }, false, ['decrypt']);
-      var pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv:b2u(enc.iv) }, key, b2u(enc.ct));
-      return new TextDecoder().decode(pt);
+    function b64u8(s){ return Uint8Array.from(atob(s), function(c){ return c.charCodeAt(0); }); }
+    function rsDecrypt(b, pin){
+      var salt = CryptoJS.enc.Base64.parse(b.s), iv = CryptoJS.enc.Base64.parse(b.i);
+      var key = CryptoJS.PBKDF2(pin, salt, { keySize:8, iterations:100000, hasher:CryptoJS.algo.SHA256 });
+      var cp = CryptoJS.lib.CipherParams.create({ ciphertext: CryptoJS.enc.Base64.parse(b.c) });
+      var compB64 = CryptoJS.AES.decrypt(cp, key, { iv:iv, mode:CryptoJS.mode.CBC, padding:CryptoJS.pad.Pkcs7 }).toString(CryptoJS.enc.Utf8);
+      var html = pako.inflate(b64u8(compB64), { to:'string' });
+      if (html.indexOf('RS1|') !== 0) throw new Error('PIN mismatch');
+      return html.slice(4);
     }
-    async function doUnlock(){
+    function doUnlock(){
       var msg = document.getElementById('msg');
       var pin = (document.getElementById('pin').value||'').trim();
       if(!ENC){ msg.textContent='이 링크에는 암호화된 데이터가 없습니다.'; return; }
       if(!pin){ msg.textContent='PIN을 입력하세요.'; return; }
-      if(!(window.crypto && crypto.subtle)){ msg.textContent='이 브라우저는 보안 복호화를 지원하지 않습니다(HTTPS 필요).'; return; }
+      if(!(window.CryptoJS && window.pako)){ msg.textContent='복호화 라이브러리 로드 실패 (인터넷 연결 확인).'; return; }
       msg.style.color='#6b7280'; msg.textContent='복호화 중...';
       try{
-        var html = await decryptShare(ENC, pin);
+        var html = rsDecrypt(ENC, pin);
         document.getElementById('gate').style.display='none';
-        var f = document.getElementById('viewer');
-        f.style.display='block'; f.srcdoc = html;
+        var f = document.getElementById('viewer'); f.style.display='block'; f.srcdoc = html;
       }catch(e){ msg.style.color='#b91c1c'; msg.textContent='PIN이 올바르지 않거나 복호화에 실패했습니다.'; }
     }
     document.getElementById('unlock').addEventListener('click', doUnlock);
@@ -109,6 +111,87 @@ app.get('/share/:token', (req, res) => {
   </script>
 </body></html>`);
     });
+});
+
+// 무상태 토큰 변환 페이지: 서버에 데이터 저장 없이, 수신자가 토큰(.rayshare)+PIN을 입력하면
+// 로컬 브라우저에서 복호화·압축해제하여 통합 뷰어로 변환·다운로드.
+app.get('/redeem', (req, res) => {
+    res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAYCloud 토큰 열람</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script></head>
+<body style="font-family:system-ui,'Pretendard',sans-serif;background:#f3f4f6;margin:0;padding:0;">
+  <div id="gate" style="padding:24px;">
+    <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px;">
+      <div style="font-size:18px;font-weight:800;color:#1f2937;margin-bottom:4px;">🧩 RAYCloud 공유 토큰 열람</div>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:16px;">전달받은 .rayshare 파일을 올리거나 토큰을 붙여넣고, PIN을 입력하세요. 데이터는 서버를 거치지 않고 이 브라우저에서만 복호화됩니다.</div>
+      <div id="meta" style="font-size:13px;color:#374151;background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:10px;margin-bottom:12px;display:none;"></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+        <input id="file" type="file" accept=".rayshare,text/plain" style="flex:1;font-size:12px;">
+      </div>
+      <textarea id="token" placeholder="또는 토큰 문자열 붙여넣기" style="width:100%;box-sizing:border-box;height:90px;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:11px;resize:vertical;"></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <input id="pin" type="password" inputmode="numeric" placeholder="PIN(비밀번호)" style="flex:1;padding:11px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;outline:none;">
+        <button id="open" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:0 18px;font-size:14px;font-weight:700;cursor:pointer;">열람</button>
+      </div>
+      <div id="msg" style="font-size:12px;color:#b91c1c;margin-top:8px;min-height:16px;"></div>
+    </div>
+  </div>
+  <div id="viewerWrap" style="display:none;">
+    <div style="padding:10px 16px;background:#15181c;color:#fff;display:flex;justify-content:space-between;align-items:center;">
+      <b style="font-size:14px;">RAYCloud 통합 뷰어</b>
+      <button id="dl" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;">💾 HTML 다운로드</button>
+    </div>
+    <iframe id="viewer" style="border:0;width:100%;height:calc(100vh - 52px);"></iframe>
+  </div>
+  <script>
+    var TOKEN = null, HTML = '';
+    function b64u8(s){ return Uint8Array.from(atob(s), function(c){ return c.charCodeAt(0); }); }
+    function decodeToken(t){ return JSON.parse(decodeURIComponent(escape(atob(t.trim())))); }
+    function rsDecrypt(b, pin){
+      var salt = CryptoJS.enc.Base64.parse(b.s), iv = CryptoJS.enc.Base64.parse(b.i);
+      var key = CryptoJS.PBKDF2(pin, salt, { keySize:8, iterations:100000, hasher:CryptoJS.algo.SHA256 });
+      var cp = CryptoJS.lib.CipherParams.create({ ciphertext: CryptoJS.enc.Base64.parse(b.c) });
+      var compB64 = CryptoJS.AES.decrypt(cp, key, { iv:iv, mode:CryptoJS.mode.CBC, padding:CryptoJS.pad.Pkcs7 }).toString(CryptoJS.enc.Utf8);
+      var html = pako.inflate(b64u8(compB64), { to:'string' });
+      if (html.indexOf('RS1|') !== 0) throw new Error('PIN mismatch');
+      return html.slice(4);
+    }
+    function showMeta(b){
+      try{
+        var m = b.meta || {}; var items = (m.items||[]).map(function(it){ return '• ' + it.name + ' (' + (it.modality||'') + ')'; }).join('<br>');
+        document.getElementById('meta').style.display='block';
+        document.getElementById('meta').innerHTML = '<b>' + (m.title||'RAYCloud 공유 데이터') + '</b><br>보낸 사람: ' + (m.by||'-') + (m.patient ? ' · 환자: ' + m.patient : '') + '<br><br>' + (items||'항목 정보 없음');
+      }catch(e){}
+    }
+    function loadTokenStr(t){ try{ TOKEN = decodeToken(t); showMeta(TOKEN); document.getElementById('msg').textContent=''; }catch(e){ document.getElementById('msg').textContent='토큰 형식이 올바르지 않습니다.'; } }
+    document.getElementById('file').addEventListener('change', function(e){
+      var f = e.target.files[0]; if(!f) return;
+      var r = new FileReader(); r.onload = function(){ document.getElementById('token').value = r.result; loadTokenStr(r.result); }; r.readAsText(f);
+    });
+    document.getElementById('token').addEventListener('change', function(e){ if(e.target.value.trim()) loadTokenStr(e.target.value); });
+    document.getElementById('open').addEventListener('click', function(){
+      var msg = document.getElementById('msg');
+      if(!TOKEN){ var tv=document.getElementById('token').value.trim(); if(tv) loadTokenStr(tv); }
+      if(!TOKEN){ msg.textContent='토큰(.rayshare)을 올리거나 붙여넣으세요.'; return; }
+      var pin = (document.getElementById('pin').value||'').trim();
+      if(!pin){ msg.textContent='PIN을 입력하세요.'; return; }
+      if(!(window.CryptoJS && window.pako)){ msg.textContent='라이브러리 로드 실패 (인터넷 연결 확인).'; return; }
+      msg.style.color='#6b7280'; msg.textContent='복호화 중...';
+      try{
+        HTML = rsDecrypt(TOKEN, pin);
+        document.getElementById('gate').style.display='none';
+        document.getElementById('viewerWrap').style.display='block';
+        document.getElementById('viewer').srcdoc = HTML;
+      }catch(e){ msg.style.color='#b91c1c'; msg.textContent='PIN이 올바르지 않거나 토큰이 손상되었습니다.'; }
+    });
+    document.getElementById('dl').addEventListener('click', function(){
+      var blob = new Blob([HTML], { type:'text/html' });
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'RAYCloud_viewer.html';
+      document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    });
+  </script>
+</body></html>`);
 });
 
 // RAYCloud → Earth 채팅방으로 메시지 전송(공유 링크 등). 소켓 핸들러와 동일하게 저장+브로드캐스트.
