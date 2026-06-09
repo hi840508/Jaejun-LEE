@@ -47,6 +47,7 @@ function initTables() {
         // 🚀 [v6] 상품 주문 양식 + 보류 결제 (판매자 승인 필요)
         // status: 'pending' (작성 완료, 판매자 승인 대기) | 'approved' (결제 완료) | 'rejected' (거절) | 'cancelled' (구매자 취소)
         db.run(`CREATE TABLE IF NOT EXISTS product_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, productId TEXT, buyer TEXT, seller TEXT, txId INTEGER, bundle_html TEXT, memo TEXT, form_data TEXT, pdf_filled_data TEXT, buyer_info TEXT, status TEXT DEFAULT 'approved', amount INTEGER DEFAULT 0, created_at TEXT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS cloud_storage (name TEXT PRIMARY KEY, purchasedBytes INTEGER DEFAULT 0, usedBytes INTEGER DEFAULT 0)`);
 
         // 🚀 [v6] 구매로 자동 생성된 대화방 메타 (브랜드명 + 최신 상품명 + 양측 표시 동기화)
         // type: 'order' (구매 후 자동 생성, 한쪽이 leave 시 양측 종료) | 'normal' (수동 친구 추가)
@@ -401,6 +402,48 @@ app.post('/api/transfer', (req, res) => {
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.receiver]);
             db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate) VALUES (?, ?, ?, ?, ?)`, [req.body.sender, req.body.receiver, amount, date, rawDate], () => res.json({ success: true }));
         });
+    });
+});
+
+// ☁️ 클라우드 저장 용량 (Earth 지갑 결제) — 100MB 무료, 500GB당 3만원(= GB당 60원)
+const CLOUD_FREE_BYTES = 100 * 1024 * 1024;
+const CLOUD_PRICE_PER_GB = 60;
+app.get('/api/cloud/usage/:name', (req, res) => {
+    db.get(`SELECT purchasedBytes, usedBytes FROM cloud_storage WHERE name = ?`, [req.params.name], (err, row) => {
+        const purchased = (row && row.purchasedBytes) || 0;
+        const used = (row && row.usedBytes) || 0;
+        res.json({ freeBytes: CLOUD_FREE_BYTES, purchasedBytes: purchased, quotaBytes: CLOUD_FREE_BYTES + purchased, usedBytes: used, pricePerGB: CLOUD_PRICE_PER_GB });
+    });
+});
+app.post('/api/cloud/purchase', (req, res) => {
+    const name = req.body.name;
+    const gb = Number(req.body.gb) || 0;
+    if (!name || gb <= 0) return res.status(400).json({ error: '구매할 용량(GB)을 확인하세요' });
+    const price = Math.round(gb * CLOUD_PRICE_PER_GB);
+    const addBytes = Math.round(gb * 1024 * 1024 * 1024);
+    db.get(`SELECT balance FROM users WHERE name = ?`, [name], (err, u) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!u) return res.status(404).json({ error: '회원을 찾을 수 없습니다' });
+        if ((u.balance || 0) < price) return res.status(400).json({ error: `지갑 잔액 부족 (필요 ${price.toLocaleString()}원 / 보유 ${(u.balance||0).toLocaleString()}원)` });
+        const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
+        db.serialize(() => {
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [price, name]);
+            db.run(`INSERT INTO cloud_storage (name, purchasedBytes, usedBytes) VALUES (?, ?, 0) ON CONFLICT(name) DO UPDATE SET purchasedBytes = purchasedBytes + ?`, [name, addBytes, addBytes]);
+            db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate) VALUES (?, ?, ?, ?, ?)`, [name, 'RAYCloud 스토리지 충전', price, date, rawDate], function() {
+                db.get(`SELECT purchasedBytes FROM cloud_storage WHERE name = ?`, [name], (e2, row) => {
+                    const purchased = (row && row.purchasedBytes) || 0;
+                    res.json({ success: true, price: price, addedGB: gb, balance: (u.balance - price), quotaBytes: CLOUD_FREE_BYTES + purchased });
+                });
+            });
+        });
+    });
+});
+app.post('/api/cloud/usage', (req, res) => {
+    const name = req.body.name; const usedBytes = Math.max(0, Number(req.body.usedBytes) || 0);
+    if (!name) return res.status(400).json({ error: 'name 누락' });
+    db.run(`INSERT INTO cloud_storage (name, purchasedBytes, usedBytes) VALUES (?, 0, ?) ON CONFLICT(name) DO UPDATE SET usedBytes = ?`, [name, usedBytes, usedBytes], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
     });
 });
 
