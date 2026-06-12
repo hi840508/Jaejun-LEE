@@ -97,6 +97,9 @@ function initTables() {
 }
 initTables();
 
+db.run(`CREATE TABLE IF NOT EXISTS viewer_files (fileId TEXT PRIMARY KEY, k TEXT, expiry INTEGER DEFAULT 0, creator TEXT, title TEXT, boundUser TEXT, firstOpenedAt INTEGER, createdAt INTEGER)`);
+db.run(`CREATE TABLE IF NOT EXISTS viewer_opens (id INTEGER PRIMARY KEY AUTOINCREMENT, fileId TEXT, userName TEXT, at INTEGER, ok INTEGER, reason TEXT)`);
+
 // 🚀 [v8+] Admin 비밀번호 헬퍼 — DB의 settings.admin_password 사용 (초기값 'mars')
 function getAdminPassword(cb) {
     db.get(`SELECT value FROM settings WHERE key = 'admin_password'`, [], (err, row) => {
@@ -134,7 +137,36 @@ app.post('/api/admin/db-reset', (req, res) => {
         initTables(); res.json({ success: true });
     });
 });
+app.post('/api/viewer/register', (req, res) => {
+    const { fileId, k, expiry, creator, title } = req.body || {};
+    if (!fileId || !k) return res.status(400).json({ error: 'fileId/k 필요' });
+    db.get(`SELECT boundUser, firstOpenedAt FROM viewer_files WHERE fileId = ?`, [fileId], (e, prev) => {
+        db.run(`INSERT OR REPLACE INTO viewer_files (fileId,k,expiry,creator,title,boundUser,firstOpenedAt,createdAt) VALUES (?,?,?,?,?,?,?,?)`,
+            [fileId, String(k), Number(expiry) || 0, creator || '', title || '', (prev && prev.boundUser) || null, (prev && prev.firstOpenedAt) || null, Date.now()],
+            (err) => { if (err) return res.status(500).json({ error: err.message }); res.json({ ok: true }); });
+    });
+});
 
+// 🔒 통합 뷰어 DRM: 열람 시 잠금해제 — 로그인 검증 + 만료 + 최초개봉 ID 바인딩 → 키 전달
+app.post('/api/viewer/unlock', (req, res) => {
+    const { fileId, userName, password } = req.body || {};
+    if (!fileId || !userName) return res.status(400).json({ error: '정보 부족' });
+    const rec = (ok, reason) => db.run(`INSERT INTO viewer_opens (fileId,userName,at,ok,reason) VALUES (?,?,?,?,?)`, [fileId, userName, Date.now(), ok ? 1 : 0, reason || ''], () => {});
+    db.get(`SELECT * FROM users WHERE name = ?`, [userName], (e, u) => {
+        if (e) return res.status(500).json({ error: e.message });
+        if (!u || u.password !== password) { rec(0, 'auth'); return res.status(401).json({ error: 'ID 또는 비밀번호가 올바르지 않습니다.' }); }
+        db.get(`SELECT * FROM viewer_files WHERE fileId = ?`, [fileId], (e2, f) => {
+            if (e2) return res.status(500).json({ error: e2.message });
+            if (!f) { rec(0, 'noreg'); return res.status(404).json({ error: '등록되지 않은 뷰어 파일입니다.' }); }
+            const now = Date.now();
+            if (f.expiry && now > f.expiry) { rec(0, 'expired'); return res.status(403).json({ error: '열람 기간이 만료되었습니다.', expired: true }); }
+            if (f.boundUser && f.boundUser !== userName) { rec(0, 'bound'); return res.status(403).json({ error: '이 파일은 다른 계정(' + f.boundUser + ')에 연결되어 다른 ID로는 열 수 없습니다.', bound: true }); }
+            if (!f.boundUser) db.run(`UPDATE viewer_files SET boundUser=?, firstOpenedAt=? WHERE fileId=?`, [userName, now, fileId], () => {});   // 최초 개봉 ID로 영구 바인딩
+            rec(1, f.boundUser ? 'open' : 'firstbind');
+            res.json({ ok: true, k: f.k, boundUser: f.boundUser || userName, firstOpen: !f.boundUser });
+        });
+    });
+});
 // 🔒 통합 뷰어 DRM: 생성 시 키 등록
 app.post('/api/viewer/register', (req, res) => {
     const { fileId, k, expiry, creator, title } = req.body || {};
