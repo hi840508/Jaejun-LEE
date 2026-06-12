@@ -17,6 +17,89 @@ const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve:
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
+// ===================== #10/#11: RAYCloud 외부 공유 링크(실제·14일 만료) + 이메일 발송 =====================
+let nodemailer = null;
+try { nodemailer = require('nodemailer'); } catch (e) { console.warn("⚠️ nodemailer 미설치 — 이메일 발송 기능을 쓰려면 'npm install nodemailer' 하세요."); }
+
+const SHARE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14일
+function _shareBaseUrl(req) {
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    return `${proto}://${host}`;
+}
+function _escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+// 링크 생성: 토큰 발급 + payload 저장 + 14일 만료. 실제 접속 가능한 URL 반환
+app.post('/api/share/create', (req, res) => {
+    const payload = req.body || {};
+    const token = crypto.randomBytes(9).toString('base64url'); // 12자 내외 URL-safe 토큰
+    const now = Date.now();
+    const expiresAt = now + SHARE_TTL_MS;
+    db.run(`INSERT INTO share_links (token, payload, createdAt, expiresAt) VALUES (?, ?, ?, ?)`,
+        [token, JSON.stringify(payload), now, expiresAt], (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true, token, url: `${_shareBaseUrl(req)}/share/${token}`, expiresAt });
+        });
+});
+
+// 링크 접속: 만료 검사 후 공유 안내 페이지 표시
+app.get('/share/:token', (req, res) => {
+    db.get(`SELECT payload, expiresAt FROM share_links WHERE token = ?`, [req.params.token], (err, row) => {
+        if (err) return res.status(500).send('서버 오류');
+        if (!row) return res.status(404).send('<meta charset="utf-8"><div style="font-family:system-ui;text-align:center;margin-top:80px;color:#374151">존재하지 않는 공유 링크입니다.</div>');
+        if (Date.now() > Number(row.expiresAt || 0)) {
+            return res.status(410).send('<meta charset="utf-8"><div style="font-family:system-ui;text-align:center;margin-top:80px;color:#b91c1c">⛔ 만료된 링크입니다. (유효기간 14일 경과)</div>');
+        }
+        let p = {}; try { p = JSON.parse(row.payload || '{}'); } catch (e) {}
+        const exp = new Date(Number(row.expiresAt)).toLocaleString('ko-KR');
+        const itemsHtml = (Array.isArray(p.items) ? p.items : [])
+            .map(it => `<li>${_escapeHtml(it.name)} <span style="color:#9ca3af">(${_escapeHtml(it.modality||'')})</span></li>`).join('') || '<li style="color:#9ca3af">목록 없음</li>';
+        res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAYCloud 공유</title></head>
+<body style="font-family:system-ui,'Pretendard',sans-serif;background:#f3f4f6;margin:0;padding:24px;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px;">
+    <div style="font-size:18px;font-weight:800;color:#1f2937;margin-bottom:6px;">${_escapeHtml(p.title || 'RAYCloud 공유 데이터')}</div>
+    <div style="font-size:13px;color:#6b7280;margin-bottom:16px;">보낸 사람: ${_escapeHtml(p.by || '-')}${p.patient ? ' · 환자: ' + _escapeHtml(p.patient) : ''}</div>
+    <div style="font-size:13px;color:#374151;font-weight:700;margin-bottom:6px;">공유 항목</div>
+    <ul style="font-size:13px;color:#374151;line-height:1.7;margin:0 0 16px 18px;padding:0;">${itemsHtml}</ul>
+    <div style="font-size:12px;color:#9ca3af;border-top:1px solid #eee;padding-top:12px;">유효기간: ${exp} 까지</div>
+  </div>
+</body></html>`);
+    });
+});
+
+// #11: 첨부 없이 동일한 링크를 이메일로 전송. 발신은 사용자가 입력한 본인 이메일 계정으로.
+app.post('/api/share/email', async (req, res) => {
+    const { to, link, senderEmail, senderPass, host, port } = req.body || {};
+    if (!to || !link) return res.status(400).json({ error: '받는 사람/링크 누락' });
+    if (!senderEmail || !senderPass) return res.status(400).json({ error: '발신 계정(본인 이메일/앱 비밀번호)을 입력하세요' });
+    if (!nodemailer) return res.status(500).json({ error: "서버에 nodemailer 미설치 ('npm install nodemailer' 후 재시작)" });
+    try {
+        const smtpHost = host || 'smtp.gmail.com';
+        const smtpPort = Number(port) || 465;
+        const transporter = nodemailer.createTransport({
+            host: smtpHost, port: smtpPort, secure: smtpPort === 465,
+            auth: { user: senderEmail, pass: senderPass }
+        });
+        await transporter.sendMail({
+            from: senderEmail,
+            to,
+            subject: '[RAYCloud] 공유 링크가 도착했습니다',
+            text: `RAYCloud에서 데이터를 공유했습니다.\n\n아래 링크로 확인하세요 (유효기간 14일):\n${link}\n`,
+            html: `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#374151;line-height:1.6">
+                <p>RAYCloud에서 데이터를 공유했습니다.</p>
+                <p>아래 링크로 확인하세요. <b>유효기간 14일</b></p>
+                <p><a href="${_escapeHtml(link)}" style="color:#2563eb">${_escapeHtml(link)}</a></p></div>`
+        });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: (e && e.message) || '메일 발송 실패 (계정/앱 비밀번호 확인)' });
+    }
+});
+// ============================================================================================
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" }, maxHttpBufferSize: 300 * 1024 * 1024 }); // 🚀 [v8+] 대형 3D/첨부 번들 지원 (300MB)
 const PORT = 4000;
@@ -32,9 +115,6 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 function initTables() {
     db.serialize(() => {
         db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, realname TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT, phone TEXT, email TEXT, shipping_address TEXT, reset_otp TEXT, reset_otp_expiry INTEGER, reset_otp_used INTEGER DEFAULT 0, force_pwd_change INTEGER DEFAULT 0)`);
-        // 🔒 통합 뷰어(HTML) DRM — 복호 키를 서버가 보관, 로그인+바인딩+만료 통과 시에만 전달.
-        db.run(`CREATE TABLE IF NOT EXISTS viewer_files (fileId TEXT PRIMARY KEY, k TEXT, expiry INTEGER DEFAULT 0, creator TEXT, title TEXT, boundUser TEXT, firstOpenedAt INTEGER, createdAt INTEGER)`);
-        db.run(`CREATE TABLE IF NOT EXISTS viewer_opens (id INTEGER PRIMARY KEY AUTOINCREMENT, fileId TEXT, userName TEXT, at INTEGER, ok INTEGER, reason TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS friends (userName TEXT, friendName TEXT, UNIQUE(userName, friendName))`);
         db.run(`CREATE TABLE IF NOT EXISTS stores (id TEXT PRIMARY KEY, name TEXT, owner TEXT, logo TEXT, status TEXT DEFAULT 'active', background TEXT, description TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, storeId TEXT, type TEXT, name TEXT, description TEXT, price_stream INTEGER DEFAULT 0, price_original INTEGER DEFAULT 0, stream_time INTEGER DEFAULT 0, stream_unit TEXT DEFAULT 'd', seller TEXT, thumbnail TEXT, encryptedPayload TEXT, compression_ratio INTEGER DEFAULT 0, block_hash TEXT, ecc_signature TEXT)`);
@@ -51,6 +131,12 @@ function initTables() {
         // status: 'pending' (작성 완료, 판매자 승인 대기) | 'approved' (결제 완료) | 'rejected' (거절) | 'cancelled' (구매자 취소)
         db.run(`CREATE TABLE IF NOT EXISTS product_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, productId TEXT, buyer TEXT, seller TEXT, txId INTEGER, bundle_html TEXT, memo TEXT, form_data TEXT, pdf_filled_data TEXT, buyer_info TEXT, status TEXT DEFAULT 'approved', amount INTEGER DEFAULT 0, created_at TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS cloud_storage (name TEXT PRIMARY KEY, purchasedBytes INTEGER DEFAULT 0, usedBytes INTEGER DEFAULT 0)`);
+
+        // #10: RAYCloud 외부 공유 링크 (실제 토큰, 14일 만료)
+        db.run(`CREATE TABLE IF NOT EXISTS share_links (token TEXT PRIMARY KEY, payload TEXT, createdAt INTEGER, expiresAt INTEGER)`);
+        // 🔒 통합 뷰어 DRM — 복호 키를 서버 보관, 로그인+바인딩+만료 통과 시에만 전달
+        db.run(`CREATE TABLE IF NOT EXISTS viewer_files (fileId TEXT PRIMARY KEY, k TEXT, expiry INTEGER DEFAULT 0, creator TEXT, title TEXT, boundUser TEXT, firstOpenedAt INTEGER, createdAt INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS viewer_opens (id INTEGER PRIMARY KEY AUTOINCREMENT, fileId TEXT, userName TEXT, at INTEGER, ok INTEGER, reason TEXT)`);
 
         // 🚀 [v6] 구매로 자동 생성된 대화방 메타 (브랜드명 + 최신 상품명 + 양측 표시 동기화)
         // type: 'order' (구매 후 자동 생성, 한쪽이 leave 시 양측 종료) | 'normal' (수동 친구 추가)
@@ -97,9 +183,6 @@ function initTables() {
 }
 initTables();
 
-db.run(`CREATE TABLE IF NOT EXISTS viewer_files (fileId TEXT PRIMARY KEY, k TEXT, expiry INTEGER DEFAULT 0, creator TEXT, title TEXT, boundUser TEXT, firstOpenedAt INTEGER, createdAt INTEGER)`);
-db.run(`CREATE TABLE IF NOT EXISTS viewer_opens (id INTEGER PRIMARY KEY AUTOINCREMENT, fileId TEXT, userName TEXT, at INTEGER, ok INTEGER, reason TEXT)`);
-
 // 🚀 [v8+] Admin 비밀번호 헬퍼 — DB의 settings.admin_password 사용 (초기값 'mars')
 function getAdminPassword(cb) {
     db.get(`SELECT value FROM settings WHERE key = 'admin_password'`, [], (err, row) => {
@@ -137,40 +220,11 @@ app.post('/api/admin/db-reset', (req, res) => {
         initTables(); res.json({ success: true });
     });
 });
-app.post('/api/viewer/register', (req, res) => {
-    const { fileId, k, expiry, creator, title } = req.body || {};
-    if (!fileId || !k) return res.status(400).json({ error: 'fileId/k 필요' });
-    db.get(`SELECT boundUser, firstOpenedAt FROM viewer_files WHERE fileId = ?`, [fileId], (e, prev) => {
-        db.run(`INSERT OR REPLACE INTO viewer_files (fileId,k,expiry,creator,title,boundUser,firstOpenedAt,createdAt) VALUES (?,?,?,?,?,?,?,?)`,
-            [fileId, String(k), Number(expiry) || 0, creator || '', title || '', (prev && prev.boundUser) || null, (prev && prev.firstOpenedAt) || null, Date.now()],
-            (err) => { if (err) return res.status(500).json({ error: err.message }); res.json({ ok: true }); });
-    });
-});
 
-// 🔒 통합 뷰어 DRM: 열람 시 잠금해제 — 로그인 검증 + 만료 + 최초개봉 ID 바인딩 → 키 전달
-app.post('/api/viewer/unlock', (req, res) => {
-    const { fileId, userName, password } = req.body || {};
-    if (!fileId || !userName) return res.status(400).json({ error: '정보 부족' });
-    const rec = (ok, reason) => db.run(`INSERT INTO viewer_opens (fileId,userName,at,ok,reason) VALUES (?,?,?,?,?)`, [fileId, userName, Date.now(), ok ? 1 : 0, reason || ''], () => {});
-    db.get(`SELECT * FROM users WHERE name = ?`, [userName], (e, u) => {
-        if (e) return res.status(500).json({ error: e.message });
-        if (!u || u.password !== password) { rec(0, 'auth'); return res.status(401).json({ error: 'ID 또는 비밀번호가 올바르지 않습니다.' }); }
-        db.get(`SELECT * FROM viewer_files WHERE fileId = ?`, [fileId], (e2, f) => {
-            if (e2) return res.status(500).json({ error: e2.message });
-            if (!f) { rec(0, 'noreg'); return res.status(404).json({ error: '등록되지 않은 뷰어 파일입니다.' }); }
-            const now = Date.now();
-            if (f.expiry && now > f.expiry) { rec(0, 'expired'); return res.status(403).json({ error: '열람 기간이 만료되었습니다.', expired: true }); }
-            if (f.boundUser && f.boundUser !== userName) { rec(0, 'bound'); return res.status(403).json({ error: '이 파일은 다른 계정(' + f.boundUser + ')에 연결되어 다른 ID로는 열 수 없습니다.', bound: true }); }
-            if (!f.boundUser) db.run(`UPDATE viewer_files SET boundUser=?, firstOpenedAt=? WHERE fileId=?`, [userName, now, fileId], () => {});   // 최초 개봉 ID로 영구 바인딩
-            rec(1, f.boundUser ? 'open' : 'firstbind');
-            res.json({ ok: true, k: f.k, boundUser: f.boundUser || userName, firstOpen: !f.boundUser });
-        });
-    });
-});
-// 🔒 통합 뷰어 DRM: 생성 시 키 등록
+// 🔒 통합 뷰어 DRM: 생성 시 복호 키 위탁(서버 보관)
 app.post('/api/viewer/register', (req, res) => {
     const { fileId, k, expiry, creator, title } = req.body || {};
-    if (!fileId || !k) return res.status(400).json({ error: 'fileId/k 필요' });
+    if (!fileId || !k) return res.status(400).json({ error: 'fileId/k \ud544\uc694' });
     db.get(`SELECT boundUser, firstOpenedAt FROM viewer_files WHERE fileId = ?`, [fileId], (e, prev) => {
         db.run(`INSERT OR REPLACE INTO viewer_files (fileId,k,expiry,creator,title,boundUser,firstOpenedAt,createdAt) VALUES (?,?,?,?,?,?,?,?)`,
             [fileId, String(k), Number(expiry) || 0, creator || '', title || '', (prev && prev.boundUser) || null, (prev && prev.firstOpenedAt) || null, Date.now()],
@@ -180,18 +234,18 @@ app.post('/api/viewer/register', (req, res) => {
 // 🔒 통합 뷰어 DRM: 열람 시 잠금해제 — 로그인 검증 + 만료 + 최초개봉 ID 바인딩 → 키 전달
 app.post('/api/viewer/unlock', (req, res) => {
     const { fileId, userName, password } = req.body || {};
-    if (!fileId || !userName) return res.status(400).json({ error: '정보 부족' });
+    if (!fileId || !userName) return res.status(400).json({ error: '\uc815\ubcf4 \ubd80\uc871' });
     const rec = (ok, reason) => db.run(`INSERT INTO viewer_opens (fileId,userName,at,ok,reason) VALUES (?,?,?,?,?)`, [fileId, userName, Date.now(), ok ? 1 : 0, reason || ''], () => {});
     db.get(`SELECT * FROM users WHERE name = ?`, [userName], (e, u) => {
         if (e) return res.status(500).json({ error: e.message });
-        if (!u || u.password !== password) { rec(0, 'auth'); return res.status(401).json({ error: 'ID 또는 비밀번호가 올바르지 않습니다.' }); }
+        if (!u || u.password !== password) { rec(0, 'auth'); return res.status(401).json({ error: 'ID \ub610\ub294 \ube44\ubc00\ubc88\ud638\uac00 \uc62c\ubc14\ub974\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4.' }); }
         db.get(`SELECT * FROM viewer_files WHERE fileId = ?`, [fileId], (e2, f) => {
             if (e2) return res.status(500).json({ error: e2.message });
-            if (!f) { rec(0, 'noreg'); return res.status(404).json({ error: '등록되지 않은 뷰어 파일입니다.' }); }
+            if (!f) { rec(0, 'noreg'); return res.status(404).json({ error: '\ub4f1\ub85d\ub418\uc9c0 \uc54a\uc740 \ubdf0\uc5b4 \ud30c\uc77c\uc785\ub2c8\ub2e4.' }); }
             const now = Date.now();
-            if (f.expiry && now > f.expiry) { rec(0, 'expired'); return res.status(403).json({ error: '열람 기간이 만료되었습니다.', expired: true }); }
-            if (f.boundUser && f.boundUser !== userName) { rec(0, 'bound'); return res.status(403).json({ error: '이 파일은 다른 계정(' + f.boundUser + ')에 연결되어 다른 ID로는 열 수 없습니다.', bound: true }); }
-            if (!f.boundUser) db.run(`UPDATE viewer_files SET boundUser=?, firstOpenedAt=? WHERE fileId=?`, [userName, now, fileId], () => {});   // 최초 개봉 ID로 영구 바인딩
+            if (f.expiry && now > f.expiry) { rec(0, 'expired'); return res.status(403).json({ error: '\uc5f4\ub78c \uae30\uac04\uc774 \ub9cc\ub8cc\ub418\uc5c8\uc2b5\ub2c8\ub2e4.', expired: true }); }
+            if (f.boundUser && f.boundUser !== userName) { rec(0, 'bound'); return res.status(403).json({ error: '\uc774 \ud30c\uc77c\uc740 \ub2e4\ub978 \uacc4\uc815(' + f.boundUser + ')\uc5d0 \uc5f0\uacb0\ub418\uc5b4 \ub2e4\ub978 ID\ub85c\ub294 \uc5f4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.', bound: true }); }
+            if (!f.boundUser) db.run(`UPDATE viewer_files SET boundUser=?, firstOpenedAt=? WHERE fileId=?`, [userName, now, fileId], () => {});
             rec(1, f.boundUser ? 'open' : 'firstbind');
             res.json({ ok: true, k: f.k, boundUser: f.boundUser || userName, firstOpen: !f.boundUser });
         });
@@ -490,7 +544,7 @@ app.post('/api/cloud/purchase', (req, res) => {
     db.get(`SELECT balance FROM users WHERE name = ?`, [name], (err, u) => {
         if (err) return res.status(500).json({ error: err.message });
         if (!u) return res.status(404).json({ error: '회원을 찾을 수 없습니다' });
-        if ((u.balance || 0) < price) return res.status(400).json({ error: `지갑 잔액 부족 (필요 ${price.toLocaleString()}원 / 보유 ${(u.balance||0).toLocaleString()}원)` });
+        if ((u.balance || 0) < price) return res.status(400).json({ error: `지갑 잔액 부족 (필요 ${price.toLocaleString()}원 / 보유 ${(u.balance||0).toLocaleString()}원)`, insufficient: true, need: price, balance: (u.balance||0), shortfall: price - (u.balance||0) });
         const date = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
         db.serialize(() => {
             db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [price, name]);
