@@ -2100,10 +2100,22 @@
             r.readAsDataURL(f);
         };
 
-        function logout() { localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
+        // ★로그인 Earth 일원화★: 이 Earth 페이지가 RAYOne 앱 iframe 안에 있으면, 로그인/로그아웃 상태를 부모창에 알려
+        //  앱(RC_USER)이 Earth 세션을 단일 원천으로 그대로 따라가게 한다.
+        function _postAuthToParent(user) {
+            try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'earth_auth', user: user || null }, '*'); } catch (e) {}
+        }
+        // 부모(RAYOne 앱)에서 로그아웃 명령 수신 → Earth도 로그아웃
+        window.addEventListener('message', function(ev){
+            var d = ev.data; if (!d || typeof d !== 'object') return;
+            if (d.type === 'rc_auth_cmd' && d.action === 'logout') { try { logout(); } catch (e) {} }
+        });
+
+        function logout() { _postAuthToParent(null); localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
 
         function loginSuccess(data) {
             currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
+            _postAuthToParent(data);   // ★Earth 일원화★ 부모 앱에 로그인 상태 통지(세션복원 포함 — 모든 로그인이 여기로 수렴)
             document.getElementById('display-name').innerText = data.name; if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
             
             // 🚀 [v8] 로고 초기화 (localStorage 우선 → 기본 오름앤파트너스)
@@ -2155,18 +2167,6 @@
             const storeParam = urlParams.get('store'); // 🚀 QR 스캔 진입
             // 💬 RAYCloud 등 외부 iframe 임베드에서 채팅 바로 열기
             if(urlParams.get('openchat')){ setTimeout(()=>{ const d=document.getElementById('messenger-drawer'); if(d && !d.classList.contains('open')) toggleMessengerDrawer(); }, 600); }
-            // #3: RAYCloud 임베드(Case 탭 등)에서는 Earth 자체 플로팅 채팅버튼을 숨겨 RAYCloud의 채팅 아이콘과 중복되지 않게 함
-            if(urlParams.get('embed')){ try{ var _es=document.createElement('style'); _es.textContent='.floating-messenger-btn{display:none !important;}'; document.head.appendChild(_es); }catch(e){} }
-            // #8: RAYCloud 결제 잔액 부족 → 입금 신청 모달 자동 오픈 (부족액 프리필)
-            const depositParam = urlParams.get('deposit');
-            if(depositParam !== null){
-                setTimeout(()=>{
-                    const amtEl = document.getElementById('modal-deposit-amount');
-                    const need = parseInt(depositParam, 10);
-                    if(amtEl && !isNaN(need) && need > 0) amtEl.value = need;
-                    if(typeof openModal === 'function') openModal('deposit-modal');
-                }, 700);
-            }
 
             // 🚀 ?store= 파라미터가 있으면 localStorage에 저장하고 로그인 완료 후 처리
             if(storeParam) {
