@@ -158,7 +158,8 @@ function initTables() {
         db.run(`ALTER TABLE product_orders ADD COLUMN pdf_filled_data TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN buyer_info TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN status TEXT DEFAULT 'approved'`, () => {});
-        db.run(`ALTER TABLE product_orders ADD COLUMN tracking TEXT`, () => {});   // 🚚 배송 송장/메모(선택)
+        db.run(`ALTER TABLE product_orders ADD COLUMN tracking TEXT`, () => {});   // 🚚 배송 송장번호(선택)
+        db.run(`ALTER TABLE product_orders ADD COLUMN courier TEXT`, () => {});    // 🚚 택배사 코드
         db.run(`ALTER TABLE product_orders ADD COLUMN amount INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE transactions ADD COLUMN refunded INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
@@ -820,7 +821,7 @@ app.post('/api/order/status', (req, res) => {
                 db.run(`UPDATE product_orders SET status = 'refunded' WHERE id = ?`, [orderId], () => res.json({ success: true }));
             });
         } else {
-            db.run(`UPDATE product_orders SET status = ?, tracking = ? WHERE id = ?`, [status, tracking || ord.tracking || null, orderId], () => res.json({ success: true }));
+            db.run(`UPDATE product_orders SET status = ?, tracking = ?, courier = ? WHERE id = ?`, [status, tracking || ord.tracking || null, req.body.courier || ord.courier || null, orderId], () => res.json({ success: true }));
         }
     });
 });
@@ -1146,7 +1147,7 @@ app.get('/api/purchases/:buyer', async (req, res) => {
 
         // 각 구매에 연관된 주문서(product_orders) — ★N+1 제거★: 한 번에 조회 후 productId별 최신 주문 매핑(구매내역 로딩 가속)
         const orders = await new Promise(r => db.all(
-            `SELECT id, productId, bundle_html, memo, form_data, created_at FROM product_orders WHERE buyer = ? ORDER BY id DESC`,
+            `SELECT id, productId, bundle_html, memo, form_data, created_at, courier, tracking, status FROM product_orders WHERE buyer = ? ORDER BY id DESC`,
             [buyer], (e, rows) => r(rows || [])
         ));
         const orderByPid = {};
@@ -1159,6 +1160,7 @@ app.get('/api/purchases/:buyer', async (req, res) => {
                 t.orderFormData = order.form_data;
                 t.orderCreatedAt = order.created_at;
                 t.hasBundle = !!order.bundle_html;
+                t.courier = order.courier; t.tracking = order.tracking; t.orderStatus = order.status;   // 🚚 배송조회용
             }
         }
         res.json(txs);
@@ -1381,9 +1383,19 @@ app.get('/api/admin/tax/settlement', (req, res) => {
     _taxConfig((cfg) => {
         let where = _salesWhere; const params = [];
         if (month) { where += ` AND substr(IFNULL(t.rawDate,t.date),1,7)=?`; params.push(month); }
-        db.all(`SELECT t.seller, COUNT(*) cnt, SUM(t.amount) salesTotal FROM transactions t WHERE ${where} GROUP BY t.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
+        db.all(`SELECT t.seller, COUNT(*) cnt, SUM(t.amount) salesTotal,
+                    GROUP_CONCAT(DISTINCT p.storeId) storeIds,
+                    GROUP_CONCAT(DISTINCT s.name) brands,
+                    GROUP_CONCAT(DISTINCT t.productName) products
+                FROM transactions t
+                LEFT JOIN products p ON p.id = t.productId
+                LEFT JOIN stores s ON p.storeId = s.id
+                WHERE ${where} GROUP BY t.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
-            const vendors = (rows || []).map(r => Object.assign({ seller: r.seller, count: r.cnt }, _settleCalc(r.salesTotal, cfg)));
+            const vendors = (rows || []).map(r => Object.assign({
+                seller: r.seller, count: r.cnt,
+                storeIds: r.storeIds || '', brands: r.brands || '', products: r.products || ''
+            }, _settleCalc(r.salesTotal, cfg)));
             res.json({ month, config: cfg, vendors });
         });
     });
