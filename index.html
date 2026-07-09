@@ -961,6 +961,8 @@
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
                         <button class="yt-sb-item" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span><span>거래 내역</span></button>
+                        <!-- 🧾 Admin 전용: 전자세금계산서·정산(배민식 일괄) -->
+                        <button class="yt-sb-item" id="sb-tax" style="display:none" onclick="switchTab('tax')" data-tab="tax"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg></span><span>세금계산서·정산</span></button>
                     </div>
                     <!-- 🚀 [v8] 사이드바 맨 아래 설정 + 사이드바 영역 늘리기 위해 flex-grow spacer -->
                     <div style="flex:1; min-height:10px;"></div>
@@ -1325,6 +1327,67 @@
                         </table>
                     </div>
                 </div>
+
+            <!-- 🧾 Admin 전자세금계산서 · 정산 (배민식 일괄) -->
+            <div id="tab-tax" class="tab-content">
+                <div class="panel" style="padding:14px 16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                        <div>
+                            <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">전자세금계산서 · 정산 (Admin)</h3>
+                            <div style="font-size:12px;color:#707070;line-height:1.6;">여러 업체의 카드결제 매출을 모아 정산하고, 월 단위로 플랫폼 이용 수수료 세금계산서를 일괄 발행합니다. 국세청 전송은 팍스빌 계약 후 활성(현재는 발행기록 + PDF).</div>
+                        </div>
+                        <span id="tax-mode-pill" style="font-size:11px;font-weight:800;padding:6px 10px;border-radius:30px;background:#e5e7eb;color:#374151;">연동 확인 중</span>
+                    </div>
+                </div>
+                <div class="panel" style="padding:14px;">
+                    <h4 style="font-size:14px;font-weight:900;margin:0 0 10px;">정산 변수 (변경 가능)</h4>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+                        <div class="input-group" style="width:130px;"><label>VAT율(%)</label><input id="cfg-vat" inputmode="decimal" placeholder="10"></div>
+                        <div class="input-group" style="width:150px;"><label>결제 수수료율(%)</label><input id="cfg-payfee" inputmode="decimal" placeholder="2.7"></div>
+                        <div class="input-group" style="width:170px;"><label>SW 월사용료(원)</label><input id="cfg-swfee" inputmode="numeric" placeholder="10000"></div>
+                        <button class="btn btn-outline" style="padding:9px 16px;" onclick="saveTaxConfig()">변수 저장</button>
+                    </div>
+                    <div style="font-size:11px;color:#94a3b8;margin-top:6px;">지급액 = 매출 − 결제수수료 − SW월사용료 − (수수료합 × VAT). 세금계산서 공급가=수수료합, 세액=그 VAT.</div>
+                </div>
+                <div class="panel" style="padding:14px;">
+                    <h4 style="font-size:14px;font-weight:900;margin:0 0 10px;">공급자(플랫폼) 정보 — 세금계산서 발행 주체</h4>
+                    <div class="grid-2col" style="gap:10px;">
+                        <div class="input-group"><label>상호 *</label><input id="sup-name" placeholder="예: 오름앤파트너스"></div>
+                        <div class="input-group"><label>사업자등록번호 *</label><input id="sup-bizno" inputmode="numeric" placeholder="숫자만"></div>
+                        <div class="input-group"><label>대표자</label><input id="sup-ceo"></div>
+                        <div class="input-group"><label>이메일</label><input id="sup-email" type="email"></div>
+                    </div>
+                    <div class="input-group"><label>주소</label><input id="sup-address"></div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <div class="input-group" style="flex:1;min-width:150px;"><label>업태</label><input id="sup-biztype"></div>
+                        <div class="input-group" style="flex:1;min-width:150px;"><label>종목</label><input id="sup-bizclass"></div>
+                    </div>
+                    <button class="btn btn-outline" style="padding:7px 12px;font-size:11px;" onclick="saveTaxSupplier()">공급자 정보 저장</button>
+                </div>
+                <div class="panel" style="padding:14px;">
+                    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
+                        <div class="input-group" style="width:170px;"><label>정산 월</label><input id="tax-month" type="month"></div>
+                        <button class="btn btn-secondary" style="padding:9px 16px;" onclick="loadSettlement()">정산 불러오기</button>
+                        <div style="flex:1;"></div>
+                        <button class="btn btn-success" style="padding:9px 18px;" onclick="issueBulkTax()">선택 업체 일괄 발행</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;">
+                            <thead><tr><th><input type="checkbox" id="tax-check-all" onclick="toggleAllVendors(this)"></th><th>업체</th><th>건수</th><th>매출</th><th>결제수수료</th><th>SW료</th><th>수수료VAT</th><th>지급액</th><th>세금계산서</th></tr></thead>
+                            <tbody id="settlement-body"><tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [정산 불러오기]를 누르세요.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel" style="padding:14px;">
+                    <h4 style="font-size:14px;font-weight:900;margin:0 0 10px;">발행 이력</h4>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;">
+                            <thead><tr><th>발행일</th><th>업체</th><th>공급가</th><th>세액</th><th>합계</th><th>국세청</th><th>PDF</th></tr></thead>
+                            <tbody id="tax-history-body"><tr><td colspan="7" style="text-align:center;padding:16px;color:#94a3b8;">-</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
                 </main>
             </div>
 
@@ -2382,6 +2445,8 @@
         function applyAdminUIState(active) {
             const ind = document.getElementById('admin-indicator');
             if(ind) ind.style.display = active ? 'inline-block' : 'none';
+            const sbTax = document.getElementById('sb-tax');   // 🧾 세금계산서·정산 사이드바(Admin 전용)
+            if(sbTax) sbTax.style.display = active ? 'flex' : 'none';
             const dep = document.getElementById('admin-deposit-panel');
             if(dep) dep.style.display = active ? 'block' : 'none';
             const dbReset = document.getElementById('admin-db-reset-btn');
@@ -2563,6 +2628,117 @@
             } catch(e){ showToast("네트워크 오류"); }
         }
 
+        // ================= 🧾 Admin 전자세금계산서 · 정산 (배민식 일괄) =================
+        window.taxSettlement = []; window.taxHistoryRows = [];
+        function taxNum(v){ return Math.max(0, Math.round(Number(String(v==null?'':v).replace(/,/g,''))||0)); }
+        function taxFmt(n){ return taxNum(n).toLocaleString(); }
+        function taxDigits(v){ return String(v==null?'':v).replace(/\D/g,''); }
+        function taxEscH(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        function taxG(id){ const e=document.getElementById(id); return e?e.value.trim():''; }
+        function taxS(id,v){ const e=document.getElementById(id); if(e) e.value=(v==null?'':String(v)); }
+        function loadTaxSupplier(){ try{ const p=JSON.parse(localStorage.getItem('earth_tax_supplier')||'{}'); taxS('sup-name',p.name||''); taxS('sup-bizno',p.bizNo||''); taxS('sup-ceo',p.ceoName||''); taxS('sup-email',p.email||''); taxS('sup-address',p.address||''); taxS('sup-biztype',p.bizType||''); taxS('sup-bizclass',p.bizClass||''); }catch(e){} }
+        function getTaxSupplier(){ return { name:taxG('sup-name'), bizNo:taxDigits(taxG('sup-bizno')), ceoName:taxG('sup-ceo'), email:taxG('sup-email'), address:taxG('sup-address'), bizType:taxG('sup-biztype'), bizClass:taxG('sup-bizclass') }; }
+        window.saveTaxSupplier=function(){ localStorage.setItem('earth_tax_supplier', JSON.stringify(getTaxSupplier())); showToast('공급자 정보를 저장했습니다.'); };
+        window.loadAdminTax=async function(){
+            if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
+            loadTaxSupplier();
+            if(!taxG('tax-month')){ const d=new Date(); taxS('tax-month', d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); }
+            try{ const cfg=await fetch(`${API_URL}/api/tax/config`).then(r=>r.json()); taxS('cfg-vat',cfg.vatRate); taxS('cfg-payfee',cfg.payFeeRate); taxS('cfg-swfee',cfg.swFee); }catch(e){}
+            try{ const st=await fetch(`${API_URL}/api/tax/config/status`).then(r=>r.json()); const pill=document.getElementById('tax-mode-pill'); if(pill){ if(st.mode==='live'){ pill.textContent='팍스빌 LIVE 연동'; pill.style.background='#dcfce7'; pill.style.color='#166534'; } else { pill.textContent='테스트 모드 (발행기록+PDF)'; pill.style.background='#fef3c7'; pill.style.color='#92400e'; } } }catch(e){}
+            loadSettlement(); loadTaxHistory();
+        };
+        window.saveTaxConfig=async function(){
+            const secret=prompt('Admin 비밀번호를 입력하세요.'); if(secret==null) return;
+            try{ const r=await fetch(`${API_URL}/api/tax/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminSecret:secret,vatRate:taxG('cfg-vat'),payFeeRate:taxG('cfg-payfee'),swFee:taxG('cfg-swfee')})}); const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패'); taxS('cfg-vat',d.config.vatRate); taxS('cfg-payfee',d.config.payFeeRate); taxS('cfg-swfee',d.config.swFee); showToast('정산 변수를 저장했습니다.'); loadSettlement(); }catch(e){ showToast('저장 실패: '+(e.message||'')); }
+        };
+        window.loadSettlement=async function(){
+            const month=taxG('tax-month'); const body=document.getElementById('settlement-body'); if(!body) return;
+            body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            try{
+                const d=await fetch(`${API_URL}/api/admin/tax/settlement?month=${encodeURIComponent(month)}`).then(r=>r.json());
+                window.taxSettlement=d.vendors||[];
+                if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 매출이 없습니다.</td></tr>'; return; }
+                body.innerHTML=window.taxSettlement.map((v,i)=>`<tr>
+                    <td style="text-align:center;"><input type="checkbox" class="tax-vsel" data-i="${i}"></td>
+                    <td style="font-weight:700;">${taxEscH(v.seller)}</td>
+                    <td style="text-align:center;">${v.count}</td>
+                    <td style="text-align:right;">${taxFmt(v.salesTotal)}</td>
+                    <td style="text-align:right;color:#b45309;">${taxFmt(v.payFee)}</td>
+                    <td style="text-align:right;color:#b45309;">${taxFmt(v.swFee)}</td>
+                    <td style="text-align:right;color:#b45309;">${taxFmt(v.vatOnFees)}</td>
+                    <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
+                    <td style="text-align:center;"><button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" onclick="issueOneTax(${i})">발행·PDF</button></td>
+                </tr>`).join('');
+            }catch(e){ body.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+        };
+        window.toggleAllVendors=function(cb){ document.querySelectorAll('.tax-vsel').forEach(x=>x.checked=cb.checked); };
+        window.issueOneTax=async function(i){
+            const v=window.taxSettlement[i]; if(!v) return;
+            const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
+            const month=taxG('tax-month');
+            try{
+                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:v.seller, buyer:v.seller, supplier, recipient:{name:v.seller}, item:{name:month+' 플랫폼 이용 수수료'}, supplyAmount:v.feeSubtotal, taxAmount:v.vatOnFees, totalAmount:v.commissionTotal, writeDate:month+'-01', batchMonth:month })});
+                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
+                showToast(`${v.seller} 세금계산서 발행 완료. PDF를 엽니다.`);
+                taxPrintInvoice({ supplier, recipient:{name:v.seller}, month, supplyAmount:v.feeSubtotal, taxAmount:v.vatOnFees, totalAmount:v.commissionTotal, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
+                loadTaxHistory();
+            }catch(e){ showToast('발행 실패: '+(e.message||'')); }
+        };
+        window.issueBulkTax=async function(){
+            const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
+            const sel=Array.from(document.querySelectorAll('.tax-vsel:checked')).map(x=>window.taxSettlement[Number(x.dataset.i)]).filter(Boolean);
+            if(!sel.length){ showToast('발행할 업체를 선택하세요.'); return; }
+            const month=taxG('tax-month');
+            if(!confirm(`${sel.length}개 업체에 ${month} 수수료 세금계산서를 일괄 발행합니다.`)) return;
+            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:v.seller}, supplyAmount:v.feeSubtotal, taxAmount:v.vatOnFees, totalAmount:v.commissionTotal }));
+            try{
+                const r=await fetch(`${API_URL}/api/tax/issue-bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ supplier, vendors, writeDate:month+'-01', batchMonth:month })});
+                const d=await r.json(); if(!r.ok) throw new Error(d.error||'실패');
+                showToast(`일괄 발행 완료: ${d.count}/${d.total}건`);
+                loadTaxHistory(); loadSettlement();
+            }catch(e){ showToast('일괄 발행 실패: '+(e.message||'')); }
+        };
+        window.loadTaxHistory=async function(){
+            const month=taxG('tax-month'); const body=document.getElementById('tax-history-body'); if(!body) return;
+            try{
+                const rows=await fetch(`${API_URL}/api/admin/tax/invoices?month=${encodeURIComponent(month)}`).then(r=>r.json());
+                window.taxHistoryRows=Array.isArray(rows)?rows:[];
+                if(!window.taxHistoryRows.length){ body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:#94a3b8;">발행 내역 없음</td></tr>'; return; }
+                body.innerHTML=window.taxHistoryRows.map((r,i)=>`<tr>
+                    <td>${(r.created_at||'').substring(0,10)}</td>
+                    <td>${taxEscH(r.recipientName||r.seller)}</td>
+                    <td style="text-align:right;">${taxFmt(r.supplyAmount)}</td>
+                    <td style="text-align:right;">${taxFmt(r.taxAmount)}</td>
+                    <td style="text-align:right;font-weight:700;">${taxFmt(r.totalAmount)}</td>
+                    <td style="text-align:center;font-size:11px;">${r.ntsStatus==='nts_sent_mock'?'테스트':(r.ntsStatus==='nts_sent'?'전송완료':(r.ntsStatus||'-'))}</td>
+                    <td style="text-align:center;"><button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" onclick="taxPrintHist(${i})">PDF</button></td>
+                </tr>`).join('');
+            }catch(e){ body.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:16px;color:#dc2626;">이력 로드 실패</td></tr>`; }
+        };
+        window.taxPrintHist=function(i){ const r=window.taxHistoryRows[i]; if(!r) return; const p=r.payloadObj||{}; taxPrintInvoice({ supplier:p.supplier||{name:r.supplierName,bizNo:r.supplierBizNo}, recipient:p.recipient||{name:r.recipientName,bizNo:r.recipientBizNo}, month:r.batchMonth||'', supplyAmount:r.supplyAmount, taxAmount:r.taxAmount, totalAmount:r.totalAmount, invoiceNo:r.invoiceNo, writeDate:(p.writeDate||'') }); };
+        // 세금계산서 PDF = 인쇄용 HTML 새 창 → '인쇄/PDF로 저장'(한글 폰트 문제 없음)
+        function taxPrintInvoice(o){
+            const sup=o.supplier||{}, rec=o.recipient||{};
+            const bizFmt=s=>{ s=taxDigits(s); return s.length===10?(s.slice(0,3)+'-'+s.slice(3,5)+'-'+s.slice(5)):s; };
+            const w=window.open('','tax_pdf','width=840,height=1000'); if(!w){ showToast('팝업 차단을 해제하세요.'); return; }
+            const mock=o.invoiceNo && String(o.invoiceNo).indexOf('MOCK')===0;
+            w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>세금계산서</title>'
+                +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;padding:26px;color:#111;}h1{text-align:center;font-size:22px;margin:0 0 4px;}.sub{text-align:center;color:#666;font-size:12px;margin-bottom:16px;}table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;}th,td{border:1px solid #333;padding:7px 9px;}th{background:#f1f5f9;}.r{text-align:right;}.amt{font-size:16px;font-weight:900;}.no{text-align:center;color:#666;font-size:11px;}@media print{.noprint{display:none;}}</style></head><body>'
+                +'<h1>전자세금계산서</h1><div class="sub">'+(o.invoiceNo?('관리번호: '+taxEscH(o.invoiceNo)):'')+' · 작성일자 '+taxEscH(o.writeDate||o.month||'')+'</div>'
+                +'<table><tr><th style="width:15%;">구분</th><th>공급자</th><th>공급받는자</th></tr>'
+                +'<tr><th>상호</th><td>'+taxEscH(sup.name||'')+'</td><td>'+taxEscH(rec.name||'')+'</td></tr>'
+                +'<tr><th>사업자번호</th><td>'+bizFmt(sup.bizNo)+'</td><td>'+bizFmt(rec.bizNo)+'</td></tr>'
+                +'<tr><th>대표자</th><td>'+taxEscH(sup.ceoName||'')+'</td><td>'+taxEscH(rec.ceoName||'')+'</td></tr>'
+                +'<tr><th>주소</th><td>'+taxEscH(sup.address||'')+'</td><td>'+taxEscH(rec.address||'')+'</td></tr>'
+                +'<tr><th>업태/종목</th><td>'+taxEscH((sup.bizType||'')+' / '+(sup.bizClass||''))+'</td><td>'+taxEscH((rec.bizType||'')+' / '+(rec.bizClass||''))+'</td></tr></table>'
+                +'<table><tr><th>품목</th><th class="r">공급가액</th><th class="r">세액</th><th class="r">합계</th></tr>'
+                +'<tr><td>'+taxEscH((o.month||'')+' 플랫폼 이용 수수료')+'</td><td class="r">'+taxFmt(o.supplyAmount)+'</td><td class="r">'+taxFmt(o.taxAmount)+'</td><td class="r amt">'+taxFmt(o.totalAmount)+'</td></tr></table>'
+                +'<p class="no">본 세금계산서는 Earth 정산 시스템에서 발행되었습니다.'+(mock?' (테스트 발행 · 국세청 미전송)':'')+'</p>'
+                +'<div class="noprint" style="text-align:center;margin-top:18px;"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;font-weight:700;background:#2563eb;color:#fff;border:0;border-radius:8px;cursor:pointer;">PDF로 저장 / 인쇄</button></div>'
+                +'</body></html>');
+            w.document.close();
+        }
+
         function switchTab(id) {
             window.currentMarketFilter = null; // 상점 탭 이동시 필터 초기화
             window.currentMarketFilterStore = null;
@@ -2604,6 +2780,7 @@
             }
             if(id === 'my-store') { loadMyStore(); loadMyBrandStores(); }
             if(id === 'sales-mgmt') { loadMySalesOrders(); }
+            if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
             if(id === 'my-purchases') { loadMyPurchases(); }
             if(id === 'history') { loadHistory(); loadIncomingRefunds(); }
             if(id === 'wallet' && currentUser) { updateUserBalance(); if(isAdmin) loadAdminActions(); }
