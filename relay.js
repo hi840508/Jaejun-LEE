@@ -120,6 +120,7 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, storeId TEXT, type TEXT, name TEXT, description TEXT, price_stream INTEGER DEFAULT 0, price_original INTEGER DEFAULT 0, stream_time INTEGER DEFAULT 0, stream_unit TEXT DEFAULT 'd', seller TEXT, thumbnail TEXT, encryptedPayload TEXT, compression_ratio INTEGER DEFAULT 0, block_hash TEXT, ecc_signature TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, purchaseType TEXT, rawDate TEXT, date TEXT, refunded INTEGER DEFAULT 0)`);
         db.run(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT, sender TEXT, senderPic TEXT, message TEXT, date TEXT)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_chats_roomId ON chats(roomId)`, () => {});   // ⚡ 채팅 히스토리·활성방 조회 가속
         db.run(`CREATE TABLE IF NOT EXISTS qr_checks (id TEXT PRIMARY KEY, amount INTEGER, issuer TEXT, secretKey TEXT, eccSignature TEXT, is_used INTEGER, date TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, amount INTEGER, date TEXT, rawDate TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS deposits (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name TEXT, sender_name TEXT, amount INTEGER, status TEXT, date TEXT, rawDate TEXT)`);
@@ -199,9 +200,35 @@ function initTables() {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_pay_fee_rate', '2.7')`, () => {});
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_sw_fee', '10000')`, () => {});
         });
+        // 🔐 로그인 세션(토큰) — 자금/민감 엔드포인트의 신원을 요청 본문이 아닌 서버 세션으로 판정
+        db.run(`CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, name TEXT, created INTEGER)`, () => {
+            db.all(`SELECT token, name FROM sessions`, [], (e, rows) => { (rows || []).forEach(r => SESSIONS.set(r.token, { name: r.name })); });
+        });
     });
 }
 initTables();
+
+// 🔐 세션 토큰: 로그인 시 발급, 이후 x-auth-token 헤더로 서버가 사용자 판정(본문 신원 위조 차단)
+const SESSIONS = new Map();   // token -> { name }
+function issueToken(name) {
+    const token = crypto.randomBytes(24).toString('hex');
+    SESSIONS.set(token, { name });
+    db.run(`INSERT INTO sessions (token, name, created) VALUES (?, ?, ?)`, [token, name, Date.now()], () => {});
+    return token;
+}
+function revokeToken(token) { if (token) { SESSIONS.delete(String(token)); db.run(`DELETE FROM sessions WHERE token = ?`, [String(token)], () => {}); } }
+function authUser(req) {
+    const t = req.headers['x-auth-token'] || (req.body && req.body._token) || (req.query && req.query._token);
+    if (!t) return null;
+    const s = SESSIONS.get(String(t));
+    return s ? s.name : null;
+}
+// 자금/민감 엔드포인트 가드: 로그인 필수 + acting user 반환. bodyNameField가 있으면 본문 신원과 토큰 신원 불일치 시 거부.
+function requireUser(req, res) {
+    const me = authUser(req);
+    if (!me) { res.status(401).json({ error: '로그인이 필요합니다. (세션 만료 시 다시 로그인)' }); return null; }
+    return me;
+}
 
 // 🚀 [v8+] Admin 비밀번호 헬퍼 — DB의 settings.admin_password 사용 (초기값 'mars')
 function getAdminPassword(cb) {
@@ -277,7 +304,7 @@ app.post('/api/auth/verify', (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
         if (row) {
             if (row.password === req.body.password) {
-                res.json({ exists: true, user: row, mustChangePassword: !!row.force_pwd_change });
+                res.json({ exists: true, user: row, token: issueToken(row.name), mustChangePassword: !!row.force_pwd_change });
             }
             else res.status(401).json({ exists: true, error: "비밀번호가 불일치합니다." });
         } else res.json({ exists: false });
@@ -297,6 +324,8 @@ app.post('/api/auth/check-id', (req, res) => {
     });
 });
 
+app.post('/api/auth/logout', (req, res) => { revokeToken(req.headers['x-auth-token']); res.json({ success: true }); });
+
 app.post('/api/auth/register', (req, res) => {
     const { name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc } = req.body;
     // 🚀 [v8+] 의료·약무 관련 업종은 자격증 필수 + Admin 승인 대기
@@ -314,14 +343,15 @@ app.post('/api/auth/register', (req, res) => {
             db.run(`INSERT INTO transactions (buyer, seller, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?)`,
                 ['Earth(Root)', name, '신규 가입 정산 한도 축하금', 10000, 'signup_bonus', rawDate, date]);
         }
-        res.json({ 
-            name, password, realname, bank, account, 
-            phone: phone || '', email: email || '', shipping_address: shipping_address || '', 
-            business_type: business_type || 'individual', 
+        res.json({
+            name, password, realname, bank, account,
+            phone: phone || '', email: email || '', shipping_address: shipping_address || '',
+            business_type: business_type || 'individual',
             approval_status: approvalStatus,
-            balance: needsApproval ? 0 : 10000, 
+            balance: needsApproval ? 0 : 10000,
             profilePic: null,
-            needsApproval
+            needsApproval,
+            token: needsApproval ? null : issueToken(name)
         });
     });
 });
@@ -429,7 +459,7 @@ app.post('/api/auth/login-with-otp', (req, res) => {
         // OTP 사용 처리 + 비밀번호 강제 변경 플래그 설정
         db.run(`UPDATE users SET reset_otp_used = 1, force_pwd_change = 1 WHERE name = ?`, [name], (e2) => {
             row.force_pwd_change = 1;
-            res.json({ success: true, user: row, mustChangePassword: true });
+            res.json({ success: true, user: row, token: issueToken(row.name), mustChangePassword: true });
         });
     });
 });
@@ -514,8 +544,13 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
 app.post('/api/deposit/request', (req, res) => { const rawDate = new Date().toISOString(); db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date, rawDate) VALUES (?, ?, ?, '대기', ?, ?)`, [req.body.userName, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR'), rawDate], () => { res.json({ success: true }); }); });
 
 app.post('/api/withdraw/request', (req, res) => {
-    const amount = Number(req.body.amount) || 0; const rawDate = new Date().toISOString();
-    db.serialize(() => { db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.name]); db.run(`INSERT INTO withdrawals (name, amount, status, date, rawDate) VALUES (?, ?, '대기', ?, ?)`, [req.body.name, amount, new Date().toLocaleString('ko-KR'), rawDate], () => res.json({ success: true })); });
+    const meName = requireUser(req, res); if (!meName) return;   // ★신원=토큰
+    const amount = Math.floor(Number(req.body.amount) || 0); const rawDate = new Date().toISOString();
+    if (!(amount > 0)) return res.status(400).json({ error: '출금액을 확인하세요.' });
+    db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [amount, meName, amount], function(e) {
+        if (e || this.changes === 0) return res.status(400).json({ error: '잔액 부족' });
+        db.run(`INSERT INTO withdrawals (name, amount, status, date, rawDate) VALUES (?, ?, '대기', ?, ?)`, [meName, amount, new Date().toLocaleString('ko-KR'), rawDate], () => res.json({ success: true }));
+    });
 });
 
 app.get('/api/admin/actions', (req, res) => {
@@ -533,14 +568,25 @@ app.post('/api/admin/approve', (req, res) => {
 });
 
 app.post('/api/transfer', (req, res) => {
-    const amount = Number(req.body.amount) || 0;
-    db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.sender], (err, sRow) => {
-        if (!sRow || sRow.balance < amount) return res.status(400).json({ error: "원장 자산 잔액 부족" });
+    const sender = requireUser(req, res); if (!sender) return;   // ★신원=토큰(본문 sender 무시) → 타인 명의 송금 차단
+    const amount = Math.floor(Number(req.body.amount) || 0);
+    const receiver = String(req.body.receiver || '');
+    // ★보안★ 음수/0 금지(음수 송금=역방향 탈취 방지), 자기송금 금지, 수신자 존재 확인
+    if (!(amount > 0)) return res.status(400).json({ error: "송금액은 1 이상이어야 합니다." });
+    if (!sender || !receiver) return res.status(400).json({ error: "보내는/받는 사람이 필요합니다." });
+    if (sender === receiver) return res.status(400).json({ error: "자기 자신에게는 송금할 수 없습니다." });
+    db.get(`SELECT name FROM users WHERE name = ?`, [receiver], (er, rRow) => {
+        if (!rRow) return res.status(404).json({ error: "받는 사람 계정이 없습니다." });
         const rawDate = new Date().toISOString(); const date = new Date().toLocaleString('ko-KR');
         db.serialize(() => {
-            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.sender]);
-            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.receiver]);
-            db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate) VALUES (?, ?, ?, ?, ?)`, [req.body.sender, req.body.receiver, amount, date, rawDate], () => res.json({ success: true }));
+            db.run('BEGIN IMMEDIATE');
+            // 잔액 가드 원자화: balance >= amount 조건부 차감 → changes=0이면 잔액부족으로 롤백
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [amount, sender, amount], function(e2) {
+                if (e2 || this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: "잔액 부족 또는 계정 오류" }); }
+                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, receiver]);
+                db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate) VALUES (?, ?, ?, ?, ?)`, [sender, receiver, amount, date, rawDate]);
+                db.run('COMMIT', () => res.json({ success: true }));
+            });
         });
     });
 });
@@ -556,7 +602,7 @@ app.get('/api/cloud/usage/:name', (req, res) => {
     });
 });
 app.post('/api/cloud/purchase', (req, res) => {
-    const name = req.body.name;
+    const name = requireUser(req, res); if (!name) return;   // ★신원=토큰
     const gb = Number(req.body.gb) || 0;
     if (!name || gb <= 0) return res.status(400).json({ error: '구매할 용량(GB)을 확인하세요' });
     const price = Math.round(gb * CLOUD_PRICE_PER_GB);
@@ -609,6 +655,10 @@ app.post('/api/store/update', (req, res) => {
         if(req.body.description !== undefined) { fields.push('description = ?'); values.push(req.body.description); }
         if(req.body.logo !== undefined && req.body.logo) { fields.push('logo = ?'); values.push(req.body.logo); }
         if(req.body.category !== undefined) { fields.push('category = ?'); values.push(req.body.category); }
+        // 🧾 브랜드 편집: 상호(name)·구분(bizType)·번호(bizNo)도 수정 가능
+        if(req.body.name !== undefined && String(req.body.name).trim()) { fields.push('name = ?'); values.push(String(req.body.name).trim()); }
+        if(req.body.bizType !== undefined) { fields.push('bizType = ?'); values.push(req.body.bizType === 'individual' ? 'individual' : 'business'); }
+        if(req.body.bizNo !== undefined) { fields.push('bizNo = ?'); values.push(String(req.body.bizNo || '').replace(/\D/g, '')); }
         if(fields.length === 0) return res.json({ success: true });
         values.push(req.body.id);
         db.run(`UPDATE stores SET ${fields.join(', ')} WHERE id = ?`, values, () => res.json({ success: true }));
@@ -703,7 +753,8 @@ app.post('/api/product/submit-order', (req, res) => {
 
 // 🚀 [v6] 판매자가 주문 승인 → 결제 처리 + status='approved'
 app.post('/api/order/approve', (req, res) => {
-    const { orderId, seller } = req.body;
+    const seller = requireUser(req, res); if (!seller) return;   // ★신원=토큰
+    const { orderId } = req.body;
     db.get(`SELECT * FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
         if(err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if(ord.seller !== seller) return res.status(403).json({ error: '본인에게 온 주문만 승인할 수 있습니다.' });
@@ -711,32 +762,26 @@ app.post('/api/order/approve', (req, res) => {
         if(ord.status === 'rejected' || ord.status === 'cancelled') return res.status(400).json({ error: '취소/거절된 주문은 승인 불가' });
 
         const amount = ord.amount || 0;
-        // 잔액 확인 + 이동
-        db.get(`SELECT balance FROM users WHERE name = ?`, [ord.buyer], (e2, bRow) => {
-            if(!bRow || bRow.balance < amount) return res.status(400).json({ error: '구매자 잔액 부족' });
-            db.serialize(() => {
-                db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, ord.buyer]);
-                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, ord.seller]);
-                const productName = ord.productId; // 정확한 이름은 별도 조회
-                db.get(`SELECT name FROM products WHERE id = ?`, [ord.productId], (e3, pRow) => {
-                    const pName = (pRow && pRow.name) || productName;
-                    const date = new Date().toLocaleString('ko-KR');
-                    db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, 'original', ?, ?)`,
-                        [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date],
-                        function() {
-                            const txId = this.lastID;
-                            db.run(`UPDATE product_orders SET status = 'approved', txId = ? WHERE id = ?`, [txId, orderId]);
-                            res.json({ success: true, txId, amount });
-                        });
+        // ★배민식 카드수령 모델★: 승인 = 주문확정 + 매출기록만. 구매자 Earth 잔액을 차감/이체하지 않는다(결제는 Admin이 카드로 수령,
+        //  업체 대금은 월정산으로 지급). 기존엔 구매자 잔액을 요구해 승인이 막히고 거래기록·구매내역이 비던 문제를 해결.
+        db.get(`SELECT name FROM products WHERE id = ?`, [ord.productId], (e3, pRow) => {
+            const pName = (pRow && pRow.name) || ord.productId;
+            const date = new Date().toLocaleString('ko-KR');
+            db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, 'original', ?, ?)`,
+                [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date],
+                function(ie) {
+                    if (ie) return res.status(500).json({ error: ie.message });
+                    const txId = this.lastID;
+                    db.run(`UPDATE product_orders SET status = 'approved', txId = ? WHERE id = ?`, [txId, orderId], () => res.json({ success: true, txId, amount }));
                 });
-            });
         });
     });
 });
 
 // 🚀 [v6] 판매자가 주문 거절
 app.post('/api/order/reject', (req, res) => {
-    const { orderId, seller, reason } = req.body;
+    const seller = requireUser(req, res); if (!seller) return;   // ★신원=토큰
+    const { orderId, reason } = req.body;
     db.get(`SELECT seller FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
         if(err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if(ord.seller !== seller) return res.status(403).json({ error: '본인에게 온 주문만 거절할 수 있습니다.' });
@@ -746,7 +791,8 @@ app.post('/api/order/reject', (req, res) => {
 
 // 🚀 [v6] 구매자가 자신의 pending 주문 취소
 app.post('/api/order/cancel', (req, res) => {
-    const { orderId, buyer } = req.body;
+    const buyer = requireUser(req, res); if (!buyer) return;   // ★신원=토큰
+    const { orderId } = req.body;
     db.get(`SELECT buyer, status FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
         if(err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if(ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 취소 가능' });
@@ -758,18 +804,20 @@ app.post('/api/order/cancel', (req, res) => {
 // 🚚 판매자: 주문 상태 변경 (배송 등록/배송 완료/환불 수락). 배송 등록은 선택(송장 없이도 배송중 가능).
 //  status: 'shipping'(배송중) | 'delivered'(배송완료) | 'refunded'(환불수락)
 app.post('/api/order/status', (req, res) => {
-    const { orderId, seller, status, tracking } = req.body || {};
+    const seller = requireUser(req, res); if (!seller) return;   // ★신원=토큰
+    const { orderId, status, tracking } = req.body || {};
     const allowed = ['shipping', 'delivered', 'refunded'];
     if (!allowed.includes(status)) return res.status(400).json({ error: '허용되지 않은 상태' });
     db.get(`SELECT * FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
         if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if (ord.seller !== seller) return res.status(403).json({ error: '본인 판매 주문만 변경 가능' });
         if (status === 'refunded') {
-            // 환불 수락: 구매자에게 결제액 환불(잔액 반환) + 상태 변경
-            const amt = Number(ord.amount) || 0;
+            // ★환불 수락(배민식)★: 잔액 이동 없이 매출 취소 표시. 가드로 중복환불·미결제환불 차단.
+            if (ord.status === 'refunded') return res.status(400).json({ error: '이미 환불 처리된 주문입니다.' });
+            if (!['approved', 'shipping', 'delivered'].includes(ord.status)) return res.status(400).json({ error: '승인/배송 상태의 주문만 환불할 수 있습니다.' });
             db.serialize(() => {
-                if (amt > 0 && ord.buyer) db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amt, ord.buyer]);
-                db.run(`UPDATE product_orders SET status = 'refunded' WHERE id = ?`, [orderId], () => res.json({ success: true, refunded: amt }));
+                if (ord.txId) db.run(`UPDATE transactions SET refunded = 1 WHERE id = ?`, [ord.txId]);   // 매출 취소(구매내역·정산에서 제외)
+                db.run(`UPDATE product_orders SET status = 'refunded' WHERE id = ?`, [orderId], () => res.json({ success: true }));
             });
         } else {
             db.run(`UPDATE product_orders SET status = ?, tracking = ? WHERE id = ?`, [status, tracking || ord.tracking || null, orderId], () => res.json({ success: true }));
@@ -976,20 +1024,22 @@ app.post('/api/admin/store/delete', (req, res) => {
 app.post('/api/product/delete', (req, res) => { db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); });
 
 app.post('/api/buy', (req, res) => {
+    const buyer = requireUser(req, res); if (!buyer) return;   // ★신원=토큰
     const amount = Number(req.body.amount) || 0; const pType = req.body.purchaseType; const rawDate = new Date().toISOString();
-    db.get(`SELECT balance FROM users WHERE name = ?`, [req.body.buyer], (err, row) => {
+    db.get(`SELECT balance FROM users WHERE name = ?`, [buyer], (err, row) => {
         if (!row || row.balance < amount) return res.status(400).json({ error: "잔액 부족" });
         db.serialize(() => {
-            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, req.body.buyer]);
+            db.run(`UPDATE users SET balance = balance - ? WHERE name = ?`, [amount, buyer]);
             db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, req.body.seller]);
-            db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [req.body.buyer, req.body.seller, req.body.productId, req.body.productName, amount, pType, rawDate, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
+            db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [buyer, req.body.seller, req.body.productId, req.body.productName, amount, pType, rawDate, new Date().toLocaleString('ko-KR')], () => res.json({ success: true }));
         });
     });
 });
 
 // 🚀 장바구니 일괄 결제 — 한 번에 결제하되 거래내역에는 개별 상품 단위로 기록 (환불 가능)
 app.post('/api/buy/cart', (req, res) => {
-    const { buyer, items } = req.body; // items: [{productId, productName, seller, amount, purchaseType}]
+    const buyer = requireUser(req, res); if (!buyer) return;   // ★신원=토큰
+    const { items } = req.body; // items: [{productId, productName, seller, amount, purchaseType}]
     if(!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "장바구니가 비어있습니다." });
     const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
     db.get(`SELECT balance FROM users WHERE name = ?`, [buyer], (err, row) => {
@@ -1062,7 +1112,14 @@ app.post('/api/favorite/toggle', (req, res) => {
     });
 });
 app.get('/api/favorites/:userName', (req, res) => { db.all(`SELECT targetStore FROM favorite_stores WHERE userName = ?`, [req.params.userName], (err, rows) => res.json(rows ? rows.map(r => r.targetStore) : [])); });
-app.get('/api/chat/:roomId', (req, res) => { db.all(`SELECT * FROM chats WHERE roomId = ? ORDER BY id ASC`, [req.params.roomId], (err, rows) => res.json(rows || [])); });
+// ⚡ 채팅 히스토리: 최근 N개만 반환(무제한 SELECT + base64 첨부 전송으로 인한 로딩 지연 해결). before 커서로 이전 대화 더보기.
+app.get('/api/chat/:roomId', (req, res) => {
+    const lim = Math.min(Number(req.query.limit) || 40, 100);
+    const before = req.query.before ? Number(req.query.before) : null;
+    const where = before ? `roomId = ? AND id < ?` : `roomId = ?`;
+    const params = before ? [req.params.roomId, before] : [req.params.roomId];
+    db.all(`SELECT * FROM (SELECT id, roomId, sender, senderPic, message, date FROM chats WHERE ${where} ORDER BY id DESC LIMIT ${lim}) ORDER BY id ASC`, params, (err, rows) => res.json(rows || []));
+});
 
 // 🚀 [v5] 내 구매 목록 (구매자 관점, 상품 메타 + 환불 상태 JOIN)
 app.get('/api/purchases/:buyer', async (req, res) => {
@@ -1087,13 +1144,15 @@ app.get('/api/purchases/:buyer', async (req, res) => {
             (e, rows) => r(rows || [])
         ));
 
-        // 각 구매에 연관된 주문서(product_orders) 조회
+        // 각 구매에 연관된 주문서(product_orders) — ★N+1 제거★: 한 번에 조회 후 productId별 최신 주문 매핑(구매내역 로딩 가속)
+        const orders = await new Promise(r => db.all(
+            `SELECT id, productId, bundle_html, memo, form_data, created_at FROM product_orders WHERE buyer = ? ORDER BY id DESC`,
+            [buyer], (e, rows) => r(rows || [])
+        ));
+        const orderByPid = {};
+        for(const o of orders) { if(!orderByPid[o.productId]) orderByPid[o.productId] = o; }   // id DESC → 첫 항목이 최신
         for(let t of txs) {
-            const order = await new Promise(r => db.get(
-                `SELECT id, bundle_html, memo, form_data, created_at FROM product_orders WHERE buyer = ? AND productId = ? ORDER BY id DESC LIMIT 1`,
-                [buyer, t.productId],
-                (e, row) => r(row || null)
-            ));
+            const order = orderByPid[t.productId];
             if(order) {
                 t.orderId = order.id;
                 t.orderMemo = order.memo;
@@ -1244,7 +1303,8 @@ app.post('/api/refund/decide', (req, res) => {
 
 // 🚀 레거시 호환: /api/refund 요청을 새 요청 흐름으로 라우팅 (즉시 처리가 아닌 승인 대기 생성)
 app.post('/api/refund', (req, res) => {
-    req.url = '/api/refund/request'; app._router.handle(req, res);
+    // Express 5에서 app._router.handle 제거됨 → 307 리다이렉트로 새 흐름 라우팅(본문/메서드 보존)
+    res.redirect(307, '/api/refund/request');
 });
 
 // ============================================================================================
