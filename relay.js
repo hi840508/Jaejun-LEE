@@ -179,6 +179,22 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`, () => {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', 'mars')`, () => {});
         });
+
+        // 🧾 전자세금계산서 이력 + 정산 기본 변수(모두 settings로 변경 가능): VAT율 10%, 결제수수료율 2.7%, SW 월사용료 10000원
+        db.run(`CREATE TABLE IF NOT EXISTS tax_invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transactionId INTEGER,
+            seller TEXT, buyer TEXT, invoiceNo TEXT,
+            issueStatus TEXT DEFAULT 'draft', ntsStatus TEXT DEFAULT 'not_sent',
+            supplierBizNo TEXT, supplierName TEXT, recipientBizNo TEXT, recipientName TEXT,
+            supplyAmount INTEGER DEFAULT 0, taxAmount INTEGER DEFAULT 0, totalAmount INTEGER DEFAULT 0,
+            invoiceType TEXT DEFAULT 'commission', batchMonth TEXT,
+            payload TEXT, paxbillResponse TEXT, created_at TEXT, updated_at TEXT
+        )`, () => {
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_vat_rate', '10')`, () => {});
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_pay_fee_rate', '2.7')`, () => {});
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_sw_fee', '10000')`, () => {});
+        });
     });
 }
 initTables();
@@ -1201,6 +1217,169 @@ app.post('/api/refund/decide', (req, res) => {
 // 🚀 레거시 호환: /api/refund 요청을 새 요청 흐름으로 라우팅 (즉시 처리가 아닌 승인 대기 생성)
 app.post('/api/refund', (req, res) => {
     req.url = '/api/refund/request'; app._router.handle(req, res);
+});
+
+// ============================================================================================
+// 🧾 전자세금계산서 + 정산(배민식: Admin 단독 일괄) — 팍스빌 ASP 어댑터(기본 Mock, env로 live 전환)
+//  정산 공식: 매출 - 결제수수료(2.7%) - SW월사용료(10000) - 그 수수료합의 VAT(10%). 세 값은 settings로 변경 가능.
+//  국세청 전송 API(팍스빌)가 없으면 Mock으로 발행 기록만 남기고 프런트에서 PDF 출력. 계약 후 env 넣으면 live.
+// ============================================================================================
+function _digits(v){ return String(v == null ? '' : v).replace(/\D/g, ''); }
+function _n(v){ return Math.max(0, Math.round(Number(v) || 0)); }
+function _taxNow(){ return new Date().toISOString(); }
+function _isLivePaxbill(){ return String(process.env.PAXBILL_MODE||'').toLowerCase()==='live' && !!process.env.PAXBILL_API_BASE && !!process.env.PAXBILL_API_KEY; }
+function _paxbillStatus(){ return { mode: _isLivePaxbill()?'live':'mock', baseSet: !!process.env.PAXBILL_API_BASE, issuePath: process.env.PAXBILL_ISSUE_PATH||'/tax-invoices/issue-and-send', statusPath: process.env.PAXBILL_STATUS_PATH||'/tax-invoices/status' }; }
+async function _postToPaxbill(pathKey, payload){
+    const st = _paxbillStatus();
+    if (st.mode !== 'live') {
+        const id = 'MOCK-' + Date.now().toString(36).toUpperCase() + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+        return { ok:true, mock:true, invoiceNo:id, issueStatus:'issued', ntsStatus:'nts_sent_mock', message:'테스트 모드: 실제 팍스빌/국세청 전송은 수행하지 않았습니다.' };
+    }
+    if (typeof fetch !== 'function') throw new Error('Node 18+ 또는 node-fetch 필요(fetch 없음)');
+    const path = pathKey === 'status' ? st.statusPath : st.issuePath;
+    const base = String(process.env.PAXBILL_API_BASE).replace(/\/$/, '');
+    const url = base + (path.startsWith('/') ? path : '/' + path);
+    const r = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', 'Accept':'application/json', 'Authorization':`Bearer ${process.env.PAXBILL_API_KEY}`, 'X-Paxbill-Secret':process.env.PAXBILL_SECRET||'' }, body: JSON.stringify(payload) });
+    const txt = await r.text(); let data; try { data = JSON.parse(txt); } catch(_) { data = { raw: txt }; }
+    if (!r.ok) throw new Error('팍스빌 API 오류: ' + ((data && (data.message||data.error||data.raw)) || ('HTTP ' + r.status)));
+    return Object.assign({ ok:true, mock:false }, data || {});
+}
+// 정산 변수 조회(기본값 포함)
+function _taxConfig(cb){
+    db.all(`SELECT key,value FROM settings WHERE key IN ('tax_vat_rate','tax_pay_fee_rate','tax_sw_fee')`, [], (e, rows) => {
+        const m = {}; (rows||[]).forEach(r => m[r.key] = r.value);
+        cb({ vatRate: parseFloat(m.tax_vat_rate)||10, payFeeRate: parseFloat(m.tax_pay_fee_rate)||2.7, swFee: parseInt(m.tax_sw_fee)||10000 });
+    });
+}
+// 매출 → 정산 내역(수수료·VAT·지급액) 계산
+function _settleCalc(salesTotal, cfg){
+    salesTotal = _n(salesTotal);
+    const payFee = Math.round(salesTotal * (cfg.payFeeRate/100));
+    const swFee = _n(cfg.swFee);
+    const feeSubtotal = payFee + swFee;
+    const vatOnFees = Math.round(feeSubtotal * (cfg.vatRate/100));
+    const commissionTotal = feeSubtotal + vatOnFees;   // 세금계산서 발행액(공급가=feeSubtotal, 세액=vatOnFees)
+    const payout = salesTotal - commissionTotal;        // 업체 지급액
+    return { salesTotal, payFee, swFee, feeSubtotal, vatOnFees, commissionTotal, payout };
+}
+const _salesWhere = `t.productId IS NOT NULL AND IFNULL(t.refunded,0)=0 AND t.purchaseType IS NOT NULL AND t.purchaseType NOT IN ('refund','signup_bonus')`;
+
+// 팍스빌 연동 모드(live/mock)
+app.get('/api/tax/config/status', (req, res) => { res.json(_paxbillStatus()); });
+// 정산 변수 조회/변경(Admin)
+app.get('/api/tax/config', (req, res) => { _taxConfig(cfg => res.json(cfg)); });
+app.post('/api/tax/config', (req, res) => {
+    verifyAdminSecret(req.body.adminSecret, (ok) => {
+        if (!ok) return res.status(403).json({ error: '관리자 인증 실패' });
+        const map = { tax_vat_rate: req.body.vatRate, tax_pay_fee_rate: req.body.payFeeRate, tax_sw_fee: req.body.swFee };
+        const entries = Object.entries(map).filter(([k, v]) => v != null && v !== '');
+        if (!entries.length) return _taxConfig(cfg => res.json({ success: true, config: cfg }));
+        let n = 0; entries.forEach(([k, v]) => db.run(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [k, String(v)], () => { if (++n === entries.length) _taxConfig(cfg => res.json({ success: true, config: cfg })); }));
+    });
+});
+// Admin: 전체 업체 판매내역(월 선택)
+app.get('/api/admin/tax/sales', (req, res) => {
+    const month = String(req.query.month || '').slice(0, 7);
+    let where = _salesWhere; const params = [];
+    if (month) { where += ` AND substr(IFNULL(t.rawDate,t.date),1,7)=?`; params.push(month); }
+    db.all(`SELECT t.id txId, t.seller, t.buyer, t.productName, t.amount, t.date, t.rawDate,
+                   u.realname buyerRealname, u.email buyerEmail
+            FROM transactions t LEFT JOIN users u ON t.buyer=u.name
+            WHERE ${where} ORDER BY t.id DESC LIMIT 1000`, params, (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json(rows || []));
+});
+// Admin: 업체별 정산(매출 합계 + 수수료/VAT/지급액)
+app.get('/api/admin/tax/settlement', (req, res) => {
+    const month = String(req.query.month || '').slice(0, 7);
+    _taxConfig((cfg) => {
+        let where = _salesWhere; const params = [];
+        if (month) { where += ` AND substr(IFNULL(t.rawDate,t.date),1,7)=?`; params.push(month); }
+        db.all(`SELECT t.seller, COUNT(*) cnt, SUM(t.amount) salesTotal FROM transactions t WHERE ${where} GROUP BY t.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            const vendors = (rows || []).map(r => Object.assign({ seller: r.seller, count: r.cnt }, _settleCalc(r.salesTotal, cfg)));
+            res.json({ month, config: cfg, vendors });
+        });
+    });
+});
+// Admin: 발행 이력 전체(월/업체 필터)
+app.get('/api/admin/tax/invoices', (req, res) => {
+    const month = String(req.query.month || '').slice(0, 7);
+    let where = '1=1'; const params = [];
+    if (month) { where += ` AND batchMonth=?`; params.push(month); }
+    db.all(`SELECT * FROM tax_invoices WHERE ${where} ORDER BY id DESC LIMIT 500`, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json((rows || []).map(r => { let p = {}; try { p = JSON.parse(r.payload || '{}'); } catch(_){} return Object.assign({}, r, { payloadObj: p }); }));
+    });
+});
+// 세금계산서 1건 발행(Admin이 특정 업체 커미션 세금계산서 발행). transactionId 없음(월 정산 커미션).
+async function _issueOne(body){
+    const b = body || {};
+    const seller = String(b.seller || '').trim();            // 공급받는자(업체)
+    const supplier = b.supplier || {};                        // 공급자(플랫폼/Admin)
+    const recipient = b.recipient || { name: seller };        // 공급받는자(업체)
+    const item = b.item || {};
+    const supplyAmount = _n(b.supplyAmount != null ? b.supplyAmount : item.supplyAmount);
+    let taxAmount = _n(b.taxAmount != null ? b.taxAmount : item.taxAmount);
+    let totalAmount = _n(b.totalAmount != null ? b.totalAmount : (supplyAmount + taxAmount));
+    if (!totalAmount) totalAmount = supplyAmount + taxAmount;
+    if (!supplier.name || !_digits(supplier.bizNo)) throw new Error('공급자(플랫폼) 상호·사업자번호를 입력하세요.');
+    if (totalAmount <= 0) throw new Error('발행 금액이 0원입니다.');
+    const payload = {
+        documentType: 'tax_invoice', issueType: 'normal', purposeType: b.purposeType || 'receipt', taxType: 'taxable',
+        writeDate: b.writeDate || new Date().toISOString().slice(0, 10), supplyDate: b.supplyDate || null, sendToNts: true,
+        seller, buyer: b.buyer || '', batchMonth: b.batchMonth || null,
+        supplier: { bizNo:_digits(supplier.bizNo), name:String(supplier.name||''), ceoName:String(supplier.ceoName||''), address:String(supplier.address||''), bizType:String(supplier.bizType||''), bizClass:String(supplier.bizClass||''), email:String(supplier.email||''), phone:String(supplier.phone||'') },
+        recipient: { bizNo:_digits(recipient.bizNo), name:String(recipient.name||seller), ceoName:String(recipient.ceoName||''), address:String(recipient.address||''), bizType:String(recipient.bizType||''), bizClass:String(recipient.bizClass||''), email:String(recipient.email||''), phone:String(recipient.phone||'') },
+        items: [{ name:String(item.name||'플랫폼 이용 수수료'), spec:String(item.spec||''), qty:Number(item.qty)||1, supplyAmount, taxAmount, totalAmount, remark:String(item.remark||'') }],
+        amounts: { supplyAmount, taxAmount, totalAmount }, memo: String(b.memo || '')
+    };
+    const pax = await _postToPaxbill('issue', payload);
+    const now = _taxNow();
+    const invoiceNo = pax.invoiceNo || ('TAX-' + Date.now());
+    const issueStatus = pax.issueStatus || 'issued';
+    const ntsStatus = pax.ntsStatus || (pax.mock ? 'nts_sent_mock' : 'nts_requested');
+    const id = await new Promise((resolve, reject) => {
+        db.run(`INSERT INTO tax_invoices (transactionId, seller, buyer, invoiceNo, issueStatus, ntsStatus, supplierBizNo, supplierName, recipientBizNo, recipientName, supplyAmount, taxAmount, totalAmount, invoiceType, batchMonth, payload, paxbillResponse, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            [b.transactionId || null, seller, b.buyer || '', invoiceNo, issueStatus, ntsStatus, payload.supplier.bizNo, payload.supplier.name, payload.recipient.bizNo, payload.recipient.name, supplyAmount, taxAmount, totalAmount, b.invoiceType || 'commission', b.batchMonth || null, JSON.stringify(payload), JSON.stringify(pax), now, now],
+            function(err){ if (err) reject(err); else resolve(this.lastID); });
+    });
+    return { id, invoiceNo, issueStatus, ntsStatus, seller, supplyAmount, taxAmount, totalAmount, paxbill: pax };
+}
+app.post('/api/tax/issue', async (req, res) => {
+    try { const out = await _issueOne(req.body); res.json(Object.assign({ success: true }, out)); }
+    catch(e) { res.status(500).json({ error: (e && e.message) || '발행 실패' }); }
+});
+// Admin: 월 일괄 발행 — vendors:[{seller, recipient?, supplyAmount, taxAmount, totalAmount, item?}]
+app.post('/api/tax/issue-bulk', async (req, res) => {
+    const b = req.body || {};
+    const vendors = Array.isArray(b.vendors) ? b.vendors : [];
+    const supplier = b.supplier || {};
+    if (!supplier.name || !_digits(supplier.bizNo)) return res.status(400).json({ error: '공급자(플랫폼) 상호·사업자번호를 입력하세요.' });
+    if (!vendors.length) return res.status(400).json({ error: '발행 대상 업체가 없습니다.' });
+    const results = [];
+    for (const v of vendors) {
+        try {
+            const out = await _issueOne({ seller: v.seller, buyer: v.seller, supplier, recipient: v.recipient || { name: v.seller }, item: v.item || { name: (b.batchMonth || '') + ' 플랫폼 이용 수수료' }, supplyAmount: v.supplyAmount, taxAmount: v.taxAmount, totalAmount: v.totalAmount, writeDate: b.writeDate, batchMonth: b.batchMonth, invoiceType: 'commission', memo: b.memo });
+            results.push({ seller: v.seller, ok: true, invoiceNo: out.invoiceNo, id: out.id });
+        } catch(e) { results.push({ seller: v.seller, ok: false, error: (e && e.message) || '실패' }); }
+    }
+    res.json({ success: true, count: results.filter(r => r.ok).length, total: results.length, results });
+});
+// 상태 새로고침(국세청 전송 결과 조회 — live 시)
+app.post('/api/tax/invoices/:id/refresh', async (req, res) => {
+    const id = Number(req.params.id);
+    db.get(`SELECT * FROM tax_invoices WHERE id = ?`, [id], async (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) return res.status(404).json({ error: '전자세금계산서를 찾을 수 없습니다.' });
+        try {
+            let payload = {}; try { payload = JSON.parse(row.payload || '{}'); } catch(_){}
+            const pax = await _postToPaxbill('status', { id: row.id, invoiceNo: row.invoiceNo, payload });
+            const now = _taxNow();
+            db.run(`UPDATE tax_invoices SET issueStatus=?, ntsStatus=?, paxbillResponse=?, updated_at=? WHERE id=?`,
+                [pax.issueStatus || row.issueStatus, pax.ntsStatus || row.ntsStatus, JSON.stringify(pax), now, id],
+                (e2) => e2 ? res.status(500).json({ error: e2.message }) : res.json({ success: true, id, issueStatus: pax.issueStatus || row.issueStatus, ntsStatus: pax.ntsStatus || row.ntsStatus }));
+        } catch(e) { res.status(500).json({ error: (e && e.message) || '상태 조회 실패' }); }
+    });
 });
 
 io.on('connection', (socket) => {
