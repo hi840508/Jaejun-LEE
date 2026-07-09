@@ -1974,6 +1974,24 @@
         })();
         console.log('[Earth] API_URL =', API_URL);
 
+        // 🔐 세션 토큰: 로그인 시 저장 → 모든 Earth API 요청에 x-auth-token 헤더 자동 첨부(자금 엔드포인트가 본문 신원 대신 토큰으로 사용자 판정 → 위조/탈취 차단).
+        //  토큰은 서버 sessions 테이블에 영속되어 자동로그인/서버재시작 후에도 유효.
+        window.EARTH_TOKEN = localStorage.getItem('earth_token') || '';
+        window.setEarthToken = function(tok){ window.EARTH_TOKEN = tok || ''; if(tok) localStorage.setItem('earth_token', tok); else localStorage.removeItem('earth_token'); };
+        (function(){
+            const _origFetch = window.fetch.bind(window);
+            window.fetch = function(input, opts){
+                try {
+                    const u = (typeof input === 'string') ? input : (input && input.url) || '';
+                    if (window.EARTH_TOKEN && (u.indexOf(API_URL) === 0 || u.indexOf('/api/') === 0)) {
+                        opts = Object.assign({}, opts);
+                        opts.headers = Object.assign({}, (opts && opts.headers) || {}, { 'x-auth-token': window.EARTH_TOKEN });
+                    }
+                } catch(_){}
+                return _origFetch(input, opts);
+            };
+        })();
+
         // 🚀 [v7p+] 서버 health-check + 진단 (Failed to fetch 발생 시 즉시 알림)
         (async function pingServer() {
             try {
@@ -2087,6 +2105,7 @@
                     if(data.user.approval_status === 'rejected') {
                         return showToast("가입 신청이 반려되었습니다. 관리자에게 문의해 주세요.");
                     }
+                    setEarthToken(data.token);   // 🔐 세션 토큰 저장
                     if(document.getElementById('auto-login-check').checked) localStorage.setItem('earth_auto_login', JSON.stringify(data.user));
                     loginSuccess(data.user);
                 } else if(data.exists === true && !res.ok) {
@@ -2137,6 +2156,7 @@
                         toggleLoginMode('login');
                         document.getElementById('login-name').value = name;
                     } else {
+                        setEarthToken(data.token);   // 🔐 세션 토큰 저장
                         loginSuccess(data);
                     }
                 } else {
@@ -2195,7 +2215,7 @@
         // ★로그인 Earth 일원화★: 이 Earth 페이지가 Earth 앱 iframe 안에 있으면, 로그인/로그아웃 상태를 부모창에 알려
         //  앱(RC_USER)이 Earth 세션을 단일 원천으로 그대로 따라가게 한다.
         function _postAuthToParent(user) {
-            try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'earth_auth', user: user || null }, '*'); } catch (e) {}
+            try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'earth_auth', user: user || null, token: user ? (window.EARTH_TOKEN || '') : '' }, '*'); } catch (e) {}
         }
         // 부모(Earth 앱)에서 로그아웃 명령 수신 → Earth도 로그아웃
         window.addEventListener('message', function(ev){
@@ -2210,7 +2230,7 @@
             try { window.open(url, '_blank'); } catch(e){ try{ location.href = url; }catch(_){} }
         };
 
-        function logout() { _postAuthToParent(null); localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
+        function logout() { _postAuthToParent(null); try{ if(window.EARTH_TOKEN) fetch(`${API_URL}/api/auth/logout`, { method:'POST', headers:{ 'x-auth-token': window.EARTH_TOKEN } }); }catch(_){} setEarthToken(''); localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
 
         function loginSuccess(data) {
             currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
@@ -2563,6 +2583,7 @@
                 closeModal('pwd-recovery-modal');
                 // 비밀번호 강제 변경 모달로 전환
                 window.pendingLoginUser = data.user;
+                window.pendingLoginToken = data.token;   // 🔐 최종 로그인 시 저장
                 openModal('force-pwd-change-modal');
             } catch(e){ showToast("네트워크 오류"); }
         }
@@ -2588,8 +2609,9 @@
                     localStorage.setItem('earth_auto_login', JSON.stringify(window.pendingLoginUser));
                 }
                 showToast("비밀번호 변경 완료. 자동 접속합니다.");
+                setEarthToken(window.pendingLoginToken);   // 🔐 세션 토큰 저장
                 loginSuccess(window.pendingLoginUser);
-                window.pendingLoginUser = null;
+                window.pendingLoginUser = null; window.pendingLoginToken = null;
             } catch(e){ showToast("네트워크 오류"); }
         }
 
@@ -3482,6 +3504,7 @@
                 const res = await fetch(`${API_URL}/api/stores/owned/${currentUser.name}`);
                 if(!res.ok) throw new Error(`HTTP ${res.status} from /api/stores/owned`);
                 const stores = await res.json() || [];
+                window.myBrandStores = stores;   // 편집 모달에서 사용
                 const listZone = document.getElementById('my-brands-list-zone'); const selector = document.getElementById('target-brand-selector');
                 if(!listZone || !selector) return;
                 if(stores.length === 0) { listZone.innerHTML = '<div style="color:gray; font-size:13px;">상점이 없습니다. 상단의 "새 브랜드 만들기" 폼으로 개설하세요.</div>'; selector.innerHTML = '<option value="">상점을 선택하세요</option>'; window.onTargetBrandSelected && window.onTargetBrandSelected(); return; }
@@ -3508,6 +3531,7 @@
                             </div>
                             <div style="display:flex; gap:5px; flex-wrap:wrap;">
                                 <button class="btn" style="padding:6px 10px; font-size:11px;" onclick="enterBrandStoreById('${st.id}')">내 상점 입장</button>
+                                <button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:var(--primary); border-color:var(--primary);" onclick="editBrandFull('${st.id}')">✏️ 전체 편집</button>
                                 <button class="btn btn-warning" style="padding:6px 10px; font-size:11px;" onclick="openPromoQR('${st.id}', '${st.name.replace(/'/g, "\\'")}')">홍보 QR</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="editStoreCategory('${st.id}', '${currentCat}')">카테고리 변경</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="uploadStoreBackground('${st.id}')">배경 ${hasBg?'변경':'등록'}</button>
@@ -3534,6 +3558,52 @@
         }
 
         async function toggleBrandStatus(storeId, currentStatus) { const newStatus = currentStatus === 'active' ? 'editing' : 'active'; await fetch(`${API_URL}/api/store/status`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: storeId, status: newStatus }) }); loadMyBrandStores(); }
+
+        // 🧾 브랜드 전체 편집(상호·카테고리·구분·사업자/주민번호·소개·로고·배경 — 새로 만들기와 동일하게 모두 변경)
+        window.editBrandFull = function(storeId){
+            const st = (window.myBrandStores||[]).find(s=>s.id===storeId);
+            if(!st){ showToast('상점 정보를 찾을 수 없습니다.'); return; }
+            const catMap = { general:'일반 상점', food:'음식점·카페', dental_lab:'치과 기공소', medical:'병원·의원', pharmacy:'약국', medical_wholesale:'의약 도·소매', fashion:'패션·의류', beauty:'뷰티·미용', education:'교육·강의', art:'아트·디자인', music:'음악·음원', game:'게임·IT', craft:'공예·수공', construction:'건설·시공', real_estate:'부동산', auto:'자동차·운송', pet:'반려동물', sports:'스포츠·레저', book:'도서·출판', legal:'법률·자문', finance:'금융·컨설팅', other:'기타' };
+            const cur = st.category || 'general';
+            const catOpts = Object.keys(catMap).map(k=>`<option value="${k}" ${k===cur?'selected':''}>${catMap[k]}</option>`).join('');
+            const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+            const old=document.getElementById('brand-edit-modal'); if(old) old.remove();
+            const ov=document.createElement('div'); ov.id='brand-edit-modal';
+            ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+            ov.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:460px;width:100%;max-height:90vh;overflow:auto;padding:20px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;"><h3 style="margin:0;font-size:17px;font-weight:900;">브랜드 편집</h3><span onclick="document.getElementById('brand-edit-modal').remove()" style="cursor:pointer;font-size:22px;color:#94a3b8;">&times;</span></div>
+                <div class="input-group"><label>상호 *</label><input id="be-name" value="${esc(st.name)}"></div>
+                <div class="input-group"><label>카테고리</label><select id="be-cat">${catOpts}</select></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <div class="input-group" style="width:120px;"><label>구분</label><select id="be-biztype" onchange="beBizToggle()"><option value="business" ${st.bizType!=='individual'?'selected':''}>사업자</option><option value="individual" ${st.bizType==='individual'?'selected':''}>개인</option></select></div>
+                    <div class="input-group" style="flex:1;min-width:170px;"><label>번호</label><input id="be-bizno" inputmode="numeric" value="${esc(st.bizNo||'')}" placeholder="${st.bizType==='individual'?'주민등록번호':'사업자등록번호'} (숫자만)"></div>
+                </div>
+                <div class="input-group"><label>소개</label><textarea id="be-desc" rows="2">${esc(st.description||'')}</textarea></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                    <button class="btn btn-outline" style="flex:1;" onclick="document.getElementById('be-logo-file').click()">로고 변경</button>
+                    <button class="btn btn-outline" style="flex:1;" onclick="document.getElementById('be-bg-file').click()">배경 변경</button>
+                    <input type="file" id="be-logo-file" accept="image/*" style="display:none;">
+                    <input type="file" id="be-bg-file" accept="image/*" style="display:none;">
+                </div>
+                <div id="be-file-note" style="font-size:11px;color:#94a3b8;margin-bottom:10px;">로고/배경은 변경할 때만 새로 선택하세요.</div>
+                <button class="btn" style="width:100%;padding:12px;" onclick="saveBrandFull('${st.id}')">저장</button>
+            </div>`;
+            document.body.appendChild(ov);
+            ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+            window._beLogo=''; window._beBg='';
+            const rd=(f,cb)=>{ const r=new FileReader(); r.onload=e=>cb(e.target.result); r.readAsDataURL(f); };
+            document.getElementById('be-logo-file').onchange=e=>{ const f=e.target.files[0]; if(f) rd(f,d=>{ window._beLogo=d; document.getElementById('be-file-note').textContent='로고 변경됨'+(window._beBg?' · 배경 변경됨':''); }); };
+            document.getElementById('be-bg-file').onchange=e=>{ const f=e.target.files[0]; if(f) rd(f,d=>{ window._beBg=d; document.getElementById('be-file-note').textContent=(window._beLogo?'로고 변경됨 · ':'')+'배경 변경됨'; }); };
+        };
+        window.beBizToggle=function(){ const t=document.getElementById('be-biztype').value; const i=document.getElementById('be-bizno'); if(i) i.placeholder=(t==='individual'?'주민등록번호':'사업자등록번호')+' (숫자만)'; };
+        window.saveBrandFull=async function(storeId){
+            const name=(document.getElementById('be-name').value||'').trim();
+            if(!name){ showToast('상호를 입력하세요.'); return; }
+            const body={ id:storeId, owner:currentUser.name, name, category:document.getElementById('be-cat').value, bizType:document.getElementById('be-biztype').value, bizNo:(document.getElementById('be-bizno').value||'').replace(/\D/g,''), description:document.getElementById('be-desc').value };
+            if(window._beLogo) body.logo=window._beLogo;
+            if(window._beBg) body.background=window._beBg;
+            try{ const r=await fetch(`${API_URL}/api/store/update`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패'); showToast('브랜드 정보가 수정되었습니다.'); const m=document.getElementById('brand-edit-modal'); if(m) m.remove(); loadMyBrandStores(); }catch(e){ showToast('저장 실패: '+(e.message||'')); }
+        };
 
         // 🚀 [v7p4] 상점 카테고리 변경 (브랜드 정체성 수정)
         window.editStoreCategory = async function(storeId, currentCat) {
@@ -6702,8 +6772,9 @@ pdfjsScript,
 
                 if(sellerCount > 0) {
                     showOrderApprovalBanner(sellerCount, unseenSellerOrders);
-                    window.__notifSound();
+                    // 알림음·토스트는 '새 주문이 늘었을 때만' (5초마다 반복 재생 방지)
                     if(sellerCount > window.__pendingOrdersPoll.prevSellerCount) {
+                        window.__notifSound();
                         showToast(`📥 새 주문서 도착! 승인 대기 중 ${sellerCount}건`);
                     }
                 } else {
@@ -6763,6 +6834,10 @@ pdfjsScript,
             const firstOrder = orders && orders[0];
             const buyerName = firstOrder ? firstOrder.buyer : '';
             const productName = firstOrder ? (firstOrder.productName || '상품') : '';
+            // 내용 동일하면 재렌더 생략(5초 폴링마다 DOM 갱신 방지 → 성능/깜빡임 개선)
+            const _sig = count + '|' + buyerName + '|' + productName;
+            if (banner.dataset.sig === _sig) { banner.style.display = 'flex'; return; }
+            banner.dataset.sig = _sig;
             banner.innerHTML = `
                 <span style="font-size:18px;">📥</span>
                 <span>승인 대기 주문 <b style="font-size:16px;">${count}건</b> — ${buyerName} 외 (${productName.substring(0,20)})</span>
