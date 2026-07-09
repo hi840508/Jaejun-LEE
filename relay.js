@@ -150,10 +150,14 @@ function initTables() {
         db.run(`ALTER TABLE stores ADD COLUMN description TEXT`, () => {});
         // 🚀 [v6] 상점 카테고리 (브랜드 정체성)
         db.run(`ALTER TABLE stores ADD COLUMN category TEXT DEFAULT 'general'`, () => {});
+        // 🧾 세금계산서용: 상점(공급자) 구분(business/individual) + 번호(사업자등록번호/주민등록번호)
+        db.run(`ALTER TABLE stores ADD COLUMN bizType TEXT DEFAULT 'business'`, () => {});
+        db.run(`ALTER TABLE stores ADD COLUMN bizNo TEXT`, () => {});
         // 🚀 [v6] order_orders 컬럼 추가 (구버전 DB 호환)
         db.run(`ALTER TABLE product_orders ADD COLUMN pdf_filled_data TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN buyer_info TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN status TEXT DEFAULT 'approved'`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN tracking TEXT`, () => {});   // 🚚 배송 송장/메모(선택)
         db.run(`ALTER TABLE product_orders ADD COLUMN amount INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE transactions ADD COLUMN refunded INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
@@ -587,8 +591,10 @@ app.post('/api/store/create', (req, res) => {
     db.get(`SELECT id FROM stores WHERE name = ?`, [req.body.name], (err, row) => {
         if (row) return res.status(400).json({ error: "이미 존재하는 명칭의 상점입니다." });
         const category = req.body.category || 'general';
-        db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description, category) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
-            ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || '', category],
+        const bizType = req.body.bizType === 'individual' ? 'individual' : 'business';
+        const bizNo = String(req.body.bizNo || '').replace(/\D/g, '');
+        db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description, category, bizType, bizNo) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
+            ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || '', category, bizType, bizNo],
             () => res.json({ success: true }));
     });
 });
@@ -746,6 +752,28 @@ app.post('/api/order/cancel', (req, res) => {
         if(ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 취소 가능' });
         if(ord.status !== 'pending') return res.status(400).json({ error: 'pending 상태만 취소 가능' });
         db.run(`UPDATE product_orders SET status = 'cancelled' WHERE id = ?`, [orderId], () => res.json({ success: true }));
+    });
+});
+
+// 🚚 판매자: 주문 상태 변경 (배송 등록/배송 완료/환불 수락). 배송 등록은 선택(송장 없이도 배송중 가능).
+//  status: 'shipping'(배송중) | 'delivered'(배송완료) | 'refunded'(환불수락)
+app.post('/api/order/status', (req, res) => {
+    const { orderId, seller, status, tracking } = req.body || {};
+    const allowed = ['shipping', 'delivered', 'refunded'];
+    if (!allowed.includes(status)) return res.status(400).json({ error: '허용되지 않은 상태' });
+    db.get(`SELECT * FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+        if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        if (ord.seller !== seller) return res.status(403).json({ error: '본인 판매 주문만 변경 가능' });
+        if (status === 'refunded') {
+            // 환불 수락: 구매자에게 결제액 환불(잔액 반환) + 상태 변경
+            const amt = Number(ord.amount) || 0;
+            db.serialize(() => {
+                if (amt > 0 && ord.buyer) db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amt, ord.buyer]);
+                db.run(`UPDATE product_orders SET status = 'refunded' WHERE id = ?`, [orderId], () => res.json({ success: true, refunded: amt }));
+            });
+        } else {
+            db.run(`UPDATE product_orders SET status = ?, tracking = ? WHERE id = ?`, [status, tracking || ord.tracking || null, orderId], () => res.json({ success: true }));
+        }
     });
 });
 
@@ -1364,6 +1392,23 @@ app.post('/api/tax/issue-bulk', async (req, res) => {
         } catch(e) { results.push({ seller: v.seller, ok: false, error: (e && e.message) || '실패' }); }
     }
     res.json({ success: true, count: results.filter(r => r.ok).length, total: results.length, results });
+});
+// 세금계산서 삭제(매출 취소 등). live 발행분은 국세청 취소가 별도 필요하므로 기록만 삭제.
+app.delete('/api/tax/invoices/:id', (req, res) => {
+    const id = Number(req.params.id);
+    db.run(`DELETE FROM tax_invoices WHERE id = ?`, [id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, deleted: this.changes });
+    });
+});
+// 여러 건 삭제
+app.post('/api/tax/invoices/delete-many', (req, res) => {
+    const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ error: '삭제할 항목이 없습니다.' });
+    db.run(`DELETE FROM tax_invoices WHERE id IN (${ids.map(() => '?').join(',')})`, ids, function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, deleted: this.changes });
+    });
 });
 // 상태 새로고침(국세청 전송 결과 조회 — live 시)
 app.post('/api/tax/invoices/:id/refresh', async (req, res) => {
