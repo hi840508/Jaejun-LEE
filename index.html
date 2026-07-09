@@ -1383,7 +1383,7 @@
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;">
-                            <thead><tr><th><input type="checkbox" id="tax-check-all" onclick="toggleAllVendors(this)"></th><th>업체</th><th>건수</th><th>매출</th><th>결제수수료</th><th>SW료</th><th>수수료VAT</th><th>지급액</th><th>세금계산서</th></tr></thead>
+                            <thead><tr><th><input type="checkbox" id="tax-check-all" onclick="toggleAllVendors(this)"></th><th>업체 (ID·브랜드·상품)</th><th>건수</th><th>매출</th><th>결제수수료</th><th>SW료</th><th>수수료VAT</th><th>지급액</th><th>세금계산서</th></tr></thead>
                             <tbody id="settlement-body"><tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [정산 불러오기]를 누르세요.</td></tr></tbody>
                         </table>
                     </div>
@@ -2711,7 +2711,11 @@
                 if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 매출이 없습니다.</td></tr>'; return; }
                 body.innerHTML=window.taxSettlement.map((v,i)=>`<tr>
                     <td style="text-align:center;"><input type="checkbox" class="tax-vsel" data-i="${i}"></td>
-                    <td style="font-weight:700;">${taxEscH(v.seller)}</td>
+                    <td style="font-weight:700;min-width:200px;">
+                        <div style="font-weight:900;">${taxEscH(v.seller)}</div>
+                        ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:2px;">🏷️ ${taxEscH(v.brands)}${v.storeIds?` <span style="color:#94a3b8;font-weight:400;">(${taxEscH(v.storeIds)})</span>`:''}</div>`:''}
+                        ${v.products?`<div style="font-size:11px;color:#707070;font-weight:400;margin-top:1px;">📦 ${taxEscH(v.products)}</div>`:''}
+                    </td>
                     <td style="text-align:center;">${v.count}</td>
                     <td style="text-align:right;">${taxFmt(v.salesTotal)}</td>
                     <td style="text-align:right;color:#b45309;">${taxFmt(v.payFee)}</td>
@@ -3666,8 +3670,8 @@
                     const dt = (o.created_at || '').replace('T', ' ').substring(0, 16);
                     const isPending = o.status === 'pending';
                     let acts = '';
-                    if(o.status === 'approved') acts = _obtn('배송 등록','#2563eb',`setOrderStatus('${o.id}','shipping',true)`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
-                    else if(o.status === 'shipping') acts = _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
+                    if(o.status === 'approved') acts = _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
+                    else if(o.status === 'shipping') acts = _obtn('송장 수정','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     else if(o.status === 'delivered') acts = _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     h += `<div style="background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:12px 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; cursor:pointer; transition:0.2s;"
                         onclick="window.openOrderInChatRoom('${o.buyer}', '${o.id}')"
@@ -3693,6 +3697,42 @@
             }
         };
 
+        // 🚚 택배사 목록 + 배송조회 URL
+        window.COURIERS = {
+            cj:{name:'CJ대한통운',url:'https://trace.cjlogistics.com/next/tracking.html?wblNo='},
+            epost:{name:'우체국택배',url:'https://service.epost.go.kr/trace.RetrieveDomRigiTraceList.comm?sid1='},
+            hanjin:{name:'한진택배',url:'https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mCode=MN038&schLang=KR&wblnumText2='},
+            lotte:{name:'롯데택배',url:'https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo='},
+            logen:{name:'로젠택배',url:'https://www.ilogen.com/web/personal/trace/'},
+            cvsnet:{name:'GS Postbox',url:'https://www.cvsnet.co.kr/invoice/tracking.do?invoice_no='},
+            cupost:{name:'CU 편의점택배',url:'https://www.cupost.co.kr/postbox/delivery/localResult.cupost?invoice_no='},
+            etc:{name:'기타/직접',url:''}
+        };
+        window.courierName = function(code){ return (window.COURIERS[code] && window.COURIERS[code].name) || code || '택배'; };
+        window.courierTrackUrl = function(code, no){ const c=window.COURIERS[code]; if(!c || !c.url || !no) return ''; return c.url + encodeURIComponent(no); };
+        // 판매자: 배송 등록 모달(택배사 선택 + 송장번호)
+        window.openShippingModal = function(orderId){
+            const old=document.getElementById('ship-modal'); if(old) old.remove();
+            const opts = Object.keys(window.COURIERS).map(k=>`<option value="${k}">${window.COURIERS[k].name}</option>`).join('');
+            const ov=document.createElement('div'); ov.id='ship-modal';
+            ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+            ov.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;padding:20px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;"><h3 style="margin:0;font-size:16px;font-weight:900;">배송 등록</h3><span onclick="document.getElementById('ship-modal').remove()" style="cursor:pointer;font-size:22px;color:#94a3b8;">&times;</span></div>
+                <div class="input-group"><label>택배사</label><select id="ship-courier">${opts}</select></div>
+                <div class="input-group"><label>송장번호 (선택 — 없으면 배송중만 처리)</label><input id="ship-tracking" inputmode="numeric" placeholder="송장번호"></div>
+                <button class="btn" style="width:100%;padding:11px;" onclick="submitShipping('${orderId}')">배송중으로 등록</button>
+            </div>`;
+            document.body.appendChild(ov); ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+        };
+        window.submitShipping = async function(orderId){
+            const courier=document.getElementById('ship-courier').value;
+            const tracking=(document.getElementById('ship-tracking').value||'').trim();
+            try{
+                const r=await fetch(`${API_URL}/api/order/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ orderId, status:'shipping', courier, tracking })});
+                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
+                showToast('배송 등록(배송중) 완료.'); const m=document.getElementById('ship-modal'); if(m) m.remove(); loadMySalesOrders();
+            }catch(e){ showToast('등록 실패: '+(e.message||'')); }
+        };
         // 🚚 판매자 주문 상태 변경(배송등록/배송완료/환불수락)
         window.setOrderStatus = async function(orderId, status, needTracking) {
             let tracking = '';
@@ -4669,9 +4709,9 @@ pdfjsScript,
                 if(prods.length === 0) { grid.innerHTML = '<div style="color:gray; font-size:13px; text-align:center; padding:20px;">📦 등록한 상품이 없습니다. 위의 폼에서 첫 상품을 등록해 보세요.</div>'; return; }
                 let b = ''; prods.forEach(p => {
                     const isSel = window.selectedProductsForBundle.has(p.id); const ratio = p.compression_ratio || getCompressionRatio(p.id + p.name);
-                    const pkgBadge = p.is_package ? `<span style="background:#7c3aed; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:4px;">📦 패키지</span>` : '';
+                    const pkgBadge = '';   // 패키지 뱃지 제거(요청)
                     b += `<div class="karrot-card ${isSel?'selected':''}" id="card-${p.id}">
-                        <div class="karrot-thumb" onclick="openUniversalViewer('${p.id}', true)"><img src="${p.thumbnail}"><div class="compression-badge">🔒 Zlib: ${ratio}%</div></div>
+                        <div class="karrot-thumb" onclick="openUniversalViewer('${p.id}', true)"><img src="${p.thumbnail}"></div>
                         <div class="karrot-info">
                             <div id="name-${p.id}" class="editable-field karrot-title" contenteditable="false">${p.name}${pkgBadge}</div>
                             <div class="karrot-seller">상점 ID: ${p.storeId}</div>
@@ -5188,34 +5228,18 @@ pdfjsScript,
                     const safeName = (st.name||'').replace(/"/g, '&quot;');
                     const safeOwner = (st.owner||'').replace(/"/g, '&quot;');
 
-                    const latestArr = st.latestProducts || [];
-                    const firstProduct = latestArr[0];
-
-                    // 🚀 [v8+] 히어로 이미지: 상점 배경화면 > 첫 상품 썸네일 > 그라데이션 폴백
+                    // 🚀 메인은 '브랜드 대표 이미지'만 노출(상품·가격은 입장 후에만). 배경 > 로고(크게) > 그라데이션+상호.
                     let heroHtml;
                     let heroBadge = '';
                     if(st.background) {
                         heroHtml = `<img class="hero-img" src="${st.background}" alt="${safeName}" onerror="this.style.display='none';">`;
-                        heroBadge = '';
-                    } else if(firstProduct && firstProduct.thumbnail) {
-                        heroHtml = `<img class="hero-img" src="${firstProduct.thumbnail}" alt="${(firstProduct.name||'').replace(/"/g,'&quot;')}" onerror="this.style.display='none';">`;
-                        // NEW 태그 (신규 알림만 컬러 강조)
-                        try {
-                            const m = (firstProduct.id || '').match(/_(\d{10,})/);
-                            if(m && (Date.now() - Number(m[1])) < 7 * 24 * 60 * 60 * 1000) {
-                                heroBadge = '<div class="hero-badge new">NEW</div>';
-                            }
-                        } catch(e){}
+                    } else if(st.logo) {
+                        heroHtml = `<img class="hero-img" src="${st.logo}" alt="${safeName}" style="object-fit:contain;background:#f4f4f5;" onerror="this.style.display='none';">`;
                     } else {
-                        heroHtml = '<div class="hero-empty">아직 등록된 상품이 없습니다</div>';
+                        heroHtml = `<div class="hero-empty" style="background:linear-gradient(135deg,#52525b,#27272a);color:#fff;font-weight:800;font-size:20px;display:flex;align-items:center;justify-content:center;">${safeName}</div>`;
                     }
-
-                    // 가격 표시 (히어로가 상품인 경우)
+                    // 상품 가격·썸네일은 메인에 노출하지 않음
                     let pricePill = '';
-                    if(!st.background && firstProduct) {
-                        const priceText = Number(firstProduct.price_original||firstProduct.price_stream||0).toLocaleString() + '원';
-                        pricePill = `<div class="price-pill">${priceText}</div>`;
-                    }
 
                     const logoHtml = st.logo
                         ? `<div class="logo"><img src="${st.logo}"></div>`
@@ -5227,31 +5251,7 @@ pdfjsScript,
                     const heroClickAttr = `onclick="enterBrandStoreById('${st.id}')"`;
 
                     // 미니 썸네일 스트립 (1번째 제외한 2~4번째 상품)
-                    let miniThumbsHtml = '';
-                    if(latestArr.length > 1) {
-                        miniThumbsHtml = '<div class="mini-thumbs">';
-                        for(let i=1; i<4; i++) {
-                            const p = latestArr[i];
-                            if(p) {
-                                const priceText = Number(p.price_original||p.price_stream||0).toLocaleString() + '원';
-                                let newBadge = '';
-                                try {
-                                    const m = (p.id || '').match(/_(\d{10,})/);
-                                    if(m && (Date.now() - Number(m[1])) < 7 * 24 * 60 * 60 * 1000) {
-                                        newBadge = '<div class="mt-new">N</div>';
-                                    }
-                                } catch(e){}
-                                miniThumbsHtml += `<div class="mt-cell" onclick="openProductFromShowcase('${p.id}', event)" title="${(p.name||'').replace(/"/g,'&quot;')}">
-                                    <img src="${p.thumbnail || ''}" onerror="this.style.background='#f1f5f9'; this.src='';">
-                                    ${newBadge}
-                                    <div class="mt-price">${priceText}</div>
-                                </div>`;
-                            } else {
-                                miniThumbsHtml += '<div class="mt-cell" style="background:#f8fafc;"></div>';
-                            }
-                        }
-                        miniThumbsHtml += '</div>';
-                    }
+                    let miniThumbsHtml = '';   // 메인에 상품 썸네일 노출 안 함(입장 후에만 상품 표시)
 
                     h += `<div class="brand-showcase-card" data-store-name="${safeName}" data-owner="${safeOwner}" data-category="${st.category || 'general'}">
                         <div class="brand-hero" ${heroClickAttr}>
@@ -6456,13 +6456,18 @@ pdfjsScript,
             if(window.checkPendingOrders) setTimeout(() => window.checkPendingOrders(), 200);
 
             socket.emit('join_room', currentChatRoomId);
-            fetch(`${API_URL}/api/chat/${currentChatRoomId}`).then(res => res.json()).then(msgs => {
-                document.getElementById('main-chat-body').innerHTML = '';
+            // 즉시 로딩 표시(빈칸→먹통 인지 방지). 최근 메시지만 페이지네이션으로 받아 렌더.
+            const _cb = document.getElementById('main-chat-body');
+            if(_cb) _cb.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;font-size:13px;">💬 대화 불러오는 중...</div>';
+            fetch(`${API_URL}/api/chat/${encodeURIComponent(currentChatRoomId)}?limit=40`).then(res => res.json()).then(msgs => {
+                const body = document.getElementById('main-chat-body'); if(!body) return;
+                body.innerHTML = '';
                 if(msgs && msgs.length>0) msgs.forEach(m => {
                     const tm = m.date ? (m.date.match(/\d{1,2}:\d{2}/) || [''])[0] : '';
                     appendMainMessage(m.sender, m.message, m.senderPic, tm, m.id);
                 });
-            });
+                body.scrollTop = body.scrollHeight;
+            }).catch(() => { const body = document.getElementById('main-chat-body'); if(body) body.innerHTML = '<div style="text-align:center;padding:30px;color:#dc2626;font-size:13px;">대화를 불러오지 못했습니다.</div>'; });
             document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-room').classList.add('active'); updateTabBadge();
         }
 
@@ -7742,6 +7747,20 @@ pdfjsScript,
                         </div>
                         <div style="font-size:11px; color:var(--text-sub); margin-bottom:6px;">판매자 <b>${escSeller}</b> · ${date}</div>
                         <div style="font-size:13px; font-weight:900; color:var(--primary); margin-bottom:8px;">${Number(p.amount||0).toLocaleString()}원${count>1?` <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(누계 ${Number(group.totalSpent).toLocaleString()}원)</span>`:''}</div>
+                        ${(function(){
+                            const st = p.orderStatus, cur = p.courier, no = p.tracking;
+                            if(!st || st==='pending' || st==='approved' && !cur && !no) return '';
+                            const stLabel = {approved:'배송 준비중', shipping:'배송중', delivered:'배송 완료', refunded:'환불됨'}[st] || '';
+                            let line = stLabel ? `<span style="display:inline-block; background:#eef2ff; color:#3730a3; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700;">🚚 ${stLabel}</span>` : '';
+                            if(cur || no){
+                                const url = window.courierTrackUrl(cur, no);
+                                const label = `${window.courierName(cur)}${no?' '+no.replace(/</g,'&lt;'):''}`;
+                                line += url
+                                    ? ` <a href="${url}" target="_blank" rel="noopener" style="font-size:11px; color:#2563eb; font-weight:700; text-decoration:underline;">${label} · 배송조회 ↗</a>`
+                                    : ` <span style="font-size:11px; color:var(--text-sub);">${label}</span>`;
+                            }
+                            return `<div style="margin-bottom:8px;">${line}</div>`;
+                        })()}
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
                             <button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openUniversalViewer && window.openUniversalViewer('${p.productId}', true)">미리보기</button>
                             <button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.redownloadPurchaseBundle('${p.productId}', '${escName.replace(/'/g, "\\'")}')">HTML 묶음 재다운로드</button>
@@ -8087,58 +8106,33 @@ pdfjsScript,
             showToast(`거래 내역 PDF 다운로드 완료 (총 ${list.length}건)`);
         }
 
-        // 🚀 [v8+] 단일 거래 영수증 발급
+        // 🚀 [v8+] 단일 거래 영수증 발급 — HTML 인쇄창(한글 폰트 문제 없이 PDF 저장). 기존 jsPDF는 한글 폰트 미로드 시 빈 항목이 됨.
         window.issueReceiptPDF = function(idx) {
-            if(!window.jspdf || !window.jspdf.jsPDF) return showToast("PDF 라이브러리 로딩 실패. 잠시 후 다시 시도해 주세요.");
             const list = getFilteredHistory();
             const h = list[idx];
             if(!h) return showToast("거래를 찾을 수 없습니다.");
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
-            const hasKr = ensureKrFont(doc);
-            const F = hasKr ? 'NotoKR' : 'helvetica';
-            doc.setFont(F, 'normal');
-
-            const sign = (h.buyer === currentUser.name || h.sender === currentUser.name || h.type.includes('출금') || h.type === '환불 지급') ? '-' : '+';
-            const amt = `${sign}${Number(h.amount).toLocaleString()}원`;
+            const sign = (h.buyer === currentUser.name || h.sender === currentUser.name || (h.type||'').includes('출금') || h.type === '환불 지급') ? '-' : '+';
+            const amt = `${sign}${Number(h.amount||0).toLocaleString()}원`;
             const target = h.seller || h.receiver || h.sender || '시스템';
-
-            // 헤더 바
-            doc.setFillColor(42,42,42); doc.rect(0,0,148,26,'F');
-            doc.setTextColor(255,255,255); doc.setFontSize(16); doc.text('거래 영수증', 14, 12);
-            doc.setFontSize(9); doc.text('Transaction Receipt · 오름앤파트너스', 14, 19);
-            doc.setTextColor(20,20,20);
-
-            let y = 38;
-            const line = (label, val) => {
-                doc.setFontSize(9); doc.setTextColor(110,110,110); doc.text(label, 14, y);
-                doc.setFontSize(11); doc.setTextColor(20,20,20); doc.text(String(val), 50, y);
-                y += 10;
-            };
-            doc.setFontSize(8); doc.setTextColor(140,140,140);
-            doc.text(`영수증 번호: RC-${(h.rawDate||h.date||Date.now()).toString().replace(/\D/g,'').slice(-12) || Date.now()}`, 14, 31);
-            y = 42;
-            line('발행일시', h.date || new Date().toLocaleString('ko-KR'));
-            line('거래 유형', h.type || '거래');
-            line('상세 내역', h.productName || '-');
-            line('거래 상대', target);
-            line('계정', `${currentUser.name} (${currentUser.realname || ''})`);
-            if(h.refunded) line('상태', '환불 완료');
-
-            // 금액 박스
-            y += 4;
-            doc.setDrawColor(42,42,42); doc.setLineWidth(0.5); doc.line(14, y, 134, y); y += 12;
-            doc.setFontSize(11); doc.setTextColor(110,110,110); doc.text('결제 금액', 14, y);
-            doc.setFontSize(18); doc.setTextColor(20,20,20); doc.text(amt, 134, y, { align: 'right' });
-
-            y += 16;
-            doc.setFontSize(8); doc.setTextColor(150,150,150);
-            doc.text('본 영수증은 오름앤파트너스 거래 원장에서 자동 발행되었습니다.', 14, y);
-            doc.text(`발행 시각: ${new Date().toLocaleString('ko-KR')}`, 14, y + 5);
-
-            const fname = `영수증_${(h.productName||'거래').replace(/[^\wㄱ-힣]/g,'_').slice(0,20)}_${formatYMD(new Date())}.pdf`;
-            doc.save(fname);
-            showToast("영수증이 발급되었습니다.");
+            const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            const rno = 'RC-' + (String(h.rawDate||h.date||'').replace(/\D/g,'').slice(-12) || String(Date.now()));
+            const rows = [
+                ['영수증 번호', rno], ['발행일시', h.date || new Date().toLocaleString('ko-KR')],
+                ['거래 유형', h.type || '거래'], ['상세 내역', h.productName || '-'],
+                ['거래 상대', target], ['계정', `${currentUser.name} (${currentUser.realname || ''})`]
+            ];
+            if(h.refunded) rows.push(['상태', '환불 완료']);
+            const w = window.open('', 'receipt', 'width=460,height=700'); if(!w){ showToast('팝업 차단을 해제하세요.'); return; }
+            w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>거래 영수증</title>'
+                +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;margin:0;color:#111;}.hd{background:#2a2a2a;color:#fff;padding:16px 20px;}.hd h1{margin:0;font-size:18px;}.hd .s{font-size:11px;opacity:.8;margin-top:3px;}.b{padding:18px 20px;}table{width:100%;border-collapse:collapse;font-size:13px;}td{padding:8px 4px;border-bottom:1px solid #eee;}td.l{color:#6b7280;width:34%;}.amt{display:flex;justify-content:space-between;align-items:center;border-top:2px solid #2a2a2a;margin-top:12px;padding-top:14px;}.amt .v{font-size:22px;font-weight:900;}.ft{color:#9aa;font-size:11px;margin-top:16px;line-height:1.6;}@media print{.noprint{display:none;}}</style></head><body>'
+                +'<div class="hd"><h1>거래 영수증</h1><div class="s">Transaction Receipt · 오름앤파트너스</div></div><div class="b"><table>'
+                + rows.map(r=>`<tr><td class="l">${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')
+                +'</table><div class="amt"><span style="color:#6b7280;">결제 금액</span><span class="v">'+esc(amt)+'</span></div>'
+                +'<div class="ft">본 영수증은 오름앤파트너스 거래 원장에서 자동 발행되었습니다.<br>발행 시각: '+esc(new Date().toLocaleString('ko-KR'))+'</div>'
+                +'<div class="noprint" style="text-align:center;margin-top:16px;"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;font-weight:700;background:#2563eb;color:#fff;border:0;border-radius:8px;cursor:pointer;">PDF로 저장 / 인쇄</button></div>'
+                +'</div></body></html>');
+            w.document.close();
+            showToast("영수증 창을 열었습니다. (PDF로 저장/인쇄)");
         }
 
         // 🚀 환불 요청 (판매자 승인 대기 상태 생성, 자금 이동 X)
