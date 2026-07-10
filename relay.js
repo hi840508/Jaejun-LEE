@@ -1310,7 +1310,9 @@ app.get('/api/transactions/:name', async (req, res) => {
             (SELECT status FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_status,
             (SELECT id FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_request_id,
             p.is_package as p_is_package, p.package_data as p_package_data, p.storeId as p_storeId,
-            s.name as storeName, s.category as storeCategory
+            s.name as storeName, s.category as storeCategory,
+            (SELECT realname FROM users WHERE name = t.seller) as sellerRealname,
+            (SELECT realname FROM users WHERE name = t.buyer) as buyerRealname
             FROM transactions t
             LEFT JOIN products p ON t.productId = p.id
             LEFT JOIN stores s ON p.storeId = s.id
@@ -1348,7 +1350,9 @@ app.get('/api/transactions/:name', async (req, res) => {
                 date: t.date, rawDate: t.rawDate || t.date, productId: t.productId, purchaseType: t.purchaseType,
                 amount: t.amount, productName: t.productName, buyer: t.buyer, seller: isBuyer ? t.seller : t.buyer,
                 refunded: !!t.refunded, refundable, refundStatus: refStatus, refundRequestId: t.refund_request_id,
-                storeName: t.storeName || null, storeId: t.p_storeId || null, fileNames: fileNames
+                storeName: t.storeName || null, storeId: t.p_storeId || null, fileNames: fileNames,
+                // 🧾 거래처 표기명(세금계산서와 통일): 상대방 실명(상호) → 없으면 브랜드 → ID
+                counterpartyRealname: (isBuyer ? t.sellerRealname : t.buyerRealname) || null
             });
         });
         tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, rawDate: t.rawDate || t.date, amount: t.amount, seller: t.receiver || t.sender, sender: t.sender, receiver: t.receiver }));

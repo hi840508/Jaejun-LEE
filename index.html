@@ -2827,8 +2827,8 @@
                     <td style="text-align:center;"><input type="checkbox" class="tax-vsel" data-i="${i}"></td>
                     <td style="font-weight:700;min-width:200px;">
                         <div style="font-weight:900;">${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span></div>
-                        ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:2px;">🏷️ ${taxEscH(v.brands)}</div>`:''}
-                        ${v.products?`<div style="font-size:11px;color:#707070;font-weight:400;margin-top:1px;">📦 ${taxEscH(v.products)}</div>`:''}
+                        ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:2px;">${taxEscH(v.brands)}</div>`:''}
+                        ${v.products?`<div style="font-size:11px;color:#707070;font-weight:400;margin-top:1px;">${taxEscH(v.products)}</div>`:''}
                     </td>
                     <td style="text-align:center;">${v.count}</td>
                     <td style="text-align:right;">${taxFmt(v.salesTotal)}</td>
@@ -8114,19 +8114,15 @@ pdfjsScript,
                         <button class="btn btn-outline" style="padding:4px 8px; font-size:10px; margin-left:4px; border-radius:6px;" onclick="requestRefund(${h.txId}, '${(h.productName||'').replace(/'/g, "\\'")}')">재요청</button>`;
                 }
 
-                // 🚀 [v7] 상세 내역: 상품명 + 상점명 + 파일명 모두 표시
+                // 🧾 상세 내역 = 세금계산서 거래처 표기와 통일(상호/실명 · ID · 브랜드 · 상품). 불필요한 아이콘 제거.
                 let detailHtml = '<span style="color:var(--text-sub);">거래 명세</span>';
-                if(h.productName) {
-                    detailHtml = `<div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-                        <b style="color:var(--text-main); font-size:13px; word-break:break-all;">${(h.productName||'').replace(/</g,'&lt;')}</b>`;
-                    if(h.storeName) {
-                        detailHtml += `<span style="font-size:11px; color:var(--primary);">🏪 ${(h.storeName||'').replace(/</g,'&lt;')}</span>`;
-                    }
-                    if(h.fileNames && h.fileNames.length > 0) {
-                        const fls = h.fileNames.slice(0, 3).map(f => `<span style="background:#f1f5f9; color:var(--text-sub); padding:1px 6px; border-radius:4px; font-size:10px; font-family:ui-monospace,monospace;">📎 ${(f||'').replace(/</g,'&lt;')}</span>`).join(' ');
-                        const more = h.fileNames.length > 3 ? `<span style="font-size:10px; color:var(--text-sub);">+${h.fileNames.length-3}개 더</span>` : '';
-                        detailHtml += `<div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:2px;">${fls}${more}</div>`;
-                    }
+                if(h.productName || h.storeName) {
+                    const _bizName = h.counterpartyRealname || h.storeName || h.seller || '';
+                    const _idPart = h.seller ? ` <span style="font-size:10px; color:var(--text-sub); font-weight:400;">(ID: ${(h.seller||'').replace(/</g,'&lt;')})</span>` : '';
+                    detailHtml = `<div style="display:flex; flex-direction:column; gap:2px; min-width:0;">`;
+                    detailHtml += `<b style="color:var(--text-main); font-size:13px; word-break:break-all;">${(_bizName||'').replace(/</g,'&lt;')}${_idPart}</b>`;
+                    if(h.storeName) detailHtml += `<span style="font-size:11px; color:var(--primary);">${(h.storeName||'').replace(/</g,'&lt;')}</span>`;
+                    if(h.productName) detailHtml += `<span style="font-size:11px; color:#707070;">${(h.productName||'').replace(/</g,'&lt;')}</span>`;
                     detailHtml += '</div>';
                 }
 
