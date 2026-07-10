@@ -1033,6 +1033,24 @@
                     </div>
                 </div>
 
+                <!-- 🔗 외부 제휴 상점(약국·병원/의원·의약도소매) 빌트인 임베드 -->
+                <div id="external-store-wrap" style="display:none; background:#fff; border:1px solid var(--border-color); border-radius:12px; overflow:hidden;">
+                    <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border-color); background:#f8fafc;">
+                        <b id="external-store-title" style="font-size:14px; color:var(--text-main);">제휴 상점</b>
+                        <span style="font-size:11px; color:var(--text-sub);">오름앤파트너스 제휴 사이트</span>
+                        <div style="flex:1;"></div>
+                        <a id="external-store-open" href="#" target="_blank" rel="noopener" class="btn btn-outline" style="padding:6px 12px; font-size:11px; border-radius:20px;">새 탭으로 열기 ↗</a>
+                        <button onclick="clearMarketFilter()" class="btn btn-secondary" style="padding:6px 12px; font-size:11px; border-radius:20px;">✕ 나가기</button>
+                    </div>
+                    <div style="position:relative; width:100%; height:76vh; background:#fff;">
+                        <iframe id="external-store-frame" src="about:blank" style="width:100%; height:100%; border:none;" title="제휴 상점"></iframe>
+                        <div id="external-store-hint" style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:12px; text-align:center; color:var(--text-sub); font-size:13px; padding:20px; background:#fff;">
+                            <div>이 사이트는 보안 정책상 앱 내 표시가 제한될 수 있습니다.<br>아래 버튼으로 새 탭에서 열어 주세요.</div>
+                            <a id="external-store-hint-open" href="#" target="_blank" rel="noopener" class="btn" style="padding:9px 18px; background:var(--gradient-btn); color:#fff;">사이트 열기 ↗</a>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 🚀 [v8+] 즐겨찾기 상점 칩 표시 (검색 패널 제거, 칩만 유지) -->
                 <div id="fav-brands-section" style="margin-top:20px; display:none; background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:14px 16px;">
                     <div style="font-size:12px; font-weight:bold; color:var(--warning); margin-bottom:8px;">즐겨찾는 브랜드 (클릭 시 즉시 입장)</div>
@@ -3429,10 +3447,31 @@
 
         // 🔗 의약 규제 카테고리(약국·병원/의원·의약 도소매)는 외부 전문 사이트를 상점으로 연결
         window.EXTERNAL_CATEGORY_STORE = { pharmacy: 'https://oreumpartners.com/main/main.asp', medical: 'https://oreumpartners.com/main/main.asp', medical_wholesale: 'https://oreumpartners.com/main/main.asp' };
+        // 🔗 외부 제휴 상점을 앱 내부 iframe으로 표시(빌트인). 차단(X-Frame-Options) 대비 새 탭 열기 폴백 제공.
+        window.openExternalStore = function(url, label) {
+            try {
+                const showWrap = document.getElementById('brand-showcase-wrap'); if(showWrap) showWrap.style.display = 'none';
+                const innerWrap = document.getElementById('brand-inner-wrap'); if(innerWrap) innerWrap.style.display = 'none';
+                const bd = document.getElementById('brand-backdrop'); if(bd) bd.style.display = 'none';
+                const wrap = document.getElementById('external-store-wrap'); if(!wrap) { window.open(url,'_blank','noopener'); return; }
+                document.getElementById('external-store-title').innerText = label || '제휴 상점';
+                document.getElementById('external-store-open').href = url;
+                document.getElementById('external-store-hint-open').href = url;
+                const hint = document.getElementById('external-store-hint'); if(hint) hint.style.display = 'none';
+                const fr = document.getElementById('external-store-frame');
+                fr.src = url;
+                // 로드 지연/차단 감지: 3초 내 로드 이벤트 없으면 폴백 안내 노출(X-Frame-Options 차단은 onload가 안 오거나 빈 화면)
+                clearTimeout(window._extStoreT);
+                let loaded = false; fr.onload = () => { loaded = true; };
+                window._extStoreT = setTimeout(() => { if(!loaded && hint) hint.style.display = 'flex'; }, 3500);
+                wrap.style.display = 'block';
+                wrap.scrollIntoView({ behavior:'smooth', block:'start' });
+            } catch(e) { window.open(url,'_blank','noopener'); }
+        };
         window.setCategoryFilter = function(catId) {
-            // 약국/병원·의원/의약 도소매 선택 시 → 외부 사이트를 상점으로 연결(새 탭)
+            // 약국/병원·의원/의약 도소매 선택 시 → 외부 제휴 사이트를 앱 내부에 빌트인(iframe) 표시
             const ext = window.EXTERNAL_CATEGORY_STORE && window.EXTERNAL_CATEGORY_STORE[catId];
-            if(ext) { try { window.open(ext, '_blank', 'noopener'); } catch(_){ location.href = ext; } if(typeof showToast==='function') showToast('제휴 사이트로 이동합니다.'); return; }
+            if(ext) { const lbl = (window.BRAND_CATEGORIES||[]).find(c=>c.id===catId); window.openExternalStore(ext, lbl?lbl.label:'제휴 상점'); return; }
             window.activeCategoryFilter = catId;
             window.renderCategoryChips && window.renderCategoryChips();
             window.renderSidebarCategories && window.renderSidebarCategories();
@@ -5191,6 +5230,9 @@ pdfjsScript,
             window.currentMarketFilterStore = null;
             document.getElementById('market-filter-nav').style.display = 'none';
             document.getElementById('brand-backdrop').style.display = 'none';
+            // 외부 제휴 상점 iframe 닫기(src 해제로 백그라운드 로딩 중단)
+            const _ext = document.getElementById('external-store-wrap'); if(_ext) _ext.style.display = 'none';
+            const _extf = document.getElementById('external-store-frame'); if(_extf) _extf.src = 'about:blank';
             document.getElementById('brand-showcase-wrap').style.display = 'block';
             document.getElementById('brand-inner-wrap').style.display = 'none';
             const ms = document.getElementById('market-search'); if(ms) { ms.value = ''; ms.placeholder = '상품명·설명 검색'; }
