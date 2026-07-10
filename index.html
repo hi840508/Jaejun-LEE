@@ -3456,11 +3456,11 @@
         // 🔗 의약 규제 카테고리(약국·병원/의원·의약 도소매)는 외부 전문 사이트를 상점으로 연결
         window.EXTERNAL_CATEGORY_STORE = { pharmacy: 'https://oreumpartners.com/main/main.asp', medical: 'https://oreumpartners.com/main/main.asp', medical_wholesale: 'https://oreumpartners.com/main/main.asp' };
         // 🔗 외부 제휴 상점을 앱 내부 iframe으로 표시(빌트인). 차단(X-Frame-Options) 대비 새 탭 열기 폴백 제공.
-        window.openExternalStore = function(url, label) {
+        window.openExternalStore = function(url, label, keepBackdrop) {
             try {
                 const showWrap = document.getElementById('brand-showcase-wrap'); if(showWrap) showWrap.style.display = 'none';
                 const innerWrap = document.getElementById('brand-inner-wrap'); if(innerWrap) innerWrap.style.display = 'none';
-                const bd = document.getElementById('brand-backdrop'); if(bd) bd.style.display = 'none';
+                const bd = document.getElementById('brand-backdrop'); if(bd && !keepBackdrop) bd.style.display = 'none';
                 const wrap = document.getElementById('external-store-wrap'); if(!wrap) { window.open(url,'_blank','noopener'); return; }
                 document.getElementById('external-store-title').innerText = label || '제휴 상점';
                 document.getElementById('external-store-open').href = url;
@@ -5510,6 +5510,15 @@ pdfjsScript,
 
                 const res = await fetch(`${API_URL}/api/products/active`); let prods = await res.json() || [];
                 prods = prods.filter(p => p.storeId === window.currentMarketFilter);
+
+                // 🔗 링크 상점: 이 상점에 홈페이지 링크 상품이 있으면 상품 그리드 대신 그 홈페이지를 빌트인(iframe)으로 표시
+                const linkProd = prods.find(p => p.link_url);
+                if(linkProd && linkProd.link_url) {
+                    const storeName = (window.currentMarketFilterStore && window.currentMarketFilterStore.name) || linkProd.name || '제휴 상점';
+                    document.getElementById('brand-inner-wrap').style.display = 'none';
+                    window.openExternalStore(linkProd.link_url, storeName, true);   // 배경 배너 유지 + 하단 iframe
+                    return;
+                }
 
                 // 유형 필터
                 if(window.marketTypeFilter !== 'all') {
