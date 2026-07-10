@@ -1509,6 +1509,7 @@ app.get('/api/admin/tax/settlement', (req, res) => {
         let where = _salesWhere; const params = [];
         if (month) { where += ` AND substr(IFNULL(t.rawDate,t.date),1,7)=?`; params.push(month); }
         db.all(`SELECT t.seller, COUNT(*) cnt, SUM(t.amount) salesTotal,
+                    (SELECT realname FROM users WHERE name = t.seller) sellerRealname,
                     GROUP_CONCAT(DISTINCT p.storeId) storeIds,
                     GROUP_CONCAT(DISTINCT s.name) brands,
                     GROUP_CONCAT(DISTINCT t.productName) products
@@ -1519,6 +1520,8 @@ app.get('/api/admin/tax/settlement', (req, res) => {
             if (err) return res.status(500).json({ error: err.message });
             const vendors = (rows || []).map(r => Object.assign({
                 seller: r.seller, count: r.cnt,
+                // 🧾 거래처 표기명 = 사업자등록증상 상호/실명(realname). 없으면 브랜드명, 그것도 없으면 ID.
+                bizName: (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
                 storeIds: r.storeIds || '', brands: r.brands || '', products: r.products || ''
             }, _settleCalc(r.salesTotal, cfg)));
             res.json({ month, config: cfg, vendors });
