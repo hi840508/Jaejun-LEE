@@ -39,7 +39,19 @@ cleanupOldChatAttachments();
 setInterval(cleanupOldChatAttachments, 6 * 60 * 60 * 1000);
 
 // 실제 비대칭 디지털 서명 알고리즘(ECDSA) 
-const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+// 🔐 서명 키페어 — 매 부팅 재생성(=재시작마다 서명 불일치, 크론 재시작 시 특히) 방지: 디스크 영속화(gitignore된 signing_keys.json).
+let publicKey, privateKey;
+(function () {
+    const KEY_PATH = path.join(__dirname, 'signing_keys.json');
+    try {
+        if (fs.existsSync(KEY_PATH)) { const j = JSON.parse(fs.readFileSync(KEY_PATH, 'utf8')); publicKey = j.publicKey; privateKey = j.privateKey; }
+    } catch (_) {}
+    if (!publicKey || !privateKey) {
+        const kp = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1', publicKeyEncoding: { type: 'spki', format: 'pem' }, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } });
+        publicKey = kp.publicKey; privateKey = kp.privateKey;
+        try { fs.writeFileSync(KEY_PATH, JSON.stringify({ publicKey, privateKey }), { mode: 0o600 }); } catch (e) { console.warn('서명키 저장 실패', e && e.message); }
+    }
+})();
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
@@ -275,6 +287,32 @@ function requireAdmin(req, res) {
     return me;
 }
 
+// 🔐 비밀번호 해시 — 내장 crypto.scrypt(외부 의존성 없음). 형식: "scrypt$<salt>$<hash>".
+//   레거시 평문 비밀번호도 verifyPassword가 허용(로그인 성공 시 해시로 자동 업그레이드) → 기존 회원 잠김 없음.
+function hashPassword(pw) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const h = crypto.scryptSync(String(pw == null ? '' : pw), salt, 32).toString('hex');
+    return 'scrypt$' + salt + '$' + h;
+}
+function isHashed(stored) { return typeof stored === 'string' && stored.startsWith('scrypt$'); }
+function verifyPassword(pw, stored) {
+    if (stored == null) return false;
+    const s = String(stored);
+    if (s.startsWith('scrypt$')) {
+        const parts = s.split('$'); if (parts.length !== 3) return false;
+        let calc; try { calc = crypto.scryptSync(String(pw == null ? '' : pw), parts[1], 32).toString('hex'); } catch (_) { return false; }
+        const a = Buffer.from(parts[2], 'hex'), b = Buffer.from(calc, 'hex');
+        return a.length === b.length && crypto.timingSafeEqual(a, b);
+    }
+    return s === String(pw == null ? '' : pw);   // 레거시 평문
+}
+// 로그인 성공 시 레거시 평문을 해시로 승격
+function upgradePasswordIfLegacy(name, stored, plain) {
+    if (!isHashed(stored)) { try { db.run(`UPDATE users SET password = ? WHERE name = ?`, [hashPassword(plain), name], () => {}); } catch (_) {} }
+}
+// 반환 사용자 객체에서 비밀번호 필드 제거(클라이언트로 유출 금지)
+function stripPwd(u) { if (u && typeof u === 'object') { const c = Object.assign({}, u); delete c.password; return c; } return u; }
+
 // 🚀 [v8+] Admin 비밀번호 헬퍼 — DB의 settings.admin_password 사용 (초기값 'mars')
 function getAdminPassword(cb) {
     db.get(`SELECT value FROM settings WHERE key = 'admin_password'`, [], (err, row) => {
@@ -330,7 +368,8 @@ app.post('/api/viewer/unlock', (req, res) => {
     const rec = (ok, reason) => db.run(`INSERT INTO viewer_opens (fileId,userName,at,ok,reason) VALUES (?,?,?,?,?)`, [fileId, userName, Date.now(), ok ? 1 : 0, reason || ''], () => {});
     db.get(`SELECT * FROM users WHERE name = ?`, [userName], (e, u) => {
         if (e) return res.status(500).json({ error: e.message });
-        if (!u || u.password !== password) { rec(0, 'auth'); return res.status(401).json({ error: 'ID \ub610\ub294 \ube44\ubc00\ubc88\ud638\uac00 \uc62c\ubc14\ub974\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4.' }); }
+        if (!u || !verifyPassword(password, u.password)) { rec(0, 'auth'); return res.status(401).json({ error: 'ID \ub610\ub294 \ube44\ubc00\ubc88\ud638\uac00 \uc62c\ubc14\ub974\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4.' }); }
+        upgradePasswordIfLegacy(u.name, u.password, password);
         db.get(`SELECT * FROM viewer_files WHERE fileId = ?`, [fileId], (e2, f) => {
             if (e2) return res.status(500).json({ error: e2.message });
             if (!f) { rec(0, 'noreg'); return res.status(404).json({ error: '\ub4f1\ub85d\ub418\uc9c0 \uc54a\uc740 \ubdf0\uc5b4 \ud30c\uc77c\uc785\ub2c8\ub2e4.' }); }
@@ -348,8 +387,9 @@ app.post('/api/auth/verify', (req, res) => {
     db.get(`SELECT * FROM users WHERE name = ?`, [req.body.name], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (row) {
-            if (row.password === req.body.password) {
-                res.json({ exists: true, user: row, token: issueToken(row.name), mustChangePassword: !!row.force_pwd_change });
+            if (verifyPassword(req.body.password, row.password)) {
+                upgradePasswordIfLegacy(row.name, row.password, req.body.password);
+                res.json({ exists: true, user: stripPwd(row), token: issueToken(row.name), mustChangePassword: !!row.force_pwd_change });
             }
             else res.status(401).json({ exists: true, error: "비밀번호가 불일치합니다." });
         } else res.json({ exists: false });
@@ -380,7 +420,7 @@ app.post('/api/auth/register', (req, res) => {
     const approvalStatus = needsApproval ? 'pending' : 'approved';
 
     db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_doc, approval_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, password, realname, bank, account, needsApproval ? 0 : 10000, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus], (err) => {
+        [name, hashPassword(password), realname, bank, account, needsApproval ? 0 : 10000, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
         // 승인 대기는 보너스 X. 자동 승인 회원만 10,000원 정산 한도 축하금
         if(!needsApproval) {
@@ -389,7 +429,7 @@ app.post('/api/auth/register', (req, res) => {
                 ['Earth(Root)', name, '신규 가입 정산 한도 축하금', 10000, 'signup_bonus', rawDate, date]);
         }
         res.json({
-            name, password, realname, bank, account,
+            name, realname, bank, account,
             phone: phone || '', email: email || '', shipping_address: shipping_address || '',
             business_type: business_type || 'individual',
             approval_status: approvalStatus,
@@ -436,17 +476,31 @@ app.post('/api/admin/approve-user', (req, res) => {
 });
 
 app.post('/api/user/update', (req, res) => {
-    db.run(`UPDATE users SET password = ?, realname = ?, bank = ?, account = ?, profilePic = ?, phone = ?, email = ?, shipping_address = ? WHERE name = ?`,
-        [req.body.password, req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.email || '', req.body.shipping_address || '', req.body.name],
-        () => res.json({success: true}));
+    const me = requireUser(req, res); if (!me) return;
+    // 🔐 본인 계정만 수정 가능(예전: 무인증 → 타인 계정 탈취 가능)
+    if (req.body.name && req.body.name !== me) return res.status(403).json({ error: '본인 계정만 수정할 수 있습니다.' });
+    const target = me;
+    // 비밀번호는 새로 입력했을 때만 변경(빈 값이면 유지) + 해시 저장
+    const pw = req.body.password;
+    if (pw && String(pw).length > 0) {
+        db.run(`UPDATE users SET password = ?, realname = ?, bank = ?, account = ?, profilePic = ?, phone = ?, email = ?, shipping_address = ? WHERE name = ?`,
+            [hashPassword(pw), req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.email || '', req.body.shipping_address || '', target],
+            () => res.json({ success: true }));
+    } else {
+        db.run(`UPDATE users SET realname = ?, bank = ?, account = ?, profilePic = ?, phone = ?, email = ?, shipping_address = ? WHERE name = ?`,
+            [req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.email || '', req.body.shipping_address || '', target],
+            () => res.json({ success: true }));
+    }
 });
 
 // 🚀 비밀번호 변경 후 force_pwd_change 플래그 해제
 app.post('/api/user/change-password', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
     const { name, newPassword } = req.body;
+    if (name && name !== me) return res.status(403).json({ error: '본인 계정만 변경할 수 있습니다.' });
     if(!newPassword || newPassword.length < 4) return res.status(400).json({ error: "비밀번호는 4자 이상이어야 합니다." });
     db.run(`UPDATE users SET password = ?, force_pwd_change = 0, reset_otp = NULL, reset_otp_expiry = NULL, reset_otp_used = 0 WHERE name = ?`,
-        [newPassword, name], (err) => {
+        [hashPassword(newPassword), me], (err) => {
             if(err) return res.status(500).json({ error: err.message });
             res.json({ success: true });
         });
@@ -481,14 +535,15 @@ app.post('/api/auth/send-otp', (req, res) => {
     const { name } = req.body;
     db.get(`SELECT email FROM users WHERE name = ?`, [name], (err, row) => {
         if(!row || !row.email) return res.status(404).json({ error: "사용자 또는 이메일 정보가 없습니다." });
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otp = crypto.randomInt(100000, 1000000).toString();   // 예측 어려운 난수 OTP
         const expiry = Date.now() + 10 * 60 * 1000; // 10분
         db.run(`UPDATE users SET reset_otp = ?, reset_otp_expiry = ?, reset_otp_used = 0 WHERE name = ?`,
             [otp, expiry, name], (e2) => {
                 if(e2) return res.status(500).json({ error: e2.message });
                 console.log(`[OTP 발송] ${name} (${row.email}) → ${otp}  (10분 유효)`);
-                // 실제 운영 환경에서는 이메일 발송 (SES, sendgrid 등). 데모 환경에서는 응답에 동봉.
-                res.json({ success: true, email: row.email, demo_otp: otp, expires_in_minutes: 10 });
+                // 🔐 OTP를 응답에 노출하지 않음(예전 demo_otp = 계정 탈취 취약점). 서버 콘솔/이메일로만 전달.
+                //   이메일 발송(SES/sendgrid 등) 미구성 시 자가복구 대신 Admin이 reset-password로 복구.
+                res.json({ success: true, email: row.email, otp_sent: true, expires_in_minutes: 10 });
             });
     });
 });
@@ -505,7 +560,7 @@ app.post('/api/auth/login-with-otp', (req, res) => {
         // OTP 사용 처리 + 비밀번호 강제 변경 플래그 설정
         db.run(`UPDATE users SET reset_otp_used = 1, force_pwd_change = 1 WHERE name = ?`, [name], (e2) => {
             row.force_pwd_change = 1;
-            res.json({ success: true, user: row, token: issueToken(row.name), mustChangePassword: true });
+            res.json({ success: true, user: stripPwd(row), token: issueToken(row.name), mustChangePassword: true });
         });
     });
 });
@@ -513,7 +568,9 @@ app.post('/api/auth/login-with-otp', (req, res) => {
 // 🚀 Admin 전용: 모든 회원 정보 조회 (복구 목적)
 app.post('/api/admin/all-users', (req, res) => {
     if(!requireAdmin(req,res)) return;
-    db.all(`SELECT name, password, realname, bank, account, phone, email, shipping_address, balance,
+    // 🔐 비밀번호(해시)는 반환하지 않음 — 평문 덤프 취약점 제거. 복구는 admin/reset-password 사용.
+    db.all(`SELECT name, realname, bank, account, phone, email, shipping_address, balance,
+            CASE WHEN password LIKE 'scrypt$%' THEN '해시' ELSE '평문(미로그인)' END as pwState,
             CASE WHEN profilePic IS NOT NULL AND profilePic != '' THEN '있음' ELSE '없음' END as hasPic
             FROM users ORDER BY name`, [], (err, rows) => {
         if(err) return res.status(500).json({ error: err.message });
@@ -527,7 +584,7 @@ app.post('/api/admin/reset-password', (req, res) => {
     const { targetName, newPassword } = req.body;
     if(!targetName || !newPassword) return res.status(400).json({ error: "필수 필드 누락" });
     db.run(`UPDATE users SET password = ?, force_pwd_change = 0, reset_otp = NULL, reset_otp_expiry = NULL, reset_otp_used = 0 WHERE name = ?`,
-        [newPassword, targetName], function(err) {
+        [hashPassword(newPassword), targetName], function(err) {
             if(err) return res.status(500).json({ error: err.message });
             if(this.changes === 0) return res.status(404).json({ error: "회원을 찾을 수 없습니다." });
             res.json({ success: true });
@@ -1568,33 +1625,53 @@ app.post('/api/tax/invoices/:id/refresh', async (req, res) => {
     });
 });
 
+// 🔐 방(room_msg_a_b) 참가자 도출 — 개인 룸 대상 전송용
+function _roomParticipants(roomId) { return String(roomId || '').replace('room_msg_', '').split('_').filter(Boolean); }
+// 두 참가자의 개인 룸에만 이벤트 전송(예전 io.emit 전체 브로드캐스트 → 무관한 사용자에게까지 채팅 노출되던 문제 제거). 크로스룸 알림은 개인 룸으로 유지.
+function _emitToRoomUsers(roomId, event, payload) {
+    const parts = _roomParticipants(roomId);
+    if (parts.length) { let e = io; parts.forEach(u => { e = e.to('user:' + u); }); e.emit(event, payload); }
+    else io.to(roomId).emit(event, payload);   // 비표준 roomId 폴백
+}
 io.on('connection', (socket) => {
+    // 🔐 소켓 신원 바인딩 — 핸드셰이크 토큰으로 사용자 판정(발신자 위조 차단) + 개인 룸 자동 가입(스코프 전송 수신용)
+    try {
+        const t = socket.handshake && socket.handshake.auth && socket.handshake.auth.token;
+        const s = t && SESSIONS.get(String(t));
+        socket.data.user = s ? s.name : null;
+        if (socket.data.user) socket.join('user:' + socket.data.user);
+    } catch (_) { socket.data.user = null; }
     socket.on('join_room', (roomId) => { socket.join(roomId); });
-    socket.on('send_message', (data) => { 
-        const users = data.roomId.replace('room_msg_', '').split('_');
-        if(users.length === 2) {
+    socket.on('send_message', (data) => {
+        if (!data || !data.roomId) return;
+        // 인증 소켓이면 발신자를 토큰 신원으로 강제(위조 차단). '__system__'은 시스템 메시지로 허용. 미인증 소켓은 레거시 호환 허용.
+        const isSystem = data.sender === '__system__';
+        if (socket.data.user && !isSystem && data.sender && data.sender !== socket.data.user) return;
+        const sender = isSystem ? '__system__' : (socket.data.user || data.sender);
+        const users = _roomParticipants(data.roomId);
+        if (users.length === 2) {
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[0], users[1]]);
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[1], users[0]]);
         }
-        // ⭐ senderPic(base64 프로필)은 DB에 저장하지 않음(null) — 예전엔 메시지마다 아바타 base64가 박혀 히스토리 로딩이 비대해졌음.
-        //   실시간 브로드캐스트에는 그대로 실어 보내고(라이브 표시), 히스토리 렌더는 프런트가 참가자 아바타를 1회 조회해 사용.
-        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, null, data.message, new Date().toLocaleString('ko-KR')], function() {
-            // 🚀 [v8+] 삽입된 메시지 id를 함께 브로드캐스트 → 클라이언트 수정/삭제 가능
-            io.emit('receive_message', Object.assign({}, data, { id: this.lastID }));
+        // senderPic(base64)은 DB 미저장(히스토리 경량화). 실시간엔 실어 보냄. 아래는 참가자 개인 룸에만 전송.
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, sender, null, data.message, new Date().toLocaleString('ko-KR')], function() {
+            _emitToRoomUsers(data.roomId, 'receive_message', Object.assign({}, data, { sender, id: this.lastID }));
         });
     });
-    // 🚀 [v8+] 메시지 수정 (작성자만)
+    // 메시지 수정 (작성자만 — 인증 소켓이면 토큰 신원으로 판정)
     socket.on('edit_message', (data) => {
-        if(!data || !data.id) return;
-        db.run(`UPDATE chats SET message = ? WHERE id = ? AND sender = ?`, [data.message, data.id, data.sender], function() {
-            io.emit('message_edited', { id: data.id, roomId: data.roomId, message: data.message, sender: data.sender });
+        if (!data || !data.id) return;
+        const sender = socket.data.user || data.sender;
+        db.run(`UPDATE chats SET message = ? WHERE id = ? AND sender = ?`, [data.message, data.id, sender], function() {
+            if (this.changes) _emitToRoomUsers(data.roomId, 'message_edited', { id: data.id, roomId: data.roomId, message: data.message, sender });
         });
     });
-    // 🚀 [v8+] 메시지 삭제 (작성자만)
+    // 메시지 삭제 (작성자만)
     socket.on('delete_message', (data) => {
-        if(!data || !data.id) return;
-        db.run(`DELETE FROM chats WHERE id = ? AND sender = ?`, [data.id, data.sender], function() {
-            io.emit('message_deleted', { id: data.id, roomId: data.roomId, sender: data.sender });
+        if (!data || !data.id) return;
+        const sender = socket.data.user || data.sender;
+        db.run(`DELETE FROM chats WHERE id = ? AND sender = ?`, [data.id, sender], function() {
+            if (this.changes) _emitToRoomUsers(data.roomId, 'message_deleted', { id: data.id, roomId: data.roomId, sender });
         });
     });
 });

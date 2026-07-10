@@ -1634,7 +1634,7 @@
             </div>
 
             <div style="height:1px; background:var(--border-color); margin:5px 0;"></div>
-            <div class="input-group"><label>로그인 비밀번호</label><input type="password" id="modal-password" placeholder="로그인 비밀번호"></div>
+            <div class="input-group"><label>로그인 비밀번호</label><input type="password" id="modal-password" placeholder="변경 시에만 입력 (비우면 기존 유지)"></div>
             <div class="input-group"><label>예금주 실명</label><input type="text" id="modal-realname"></div>
             <div class="input-group"><label>이메일 <span style="font-size:11px; color:var(--text-sub);">(비밀번호 분실 시 OTP 수신용)</span></label><input type="email" id="modal-email" placeholder="example@email.com"></div>
             <div class="input-group"><label>휴대전화번호</label><input type="tel" id="modal-phone" placeholder="010-0000-0000"></div>
@@ -1719,7 +1719,7 @@
                     <thead style="background:#f8fafc; position:sticky; top:0;">
                         <tr>
                             <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">ID</th>
-                            <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">비밀번호</th>
+                            <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">비번상태</th>
                             <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">실명</th>
                             <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">이메일</th>
                             <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">전화</th>
@@ -2271,7 +2271,8 @@
             isAdmin = !!(data && data.name === '이재준');
             if(window.applyAdminUIState) applyAdminUIState(isAdmin);
 
-            socket = io(API_URL, { transports: ['websocket', 'polling'] });
+            // 🔐 소켓 핸드셰이크에 세션 토큰 전달 → 서버가 신원 바인딩 + 개인 룸 가입(스코프 전송 수신). 발신자 위조 차단.
+            socket = io(API_URL, { transports: ['websocket', 'polling'], auth: { token: window.EARTH_TOKEN || localStorage.getItem('earth_token') || '' } });
             socket.on('receive_message', handleReceiveMessage);
             // 🚀 실시간 친구 추가 알림 (별도 새로고침 없이 친구목록/대화방 즉시 갱신)
             socket.on('friend_added', handleFriendAdded);
@@ -2342,7 +2343,7 @@
         // --- 🚀 프로필/Admin 제어 모달 ---
         function openProfileModal() {
             if(!currentUser) return;
-            document.getElementById('modal-name').value = currentUser.name; document.getElementById('modal-realname').value = currentUser.realname || ''; document.getElementById('modal-password').value = currentUser.password || ''; document.getElementById('modal-bank').value = currentUser.bank || ''; document.getElementById('modal-account').value = currentUser.account || '';
+            document.getElementById('modal-name').value = currentUser.name; document.getElementById('modal-realname').value = currentUser.realname || ''; document.getElementById('modal-password').value = ''; document.getElementById('modal-bank').value = currentUser.bank || ''; document.getElementById('modal-account').value = currentUser.account || '';
             const phoneEl = document.getElementById('modal-phone'); if(phoneEl) phoneEl.value = currentUser.phone || '';
             const emailEl = document.getElementById('modal-email'); if(emailEl) emailEl.value = currentUser.email || '';
             const shipEl = document.getElementById('modal-shipping'); if(shipEl) shipEl.value = currentUser.shipping_address || '';
@@ -2357,12 +2358,15 @@
             const phone = (document.getElementById('modal-phone') && document.getElementById('modal-phone').value.trim()) || '';
             const email = (document.getElementById('modal-email') && document.getElementById('modal-email').value.trim()) || '';
             const shipping_address = (document.getElementById('modal-shipping') && document.getElementById('modal-shipping').value.trim()) || '';
-            if(!password || !realname || !bank || !account) return showToast("ID/비밀번호/실명/은행/계좌는 필수입니다.");
+            if(!realname || !bank || !account) return showToast("실명/은행/계좌는 필수입니다.");
             if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast("이메일 형식이 올바르지 않습니다.");
             try {
-                const res = await fetch(`${API_URL}/api/user/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: currentUser.name, password, realname, bank, account, phone, email, shipping_address, profilePic: tempProfilePicBase64 }) });
+                // 🔐 비밀번호는 새로 입력했을 때만 전송(빈 값이면 기존 유지). 서버가 해시 저장.
+                const body = { name: currentUser.name, realname, bank, account, phone, email, shipping_address, profilePic: tempProfilePicBase64 };
+                if(password) body.password = password;
+                const res = await fetch(`${API_URL}/api/user/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
                 if(res.ok) {
-                    currentUser.password = password; currentUser.realname = realname; currentUser.bank = bank; currentUser.account = account; currentUser.phone = phone; currentUser.email = email; currentUser.shipping_address = shipping_address; currentUser.profilePic = tempProfilePicBase64;
+                    currentUser.realname = realname; currentUser.bank = bank; currentUser.account = account; currentUser.phone = phone; currentUser.email = email; currentUser.shipping_address = shipping_address; currentUser.profilePic = tempProfilePicBase64;
                     if(tempProfilePicBase64) document.getElementById('my-profile-pic').src = tempProfilePicBase64;
                     const str = `[${bank}] ${account} (${realname})`; const modalAccEl = document.getElementById('modal-withdraw-account-info'); if(modalAccEl) modalAccEl.innerText = str;
                     
@@ -2555,8 +2559,9 @@
                 if(!res.ok) return showToast(data.error);
                 document.getElementById('pwd-recovery-step-2').style.display = 'none';
                 document.getElementById('pwd-recovery-step-3').style.display = 'block';
-                document.getElementById('pwd-recovery-demo-otp-value').innerText = data.demo_otp;
-                showToast(`✉️ OTP가 ${data.email}로 발송되었습니다.`);
+                const _otpEl = document.getElementById('pwd-recovery-demo-otp-value');
+                if(_otpEl) _otpEl.innerText = '이메일로 받은 6자리 코드를 입력하세요';
+                showToast(`✉️ OTP가 ${data.email}로 발송되었습니다. (미수신 시 관리자에게 문의)`);
             } catch(e){ showToast("네트워크 오류"); }
         }
 
@@ -2630,7 +2635,7 @@
                 const esc = s => (s || '').toString().replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 h += `<tr style="border-bottom:1px solid var(--border-color);">
                     <td style="padding:6px 8px; font-weight:bold; color:var(--primary);">${esc(u.name)}</td>
-                    <td style="padding:6px 8px; font-family:monospace; color:var(--danger);">${esc(u.password)}</td>
+                    <td style="padding:6px 8px; font-size:11px; color:${u.pwState==='해시'?'#16a34a':'#b45309'};">${esc(u.pwState||'-')}</td>
                     <td style="padding:6px 8px;">${esc(u.realname)}</td>
                     <td style="padding:6px 8px; font-size:11px;">${esc(u.email) || '<span style="color:#cbd5e1;">미등록</span>'}</td>
                     <td style="padding:6px 8px; font-size:11px;">${esc(u.phone) || '<span style="color:#cbd5e1;">-</span>'}</td>
