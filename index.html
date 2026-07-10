@@ -898,7 +898,33 @@
                 <div class="input-group"><label>예금주 실명</label><input type="text" id="reg-realname" placeholder="예: 홍길동"></div>
                 <div class="input-group"><label>정산 은행명</label><input type="text" id="reg-bank" placeholder="예: 우리은행"></div>
                 <div class="input-group"><label>정산 수령 계좌번호</label><input type="text" id="reg-account" placeholder="숫자만 입력"></div>
-                <button class="btn btn-success" style="width: 100%; padding:14px; margin-top:5px; font-size:15px;" onclick="registerUser()">회원 등록 및 접속</button>
+
+                <!-- 🔐 개인정보 수집·이용 동의 (필수) -->
+                <div style="margin-top:14px;">
+                    <label style="font-weight:700; font-size:13px; display:block; margin-bottom:6px;">개인정보 수집·이용 동의 <span style="color:var(--danger);">*</span></label>
+                    <div style="max-height:170px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px; padding:12px 14px; background:#f8fafc; font-size:11.5px; line-height:1.7; color:#334155;">
+                        <b>○ 개인정보 수집ㆍ이용 목적</b><br>
+                        (주)오름앤파트너스(이하 '회사'는)는 수집한 개인정보를 다음의 목적을 위해 활용합니다.<br>
+                        &nbsp;&nbsp;ο 회원 관리 : 회원제 서비스 이용에 따른 본인확인, 개인 식별, 불량회원의 부정 이용 방지와 비인가 사용 방지, 가입 의사 확인, 불만처리 등 민원처리<br><br>
+                        <b>○ 수집하는 개인정보 항목</b><br>
+                        회사는 회원가입, 상담, 서비스 신청 등등을 위해 아래와 같은 개인정보를 수집하고 있습니다.<br>
+                        &nbsp;&nbsp;ο 수집항목 : 성명, 로그인ID, 비밀번호, 회사명, 전화번호, 이메일, 핸드폰<br>
+                        &nbsp;&nbsp;ο 개인정보 수집방법 : 홈페이지(회원가입)<br><br>
+                        <b>○ 개인정보의 보유 및 이용기간</b><br>
+                        회사는 이용자의 개인정보의 수집목적 또는 제공받은 목적이 달성되면 파기하는 것을 원칙으로 합니다. 다만, 관계법령의 규정에 의하여 보존할 필요가 있는 경우 일정한 기간 동안 회원정보를 보관합니다.<br>
+                        &nbsp;&nbsp;ο 보존 항목 : 성명, 로그인ID, 비밀번호, 회사명, 전화번호, 이메일, 핸드폰<br>
+                        &nbsp;&nbsp;ο 보존 근거 : 전자상거래등에서의 소비자보호에 관한 법률<br>
+                        &nbsp;&nbsp;ο 보존 기간 : 5년<br><br>
+                        <b>○ 수집한 개인정보의 위탁</b><br>
+                        회사는 이용자의 동의없이 이용자의 정보를 외부 업체에 위탁하지 않습니다.
+                    </div>
+                    <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:12.5px; cursor:pointer;">
+                        <input type="checkbox" id="reg-privacy-agree" style="width:16px; height:16px;">
+                        위 개인정보 수집·이용에 동의합니다. (필수)
+                    </label>
+                </div>
+
+                <button class="btn btn-success" style="width: 100%; padding:14px; margin-top:12px; font-size:15px;" onclick="registerUser()">회원 등록 및 접속</button>
             </div>
         </div>
     </div><!-- /login-wrap -->
@@ -2129,6 +2155,9 @@
             if(!business_type) return showToast("업체 유형을 선택해 주세요.");
             if(!email) return showToast("이메일을 입력해 주세요. (비밀번호 분실 시 OTP 수신용)");
             if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast("이메일 형식이 올바르지 않습니다.");
+            // 🔐 개인정보 수집·이용 동의(필수)
+            const _privacyEl = document.getElementById('reg-privacy-agree');
+            if(!_privacyEl || !_privacyEl.checked) return showToast("개인정보 수집·이용에 동의해 주세요. (필수)");
 
             // 🚀 [v8+] 규제 업종은 자격증 필수
             const regulated = (window.REGULATED_TYPES || []).includes(business_type);
@@ -2146,7 +2175,7 @@
             } catch(e){ /* 서버 다운 시 일단 진행 */ }
 
             try {
-                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc }) });
+                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc, privacy_agreed: true }) });
                 const data = await res.json();
                 if(res.ok) {
                     if(data.needsApproval) {

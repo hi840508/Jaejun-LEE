@@ -211,6 +211,7 @@ function initTables() {
         db.run(`ALTER TABLE users ADD COLUMN reset_otp TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN reset_otp_expiry INTEGER`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN reset_otp_used INTEGER DEFAULT 0`, () => {});
+        db.run(`ALTER TABLE users ADD COLUMN privacy_agreed_at TEXT`, () => {});   // 🔐 개인정보 수집·이용 동의 시각
         db.run(`ALTER TABLE users ADD COLUMN force_pwd_change INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE transfers ADD COLUMN rawDate TEXT`, () => {});
         db.run(`ALTER TABLE deposits ADD COLUMN rawDate TEXT`, () => {});
@@ -412,15 +413,18 @@ app.post('/api/auth/check-id', (req, res) => {
 app.post('/api/auth/logout', (req, res) => { revokeToken(req.headers['x-auth-token']); res.json({ success: true }); });
 
 app.post('/api/auth/register', (req, res) => {
-    const { name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc } = req.body;
+    const { name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc, privacy_agreed } = req.body;
+    // 🔐 개인정보 수집·이용 동의(필수) — 미동의 시 가입 거부
+    if(!privacy_agreed) return res.status(400).json({ error: '개인정보 수집·이용 동의가 필요합니다.' });
     // 🚀 [v8+] 의료·약무 관련 업종은 자격증 필수 + Admin 승인 대기
     const regulated = ['dental_lab', 'medical', 'pharmacy', 'medical_wholesale'];
     const needsApproval = regulated.includes(business_type);
     if(needsApproval && !license_doc) return res.status(400).json({ error: '해당 업종은 자격증 업로드가 필수입니다.' });
     const approvalStatus = needsApproval ? 'pending' : 'approved';
+    const privacyAgreedAt = new Date().toISOString();   // 동의 시각 기록(보관 근거)
 
-    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_doc, approval_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, hashPassword(password), realname, bank, account, needsApproval ? 0 : 10000, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus], (err) => {
+    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_doc, approval_status, privacy_agreed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, hashPassword(password), realname, bank, account, needsApproval ? 0 : 10000, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus, privacyAgreedAt], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
         // 승인 대기는 보너스 X. 자동 승인 회원만 10,000원 정산 한도 축하금
         if(!needsApproval) {
