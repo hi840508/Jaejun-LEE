@@ -924,10 +924,21 @@ app.post('/api/order/status', (req, res) => {
             // ★환불 수락(배민식)★: 잔액 이동 없이 매출 취소 표시. 가드로 중복환불·미결제환불 차단.
             if (ord.status === 'refunded') return res.status(400).json({ error: '이미 환불 처리된 주문입니다.' });
             if (!['approved', 'shipping', 'delivered'].includes(ord.status)) return res.status(400).json({ error: '승인/배송 상태의 주문만 환불할 수 있습니다.' });
-            db.serialize(() => {
-                if (ord.txId) db.run(`UPDATE transactions SET refunded = 1 WHERE id = ?`, [ord.txId]);   // 매출 취소(구매내역·정산에서 제외)
-                db.run(`UPDATE product_orders SET status = 'refunded' WHERE id = ?`, [orderId], () => res.json({ success: true }));
-            });
+            const _finish = () => db.run(`UPDATE product_orders SET status = 'refunded' WHERE id = ?`, [orderId], () => res.json({ success: true }));
+            if (ord.txId) {
+                // 원 거래를 매출취소 처리 + 매출취소 거래기록 생성(거래내역·영수증·정산에 반영)
+                db.get(`SELECT * FROM transactions WHERE id = ?`, [ord.txId], (e3, otx) => {
+                    db.serialize(() => {
+                        db.run(`UPDATE transactions SET refunded = 1 WHERE id = ?`, [ord.txId]);   // 매출 취소(구매내역·정산에서 제외)
+                        if (otx) {
+                            const now = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
+                            db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, refunded) VALUES (?, ?, ?, ?, ?, 'refund', ?, ?, 1)`,
+                                [otx.seller, otx.buyer, otx.productId, `[매출취소] ${otx.productName || ''}`, otx.amount, rawDate, now]);
+                        }
+                        _finish();
+                    });
+                });
+            } else { _finish(); }
         } else {
             db.run(`UPDATE product_orders SET status = ?, tracking = ?, courier = ? WHERE id = ?`, [status, tracking || ord.tracking || null, req.body.courier || ord.courier || null, orderId], () => res.json({ success: true }));
         }

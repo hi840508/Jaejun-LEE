@@ -8220,23 +8220,34 @@ pdfjsScript,
             const list = getFilteredHistory();
             const h = list[idx];
             if(!h) return showToast("거래를 찾을 수 없습니다.");
-            const sign = (h.buyer === currentUser.name || h.sender === currentUser.name || (h.type||'').includes('출금') || h.type === '환불 지급') ? '-' : '+';
+            // 🧾 매출 취소(환불) 여부 판정 → 영수증에 반영
+            const isCancel = !!(h.refunded || h.purchaseType === 'refund' || (h.type||'').includes('환불') || /매출취소|\[환불\]/.test(h.productName||''));
+            const sign = isCancel ? '-' : ((h.buyer === currentUser.name || h.sender === currentUser.name || (h.type||'').includes('출금')) ? '-' : '+');
             const amt = `${sign}${Number(h.amount||0).toLocaleString()}원`;
             const target = h.seller || h.receiver || h.sender || '시스템';
             const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            const rno = 'RC-' + (String(h.rawDate||h.date||'').replace(/\D/g,'').slice(-12) || String(Date.now()));
+            const rno = (isCancel?'CN-':'RC-') + (String(h.rawDate||h.date||'').replace(/\D/g,'').slice(-12) || String(Date.now()));
+            // 거래처 통일 표기: 상호/실명 · ID
+            const _bizName = h.counterpartyRealname || h.storeName || target;
+            const _cleanProduct = (h.productName || '-').replace(/^\[(매출취소|환불)\]\s*/, '');
             const rows = [
                 ['영수증 번호', rno], ['발행일시', h.date || new Date().toLocaleString('ko-KR')],
-                ['거래 유형', h.type || '거래'], ['상세 내역', h.productName || '-'],
-                ['거래 상대', target], ['계정', `${currentUser.name} (${currentUser.realname || ''})`]
+                ['거래 유형', isCancel ? '매출 취소 (환불)' : (h.type || '거래')],
+                ['거래처', _bizName + (h.seller ? ` (ID: ${h.seller})` : '')]
             ];
-            if(h.refunded) rows.push(['상태', '환불 완료']);
+            if(h.storeName) rows.push(['브랜드', h.storeName]);
+            rows.push(['상품', _cleanProduct]);
+            rows.push(['계정', `${currentUser.name} (${currentUser.realname || ''})`]);
+            if(isCancel) rows.push(['상태', '매출 취소 · 환불 완료']);
+            const title = isCancel ? '매출 취소 영수증 (환불)' : '거래 영수증';
+            const hdBg = isCancel ? '#b91c1c' : '#2a2a2a';
+            const amtLabel = isCancel ? '취소 금액' : '결제 금액';
             const w = window.open('', 'receipt', 'width=460,height=700'); if(!w){ showToast('팝업 차단을 해제하세요.'); return; }
-            w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>거래 영수증</title>'
-                +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;margin:0;color:#111;}.hd{background:#2a2a2a;color:#fff;padding:16px 20px;}.hd h1{margin:0;font-size:18px;}.hd .s{font-size:11px;opacity:.8;margin-top:3px;}.b{padding:18px 20px;}table{width:100%;border-collapse:collapse;font-size:13px;}td{padding:8px 4px;border-bottom:1px solid #eee;}td.l{color:#6b7280;width:34%;}.amt{display:flex;justify-content:space-between;align-items:center;border-top:2px solid #2a2a2a;margin-top:12px;padding-top:14px;}.amt .v{font-size:22px;font-weight:900;}.ft{color:#9aa;font-size:11px;margin-top:16px;line-height:1.6;}@media print{.noprint{display:none;}}</style></head><body>'
-                +'<div class="hd"><h1>거래 영수증</h1><div class="s">Transaction Receipt · 오름앤파트너스</div></div><div class="b"><table>'
+            w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>'+esc(title)+'</title>'
+                +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;margin:0;color:#111;}.hd{background:'+hdBg+';color:#fff;padding:16px 20px;}.hd h1{margin:0;font-size:18px;}.hd .s{font-size:11px;opacity:.8;margin-top:3px;}.b{padding:18px 20px;}table{width:100%;border-collapse:collapse;font-size:13px;}td{padding:8px 4px;border-bottom:1px solid #eee;}td.l{color:#6b7280;width:34%;}.amt{display:flex;justify-content:space-between;align-items:center;border-top:2px solid '+hdBg+';margin-top:12px;padding-top:14px;}.amt .v{font-size:22px;font-weight:900;'+(isCancel?'color:#b91c1c;':'')+'}.ft{color:#9aa;font-size:11px;margin-top:16px;line-height:1.6;}@media print{.noprint{display:none;}}</style></head><body>'
+                +'<div class="hd"><h1>'+esc(title)+'</h1><div class="s">'+(isCancel?'Sales Cancellation / Refund Receipt':'Transaction Receipt')+' · 오름앤파트너스</div></div><div class="b"><table>'
                 + rows.map(r=>`<tr><td class="l">${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')
-                +'</table><div class="amt"><span style="color:#6b7280;">결제 금액</span><span class="v">'+esc(amt)+'</span></div>'
+                +'</table><div class="amt"><span style="color:#6b7280;">'+esc(amtLabel)+'</span><span class="v">'+esc(amt)+'</span></div>'
                 +'<div class="ft">본 영수증은 오름앤파트너스 거래 원장에서 자동 발행되었습니다.<br>발행 시각: '+esc(new Date().toLocaleString('ko-KR'))+'</div>'
                 +'<div class="noprint" style="text-align:center;margin-top:16px;"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;font-weight:700;background:#2563eb;color:#fff;border:0;border-radius:8px;cursor:pointer;">PDF로 저장 / 인쇄</button></div>'
                 +'</div></body></html>');
