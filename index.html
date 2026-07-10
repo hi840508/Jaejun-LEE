@@ -2266,9 +2266,8 @@
             const modalAccEl = document.getElementById('modal-withdraw-account-info');
             if(modalAccEl) modalAccEl.innerText = str;
 
-            // 🔐 관리자 권한은 '계정 신원'으로 판정(예전: 공유 비밀번호 'mars' 입력 → 백도어라 폐지).
-            //   서버가 세션 토큰으로 최종 강제하므로, 여기서는 Root Admin 계정에만 관리자 UI를 노출한다.
-            isAdmin = !!(data && data.name === '이재준');
+            // 🔐 관리자 권한은 '서버가 준 isAdmin 플래그'로 판정(허용목록 settings.admin_users 기반). 서버가 세션 토큰으로 최종 강제.
+            isAdmin = !!(data && data.isAdmin);
             if(window.applyAdminUIState) applyAdminUIState(isAdmin);
 
             // 🔐 소켓 핸드셰이크에 세션 토큰 전달 → 서버가 신원 바인딩 + 개인 룸 가입(스코프 전송 수신). 발신자 위조 차단.
@@ -2446,8 +2445,8 @@
         };
 
         window.activateAdmin = async function() {
-            // 🔐 신원 기반: Root Admin 계정으로 로그인한 경우에만 활성화(서버가 세션 토큰으로 재확인). 공유 비밀번호 방식 폐지.
-            if(!currentUser || currentUser.name !== '이재준') return showToast("관리자(Root Admin) 계정으로 로그인해야 합니다.");
+            // 🔐 신원 기반: 서버 허용목록(admin_users)에 속한 계정만 활성화(서버가 세션 토큰으로 재확인). 공유 비밀번호 방식 폐지.
+            if(!currentUser || !currentUser.isAdmin) return showToast("관리자 계정으로 로그인해야 합니다.");
             isAdmin = true;
             applyAdminUIState(true);
             const pe = document.getElementById('admin-activate-pwd'); if(pe) pe.value = '';

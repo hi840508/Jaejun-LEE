@@ -222,8 +222,8 @@ function initTables() {
         // 🚀 [v8+] 전역 설정 (Admin 권한 비밀번호 등) — 초기값 'mars'
         db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`, () => {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', 'mars')`, () => {});
-            // 🔐 관리자 계정 허용목록(쉼표구분) — 예전 공유 비밀번호 'mars' 백도어를 대체하는 신원 기반 권한. 기본: Root Admin.
-            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_users', '이재준')`, () => {});
+            // 🔐 관리자 계정 허용목록(쉼표구분 로그인ID) — 예전 공유 비밀번호 'mars' 백도어를 대체하는 신원 기반 권한. 기본: 소유자 계정.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_users', 'hi840508')`, () => {});
         });
 
         // 🧾 전자세금계산서 이력 + 정산 기본 변수(모두 settings로 변경 가능): VAT율 10%, 결제수수료율 2.7%, SW 월사용료 10000원
@@ -273,7 +273,7 @@ function requireUser(req, res) {
 }
 
 // 🔐 관리자 신원(세션 토큰 기반). ⛔ 예전 'mars' 공유 비밀번호 백도어 폐지 — settings.admin_users(쉼표구분, 기본 '이재준')에 속한 로그인 사용자만 관리자.
-let ADMIN_USERS = new Set(['이재준']);
+let ADMIN_USERS = new Set(['hi840508']);
 function loadAdminUsers() {
     db.get(`SELECT value FROM settings WHERE key='admin_users'`, [], (e, row) => {
         if (row && row.value) ADMIN_USERS = new Set(String(row.value).split(',').map(s => s.trim()).filter(Boolean));
@@ -389,7 +389,7 @@ app.post('/api/auth/verify', (req, res) => {
         if (row) {
             if (verifyPassword(req.body.password, row.password)) {
                 upgradePasswordIfLegacy(row.name, row.password, req.body.password);
-                res.json({ exists: true, user: stripPwd(row), token: issueToken(row.name), mustChangePassword: !!row.force_pwd_change });
+                res.json({ exists: true, user: Object.assign(stripPwd(row), { isAdmin: isAdminName(row.name) }), token: issueToken(row.name), mustChangePassword: !!row.force_pwd_change, isAdmin: isAdminName(row.name) });
             }
             else res.status(401).json({ exists: true, error: "비밀번호가 불일치합니다." });
         } else res.json({ exists: false });
@@ -436,7 +436,8 @@ app.post('/api/auth/register', (req, res) => {
             balance: needsApproval ? 0 : 10000,
             profilePic: null,
             needsApproval,
-            token: needsApproval ? null : issueToken(name)
+            token: needsApproval ? null : issueToken(name),
+            isAdmin: isAdminName(name)
         });
     });
 });
@@ -560,7 +561,7 @@ app.post('/api/auth/login-with-otp', (req, res) => {
         // OTP 사용 처리 + 비밀번호 강제 변경 플래그 설정
         db.run(`UPDATE users SET reset_otp_used = 1, force_pwd_change = 1 WHERE name = ?`, [name], (e2) => {
             row.force_pwd_change = 1;
-            res.json({ success: true, user: stripPwd(row), token: issueToken(row.name), mustChangePassword: true });
+            res.json({ success: true, user: Object.assign(stripPwd(row), { isAdmin: isAdminName(row.name) }), token: issueToken(row.name), mustChangePassword: true, isAdmin: isAdminName(row.name) });
         });
     });
 });
