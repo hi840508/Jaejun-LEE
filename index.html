@@ -1174,6 +1174,12 @@
                     <div id="prod-form-content" style="display:none;">
                     <!-- 🚀 새로운 상품 등록 폼: 대표 파일 + 주문서 PDF + 추가 파일 + 안내 메모 -->
                     <div style="background:#f8fafc; border-radius:12px; padding:14px; margin-bottom:12px; border:1px solid var(--border-color);">
+                        <!-- 🔗 홈페이지 주소(Admin 전용): 입력 시 파일 없이도 '링크 상품'으로 등록되어 클릭 시 해당 페이지로 연결 -->
+                        <div id="prod-link-row" style="display:none; margin-bottom:10px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:8px; padding:10px 12px;">
+                            <label style="font-size:12px; font-weight:bold; color:#3730a3; display:block; margin-bottom:4px;">🔗 홈페이지 주소 (관리자 전용 · 선택)</label>
+                            <input type="url" id="prod-link-url" placeholder="예: https://oreumpartners.com/main/main.asp" style="width:100%; padding:8px; border-radius:6px; border:1px solid #c7d2fe;">
+                            <div style="font-size:11px; color:#4338ca; margin-top:4px;">입력하면 파일 없이도 등록되며, 상품 클릭 시 이 페이지로 연결됩니다.</div>
+                        </div>
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                             <div>
                                 <label style="font-size:12px; font-weight:bold; color:var(--text-main); display:block; margin-bottom:4px;">상품명 <span style="color:var(--danger);">*</span></label>
@@ -2633,6 +2639,8 @@
             if(dbReset) dbReset.style.display = active ? 'block' : 'none';
             const logoBtn = document.getElementById('admin-logo-btn');
             if(logoBtn) logoBtn.style.display = active ? 'inline-block' : 'none';
+            const linkRow = document.getElementById('prod-link-row');   // 🔗 링크 상품(홈페이지) 입력란 — Admin 전용
+            if(linkRow) linkRow.style.display = active ? 'block' : 'none';
             // 모달 내 활성/변경 UI 토글
             const actRow = document.getElementById('admin-activate-row');
             const chgRow = document.getElementById('admin-change-pwd-row');
@@ -3469,9 +3477,6 @@
             } catch(e) { window.open(url,'_blank','noopener'); }
         };
         window.setCategoryFilter = function(catId) {
-            // 약국/병원·의원/의약 도소매 선택 시 → 외부 제휴 사이트를 앱 내부에 빌트인(iframe) 표시
-            const ext = window.EXTERNAL_CATEGORY_STORE && window.EXTERNAL_CATEGORY_STORE[catId];
-            if(ext) { const lbl = (window.BRAND_CATEGORIES||[]).find(c=>c.id===catId); window.openExternalStore(ext, lbl?lbl.label:'제휴 상점'); return; }
             window.activeCategoryFilter = catId;
             window.renderCategoryChips && window.renderCategoryChips();
             window.renderSidebarCategories && window.renderSidebarCategories();
@@ -4203,9 +4208,29 @@
             const files = window.prodFormState.files;
             const pdf = window.prodFormState.pdfFile;
 
+            // 🔗 관리자: 홈페이지 주소를 입력하면 파일 없이 '링크 상품'으로 등록
+            const linkUrl = (isAdmin && document.getElementById('prod-link-url')) ? document.getElementById('prod-link-url').value.trim() : '';
             if(!name) return showToast("상품명을 입력하세요.");
             if(!storeId) return showToast("상점을 먼저 선택하세요.");
-            if(files.length === 0) return showToast("최소 1개 이상의 상품 파일을 등록하세요.");
+            if(!linkUrl && files.length === 0) return showToast("최소 1개 이상의 상품 파일을 등록하세요. (관리자는 홈페이지 주소 입력 가능)");
+
+            // 링크 상품 경로: 파일 인코딩 없이 URL만 등록
+            if(linkUrl && files.length === 0) {
+                const btnL = document.getElementById('btn-submit-product');
+                if(btnL) { btnL.disabled = true; btnL.style.opacity = '0.5'; btnL.innerText = '⏳ 등록 중...'; }
+                try {
+                    const linkThumb = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#eef2ff"/><g fill="none" stroke="#6366f1" stroke-width="6" stroke-linecap="round"><path d="M42 58 58 42"/><path d="M54 34l6-6a12 12 0 0 1 17 17l-6 6"/><path d="M46 66l-6 6a12 12 0 0 1-17-17l6-6"/></g></svg>');
+                    const res = await fetch(`${API_URL}/api/products/encrypt-build`, {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ name, price_stream: 0, price_original: pOri, stream_time: 0, stream_unit: 'd', seller: currentUser.name, storeId, thumbnail: linkThumb, encryptedPayload: '', description, is_package: false, link_url: linkUrl })
+                    });
+                    const data = await res.json();
+                    if(res.ok) { showToast('🔗 링크 상품 등록 완료 (클릭 시 홈페이지로 연결)'); resetProdForm(); loadMyStore(); }
+                    else showToast(data.error || '등록 실패');
+                } catch(err) { showToast('링크 상품 등록 실패: ' + (err.message||err)); }
+                finally { if(btnL) { btnL.disabled = false; btnL.style.opacity = '1'; btnL.innerText = '🚀 상품 등록하기 (출시)'; } }
+                return;
+            }
 
             // 첫 번째가 main, 나머지가 extras
             const main = files[0];
@@ -6072,6 +6097,8 @@ pdfjsScript,
                 const res = await fetch(`${API_URL}/api/product/detail/${id}`);
                 const p = await res.json();
                 if(!p || !p.id) return showToast('상품 정보를 찾을 수 없습니다.');
+                // 🔗 링크 상품: 뷰어 대신 등록된 홈페이지로 연결
+                if(p.link_url) { try { window.open(p.link_url, '_blank', 'noopener'); } catch(_){ location.href = p.link_url; } return; }
                 const titleEl = document.getElementById('modal-product-title');
                 if(titleEl) titleEl.innerText = p.name || '상품';
                 document.getElementById('universal-modal').style.display = 'flex';

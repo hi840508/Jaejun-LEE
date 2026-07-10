@@ -219,6 +219,7 @@ function initTables() {
         // 🚀 products: 패키지 메타 (대표 파일 + PDF + 추가 파일 묶음 JSON)
         db.run(`ALTER TABLE products ADD COLUMN package_data TEXT`, () => {});
         db.run(`ALTER TABLE products ADD COLUMN is_package INTEGER DEFAULT 0`, () => {});
+        db.run(`ALTER TABLE products ADD COLUMN link_url TEXT`, () => {});   // 🔗 링크 상품(외부 홈페이지 연결) — Admin 전용
 
         // 🚀 [v8+] 전역 설정 (Admin 권한 비밀번호 등) — 초기값 'mars'
         db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`, () => {
@@ -839,9 +840,11 @@ app.post('/api/products/encrypt-build', (req, res) => {
         const pid = req.body.storeId.startsWith('room_msg_') ? req.body.storeId + '_' + Date.now() : 'PRD_' + Date.now();
         const isPackage = req.body.is_package ? 1 : 0;
         const packageData = req.body.package_data || null;
+        // 🔗 링크 상품: 홈페이지 주소는 관리자(세션 토큰)만 등록 가능. 비관리자가 보내면 무시.
+        const linkUrl = (req.body.link_url && isAdminName(authUser(req))) ? String(req.body.link_url).trim() : null;
 
-        db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, stream_time, stream_unit, seller, thumbnail, encryptedPayload, compression_ratio, block_hash, ecc_signature, package_data, is_package) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [pid, req.body.storeId, req.body.name, req.body.description, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, Number(req.body.stream_time)||0, req.body.stream_unit, req.body.seller, req.body.thumbnail, req.body.encryptedPayload, ratio, block_hash, ecc_signature, packageData, isPackage], function(err) {
+        db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, stream_time, stream_unit, seller, thumbnail, encryptedPayload, compression_ratio, block_hash, ecc_signature, package_data, is_package, link_url) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [pid, req.body.storeId, req.body.name, req.body.description, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, Number(req.body.stream_time)||0, req.body.stream_unit, req.body.seller, req.body.thumbnail, req.body.encryptedPayload, ratio, block_hash, ecc_signature, packageData, isPackage, linkUrl], function(err) {
                 if(err) return res.status(500).json({error: err.message});
                 res.json({ success: true, id: pid, ratio, block_hash, ecc_signature });
             });
