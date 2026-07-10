@@ -5,12 +5,20 @@ const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 const zlib = require('zlib');
+const fs = require('fs');
 const { Server } = require('socket.io');
 
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: '1000mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1000mb' }));
+
+// ===================== 💬 채팅 첨부 로컬 디스크 저장 =====================
+// 예전: 첨부(이미지·영상·3D)를 base64로 메시지 텍스트에 통째 인라인 → 방 열 때마다 전량 재전송(느림).
+// 이제: 파일을 서버 로컬 디스크(chat_uploads/)에 1회 저장하고 메시지엔 URL만 담는다 → 로딩 시 썸네일/URL만, 원본은 클릭 시 지연 로드 + 브라우저 캐시.
+const CHAT_UPLOAD_DIR = path.join(__dirname, 'chat_uploads');
+try { fs.mkdirSync(CHAT_UPLOAD_DIR, { recursive: true }); } catch (e) { console.warn('chat_uploads 생성 실패', e && e.message); }
+app.use('/chat-files', express.static(CHAT_UPLOAD_DIR, { maxAge: '365d', immutable: true }));
 
 // 실제 비대칭 디지털 서명 알고리즘(ECDSA) 
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -1122,6 +1130,23 @@ app.get('/api/chat/:roomId', (req, res) => {
     db.all(`SELECT * FROM (SELECT id, roomId, sender, senderPic, message, date FROM chats WHERE ${where} ORDER BY id DESC LIMIT ${lim}) ORDER BY id ASC`, params, (err, rows) => res.json(rows || []));
 });
 
+// 💬 채팅 첨부 업로드 — 파일을 로컬 디스크에 저장하고 접근 URL 반환(메시지에 URL만 담아 재전송 방지)
+app.post('/api/chat/attach', (req, res) => {
+    try {
+        const { filename, dataBase64 } = req.body || {};
+        if (!dataBase64) return res.status(400).json({ error: '데이터가 없습니다.' });
+        const buf = Buffer.from(String(dataBase64), 'base64');
+        if (!buf.length) return res.status(400).json({ error: '빈 파일입니다.' });
+        if (buf.length > 300 * 1024 * 1024) return res.status(413).json({ error: '파일이 너무 큽니다(300MB 초과).' });
+        let ext = path.extname(String(filename || '')).slice(0, 12).replace(/[^.\w]/g, '');
+        if (!ext) ext = '.bin';
+        const safe = 'att_' + Date.now() + '_' + crypto.randomBytes(8).toString('hex') + ext;
+        fs.writeFileSync(path.join(CHAT_UPLOAD_DIR, safe), buf);
+        const url = _shareBaseUrl(req) + '/chat-files/' + safe;
+        res.json({ success: true, url, size: buf.length });
+    } catch (e) { res.status(500).json({ error: (e && e.message) || '업로드 실패' }); }
+});
+
 // 🚀 [v5] 내 구매 목록 (구매자 관점, 상품 메타 + 환불 상태 JOIN)
 app.get('/api/purchases/:buyer', async (req, res) => {
     const buyer = req.params.buyer;
@@ -1507,10 +1532,12 @@ io.on('connection', (socket) => {
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[0], users[1]]);
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[1], users[0]]);
         }
-        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, data.senderPic, data.message, new Date().toLocaleString('ko-KR')], function() { 
+        // ⭐ senderPic(base64 프로필)은 DB에 저장하지 않음(null) — 예전엔 메시지마다 아바타 base64가 박혀 히스토리 로딩이 비대해졌음.
+        //   실시간 브로드캐스트에는 그대로 실어 보내고(라이브 표시), 히스토리 렌더는 프런트가 참가자 아바타를 1회 조회해 사용.
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, data.sender, null, data.message, new Date().toLocaleString('ko-KR')], function() {
             // 🚀 [v8+] 삽입된 메시지 id를 함께 브로드캐스트 → 클라이언트 수정/삭제 가능
-            io.emit('receive_message', Object.assign({}, data, { id: this.lastID })); 
-        }); 
+            io.emit('receive_message', Object.assign({}, data, { id: this.lastID }));
+        });
     });
     // 🚀 [v8+] 메시지 수정 (작성자만)
     socket.on('edit_message', (data) => {

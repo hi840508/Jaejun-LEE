@@ -4605,72 +4605,54 @@ pdfjsScript,
         };
 
 
-        // 🚀 [v8+] 채팅 파일 첨부: 단일/다중 무관 항상 HTML 번들로 변환하여 업로드
-        //   원본 파일은 절대 첨부되지 않음. 모든 파일은 buildChatBundleHTML로 패키징
+        // 💬 채팅 첨부(Blob) → 서버 로컬 디스크 업로드 후 접근 URL 반환(메시지엔 URL만 담아 재전송 방지)
+        window.uploadChatBlob = async function(blob, filename, mime) {
+            const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = () => rej(new Error('read fail')); r.readAsDataURL(blob); });
+            const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;   // 순수 base64(헤더 제거)
+            const res = await fetch(`${API_URL}/api/chat/attach`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roomId: currentChatRoomId, filename: filename || 'file', mime: mime || '', dataBase64: b64 })
+            });
+            const d = await res.json();
+            if(!res.ok || !d.success || !d.url) throw new Error(d.error || '업로드 실패');
+            return d.url;   // 절대 URL(https://earth.../chat-files/xxx)
+        };
+        window.uploadChatAttachment = function(file) { return window.uploadChatBlob(file, file.name, file.type || ''); };
+
+        // 🚀 [v9] 채팅 파일 첨부: 파일마다 로컬 디스크에 1회 업로드하고 메시지엔 URL만 담는다.
+        //   → 대화방 로딩 시 원본 바이트를 매번 재다운로드하지 않음(예전 base64 인라인 방식 폐지). 원본은 클릭/미리보기 시 지연 로드 + 브라우저 캐시(1년).
         window.handleChatFileAttach = async function(files) {
             if(!activeChatFriend) return showToast("먼저 대화방을 여세요.");
             const arr = Array.from(files);
             if(arr.length === 0) return;
 
-            // 용량 사전 점검 (HTML로 변환되면 base64 인코딩으로 약 33% 증가)
-            // 🚀 [v8+] 12MB 제한 제거 — 대형 3D 스캔 데이터를 위해 넉넉한 상한(200MB)만 둠
             const totalSize = arr.reduce((s, f) => s + f.size, 0);
             const totalMB = (totalSize / 1048576).toFixed(1);
-            if(totalSize > 200 * 1024 * 1024) {
-                return showToast(`전체 파일 크기가 ${totalMB}MB입니다. 200MB 이하로 보내 주세요.`);
+            if(totalSize > 300 * 1024 * 1024) {
+                return showToast(`전체 파일 크기가 ${totalMB}MB입니다. 300MB 이하로 보내 주세요.`);
             }
+            showToast(arr.length === 1 ? `${arr[0].name} 업로드 중...` : `${arr.length}개 파일 업로드 중...`);
 
-            const toast = arr.length === 1
-                ? `${arr[0].name} HTML 번들로 변환 중...`
-                : `${arr.length}개 파일을 HTML 번들로 변환 중...`;
-            showToast(toast);
-
-            try {
-                // 모든 파일을 base64로 변환
-                const filePayloads = [];
-                for(const f of arr) {
-                    const b64 = await fileToBase64(f);
-                    filePayloads.push({
-                        filename: f.name,
-                        type: f.type || 'application/octet-stream',
-                        size: f.size,
-                        data: b64
-                    });
+            const pic = document.getElementById('my-profile-pic').src;
+            let okCount = 0;
+            for(const f of arr) {
+                try {
+                    const url = await window.uploadChatAttachment(f);
+                    const mime = f.type || 'application/octet-stream';
+                    const sizeKB = (f.size / 1024).toFixed(0);
+                    // 파일마다 카드 1개(이미지·영상은 URL로 네이티브 미리보기 + 캐시). [FILE_ATTACH]이름|KB|mime|URL
+                    const msg = `[FILE_ATTACH]${f.name}|${sizeKB}|${mime}|${url}`;
+                    if(socket && socket.connected) {
+                        socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
+                    }
+                    appendMainMessage(currentUser.name, msg, pic);
+                    okCount++;
+                } catch(e) {
+                    showToast(`${f.name} 전송 실패: ${e.message || e}`);
+                    if(window.__earthDiag) window.__earthDiag('handleChatFileAttach error: ' + (e.message || e), true);
                 }
-
-                // HTML 번들 생성 (단일/다중 무관 동일 처리)
-                const bundleName = arr.length === 1
-                    ? arr[0].name.replace(/\.[^.]+$/, '') + '.html'
-                    : `attachments_${Date.now()}.html`;
-                const titleSafe = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-                const bundleTitle = arr.length === 1 ? arr[0].name : `첨부 파일 ${arr.length}개`;
-
-                // 🚀 [v8+] 번들 HTML 생성 — 3D 포함 시 Earth 스타일 뷰어, 아니면 카드형
-                const bundleHtml = window.buildChatBundleHTML(filePayloads, {
-                    title: bundleTitle,
-                    sender: currentUser.name || '',
-                    origin: window.location.origin + window.location.pathname
-                });
-
-                const bundleSize = new Blob([bundleHtml]).size;
-                if(bundleSize > 260 * 1024 * 1024) {
-                    return showToast(`HTML 번들 크기가 ${(bundleSize/1048576).toFixed(1)}MB로 너무 큽니다.`);
-                }
-
-                // base64 인코딩하여 메시지로 전송
-                const bundleB64 = 'data:text/html;base64,' + btoa(unescape(encodeURIComponent(bundleHtml)));
-                const sizeKB = (bundleSize / 1024).toFixed(0);
-                const msg = `[FILE_ATTACH]${bundleName}|${sizeKB}|text/html|${bundleB64}`;
-                const pic = document.getElementById('my-profile-pic').src;
-                if(socket && socket.connected) {
-                    socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
-                }
-                appendMainMessage(currentUser.name, msg, pic);
-                showToast(`HTML 번들 전송 완료 · ${arr.length}개 파일 · ${sizeKB}KB`);
-            } catch(e) {
-                showToast('전송 실패: ' + (e.message || e));
-                if(window.__earthDiag) window.__earthDiag('handleChatFileAttach error: ' + e.message, true);
             }
+            if(okCount) showToast(`전송 완료 · ${okCount}개 파일 (URL 방식 — 재로딩 없음)`);
             const ca = document.getElementById('chat-quick-attach'); if(ca) ca.value = '';
         }
 
@@ -5877,7 +5859,10 @@ pdfjsScript,
                 r.onerror = () => reject(new Error('blob read fail'));
                 r.readAsDataURL(orderHtmlBlob);
             });
-            const fileMsg = `[FILE_ATTACH]${orderFileName}|${orderSizeKB}|text/html|${orderDataUrl}`;
+            // 주문서 HTML도 로컬 디스크 업로드 후 URL로 첨부(인라인 base64 폐지). 업로드 실패 시에만 기존 data URL로 폴백.
+            let orderFileRef = orderDataUrl;
+            try { orderFileRef = await window.uploadChatBlob(orderHtmlBlob, orderFileName, 'text/html'); } catch(_) {}
+            const fileMsg = `[FILE_ATTACH]${orderFileName}|${orderSizeKB}|text/html|${orderFileRef}`;
 
             // 소켓 연결 보장: 미연결 시 잠시 대기
             const ensureSocket = async () => {
@@ -6459,13 +6444,23 @@ pdfjsScript,
             // 즉시 로딩 표시(빈칸→먹통 인지 방지). 최근 메시지만 페이지네이션으로 받아 렌더.
             const _cb = document.getElementById('main-chat-body');
             if(_cb) _cb.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;font-size:13px;">💬 대화 불러오는 중...</div>';
-            fetch(`${API_URL}/api/chat/${encodeURIComponent(currentChatRoomId)}?limit=40`).then(res => res.json()).then(msgs => {
+            // ⭐ 방 참가자 아바타 캐시(히스토리 메시지는 senderPic을 담지 않음 → 여기서 1회 조회)
+            window.__roomAvatars = window.__roomAvatars || {};
+            if(currentUser && currentUser.name) window.__roomAvatars[currentUser.name] = currentUser.profilePic || '';
+            const _avaFetch = fetch(`${API_URL}/api/users/${encodeURIComponent(friendName)}`).then(r=>r.json()).then(u => { if(u && u.profilePic) window.__roomAvatars[friendName] = u.profilePic; }).catch(()=>{});
+            Promise.all([
+                fetch(`${API_URL}/api/chat/${encodeURIComponent(currentChatRoomId)}?limit=40`).then(res => res.json()),
+                _avaFetch
+            ]).then(([msgs]) => {
                 const body = document.getElementById('main-chat-body'); if(!body) return;
                 body.innerHTML = '';
-                if(msgs && msgs.length>0) msgs.forEach(m => {
-                    const tm = m.date ? (m.date.match(/\d{1,2}:\d{2}/) || [''])[0] : '';
-                    appendMainMessage(m.sender, m.message, m.senderPic, tm, m.id);
-                });
+                window.__chatBulkLoading = true;   // 벌크 렌더: 메시지마다 스크롤 강제 안 함(리플로우 절감)
+                try {
+                    if(msgs && msgs.length>0) msgs.forEach(m => {
+                        const tm = m.date ? (m.date.match(/\d{1,2}:\d{2}/) || [''])[0] : '';
+                        appendMainMessage(m.sender, m.message, m.senderPic, tm, m.id);
+                    });
+                } finally { window.__chatBulkLoading = false; }
                 body.scrollTop = body.scrollHeight;
             }).catch(() => { const body = document.getElementById('main-chat-body'); if(body) body.innerHTML = '<div style="text-align:center;padding:30px;color:#dc2626;font-size:13px;">대화를 불러오지 못했습니다.</div>'; });
             document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-room').classList.add('active'); updateTabBadge();
@@ -7295,8 +7290,9 @@ pdfjsScript,
 
             // 🚀 시스템 안내 메시지 (친구 등록 등) - 카카오톡식 중앙 알림
             if(sender === '__system__') {
-                chatBody.innerHTML += `<div class="kt-system-line">${text}</div>`;
-                chatBody.scrollTop = chatBody.scrollHeight; return;
+                chatBody.insertAdjacentHTML('beforeend', `<div class="kt-system-line">${text}</div>`);
+                if(!window.__chatBulkLoading) chatBody.scrollTop = chatBody.scrollHeight;
+                return;
             }
 
             const isMe = sender === currentUser.name;
@@ -7356,7 +7352,7 @@ pdfjsScript,
                     // 공유 통합뷰어 카드: 썸네일 표시 + 클릭 시 다운로드(스마트: 부모 앱 있으면 로컬 반영, 없으면 파일 저장)
                     preview = `<div class="kt-card-preview" style="cursor:pointer" onclick="rcDownloadShare('${dataUrl}','${escFname}')"><img src="${_thumb}" alt=""></div>`;
                 } else if(isImage) {
-                    preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><img src="${dataUrl}" alt=""></div>`;
+                    preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><img src="${dataUrl}" alt="" loading="lazy" decoding="async"></div>`;
                 } else if(isVideo) {
                     preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><video src="${dataUrl}" muted preload="metadata"></video><div class="play-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);font-size:36px;color:#fff;pointer-events:none;">▶</div></div>`;
                 } else if(isAudio) {
@@ -7471,19 +7467,21 @@ pdfjsScript,
 
             if(isMe) {
                 const bubbleClass = sameAsLast ? 'kt-bubble me same-sender' : 'kt-bubble me';
-                chatBody.innerHTML += `<div class="kt-msg-line me${sameAsLast?' same-sender':''}" data-sender="${sender}"${idAttr}><div class="kt-time">${time}</div>${menuBtn}<div class="${bubbleClass}">${displayHtml}</div></div>`;
+                chatBody.insertAdjacentHTML('beforeend', `<div class="kt-msg-line me${sameAsLast?' same-sender':''}" data-sender="${sender}"${idAttr}><div class="kt-time">${time}</div>${menuBtn}<div class="${bubbleClass}">${displayHtml}</div></div>`);
             } else {
                 const showName = !sameAsLast;
+                // ⭐ senderPic은 이제 히스토리에 저장 안 함(null) → 방 참가자 아바타 캐시(__roomAvatars)에서 조회, 없으면 이니셜.
+                const avaSrc = picBase64 || (window.__roomAvatars && window.__roomAvatars[sender]) || '';
                 const avatar = sameAsLast
                     ? `<div class="kt-avatar-spacer"></div>`
-                    : (picBase64 ? `<img class="kt-avatar" src="${picBase64}">` : `<div class="kt-avatar" style="display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:13px; background:linear-gradient(135deg,#94a3b8,#64748b);">${(sender||'?').substring(0,1)}</div>`);
+                    : (avaSrc ? `<img class="kt-avatar" src="${avaSrc}">` : `<div class="kt-avatar" style="display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:13px; background:linear-gradient(135deg,#94a3b8,#64748b);">${(sender||'?').substring(0,1)}</div>`);
                 if(showName) {
-                    chatBody.innerHTML += `<div class="kt-sender-name">${sender === '이재준' ? 'Root Admin (고객센터)' : sender}</div>`;
+                    chatBody.insertAdjacentHTML('beforeend', `<div class="kt-sender-name">${sender === '이재준' ? 'Root Admin (고객센터)' : sender}</div>`);
                 }
                 const bubbleClass = sameAsLast ? 'kt-bubble other same-sender' : 'kt-bubble other';
-                chatBody.innerHTML += `<div class="kt-msg-line other${sameAsLast?' same-sender':''}" data-sender="${sender}"${idAttr}>${avatar}<div class="kt-bubble-col"><div class="${bubbleClass}">${displayHtml}</div></div><div class="kt-time">${time}</div></div>`;
+                chatBody.insertAdjacentHTML('beforeend', `<div class="kt-msg-line other${sameAsLast?' same-sender':''}" data-sender="${sender}"${idAttr}>${avatar}<div class="kt-bubble-col"><div class="${bubbleClass}">${displayHtml}</div></div><div class="kt-time">${time}</div></div>`);
             }
-            chatBody.scrollTop = chatBody.scrollHeight;
+            if(!window.__chatBulkLoading) chatBody.scrollTop = chatBody.scrollHeight;
         }
 
         // 🚀 [v8+] 메시지 수정/삭제 메뉴 (카카오톡식)
@@ -8217,8 +8215,15 @@ pdfjsScript,
     var room=currentChatRoomId, p=picSrc(), me=meName();
     var arr=window.__rcPendingAttach.splice(0);
     arr.forEach(function(it,i){
-      setTimeout(function(){
-        try{ socket.emit('send_message', { roomId:room, sender:me, senderPic:p, message:'[FILE_ATTACH]'+it.name+'|'+it.sizeKB+'|'+it.mime+'|'+it.dataUrl }); }catch(e){}
+      setTimeout(async function(){
+        try{
+          var payload = it.dataUrl;
+          // 혹시 base64 data URI가 넘어오면 디스크 업로드 후 URL로 치환(인라인 재전송 방지). 이미 URL/THUMB이면 그대로.
+          if(typeof payload==='string' && payload.indexOf('data:')===0 && window.uploadChatBlob){
+            try{ var bl=await (await fetch(payload)).blob(); payload=await window.uploadChatBlob(bl, it.name, it.mime||''); }catch(_){}
+          }
+          socket.emit('send_message', { roomId:room, sender:me, senderPic:p, message:'[FILE_ATTACH]'+it.name+'|'+it.sizeKB+'|'+it.mime+'|'+payload });
+        }catch(e){}
       }, i*230);
     });
     if(typeof showToast==='function') showToast(arr.length+'개 영상을 채팅으로 전송했습니다');
