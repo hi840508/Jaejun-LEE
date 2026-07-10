@@ -621,7 +621,7 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
     // 🚀 INSTR로 안전하게 참여자 매칭. roomId 형식 = room_msg_userA_userB (정렬됨)
     // '_' + roomId + '_' 안에 '_userName_' 부분문자열이 있으면 참여 → 양쪽 모두 정확히 매칭
     const query = `
-        SELECT roomId, sender, message, date, senderPic
+        SELECT id, roomId, sender, message, date, senderPic
         FROM chats
         WHERE id IN (SELECT MAX(id) FROM chats GROUP BY roomId)
           AND INSTR('_' || roomId || '_', '_' || ? || '_') > 0
@@ -641,6 +641,8 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
                     partnerName,
                     lastMsg: r.message,
                     lastDate: r.date,
+                    lastMsgId: r.id,        // 🔔 미읽음 판정용(로컬 읽음표시와 비교)
+                    lastSender: r.sender,   // 🔔 마지막 발신자(내가 보낸 것이면 미읽음 아님)
                     partnerPic: u ? u.profilePic : null
                 });
             });

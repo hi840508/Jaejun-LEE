@@ -3427,7 +3427,12 @@
             wrap.innerHTML = h;
         };
 
+        // 🔗 의약 규제 카테고리(약국·병원/의원·의약 도소매)는 외부 전문 사이트를 상점으로 연결
+        window.EXTERNAL_CATEGORY_STORE = { pharmacy: 'https://oreumpartners.com/main/main.asp', medical: 'https://oreumpartners.com/main/main.asp', medical_wholesale: 'https://oreumpartners.com/main/main.asp' };
         window.setCategoryFilter = function(catId) {
+            // 약국/병원·의원/의약 도소매 선택 시 → 외부 사이트를 상점으로 연결(새 탭)
+            const ext = window.EXTERNAL_CATEGORY_STORE && window.EXTERNAL_CATEGORY_STORE[catId];
+            if(ext) { try { window.open(ext, '_blank', 'noopener'); } catch(_){ location.href = ext; } if(typeof showToast==='function') showToast('제휴 사이트로 이동합니다.'); return; }
             window.activeCategoryFilter = catId;
             window.renderCategoryChips && window.renderCategoryChips();
             window.renderSidebarCategories && window.renderSidebarCategories();
@@ -6571,10 +6576,15 @@ pdfjsScript,
                 body.innerHTML = '';
                 window.__chatBulkLoading = true;   // 벌크 렌더: 메시지마다 스크롤 강제 안 함(리플로우 절감)
                 try {
+                    let _maxId = 0;
                     if(msgs && msgs.length>0) msgs.forEach(m => {
                         const tm = m.date ? (m.date.match(/\d{1,2}:\d{2}/) || [''])[0] : '';
                         appendMainMessage(m.sender, m.message, m.senderPic, tm, m.id);
+                        if(m.id && m.id > _maxId) _maxId = m.id;
                     });
+                    // 🔔 이 방 읽음 처리: 마지막 메시지 id 저장 → 다음 로그인/새로고침에 미읽음으로 안 뜸
+                    if(_maxId) { try { localStorage.setItem('rc_read_' + currentChatRoomId, String(_maxId)); } catch(_){} }
+                    unreadCounts[currentChatRoomId] = 0; updateTabBadge();
                 } finally { window.__chatBulkLoading = false; }
                 body.scrollTop = body.scrollHeight;
             }).catch(() => { const body = document.getElementById('main-chat-body'); if(body) body.innerHTML = '<div style="text-align:center;padding:30px;color:#dc2626;font-size:13px;">대화를 불러오지 못했습니다.</div>'; });
@@ -6975,8 +6985,19 @@ pdfjsScript,
         async function loadChatList() {
             if(!currentUser) return;
             try {
-                const res = await fetch(`${API_URL}/api/chat/active-rooms/${currentUser.name}`); 
+                const res = await fetch(`${API_URL}/api/chat/active-rooms/${currentUser.name}`);
                 let rooms = await res.json() || [];
+                // 🔔 미읽음 판정: 방의 마지막 메시지 id가 로컬 '읽음 표시'보다 크고, 내가/시스템이 보낸 게 아니면 미읽음(오프라인 중 수신 포함)
+                try {
+                    rooms.forEach(r => {
+                        if(!r.lastMsgId) return;
+                        const readId = Number(localStorage.getItem('rc_read_' + r.roomId) || 0);
+                        const isMine = (r.lastSender === currentUser.name) || (r.lastSender === '__system__');
+                        if(r.lastMsgId > readId && !isMine) { if(!unreadCounts[r.roomId]) unreadCounts[r.roomId] = 1; }
+                        else if(r.lastMsgId <= readId) { unreadCounts[r.roomId] = 0; }
+                    });
+                    updateTabBadge();
+                } catch(_){}
                 // 🚀 [v6] 채팅방 메타 가져와서 브랜드명/상품명 표시
                 let roomMetas = {};
                 try {
@@ -7720,6 +7741,8 @@ pdfjsScript,
             if(data.roomId === currentChatRoomId) {
                 if(data.sender !== currentUser.name) {
                     appendMainMessage(data.sender, data.message, data.senderPic, null, data.id);
+                    // 🔔 열려있는 방이므로 읽음 처리(다음 로그인에 미읽음으로 안 뜨게)
+                    if(data.id) { try { localStorage.setItem('rc_read_' + data.roomId, String(data.id)); } catch(_){} }
                     // 현재 채팅방을 보고 있을 때도 진동+사운드 (현장감)
                     fireMobileNotification(data.sender, data.message);
                 } else if(data.id) {
