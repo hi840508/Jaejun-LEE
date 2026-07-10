@@ -19,6 +19,24 @@ app.use(express.urlencoded({ extended: true, limit: '1000mb' }));
 const CHAT_UPLOAD_DIR = path.join(__dirname, 'chat_uploads');
 try { fs.mkdirSync(CHAT_UPLOAD_DIR, { recursive: true }); } catch (e) { console.warn('chat_uploads 생성 실패', e && e.message); }
 app.use('/chat-files', express.static(CHAT_UPLOAD_DIR, { maxAge: '365d', immutable: true }));
+// 💬 첨부 보존기간 최대 14일 — 초과분 자동 삭제(디스크 무한 누적 방지). 부팅 시 1회 + 6시간마다.
+const CHAT_ATTACH_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+function cleanupOldChatAttachments() {
+    try {
+        const now = Date.now();
+        let removed = 0, freed = 0;
+        for (const f of fs.readdirSync(CHAT_UPLOAD_DIR)) {
+            const fp = path.join(CHAT_UPLOAD_DIR, f);
+            try {
+                const st = fs.statSync(fp);
+                if (st.isFile() && (now - st.mtimeMs) > CHAT_ATTACH_TTL_MS) { freed += st.size; fs.rmSync(fp, { force: true }); removed++; }
+            } catch (_) {}
+        }
+        if (removed) console.log(`🧹 채팅 첨부 정리: ${removed}개 삭제(${(freed / 1048576).toFixed(1)}MB) — 14일 초과`);
+    } catch (e) { console.warn('첨부 정리 오류', e && e.message); }
+}
+cleanupOldChatAttachments();
+setInterval(cleanupOldChatAttachments, 6 * 60 * 60 * 1000);
 
 // 실제 비대칭 디지털 서명 알고리즘(ECDSA) 
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -192,6 +210,8 @@ function initTables() {
         // 🚀 [v8+] 전역 설정 (Admin 권한 비밀번호 등) — 초기값 'mars'
         db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`, () => {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', 'mars')`, () => {});
+            // 🔐 관리자 계정 허용목록(쉼표구분) — 예전 공유 비밀번호 'mars' 백도어를 대체하는 신원 기반 권한. 기본: Root Admin.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_users', '이재준')`, () => {});
         });
 
         // 🧾 전자세금계산서 이력 + 정산 기본 변수(모두 settings로 변경 가능): VAT율 10%, 결제수수료율 2.7%, SW 월사용료 10000원
@@ -216,6 +236,7 @@ function initTables() {
     });
 }
 initTables();
+setTimeout(loadAdminUsers, 500);   // 부팅 후 admin_users 설정 반영(기본 '이재준')
 
 // 🔐 세션 토큰: 로그인 시 발급, 이후 x-auth-token 헤더로 서버가 사용자 판정(본문 신원 위조 차단)
 const SESSIONS = new Map();   // token -> { name }
@@ -239,6 +260,21 @@ function requireUser(req, res) {
     return me;
 }
 
+// 🔐 관리자 신원(세션 토큰 기반). ⛔ 예전 'mars' 공유 비밀번호 백도어 폐지 — settings.admin_users(쉼표구분, 기본 '이재준')에 속한 로그인 사용자만 관리자.
+let ADMIN_USERS = new Set(['이재준']);
+function loadAdminUsers() {
+    db.get(`SELECT value FROM settings WHERE key='admin_users'`, [], (e, row) => {
+        if (row && row.value) ADMIN_USERS = new Set(String(row.value).split(',').map(s => s.trim()).filter(Boolean));
+    });
+}
+function isAdminName(name) { return !!name && ADMIN_USERS.has(name); }
+function requireAdmin(req, res) {
+    const me = authUser(req);
+    if (!me) { res.status(401).json({ error: '로그인이 필요합니다.' }); return null; }
+    if (!isAdminName(me)) { res.status(403).json({ error: '관리자 권한이 필요합니다.' }); return null; }
+    return me;
+}
+
 // 🚀 [v8+] Admin 비밀번호 헬퍼 — DB의 settings.admin_password 사용 (초기값 'mars')
 function getAdminPassword(cb) {
     db.get(`SELECT value FROM settings WHERE key = 'admin_password'`, [], (err, row) => {
@@ -247,7 +283,7 @@ function getAdminPassword(cb) {
 }
 // adminSecret 검증 미들웨어 대용 — 'mars'(레거시) 또는 현재 설정된 비밀번호 모두 허용
 function verifyAdminSecret(secret, cb) {
-    getAdminPassword((pw) => cb(secret === pw || secret === 'mars'));
+    getAdminPassword((pw) => cb(secret === pw));   // ⛔ 'mars' 레거시 백도어 제거(이 함수 자체도 현재 미사용 — 신원 기반 requireAdmin으로 대체)
 }
 
 // Admin 권한 비밀번호 확인 (활성화용)
@@ -269,7 +305,7 @@ app.post('/api/admin/change-password', (req, res) => {
 });
 
 app.post('/api/admin/db-reset', (req, res) => {
-    if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
+    if(!requireAdmin(req,res)) return;
     db.serialize(() => {
         const tables = ['users', 'friends', 'stores', 'products', 'transactions', 'chats', 'qr_checks', 'transfers', 'deposits', 'withdrawals', 'favorite_stores', 'refund_requests', 'product_orders', 'chat_rooms', 'product_reviews'];
         tables.forEach(t => db.run(`DROP TABLE IF EXISTS ${t}`));
@@ -367,6 +403,7 @@ app.post('/api/auth/register', (req, res) => {
 
 // 🚀 [v8+] Admin: 가입 승인 대기 회원 목록
 app.get('/api/admin/pending-users', (req, res) => {
+    if(!requireAdmin(req,res)) return;
     db.all(`SELECT name, realname, business_type, phone, email, license_doc, approval_status, approval_note FROM users WHERE approval_status = 'pending' ORDER BY name`, [], (err, rows) => {
         if(err) return res.status(500).json({ error: err.message });
         res.json(rows || []);
@@ -375,8 +412,8 @@ app.get('/api/admin/pending-users', (req, res) => {
 
 // 🚀 [v8+] Admin: 승인 / 반려
 app.post('/api/admin/approve-user', (req, res) => {
-    const { name, decision, note, adminSecret } = req.body;
-    if(adminSecret !== 'mars') return res.status(403).json({ error: 'Admin 권한 필요' });
+    const { name, decision, note } = req.body;
+    if(!requireAdmin(req,res)) return;
     if(!['approved', 'rejected'].includes(decision)) return res.status(400).json({ error: '잘못된 결정값' });
     db.run(`UPDATE users SET approval_status = ?, approval_note = ? WHERE name = ?`, [decision, note || '', name], function(err) {
         if(err) return res.status(500).json({ error: err.message });
@@ -475,7 +512,7 @@ app.post('/api/auth/login-with-otp', (req, res) => {
 
 // 🚀 Admin 전용: 모든 회원 정보 조회 (복구 목적)
 app.post('/api/admin/all-users', (req, res) => {
-    if(req.body.adminSecret !== 'mars') return res.status(403).json({ error: "Admin 인증 실패" });
+    if(!requireAdmin(req,res)) return;
     db.all(`SELECT name, password, realname, bank, account, phone, email, shipping_address, balance,
             CASE WHEN profilePic IS NOT NULL AND profilePic != '' THEN '있음' ELSE '없음' END as hasPic
             FROM users ORDER BY name`, [], (err, rows) => {
@@ -486,7 +523,7 @@ app.post('/api/admin/all-users', (req, res) => {
 
 // 🚀 Admin 전용: 특정 회원 비밀번호 강제 재설정 (복구 목적)
 app.post('/api/admin/reset-password', (req, res) => {
-    if(req.body.adminSecret !== 'mars') return res.status(403).json({ error: "Admin 인증 실패" });
+    if(!requireAdmin(req,res)) return;
     const { targetName, newPassword } = req.body;
     if(!targetName || !newPassword) return res.status(400).json({ error: "필수 필드 누락" });
     db.run(`UPDATE users SET password = ?, force_pwd_change = 0, reset_otp = NULL, reset_otp_expiry = NULL, reset_otp_used = 0 WHERE name = ?`,
@@ -563,6 +600,7 @@ app.post('/api/withdraw/request', (req, res) => {
 });
 
 app.get('/api/admin/actions', (req, res) => {
+    if(!requireAdmin(req,res)) return;
     db.all(`SELECT d.*, u.realname, u.bank, u.account FROM deposits d LEFT JOIN users u ON d.user_name = u.name WHERE d.status = '대기'`, [], (err, deps) => {
         db.all(`SELECT w.*, u.realname, u.bank, u.account FROM withdrawals w LEFT JOIN users u ON w.name = u.name WHERE w.status = '대기'`, [], (err2, wds) => { res.json({ deposits: deps || [], withdrawals: wds || [] }); });
     });
@@ -570,7 +608,7 @@ app.get('/api/admin/actions', (req, res) => {
 
 app.post('/api/admin/approve', (req, res) => {
     const { type, id, userName } = req.body; const amount = Number(req.body.amount) || 0;
-    if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
+    if(!requireAdmin(req,res)) return;
     if(type === 'deposit_direct') {
         db.serialize(() => { db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, userName]); db.run(`UPDATE deposits SET status = '승인_증액' WHERE id = ?`, [id], () => res.json({ success: true })); });
     } else if (type === 'withdraw') { db.run(`UPDATE withdrawals SET status = '승인출금완료' WHERE id = ?`, [id], () => res.json({ success: true })); }
@@ -716,7 +754,7 @@ app.get('/api/stores/showcase', (req, res) => {
 
 app.post('/api/store/close', (req, res) => { db.serialize(() => { db.run(`DELETE FROM products WHERE storeId = ? AND seller = ?`, [req.body.id, req.body.owner]); db.run(`DELETE FROM stores WHERE id = ? AND owner = ?`, [req.body.id, req.body.owner], () => res.json({ success: true })); }); });
 app.post('/api/admin/store/close', (req, res) => { 
-    if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
+    if(!requireAdmin(req,res)) return;
     db.serialize(() => { db.run(`DELETE FROM products WHERE storeId = ?`, [req.body.id]); db.run(`DELETE FROM stores WHERE id = ?`, [req.body.id], () => res.json({ success: true })); }); 
 });
 
@@ -1019,12 +1057,12 @@ app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT * FROM product
 app.post('/api/product/edit', (req, res) => { db.run(`UPDATE products SET name = ?, description = ?, stream_time = ?, stream_unit = ?, price_stream = ?, price_original = ? WHERE id = ?`, [req.body.name, req.body.description, Number(req.body.stream_time)||0, req.body.stream_unit, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, req.body.id], () => res.json({ success: true })); });
 
 app.post('/api/admin/product/delete', (req, res) => { 
-    if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
+    if(!requireAdmin(req,res)) return;
     db.run(`DELETE FROM products WHERE id = ?`, [req.body.id], () => res.json({ success: true })); 
 });
 // 🚀 [v8+] Admin이 임의 상점을 강제 폐쇄 (소유자 무관)
 app.post('/api/admin/store/delete', (req, res) => {
-    if(req.body.adminSecret !== 'mars') return res.status(403).json({error: "Admin Authorization Failed"});
+    if(!requireAdmin(req,res)) return;
     db.serialize(() => {
         db.run(`DELETE FROM products WHERE storeId = ?`, [req.body.id]);
         db.run(`DELETE FROM stores WHERE id = ?`, [req.body.id], () => res.json({ success: true }));
@@ -1384,16 +1422,15 @@ app.get('/api/tax/config/status', (req, res) => { res.json(_paxbillStatus()); })
 // 정산 변수 조회/변경(Admin)
 app.get('/api/tax/config', (req, res) => { _taxConfig(cfg => res.json(cfg)); });
 app.post('/api/tax/config', (req, res) => {
-    verifyAdminSecret(req.body.adminSecret, (ok) => {
-        if (!ok) return res.status(403).json({ error: '관리자 인증 실패' });
-        const map = { tax_vat_rate: req.body.vatRate, tax_pay_fee_rate: req.body.payFeeRate, tax_sw_fee: req.body.swFee };
-        const entries = Object.entries(map).filter(([k, v]) => v != null && v !== '');
-        if (!entries.length) return _taxConfig(cfg => res.json({ success: true, config: cfg }));
-        let n = 0; entries.forEach(([k, v]) => db.run(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [k, String(v)], () => { if (++n === entries.length) _taxConfig(cfg => res.json({ success: true, config: cfg })); }));
-    });
+    if (!requireAdmin(req, res)) return;
+    const map = { tax_vat_rate: req.body.vatRate, tax_pay_fee_rate: req.body.payFeeRate, tax_sw_fee: req.body.swFee };
+    const entries = Object.entries(map).filter(([k, v]) => v != null && v !== '');
+    if (!entries.length) return _taxConfig(cfg => res.json({ success: true, config: cfg }));
+    let n = 0; entries.forEach(([k, v]) => db.run(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [k, String(v)], () => { if (++n === entries.length) _taxConfig(cfg => res.json({ success: true, config: cfg })); }));
 });
 // Admin: 전체 업체 판매내역(월 선택)
 app.get('/api/admin/tax/sales', (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const month = String(req.query.month || '').slice(0, 7);
     let where = _salesWhere; const params = [];
     if (month) { where += ` AND substr(IFNULL(t.rawDate,t.date),1,7)=?`; params.push(month); }
@@ -1404,6 +1441,7 @@ app.get('/api/admin/tax/sales', (req, res) => {
 });
 // Admin: 업체별 정산(매출 합계 + 수수료/VAT/지급액)
 app.get('/api/admin/tax/settlement', (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const month = String(req.query.month || '').slice(0, 7);
     _taxConfig((cfg) => {
         let where = _salesWhere; const params = [];
@@ -1427,6 +1465,7 @@ app.get('/api/admin/tax/settlement', (req, res) => {
 });
 // Admin: 발행 이력 전체(월/업체 필터)
 app.get('/api/admin/tax/invoices', (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const month = String(req.query.month || '').slice(0, 7);
     let where = '1=1'; const params = [];
     if (month) { where += ` AND batchMonth=?`; params.push(month); }
@@ -1471,11 +1510,13 @@ async function _issueOne(body){
     return { id, invoiceNo, issueStatus, ntsStatus, seller, supplyAmount, taxAmount, totalAmount, paxbill: pax };
 }
 app.post('/api/tax/issue', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
     try { const out = await _issueOne(req.body); res.json(Object.assign({ success: true }, out)); }
     catch(e) { res.status(500).json({ error: (e && e.message) || '발행 실패' }); }
 });
 // Admin: 월 일괄 발행 — vendors:[{seller, recipient?, supplyAmount, taxAmount, totalAmount, item?}]
 app.post('/api/tax/issue-bulk', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const b = req.body || {};
     const vendors = Array.isArray(b.vendors) ? b.vendors : [];
     const supplier = b.supplier || {};
@@ -1492,6 +1533,7 @@ app.post('/api/tax/issue-bulk', async (req, res) => {
 });
 // 세금계산서 삭제(매출 취소 등). live 발행분은 국세청 취소가 별도 필요하므로 기록만 삭제.
 app.delete('/api/tax/invoices/:id', (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const id = Number(req.params.id);
     db.run(`DELETE FROM tax_invoices WHERE id = ?`, [id], function(err) {
         if (err) return res.status(500).json({ error: err.message });
@@ -1500,6 +1542,7 @@ app.delete('/api/tax/invoices/:id', (req, res) => {
 });
 // 여러 건 삭제
 app.post('/api/tax/invoices/delete-many', (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(Boolean);
     if (!ids.length) return res.status(400).json({ error: '삭제할 항목이 없습니다.' });
     db.run(`DELETE FROM tax_invoices WHERE id IN (${ids.map(() => '?').join(',')})`, ids, function(err) {
@@ -1509,6 +1552,7 @@ app.post('/api/tax/invoices/delete-many', (req, res) => {
 });
 // 상태 새로고침(국세청 전송 결과 조회 — live 시)
 app.post('/api/tax/invoices/:id/refresh', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const id = Number(req.params.id);
     db.get(`SELECT * FROM tax_invoices WHERE id = ?`, [id], async (err, row) => {
         if (err) return res.status(500).json({ error: err.message });

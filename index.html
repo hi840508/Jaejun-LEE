@@ -2266,10 +2266,10 @@
             const modalAccEl = document.getElementById('modal-withdraw-account-info');
             if(modalAccEl) modalAccEl.innerText = str;
 
-            // 🚀 [v8+] 모든 계정은 Admin 권한을 보유하지만, 기본은 잠금 상태.
-            // 프로필 > Admin 권한 영역에서 비밀번호(초기 mars)를 입력해야 활성화됨.
-            isAdmin = false;
-            if(window.applyAdminUIState) applyAdminUIState(false);
+            // 🔐 관리자 권한은 '계정 신원'으로 판정(예전: 공유 비밀번호 'mars' 입력 → 백도어라 폐지).
+            //   서버가 세션 토큰으로 최종 강제하므로, 여기서는 Root Admin 계정에만 관리자 UI를 노출한다.
+            isAdmin = !!(data && data.name === '이재준');
+            if(window.applyAdminUIState) applyAdminUIState(isAdmin);
 
             socket = io(API_URL, { transports: ['websocket', 'polling'] });
             socket.on('receive_message', handleReceiveMessage);
@@ -2442,24 +2442,13 @@
         };
 
         window.activateAdmin = async function() {
-            const pwd = document.getElementById('admin-activate-pwd').value;
-            if(!pwd) return showToast("Admin 비밀번호를 입력해 주세요.");
-            try {
-                const res = await fetch(`${API_URL}/api/admin/verify-password`, {
-                    method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({ password: pwd })
-                });
-                const data = await res.json();
-                if(data.ok) {
-                    isAdmin = true;
-                    applyAdminUIState(true);
-                    document.getElementById('admin-activate-pwd').value = '';
-                    showToast("Admin 권한이 활성화되었습니다.");
-                    loadMarketplace(); loadAdminActions();
-                } else {
-                    showToast("인증 실패: Admin 비밀번호가 다릅니다.");
-                }
-            } catch(e) { showToast("네트워크 오류로 인증에 실패했습니다."); }
+            // 🔐 신원 기반: Root Admin 계정으로 로그인한 경우에만 활성화(서버가 세션 토큰으로 재확인). 공유 비밀번호 방식 폐지.
+            if(!currentUser || currentUser.name !== '이재준') return showToast("관리자(Root Admin) 계정으로 로그인해야 합니다.");
+            isAdmin = true;
+            applyAdminUIState(true);
+            const pe = document.getElementById('admin-activate-pwd'); if(pe) pe.value = '';
+            showToast("Admin 권한이 활성화되었습니다.");
+            loadMarketplace(); loadAdminActions();
         };
 
         window.changeAdminPassword = async function() {
