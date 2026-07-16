@@ -990,6 +990,8 @@
                         <button class="yt-sb-item" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span><span>거래 내역</span></button>
                         <!-- 🧾 Admin 전용: 전자세금계산서·정산(배민식 일괄) -->
                         <button class="yt-sb-item" id="sb-tax" style="display:none" onclick="switchTab('tax')" data-tab="tax"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg></span><span>세금계산서·정산</span></button>
+                        <!-- 👑 Admin 전용: 전체 주문·거래 모니터링 -->
+                        <button class="yt-sb-item" id="sb-admin-orders" style="display:none" onclick="switchTab('admin-orders')" data-tab="admin-orders"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span><span>전체 주문·거래(관리자)</span></button>
                     </div>
                     <!-- 🚀 [v8] 사이드바 맨 아래 설정 + 사이드바 영역 늘리기 위해 flex-grow spacer -->
                     <div style="flex:1; min-height:10px;"></div>
@@ -1451,6 +1453,7 @@
                     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
                         <div class="input-group" style="width:170px;"><label>정산 월</label><input id="tax-month" type="month"></div>
                         <button class="btn btn-secondary" style="padding:9px 16px;" onclick="loadSettlement()">정산 불러오기</button>
+                        <button class="btn btn-outline" style="padding:9px 16px;" onclick="loadSettledVendors()">정산완료 불러오기</button>
                         <div style="flex:1;"></div>
                         <span id="admin-revenue-badge" style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:#eff6ff;color:#1d4ed8;">Admin 수수료 매출: 0원</span>
                         <button class="btn btn-success" style="padding:9px 18px;" onclick="issueBulkTax()">선택 업체 일괄 발행</button>
@@ -1460,6 +1463,22 @@
                         <table class="history-table" style="background:#fff;">
                             <thead><tr><th><input type="checkbox" id="tax-check-all" onclick="toggleAllVendors(this)"></th><th>거래처 (상호/실명·ID·브랜드·상품)</th><th>건수</th><th>매출</th><th>결제수수료</th><th>지급액</th><th>정산</th><th>세금계산서</th></tr></thead>
                             <tbody id="settlement-body"><tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [정산 불러오기]를 누르세요.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- 💰 정산완료 업체 — 세금계산서 발행 대상 (settled=1) -->
+                <div class="panel" style="padding:14px;">
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+                        <h4 style="font-size:14px;font-weight:900;margin:0;">정산완료 업체 (세금계산서 발행 대상)</h4>
+                        <div style="flex:1;"></div>
+                        <span id="settled-admin-revenue-badge" style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:#f0fdf4;color:#166534;">정산완료 Admin 수수료 매출: 0원</span>
+                        <button class="btn btn-success" style="padding:9px 18px;" onclick="issueBulkSettled()">선택 업체 일괄 발행</button>
+                        <button class="btn btn-outline" style="padding:9px 16px;" onclick="issueSettledAdminRevenueTax()">정산완료 전체 Admin 수수료 매출 세금계산서 발행</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;">
+                            <thead><tr><th><input type="checkbox" id="settled-check-all" onclick="toggleAllSettled(this)"></th><th>거래처 (상호)</th><th>건수</th><th>매출</th><th>결제수수료</th><th>지급액</th><th>정산완료일</th><th>세금계산서</th></tr></thead>
+                            <tbody id="settled-body"><tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [정산완료 불러오기]를 누르세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -1488,6 +1507,55 @@
                                 <th>공급가액</th><th>부가세액</th><th>합계금액</th><th>발행구분</th><th>대표자</th><th>주소</th><th>연락처</th><th>PDF</th>
                             </tr></thead>
                             <tbody id="tax-history-body"><tr><td colspan="15" style="text-align:center;padding:16px;color:#94a3b8;">-</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 👑 Admin 전용: 전체 주문(판매 상태) + 전체 거래내역 모니터링 -->
+            <div id="tab-admin-orders" class="tab-content">
+                <div class="panel" style="padding:14px 16px;">
+                    <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">전체 주문 · 거래 (Admin)</h3>
+                    <div style="font-size:12px;color:#707070;line-height:1.6;">모든 상점의 주문 판매 상태와 전체 거래내역을 조회합니다. 관리자 전용 화면입니다.</div>
+                </div>
+                <div class="panel" style="padding:14px;">
+                    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
+                        <h4 style="font-size:14px;font-weight:900;margin:0;flex:1;min-width:120px;">전체 주문 (판매 상태)</h4>
+                        <div class="input-group" style="width:220px;"><label>검색 (상품·상점·구매자·판매자)</label><input id="ao-order-q" placeholder="검색어 입력 후 Enter" onkeydown="if(event.key==='Enter')loadAdminOrdersList()"></div>
+                        <div class="input-group" style="width:170px;"><label>상태</label>
+                            <select id="ao-order-status" onchange="loadAdminOrdersList()">
+                                <option value="">전체</option>
+                                <option value="pending">승인 대기</option>
+                                <option value="approved">승인됨·결제완료</option>
+                                <option value="shipping">배송중</option>
+                                <option value="delivered">배송완료</option>
+                                <option value="confirmed">구매확정</option>
+                                <option value="refund_requested">환불요청</option>
+                                <option value="refunded">환불완료</option>
+                                <option value="rejected">거절됨</option>
+                                <option value="cancelled">취소됨</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-outline" style="padding:9px 16px;" onclick="loadAdminOrdersList()">조회</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;white-space:nowrap;">
+                            <thead><tr><th>주문#</th><th>상품</th><th>상점</th><th>구매자</th><th>판매자</th><th style="text-align:right;">금액</th><th style="text-align:center;">상태</th><th>송장</th><th style="text-align:center;">정산</th></tr></thead>
+                            <tbody id="ao-orders-body"><tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 전체 주문을 불러오세요.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel" style="padding:14px;">
+                    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
+                        <h4 style="font-size:14px;font-weight:900;margin:0;flex:1;min-width:120px;">전체 거래내역</h4>
+                        <div class="input-group" style="width:170px;"><label>월 (선택)</label><input id="ao-txn-month" type="month"></div>
+                        <div class="input-group" style="width:220px;"><label>검색 (구매자·판매자·상품)</label><input id="ao-txn-q" placeholder="검색어 입력 후 Enter" onkeydown="if(event.key==='Enter')loadAdminTransactions()"></div>
+                        <button class="btn btn-outline" style="padding:9px 16px;" onclick="loadAdminTransactions()">조회</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;white-space:nowrap;">
+                            <thead><tr><th>거래#</th><th>일시</th><th>구매자</th><th>판매자</th><th>상품</th><th style="text-align:right;">금액</th><th>유형</th><th style="text-align:center;">환불</th></tr></thead>
+                            <tbody id="ao-txns-body"><tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 전체 거래내역을 불러오세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -2445,7 +2513,13 @@
             // 🚀 [v8+] 메시지 수정/삭제 실시간 반영
             socket.on('message_edited', handleMessageEdited);
             socket.on('message_deleted', handleMessageDeleted);
-            
+            // 🚀 주문 상태 실시간 반영 — 열려있는 채팅 주문카드를 즉시 갱신 (시스템 안내 메시지는 receive_message가 별도 처리)
+            socket.on('order_status', d => {
+                if(!d || !d.orderId) return;
+                const card = document.querySelector('.kt-card-msg[data-order-id="'+d.orderId+'"]');
+                if(card && window.checkAndReplaceOrderCard) window.checkAndReplaceOrderCard(card.id, d.orderId, card.dataset.productName||'', +(card.dataset.amount||0));
+            });
+
             // 초대 URL 처리 (자동 친구 등록 + 대화방 즉시 개설; 양측 모두 별도 새로고침 없이 반영)
             const urlParams = new URLSearchParams(window.location.search);
             const inviteName = urlParams.get('invite');
@@ -2551,6 +2625,9 @@
                 const card = document.getElementById(cardId);
                 if(!card) return;
                 if(ord.status === 'pending') return; // 그대로 두기
+                const _me = (currentUser && currentUser.name) || '';
+                const _isSeller = _me === ord.seller;
+                const _isBuyer = _me === ord.buyer;
                 let newHtml = '';
                 if(ord.status === 'rejected') {
                     let reason = '';
@@ -2564,13 +2641,6 @@
                         <div style="font-size:11px; color:var(--text-sub); word-break:break-all;">${(productName||'').replace(/</g,'&lt;')}</div>
                         ${reason ? `<div style="font-size:11px; color:var(--text-main); margin-top:8px; padding:6px 8px; background:#fff; border:1px solid #fecaca; border-radius:6px; text-align:left;"><b>사유:</b> ${reason.replace(/</g,'&lt;')}</div>` : ''}
                     </div>`;
-                } else if(ord.status === 'approved') {
-                    newHtml = `<div class="kt-card-msg" style="max-width:240px; padding:14px; text-align:center; background:#ecfdf5; border-color:#bbf7d0;">
-                        <div style="font-size:32px; color:var(--success);">✓</div>
-                        <div style="font-size:13px; font-weight:600; color:var(--success); margin:6px 0;">주문 승인 + 결제 완료</div>
-                        <div style="font-size:11px; color:var(--text-sub); word-break:break-all;">${(productName||'').replace(/</g,'&lt;')}</div>
-                        <div style="font-size:14px; font-weight:700; color:var(--text-main); margin-top:6px;">${Number(amount||0).toLocaleString()}원</div>
-                    </div>`;
                 } else if(ord.status === 'cancelled') {
                     newHtml = `<div class="kt-card-msg" style="max-width:240px; padding:14px; text-align:center; background:#f4f4f5;">
                         <div style="font-size:32px; color:var(--text-sub);">○</div>
@@ -2582,9 +2652,64 @@
                     newHtml = `<div class="kt-card-msg" style="max-width:200px; padding:8px 12px; text-align:center; background:#f4f4f5;">
                         <div style="font-size:11px; color:var(--text-sub);">주문 처리 종료 · ${(productName||'').replace(/</g,'&lt;')}</div>
                     </div>`;
+                } else {
+                    // 🚀 진행/완료 상태 카드 (approved/shipping/delivered/confirmed/refund_requested/refunded/settled) — 상태 배지 + 송장 + 역할별 액션
+                    let est = ord.status;
+                    if(ord.settled && est === 'confirmed') est = 'settled';
+                    const META = {
+                        approved:  { txt:'승인됨·결제완료',    bg:'#d1fae5', color:'#065f46', icon:'✓' },
+                        shipping:  { txt:'배송중',            bg:'#dbeafe', color:'#1e40af', icon:'🚚' },
+                        delivered: { txt:'배송완료',          bg:'#e0e7ff', color:'#3730a3', icon:'📦' },
+                        confirmed: { txt:'구매확정·정산대기',  bg:'#dcfce7', color:'#166534', icon:'🔒' },
+                        refund_requested: { txt:'환불요청',   bg:'#ffedd5', color:'#9a3412', icon:'⚠' },
+                        refunded:  { txt:'환불완료',          bg:'#fee2e2', color:'#991b1b', icon:'↩' },
+                        settled:   { txt:'정산완료',          bg:'#dcfce7', color:'#166534', icon:'💰' }
+                    };
+                    const meta = META[est] || { txt: est, bg:'#f4f4f5', color:'#52525b', icon:'·' };
+                    const _b = (label,color,fn)=>`<button onclick="${fn}" style="flex:1; background:#fff; color:${color}; border:1px solid ${color}; padding:8px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;">${label}</button>`;
+                    let acts = '';
+                    if(_isSeller){
+                        if(ord.status==='approved') acts = _b('배송 등록','#2563eb',`openShippingModal('${orderId}')`) + _b('배송 완료','#3730a3',`setOrderStatus('${orderId}','delivered')`);
+                        else if(ord.status==='shipping') acts = _b('송장 수정','#2563eb',`openShippingModal('${orderId}')`) + _b('배송 완료','#3730a3',`setOrderStatus('${orderId}','delivered')`);
+                        else if(ord.status==='refund_requested') acts = _b('환불 수락','#dc2626',`setOrderStatus('${orderId}','refunded')`);
+                    } else if(_isBuyer){
+                        if(ord.status==='shipping' || ord.status==='delivered') acts = _b('구매 확정','#166534',`confirmPurchaseOrder('${orderId}')`) + _b('환불 요청','#dc2626',`requestOrderRefund('${orderId}')`);
+                    }
+                    let trackLine = '';
+                    if(ord.tracking){
+                        const cn = (window.courierName ? window.courierName(ord.courier) : '택배');
+                        const url = (window.courierTrackUrl ? window.courierTrackUrl(ord.courier, ord.tracking) : '');
+                        const trk = String(ord.tracking).replace(/</g,'&lt;');
+                        trackLine = url
+                            ? `<div style="font-size:11px; color:var(--text-sub); margin-top:6px;">${cn} · <a href="${url}" target="_blank" style="color:var(--primary);">${trk}</a></div>`
+                            : `<div style="font-size:11px; color:var(--text-sub); margin-top:6px;">${cn} · 송장 ${trk}</div>`;
+                    }
+                    const _pn = (productName||'').replace(/</g,'&lt;');
+                    const _pnAttr = (productName||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+                    const _amt = Number(amount||0);
+                    newHtml = `<div class="kt-card-msg" id="${cardId}" data-order-id="${orderId}" data-product-name="${_pnAttr}" data-amount="${_amt}" style="width:100%; max-width:280px; overflow:hidden;">
+                        <div style="background:${meta.bg}; color:${meta.color}; padding:10px 14px; display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:16px;">${meta.icon}</span>
+                            <span style="font-size:12px; font-weight:800;">${meta.txt}</span>
+                        </div>
+                        <div style="padding:10px 12px;">
+                            <div style="font-size:12px; color:var(--text-sub); word-break:break-all;">${_pn}</div>
+                            <div style="font-size:16px; font-weight:800; color:var(--text-main); margin-top:2px;">${_amt.toLocaleString()}원</div>
+                            ${trackLine}
+                            ${acts ? `<div style="display:flex; gap:6px; margin-top:10px;">${acts}</div>` : ''}
+                        </div>
+                    </div>`;
                 }
                 if(newHtml) card.outerHTML = newHtml;
             } catch(e) { /* 조용히 실패 */ }
+        };
+
+        // 🚀 주문 상태 변경 액션 성공 후, 화면에 떠있는 해당 주문 채팅카드를 즉시 재렌더
+        window.refreshOrderChatCard = function(orderId){
+            try{
+                const card = document.querySelector('.kt-card-msg[data-order-id="'+orderId+'"]');
+                if(card && window.checkAndReplaceOrderCard) window.checkAndReplaceOrderCard(card.id, orderId, card.dataset.productName||'', +(card.dataset.amount||0));
+            }catch(_){}
         };
 
         // 🚀 [v8] 어드민 로고 변경 (localStorage에 저장 → 본인 브라우저에 적용)
@@ -2655,6 +2780,8 @@
             if(ind) ind.style.display = active ? 'inline-block' : 'none';
             const sbTax = document.getElementById('sb-tax');   // 🧾 세금계산서·정산 사이드바(Admin 전용)
             if(sbTax) sbTax.style.display = active ? 'flex' : 'none';
+            const sbAdminOrders = document.getElementById('sb-admin-orders');   // 👑 전체 주문·거래 모니터링(Admin 전용)
+            if(sbAdminOrders) sbAdminOrders.style.display = active ? 'flex' : 'none';
             const dep = document.getElementById('admin-deposit-panel');
             if(dep) dep.style.display = active ? 'block' : 'none';
             const dbReset = document.getElementById('admin-db-reset-btn');
@@ -3047,6 +3174,146 @@
             w.document.close();
         }
 
+        // ================= 👑 Admin 전체 주문 · 거래 모니터링 =================
+        window.__aoStatusMeta = {
+            pending:   { txt:'승인 대기',        bg:'#fef3c7', color:'#92400e' },
+            approved:  { txt:'승인됨·결제완료',   bg:'#d1fae5', color:'#065f46' },
+            shipping:  { txt:'배송중',           bg:'#dbeafe', color:'#1e40af' },
+            delivered: { txt:'배송완료',         bg:'#e0e7ff', color:'#3730a3' },
+            confirmed: { txt:'구매확정',         bg:'#dcfce7', color:'#166534' },
+            refund_requested: { txt:'환불요청',  bg:'#ffedd5', color:'#9a3412' },
+            refunded:  { txt:'환불완료',         bg:'#fee2e2', color:'#991b1b' },
+            rejected:  { txt:'거절됨',           bg:'#fee2e2', color:'#991b1b' },
+            cancelled: { txt:'취소됨',           bg:'#e5e7eb', color:'#475569' },
+            dismissed: { txt:'알림 해제됨',       bg:'#e5e7eb', color:'#475569' }
+        };
+        function aoStatusBadge(st){ const m=window.__aoStatusMeta[st]||{txt:st,bg:'#f4f4f5',color:'#52525b'}; return `<span style="display:inline-block;padding:3px 9px;border-radius:20px;background:${m.bg};color:${m.color};font-size:11px;font-weight:700;white-space:nowrap;">${taxEscH(m.txt)}</span>`; }
+        window.loadAdminOrders=function(){
+            if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
+            const mn=document.getElementById('ao-txn-month');
+            if(mn && !mn.value){ const d=new Date(); mn.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+            loadAdminOrdersList(); loadAdminTransactions();
+        };
+        window.loadAdminOrdersList=async function(){
+            const body=document.getElementById('ao-orders-body'); if(!body) return;
+            const status=(document.getElementById('ao-order-status')||{}).value||'';
+            const q=(document.getElementById('ao-order-q')||{}).value||'';
+            body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            try{
+                const d=await fetch(`${API_URL}/api/admin/orders?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q.trim())}`).then(r=>r.json());
+                const orders=d.orders||[];
+                if(!orders.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">주문이 없습니다.</td></tr>'; return; }
+                body.innerHTML=orders.map(o=>{
+                    const trk = o.tracking ? taxEscH(((window.courierName?window.courierName(o.courier):'')+' '+o.tracking).trim()) : '-';
+                    const settledTxt = o.settled ? '<span style="color:#166534;font-weight:700;">정산완료</span>' : (o.escrow_held ? '<span style="color:#b45309;">보관중</span>' : '-');
+                    return `<tr>
+                        <td style="text-align:center;">${o.id}</td>
+                        <td style="font-weight:700;max-width:180px;overflow:hidden;text-overflow:ellipsis;">${taxEscH(o.productName||o.productId||'-')}</td>
+                        <td>${taxEscH(o.storeName||'-')}${o.storeManaged?' <span style="font-size:10px;color:#2563eb;">(통합관리)</span>':''}</td>
+                        <td>${taxEscH(o.buyer||'')}${o.buyerRealname?` <span style="font-size:10px;color:#94a3b8;">(${taxEscH(o.buyerRealname)})</span>`:''}</td>
+                        <td>${taxEscH(o.seller||'')}</td>
+                        <td style="text-align:right;font-weight:700;">${taxFmt(o.amount)}</td>
+                        <td style="text-align:center;">${aoStatusBadge(o.status)}</td>
+                        <td style="font-size:11px;">${trk}</td>
+                        <td style="text-align:center;font-size:11px;">${settledTxt}</td>
+                    </tr>`;
+                }).join('');
+            }catch(e){ body.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+        };
+        window.loadAdminTransactions=async function(){
+            const body=document.getElementById('ao-txns-body'); if(!body) return;
+            const month=(document.getElementById('ao-txn-month')||{}).value||'';
+            const q=(document.getElementById('ao-txn-q')||{}).value||'';
+            body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            try{
+                const d=await fetch(`${API_URL}/api/admin/transactions?month=${encodeURIComponent(month)}&q=${encodeURIComponent(q.trim())}`).then(r=>r.json());
+                const txns=d.transactions||[];
+                if(!txns.length){ body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">거래내역이 없습니다.</td></tr>'; return; }
+                body.innerHTML=txns.map(t=>{
+                    const dt=String(t.rawDate||t.date||'').replace('T',' ').substring(0,16);
+                    const refunded = t.refunded ? '<span style="color:#991b1b;font-weight:700;">환불됨</span>' : '-';
+                    return `<tr>
+                        <td style="text-align:center;">${t.id}</td>
+                        <td style="font-size:11px;">${taxEscH(dt)}</td>
+                        <td>${taxEscH(t.buyer||'')}</td>
+                        <td>${taxEscH(t.seller||'')}</td>
+                        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;">${taxEscH(t.productName||t.productId||'-')}</td>
+                        <td style="text-align:right;font-weight:700;">${taxFmt(t.amount)}</td>
+                        <td style="font-size:11px;">${taxEscH(t.purchaseType||'-')}</td>
+                        <td style="text-align:center;font-size:11px;">${refunded}</td>
+                    </tr>`;
+                }).join('');
+            }catch(e){ body.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+        };
+
+        // ================= 💰 정산완료 업체 — 세금계산서 발행 =================
+        window.taxSettled=[]; window.taxSettledAdminRevenue=0;
+        function renderSettledAdminRevenue(){ const b=document.getElementById('settled-admin-revenue-badge'); if(b) b.textContent='정산완료 Admin 수수료 매출: '+taxFmt(window.taxSettledAdminRevenue)+'원'; }
+        window.toggleAllSettled=function(cb){ document.querySelectorAll('.settled-vsel').forEach(x=>x.checked=cb.checked); };
+        window.loadSettledVendors=async function(){
+            if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
+            const month=taxG('tax-month'); const body=document.getElementById('settled-body'); if(!body) return;
+            body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            try{
+                const d=await fetch(`${API_URL}/api/admin/tax/settled?month=${encodeURIComponent(month)}`).then(r=>r.json());
+                window.taxSettled=d.vendors||[];
+                window.taxSettledAdminRevenue=d.adminRevenue||0; renderSettledAdminRevenue();
+                if(!window.taxSettled.length){ body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 정산완료 매출이 없습니다.</td></tr>'; return; }
+                body.innerHTML=window.taxSettled.map((v,i)=>`<tr>
+                    <td style="text-align:center;"><input type="checkbox" class="settled-vsel" data-i="${i}"></td>
+                    <td style="font-weight:700;min-width:180px;">
+                        <div style="font-weight:900;">${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span></div>
+                        ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:2px;">${taxEscH(v.brands)}</div>`:''}
+                    </td>
+                    <td style="text-align:center;">${v.count}</td>
+                    <td style="text-align:right;">${taxFmt(v.salesTotal)}</td>
+                    <td style="text-align:right;color:#b45309;">${taxFmt(v.payFee)}</td>
+                    <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
+                    <td style="font-size:11px;">${taxEscH((v.settledAt||'').replace('T',' ').substring(0,16))}</td>
+                    <td style="text-align:center;"><button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" onclick="issueSettledOne(${i})">발행·PDF</button></td>
+                </tr>`).join('');
+            }catch(e){ body.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+        };
+        window.issueSettledOne=async function(i){
+            const v=window.taxSettled[i]; if(!v) return;
+            const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
+            const month=taxG('tax-month');
+            try{
+                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:v.seller, buyer:v.seller, supplier, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:month+' 거래/결제 수수료'}, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee, writeDate:month+'-01', batchMonth:month })});
+                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
+                showToast(`${v.seller} 세금계산서 발행 완료. PDF를 엽니다.`);
+                taxPrintInvoice({ supplier, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, month, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
+                loadTaxHistory();
+            }catch(e){ showToast('발행 실패: '+(e.message||'')); }
+        };
+        window.issueBulkSettled=async function(){
+            const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
+            const sel=Array.from(document.querySelectorAll('.settled-vsel:checked')).map(x=>window.taxSettled[Number(x.dataset.i)]).filter(Boolean);
+            if(!sel.length){ showToast('발행할 업체를 선택하세요.'); return; }
+            const month=taxG('tax-month');
+            if(!confirm(`${sel.length}개 업체에 ${month} 거래/결제 수수료 세금계산서를 일괄 발행합니다.`)) return;
+            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:month+' 거래/결제 수수료'}, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee }));
+            try{
+                const r=await fetch(`${API_URL}/api/tax/issue-bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ supplier, vendors, writeDate:month+'-01', batchMonth:month })});
+                const d=await r.json(); if(!r.ok) throw new Error(d.error||'실패');
+                showToast(`일괄 발행 완료: ${d.count}/${d.total}건`);
+                loadTaxHistory();
+            }catch(e){ showToast('일괄 발행 실패: '+(e.message||'')); }
+        };
+        window.issueSettledAdminRevenueTax=async function(){
+            const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
+            const month=taxG('tax-month'); const rev=window.taxSettledAdminRevenue||0;
+            if(rev<=0){ showToast('발행할 정산완료 Admin 수수료 매출이 없습니다.'); return; }
+            if(!confirm(`${month} 거래/결제 수수료 매출(정산완료분) ${taxFmt(rev)}원에 대한 Admin 매출 세금계산서를 발행합니다.`)) return;
+            try{
+                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:'(Admin)', buyer:'(Admin)', supplier, recipient:supplier, item:{name:month+' 거래/결제 수수료 매출(정산완료분)'}, supplyAmount:rev, taxAmount:0, totalAmount:rev, writeDate:month+'-01', batchMonth:month, invoiceType:'admin_revenue' })});
+                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
+                showToast('정산완료분 Admin 수수료 매출 세금계산서 발행 완료. PDF를 엽니다.');
+                taxPrintInvoice({ supplier, recipient:supplier, month, supplyAmount:rev, taxAmount:0, totalAmount:rev, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
+                loadTaxHistory();
+            }catch(e){ showToast('발행 실패: '+(e.message||'')); }
+        };
+
         function switchTab(id) {
             window.currentMarketFilter = null; // 상점 탭 이동시 필터 초기화
             window.currentMarketFilterStore = null;
@@ -3089,6 +3356,7 @@
             if(id === 'my-store') { loadMyStore(); loadMyBrandStores(); }
             if(id === 'sales-mgmt') { loadMySalesOrders(); }
             if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
+            if(id === 'admin-orders') { if(typeof loadAdminOrders==='function') loadAdminOrders(); }
             if(id === 'my-purchases') { loadMyPurchases(); }
             if(id === 'history') { loadHistory(); loadIncomingRefunds(); }
             if(id === 'wallet' && currentUser) { updateUserBalance(); if(isAdmin) loadAdminActions(); }
@@ -3987,7 +4255,7 @@
             try{
                 const r=await fetch(`${API_URL}/api/order/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ orderId, status:'shipping', courier, tracking })});
                 const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
-                showToast('배송 등록(배송중) 완료.'); const m=document.getElementById('ship-modal'); if(m) m.remove(); loadMySalesOrders();
+                showToast('배송 등록(배송중) 완료.'); const m=document.getElementById('ship-modal'); if(m) m.remove(); loadMySalesOrders(); if(window.refreshOrderChatCard) window.refreshOrderChatCard(orderId);
             }catch(e){ showToast('등록 실패: '+(e.message||'')); }
         };
         // 🚚 판매자 주문 상태 변경(배송등록/배송완료/환불수락)
@@ -4001,6 +4269,7 @@
                 const d = await r.json(); if(!r.ok || !d.success) throw new Error(d.error || '실패');
                 showToast((labels[status]||status) + ' 처리 완료.');
                 loadMySalesOrders();
+                if(window.refreshOrderChatCard) window.refreshOrderChatCard(orderId);
             } catch(e) { showToast('처리 실패: ' + (e.message||'')); }
         };
 
@@ -7710,7 +7979,8 @@ pdfjsScript,
                         <button onclick="approvePendingOrder('${orderId}', '${safePName.replace(/'/g, "\\'")}', ${amt})" style="flex:2; background:var(--success); color:#fff; border:none; padding:8px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer;">승인 + 결제 처리</button>
                     </div>`
                     : `<div style="padding:0 12px 12px;"><button onclick="cancelPendingOrder('${orderId}')" style="width:100%; background:#fff; color:var(--text-sub); border:1px solid var(--border-color); padding:8px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer;">주문 취소</button></div>`;
-                displayHtml = `<div class="kt-card-msg" id="${cardId}" data-order-id="${orderId}" style="width:100%; max-width:280px;">
+                const pnAttr = (pName||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+                displayHtml = `<div class="kt-card-msg" id="${cardId}" data-order-id="${orderId}" data-product-name="${pnAttr}" data-amount="${amt}" style="width:100%; max-width:280px;">
                     <div style="background:var(--gradient-btn); color:#fff; padding:12px 14px;">
                         <div style="font-size:11px; opacity:0.95;">주문서 도착 — 승인 대기</div>
                         <div style="font-size:14px; font-weight:600; margin-top:2px; word-break:break-all;">${safePName}</div>
@@ -8015,7 +8285,7 @@ pdfjsScript,
             try{
                 const r=await fetch(`${API_URL}/api/order/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ orderId })});
                 const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
-                showToast('구매확정 완료. 정산 대기 상태입니다.'); loadMyPurchases();
+                showToast('구매확정 완료. 정산 대기 상태입니다.'); loadMyPurchases(); if(window.refreshOrderChatCard) window.refreshOrderChatCard(orderId);
             }catch(e){ showToast('구매확정 실패: '+(e.message||'')); }
         };
         // 💰 [에스크로] 구매자: 환불 요청 → 상점이 수락(환불완료)하면 Admin 보관금이 반환됨
@@ -8024,7 +8294,7 @@ pdfjsScript,
             try{
                 const r=await fetch(`${API_URL}/api/order/refund-request`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ orderId, reason: reason||'' })});
                 const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
-                showToast('환불요청을 접수했습니다. 상점 승인 후 환불됩니다.'); loadMyPurchases();
+                showToast('환불요청을 접수했습니다. 상점 승인 후 환불됩니다.'); loadMyPurchases(); if(window.refreshOrderChatCard) window.refreshOrderChatCard(orderId);
             }catch(e){ showToast('환불요청 실패: '+(e.message||'')); }
         };
         function renderMyPurchases(purchases) {

@@ -880,6 +880,21 @@ app.post('/api/product/submit-order', (req, res) => {
         });
 });
 
+// 💬 [채팅 상태알림] 주문 상태가 바뀔 때 구매자·판매자 채팅방에 시스템 메시지 기록 + order_status 이벤트(카드 갱신용) 방출.
+function _orderRoomId(buyer, seller) { return 'room_msg_' + [String(buyer || ''), String(seller || '')].sort().join('_'); }
+function _notifyOrderStatus(buyer, seller, orderId, status, msg) {
+    try {
+        const roomId = _orderRoomId(buyer, seller);
+        if (msg) {
+            const date = new Date().toLocaleString('ko-KR');
+            db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, '__system__', NULL, ?, ?)`, [roomId, msg, date], function() {
+                try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: this.lastID, date }); } catch (_) {}
+            });
+        }
+        try { _emitToRoomUsers(roomId, 'order_status', { orderId, status, buyer, seller }); } catch (_) {}   // 채팅 주문카드 실시간 갱신
+    } catch (_) {}
+}
+
 // 💰 [에스크로] 주문 상품의 상점이 Admin 통합관리(admin_managed=1)인지 조회 → cb(managed:boolean, store)
 function _orderStoreManaged(ord, cb) {
     db.get(`SELECT s.id AS sid, s.admin_managed AS am, s.name AS sname FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e, row) => {
@@ -919,7 +934,7 @@ app.post('/api/order/approve', (req, res) => {
                                     if (ie) { db.run('ROLLBACK'); return res.status(500).json({ error: ie.message }); }
                                     const txId = this.lastID;
                                     db.run(`UPDATE product_orders SET status = 'approved', txId = ?, escrow_held = ? WHERE id = ?`, [txId, amount, orderId]);
-                                    db.run('COMMIT', () => res.json({ success: true, txId, amount, escrow: true }));
+                                    db.run('COMMIT', () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', `✅ [주문 승인] 결제(${amount.toLocaleString()}원)가 완료되어 주문이 확정되었습니다. 배송을 준비합니다.`); res.json({ success: true, txId, amount, escrow: true }); });
                                 });
                         });
                     });
@@ -930,7 +945,7 @@ app.post('/api/order/approve', (req, res) => {
                         function(ie) {
                             if (ie) return res.status(500).json({ error: ie.message });
                             const txId = this.lastID;
-                            db.run(`UPDATE product_orders SET status = 'approved', txId = ? WHERE id = ?`, [txId, orderId], () => res.json({ success: true, txId, amount }));
+                            db.run(`UPDATE product_orders SET status = 'approved', txId = ? WHERE id = ?`, [txId, orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', '✅ [주문 승인] 주문이 확정되었습니다. 배송을 준비합니다.'); res.json({ success: true, txId, amount }); });
                         });
                 }
             });
@@ -977,7 +992,7 @@ app.post('/api/order/status', (req, res) => {
             if (ord.settled) return res.status(400).json({ error: '이미 정산 완료된 주문은 환불할 수 없습니다.' });
             if (!['approved', 'shipping', 'delivered', 'refund_requested', 'confirmed'].includes(ord.status)) return res.status(400).json({ error: '승인/배송/확정 상태의 주문만 환불할 수 있습니다.' });
             const hold = ord.escrow_held || 0;
-            const _finish = () => db.run(`UPDATE product_orders SET status = 'refunded', escrow_held = 0 WHERE id = ?`, [orderId], () => res.json({ success: true, refundedToBuyer: hold > 0 ? hold : 0 }));
+            const _finish = () => db.run(`UPDATE product_orders SET status = 'refunded', escrow_held = 0 WHERE id = ?`, [orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'refunded', hold > 0 ? `↩️ [환불 완료] 결제금액(${hold.toLocaleString()}원)이 구매자에게 환불되었습니다.` : '↩️ [환불 처리] 주문이 환불 처리되었습니다.'); res.json({ success: true, refundedToBuyer: hold > 0 ? hold : 0 }); });
             const _markTx = () => {
                 if (ord.txId) {
                     db.get(`SELECT * FROM transactions WHERE id = ?`, [ord.txId], (e3, otx) => {
@@ -1006,7 +1021,13 @@ app.post('/api/order/status', (req, res) => {
         } else {
             // 배송완료 시각 기록(자동확정 3일 기준). 배송중/완료 상태 변경.
             const dlvAt = (status === 'delivered') ? (ord.delivered_at || new Date().toISOString()) : ord.delivered_at;
-            db.run(`UPDATE product_orders SET status = ?, tracking = ?, courier = ?, delivered_at = ? WHERE id = ?`, [status, tracking || ord.tracking || null, req.body.courier || ord.courier || null, dlvAt || null, orderId], () => res.json({ success: true }));
+            const _trk = tracking || ord.tracking || null;
+            db.run(`UPDATE product_orders SET status = ?, tracking = ?, courier = ?, delivered_at = ? WHERE id = ?`, [status, _trk, req.body.courier || ord.courier || null, dlvAt || null, orderId], () => {
+                const msg = status === 'delivered' ? '📦 [배송 완료] 상품이 배송 완료되었습니다. 구매확정을 눌러주세요. (배송완료 3일 후 자동 구매확정)'
+                          : (_trk ? `🚚 [배송 시작] 송장번호 ${_trk} 로 배송이 시작되었습니다.` : '🚚 [배송 시작] 배송이 시작되었습니다.');
+                _notifyOrderStatus(ord.buyer, ord.seller, orderId, status, msg);
+                res.json({ success: true });
+            });
         }
     });
 });
@@ -1023,7 +1044,7 @@ app.post('/api/order/confirm', (req, res) => {
         if (!['delivered', 'shipping', 'approved'].includes(ord.status)) return res.status(400).json({ error: '배송/승인 상태의 주문만 구매확정할 수 있습니다.' });
         const now = new Date();
         const month = now.toISOString().slice(0, 7);   // YYYY-MM (정산 귀속월)
-        db.run(`UPDATE product_orders SET status = 'confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, orderId], () => res.json({ success: true }));
+        db.run(`UPDATE product_orders SET status = 'confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'confirmed', '🎉 [구매 확정] 구매가 확정되었습니다. (정산 대기)'); res.json({ success: true }); });
     });
 });
 
@@ -1036,7 +1057,7 @@ app.post('/api/order/refund-request', (req, res) => {
         if (ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 환불 요청할 수 있습니다.' });
         if (ord.settled) return res.status(400).json({ error: '정산 완료된 주문은 환불 요청할 수 없습니다.' });
         if (!['approved', 'shipping', 'delivered', 'confirmed'].includes(ord.status)) return res.status(400).json({ error: '진행중인 주문만 환불 요청할 수 있습니다.' });
-        db.run(`UPDATE product_orders SET status = 'refund_requested', memo = COALESCE(memo,'') || ? WHERE id = ?`, ['\n[환불요청] ' + (reason || ''), orderId], () => res.json({ success: true }));
+        db.run(`UPDATE product_orders SET status = 'refund_requested', memo = COALESCE(memo,'') || ? WHERE id = ?`, ['\n[환불요청] ' + (reason || ''), orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'refund_requested', '↩️ [환불 요청] 구매자가 환불을 요청했습니다. 판매자 승인 시 환불됩니다.' + (reason ? ' 사유: ' + reason : '')); res.json({ success: true }); });
     });
 });
 
@@ -1045,10 +1066,10 @@ app.post('/api/order/refund-request', (req, res) => {
 function _autoConfirmSweep() {
     try {
         const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-        db.all(`SELECT id, delivered_at FROM product_orders WHERE status='delivered' AND escrow_held > 0 AND settled = 0 AND delivered_at IS NOT NULL AND delivered_at <= ?`, [cutoff], (e, rows) => {
+        db.all(`SELECT id, buyer, seller, delivered_at FROM product_orders WHERE status='delivered' AND escrow_held > 0 AND settled = 0 AND delivered_at IS NOT NULL AND delivered_at <= ?`, [cutoff], (e, rows) => {
             if (e || !rows || !rows.length) return;
             const now = new Date(); const month = now.toISOString().slice(0, 7);
-            rows.forEach(r => db.run(`UPDATE product_orders SET status='confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, r.id], () => {}));
+            rows.forEach(r => db.run(`UPDATE product_orders SET status='confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, r.id], () => { _notifyOrderStatus(r.buyer, r.seller, r.id, 'confirmed', '🎉 [자동 구매확정] 배송완료 3일 경과로 구매가 자동 확정되었습니다. (정산 대기)'); }));
             console.log(`[에스크로] 자동 구매확정 ${rows.length}건 (배송완료 3일 경과)`);
         });
     } catch (_) {}
@@ -1637,6 +1658,36 @@ app.post('/api/admin/store/manage', (req, res) => {
     db.run(`UPDATE stores SET admin_managed = ? WHERE id = ?`, [managed ? 1 : 0, storeId],
         function(err) { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true, storeId, managed: managed ? 1 : 0, changed: this.changes }); });
 });
+// 👑 [관리자] 전체 상품 주문(판매 상태) 조회 — 상태/검색 필터. 모든 상점의 주문을 상태와 함께.
+app.get('/api/admin/orders', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const status = String(req.query.status || '').trim();
+    const q = String(req.query.q || '').trim();
+    let where = `1=1`; const params = [];
+    if (status) { where += ` AND o.status = ?`; params.push(status); }
+    if (q) { where += ` AND (o.buyer LIKE ? OR o.seller LIKE ? OR IFNULL(pr.name,'') LIKE ? OR IFNULL(s.name,'') LIKE ?)`; const like = '%' + q + '%'; params.push(like, like, like, like); }
+    db.all(`SELECT o.id, o.productId, o.buyer, o.seller, o.status, o.amount, o.tracking, o.courier,
+                   o.created_at, o.delivered_at, o.confirmed_at, o.escrow_held, o.settled, o.settled_at, o.settle_month, o.txId,
+                   pr.name AS productName, s.name AS storeName, IFNULL(s.admin_managed,0) AS storeManaged,
+                   (SELECT realname FROM users WHERE name = o.buyer) AS buyerRealname
+            FROM product_orders o
+            LEFT JOIN products pr ON pr.id = o.productId
+            LEFT JOIN stores s ON pr.storeId = s.id
+            WHERE ${where} ORDER BY o.id DESC LIMIT 1000`, params,
+        (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json({ orders: rows || [] }));
+});
+// 👑 [관리자] 전체 거래내역 조회 — 모든 사용자/상점의 거래.
+app.get('/api/admin/transactions', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const q = String(req.query.q || '').trim();
+    const month = String(req.query.month || '').slice(0, 7);
+    let where = `1=1`; const params = [];
+    if (q) { where += ` AND (t.buyer LIKE ? OR t.seller LIKE ? OR IFNULL(t.productName,'') LIKE ?)`; const like = '%' + q + '%'; params.push(like, like, like); }
+    if (month) { where += ` AND substr(IFNULL(t.rawDate,t.date),1,7) = ?`; params.push(month); }
+    db.all(`SELECT t.id, t.buyer, t.seller, t.productId, t.productName, t.amount, t.purchaseType, t.date, t.rawDate, IFNULL(t.refunded,0) refunded
+            FROM transactions t WHERE ${where} ORDER BY t.id DESC LIMIT 2000`, params,
+        (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json({ transactions: rows || [] }));
+});
 // 🧾 공급자(플랫폼) 정보 서버 영속화 — 항상 마지막 입력값 자동 저장(settings.tax_supplier JSON). 프런트 localStorage와 병행.
 app.get('/api/tax/supplier', (req, res) => {
     db.get(`SELECT value FROM settings WHERE key='tax_supplier'`, [], (e, row) => {
@@ -1689,6 +1740,36 @@ app.get('/api/admin/tax/settlement', (req, res) => {
                 storeIds: r.storeIds || '', brands: r.brands || ''
             }, _settleCalc(r.salesTotal, cfg)));
             const adminRevenue = vendors.reduce((s, v) => s + (v.payFee || 0), 0);   // 거래 수수료 = Admin 매출
+            res.json({ month, config: cfg, vendors, adminRevenue });
+        });
+    });
+});
+// Admin: 정산 완료(settled=1) 상점별 목록 — 세금계산서 발행 대상. settlement과 동일 그룹/계산, settled=1 기준.
+app.get('/api/admin/tax/settled', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const month = String(req.query.month || '').slice(0, 7);
+    const owner = String(req.query.owner || '').trim();
+    _taxConfig((cfg) => {
+        let where = `o.settled=1 AND o.escrow_held>0`; const params = [];
+        if (month) { where += ` AND o.settle_month=?`; params.push(month); }
+        if (owner) { where += ` AND o.seller=?`; params.push(owner); }
+        db.all(`SELECT o.seller, COUNT(*) cnt, SUM(o.escrow_held) salesTotal, MAX(o.settled_at) settledAt,
+                    (SELECT realname FROM users WHERE name = o.seller) sellerRealname,
+                    GROUP_CONCAT(DISTINCT p.storeId) storeIds,
+                    GROUP_CONCAT(DISTINCT s.name) brands,
+                    GROUP_CONCAT(DISTINCT s.bizNo) bizNos
+                FROM product_orders o
+                LEFT JOIN products p ON p.id = o.productId
+                LEFT JOIN stores s ON p.storeId = s.id
+                WHERE ${where} GROUP BY o.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            const vendors = (rows || []).map(r => Object.assign({
+                seller: r.seller, count: r.cnt, settledAt: r.settledAt || '',
+                bizName: (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
+                bizNo: (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
+                storeIds: r.storeIds || '', brands: r.brands || ''
+            }, _settleCalc(r.salesTotal, cfg)));
+            const adminRevenue = vendors.reduce((s, v) => s + (v.payFee || 0), 0);
             res.json({ month, config: cfg, vendors, adminRevenue });
         });
     });
