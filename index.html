@@ -1399,18 +1399,38 @@
                             <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">전자세금계산서 · 정산 (Admin)</h3>
                             <div style="font-size:12px;color:#707070;line-height:1.6;">여러 업체의 카드결제 매출을 모아 정산하고, 월 단위로 플랫폼 이용 수수료 세금계산서를 일괄 발행합니다. 국세청 전송은 팍스빌 계약 후 활성(현재는 발행기록 + PDF).</div>
                         </div>
-                        <span id="tax-mode-pill" style="font-size:11px;font-weight:800;padding:6px 10px;border-radius:30px;background:#e5e7eb;color:#374151;">연동 확인 중</span>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <button class="btn btn-secondary" style="padding:8px 14px;font-weight:800;" onclick="toggleStoreManage()">🏬 상점 관리</button>
+                            <span id="tax-mode-pill" style="font-size:11px;font-weight:800;padding:6px 10px;border-radius:30px;background:#e5e7eb;color:#374151;">연동 확인 중</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 🏬 상점 관리 — Admin 통합관리(에스크로) 대상 상점 지정 -->
+                <div id="store-manage-panel" class="panel" style="padding:14px;display:none;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+                        <h4 style="font-size:14px;font-weight:900;margin:0;">🏬 상점 관리 (Admin 통합관리 지정)</h4>
+                        <span onclick="toggleStoreManage()" style="cursor:pointer;font-size:20px;color:#94a3b8;">&times;</span>
+                    </div>
+                    <div style="font-size:11px;color:#94a3b8;line-height:1.6;margin-bottom:10px;">체크된 상점은 <b style="color:#2563eb;">Admin이 결제/매출을 통합관리(에스크로)</b>합니다. 구매대금은 Admin이 보관했다가 구매확정 후 정산으로 상점주에게 지급되며, 결제수수료는 Admin 매출로 귀속됩니다.</div>
+                    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
+                        <div class="input-group" style="flex:1;min-width:200px;"><label>상점 검색 (상호·상점주·사업자번호)</label><input id="store-manage-search" placeholder="검색어 입력 후 Enter" onkeydown="if(event.key==='Enter')loadManagedStores()"></div>
+                        <button class="btn btn-outline" style="padding:9px 16px;" onclick="loadManagedStores()">검색</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;">
+                            <thead><tr><th style="text-align:center;">통합관리</th><th>상점(상호)</th><th>상점주</th><th>사업자번호</th><th style="text-align:center;">상품수</th></tr></thead>
+                            <tbody id="store-manage-body"><tr><td colspan="5" style="text-align:center;padding:16px;color:#94a3b8;">[검색]을 눌러 상점 목록을 불러오세요.</td></tr></tbody>
+                        </table>
                     </div>
                 </div>
                 <div class="panel" style="padding:14px;">
                     <h4 style="font-size:14px;font-weight:900;margin:0 0 10px;">정산 변수 (변경 가능)</h4>
                     <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
-                        <div class="input-group" style="width:130px;"><label>VAT율(%)</label><input id="cfg-vat" inputmode="decimal" placeholder="10"></div>
-                        <div class="input-group" style="width:150px;"><label>결제 수수료율(%)</label><input id="cfg-payfee" inputmode="decimal" placeholder="2.7"></div>
-                        <div class="input-group" style="width:170px;"><label>SW 월사용료(원)</label><input id="cfg-swfee" inputmode="numeric" placeholder="10000"></div>
+                        <div class="input-group" style="width:170px;"><label>카드결제 수수료율(%)</label><input id="cfg-cardfee" inputmode="decimal" placeholder="2.4"></div>
+                        <div class="input-group" style="width:150px;"><label>거래 수수료율(%)</label><input id="cfg-txnfee" inputmode="decimal" placeholder="0.6"></div>
                         <button class="btn btn-outline" style="padding:9px 16px;" onclick="saveTaxConfig()">변수 저장</button>
                     </div>
-                    <div style="font-size:11px;color:#94a3b8;margin-top:6px;">지급액 = 매출 − 결제수수료 − SW월사용료 − (수수료합 × VAT). 세금계산서 공급가=수수료합, 세액=그 VAT.</div>
+                    <div style="font-size:11px;color:#94a3b8;margin-top:6px;">결제수수료 = (카드결제 수수료율 + 거래 수수료율) % · 지급액 = 매출 − 결제수수료 · (예: 10,000원 결제, 3% → 수수료 300원, 지급액 9,700원). SW월사용료·VAT 없음.</div>
                 </div>
                 <div class="panel" style="padding:14px;">
                     <h4 style="font-size:14px;font-weight:900;margin:0 0 10px;">공급자(플랫폼) 정보 — 세금계산서 발행 주체</h4>
@@ -1432,12 +1452,14 @@
                         <div class="input-group" style="width:170px;"><label>정산 월</label><input id="tax-month" type="month"></div>
                         <button class="btn btn-secondary" style="padding:9px 16px;" onclick="loadSettlement()">정산 불러오기</button>
                         <div style="flex:1;"></div>
+                        <span id="admin-revenue-badge" style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:#eff6ff;color:#1d4ed8;">Admin 수수료 매출: 0원</span>
                         <button class="btn btn-success" style="padding:9px 18px;" onclick="issueBulkTax()">선택 업체 일괄 발행</button>
+                        <button class="btn btn-outline" style="padding:9px 16px;" onclick="issueAdminRevenueTax()">Admin 수수료 매출 세금계산서 발행</button>
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;">
-                            <thead><tr><th><input type="checkbox" id="tax-check-all" onclick="toggleAllVendors(this)"></th><th>거래처 (상호/실명·ID·브랜드·상품)</th><th>건수</th><th>매출</th><th>결제수수료</th><th>SW료</th><th>수수료VAT</th><th>지급액</th><th>세금계산서</th></tr></thead>
-                            <tbody id="settlement-body"><tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [정산 불러오기]를 누르세요.</td></tr></tbody>
+                            <thead><tr><th><input type="checkbox" id="tax-check-all" onclick="toggleAllVendors(this)"></th><th>거래처 (상호/실명·ID·브랜드·상품)</th><th>건수</th><th>매출</th><th>결제수수료</th><th>지급액</th><th>정산</th><th>세금계산서</th></tr></thead>
+                            <tbody id="settlement-body"><tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [정산 불러오기]를 누르세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -2827,55 +2849,124 @@
         function taxEscH(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
         function taxG(id){ const e=document.getElementById(id); return e?e.value.trim():''; }
         function taxS(id,v){ const e=document.getElementById(id); if(e) e.value=(v==null?'':String(v)); }
-        function loadTaxSupplier(){ try{ const p=JSON.parse(localStorage.getItem('earth_tax_supplier')||'{}'); taxS('sup-name',p.name||''); taxS('sup-bizno',p.bizNo||''); taxS('sup-ceo',p.ceoName||''); taxS('sup-email',p.email||''); taxS('sup-address',p.address||''); taxS('sup-biztype',p.bizType||''); taxS('sup-bizclass',p.bizClass||''); }catch(e){} }
+        function fillTaxSupplier(p){ p=p||{}; taxS('sup-name',p.name||''); taxS('sup-bizno',p.bizNo||''); taxS('sup-ceo',p.ceoName||''); taxS('sup-email',p.email||''); taxS('sup-address',p.address||''); taxS('sup-biztype',p.bizType||''); taxS('sup-bizclass',p.bizClass||''); }
+        function loadTaxSupplier(){ try{ fillTaxSupplier(JSON.parse(localStorage.getItem('earth_tax_supplier')||'{}')); }catch(e){} }
         function getTaxSupplier(){ return { name:taxG('sup-name'), bizNo:taxDigits(taxG('sup-bizno')), ceoName:taxG('sup-ceo'), email:taxG('sup-email'), address:taxG('sup-address'), bizType:taxG('sup-biztype'), bizClass:taxG('sup-bizclass') }; }
-        window.saveTaxSupplier=function(){ localStorage.setItem('earth_tax_supplier', JSON.stringify(getTaxSupplier())); showToast('공급자 정보를 저장했습니다.'); };
+        // 공급자(플랫폼) 정보: localStorage + 서버(settings.tax_supplier)에 항상 마지막 입력값 자동 저장
+        async function persistTaxSupplier(silent){
+            const sup=getTaxSupplier();
+            localStorage.setItem('earth_tax_supplier', JSON.stringify(sup));
+            try{ await fetch(`${API_URL}/api/tax/supplier`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({supplier:sup})}); }catch(e){}
+            if(!silent) showToast('공급자 정보를 저장했습니다.');
+        }
+        window.saveTaxSupplier=function(){ persistTaxSupplier(false); };
+        // #sup-* 입력 변경/blur 시 자동 저장 (버튼 없이도 서버 영속)
+        let _supWireDone=false;
+        function wireSupplierAutoSave(){
+            if(_supWireDone) return; _supWireDone=true;
+            ['sup-name','sup-bizno','sup-ceo','sup-email','sup-address','sup-biztype','sup-bizclass'].forEach(id=>{
+                const el=document.getElementById(id); if(!el) return;
+                el.addEventListener('blur', ()=>persistTaxSupplier(true));
+                el.addEventListener('change', ()=>persistTaxSupplier(true));
+            });
+        }
         window.loadAdminTax=async function(){
             if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
             loadTaxSupplier();
+            try{ const sr=await fetch(`${API_URL}/api/tax/supplier`).then(r=>r.json()); if(sr&&sr.supplier) fillTaxSupplier(sr.supplier); }catch(e){}
+            wireSupplierAutoSave();
             if(!taxG('tax-month')){ const d=new Date(); taxS('tax-month', d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); }
-            try{ const cfg=await fetch(`${API_URL}/api/tax/config`).then(r=>r.json()); taxS('cfg-vat',cfg.vatRate); taxS('cfg-payfee',cfg.payFeeRate); taxS('cfg-swfee',cfg.swFee); }catch(e){}
+            try{ const cfg=await fetch(`${API_URL}/api/tax/config`).then(r=>r.json()); taxS('cfg-cardfee',cfg.cardFeeRate); taxS('cfg-txnfee',cfg.txnFeeRate); }catch(e){}
             try{ const st=await fetch(`${API_URL}/api/tax/config/status`).then(r=>r.json()); const pill=document.getElementById('tax-mode-pill'); if(pill){ if(st.mode==='live'){ pill.textContent='팍스빌 LIVE 연동'; pill.style.background='#dcfce7'; pill.style.color='#166534'; } else { pill.textContent='테스트 모드 (발행기록+PDF)'; pill.style.background='#fef3c7'; pill.style.color='#92400e'; } } }catch(e){}
             loadSettlement(); loadTaxHistory();
         };
         window.saveTaxConfig=async function(){
-            const secret=prompt('Admin 비밀번호를 입력하세요.'); if(secret==null) return;
-            try{ const r=await fetch(`${API_URL}/api/tax/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminSecret:secret,vatRate:taxG('cfg-vat'),payFeeRate:taxG('cfg-payfee'),swFee:taxG('cfg-swfee')})}); const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패'); taxS('cfg-vat',d.config.vatRate); taxS('cfg-payfee',d.config.payFeeRate); taxS('cfg-swfee',d.config.swFee); showToast('정산 변수를 저장했습니다.'); loadSettlement(); }catch(e){ showToast('저장 실패: '+(e.message||'')); }
+            try{ const r=await fetch(`${API_URL}/api/tax/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cardFeeRate:+taxG('cfg-cardfee'),txnFeeRate:+taxG('cfg-txnfee')})}); const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패'); taxS('cfg-cardfee',d.config.cardFeeRate); taxS('cfg-txnfee',d.config.txnFeeRate); showToast('정산 변수를 저장했습니다.'); loadSettlement(); }catch(e){ showToast('저장 실패: '+(e.message||'')); }
         };
+        // 🏬 상점 관리 (Admin 통합관리 지정)
+        window.toggleStoreManage=function(){ const p=document.getElementById('store-manage-panel'); if(!p) return; const show=p.style.display==='none'; p.style.display=show?'block':'none'; if(show) loadManagedStores(); };
+        window.loadManagedStores=async function(){
+            const body=document.getElementById('store-manage-body'); if(!body) return;
+            const q=(document.getElementById('store-manage-search')||{}).value||'';
+            body.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            try{
+                const d=await fetch(`${API_URL}/api/admin/stores?q=${encodeURIComponent(q.trim())}`).then(r=>r.json());
+                const stores=d.stores||[];
+                if(!stores.length){ body.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:#94a3b8;">등록된 상점이 없습니다.</td></tr>'; return; }
+                body.innerHTML=stores.map(s=>`<tr>
+                    <td style="text-align:center;"><input type="checkbox" ${s.admin_managed?'checked':''} onchange="toggleManageStore('${s.id}', this)"></td>
+                    <td style="font-weight:800;">${taxEscH(s.name||'')}</td>
+                    <td>${taxEscH(s.ownerRealname||s.owner||'')} <span style="font-size:10px;color:#94a3b8;">(${taxEscH(s.owner||'')})</span></td>
+                    <td>${taxEscH(s.bizNo||'-')}</td>
+                    <td style="text-align:center;">${s.productCount||0}</td>
+                </tr>`).join('');
+            }catch(e){ body.innerHTML=`<tr><td colspan="5" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+        };
+        window.toggleManageStore=async function(storeId, cb){
+            const managed=cb.checked;
+            try{ const r=await fetch(`${API_URL}/api/admin/store/manage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storeId, managed})}); const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패'); showToast(managed?'Admin 통합관리(에스크로) 상점으로 지정했습니다.':'통합관리 지정을 해제했습니다.'); }catch(e){ cb.checked=!managed; showToast('변경 실패: '+(e.message||'')); }
+        };
+        window.taxAdminRevenue=0;
+        function renderAdminRevenue(){ const b=document.getElementById('admin-revenue-badge'); if(b) b.textContent='Admin 수수료 매출: '+taxFmt(window.taxAdminRevenue)+'원'; }
         window.loadSettlement=async function(){
             const month=taxG('tax-month'); const body=document.getElementById('settlement-body'); if(!body) return;
-            body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             try{
                 const d=await fetch(`${API_URL}/api/admin/tax/settlement?month=${encodeURIComponent(month)}`).then(r=>r.json());
                 window.taxSettlement=d.vendors||[];
-                if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 매출이 없습니다.</td></tr>'; return; }
+                window.taxAdminRevenue=d.adminRevenue||0; renderAdminRevenue();
+                if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 정산 대상(구매확정·미정산) 매출이 없습니다.</td></tr>'; return; }
                 body.innerHTML=window.taxSettlement.map((v,i)=>`<tr>
                     <td style="text-align:center;"><input type="checkbox" class="tax-vsel" data-i="${i}"></td>
                     <td style="font-weight:700;min-width:200px;">
                         <div style="font-weight:900;">${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span></div>
                         ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:2px;">${taxEscH(v.brands)}</div>`:''}
-                        ${v.products?`<div style="font-size:11px;color:#707070;font-weight:400;margin-top:1px;">${taxEscH(v.products)}</div>`:''}
                     </td>
                     <td style="text-align:center;">${v.count}</td>
                     <td style="text-align:right;">${taxFmt(v.salesTotal)}</td>
                     <td style="text-align:right;color:#b45309;">${taxFmt(v.payFee)}</td>
-                    <td style="text-align:right;color:#b45309;">${taxFmt(v.swFee)}</td>
-                    <td style="text-align:right;color:#b45309;">${taxFmt(v.vatOnFees)}</td>
                     <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
+                    <td style="text-align:center;"><button class="btn btn-success" style="padding:4px 10px;font-size:11px;" onclick="settleVendor(${i})">정산 지급</button></td>
                     <td style="text-align:center;"><button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" onclick="issueOneTax(${i})">발행·PDF</button></td>
                 </tr>`).join('');
-            }catch(e){ body.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+            }catch(e){ body.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         window.toggleAllVendors=function(cb){ document.querySelectorAll('.tax-vsel').forEach(x=>x.checked=cb.checked); };
+        // 💰 정산 지급 — 지급액(매출−결제수수료)을 Admin→상점주 이체 후 해당 주문 정산완료 처리
+        window.settleVendor=async function(i){
+            const v=window.taxSettlement[i]; if(!v) return;
+            const month=taxG('tax-month');
+            if(!confirm(`[${v.bizName||v.seller}] ${month} 정산\n매출 ${taxFmt(v.salesTotal)}원 − 결제수수료 ${taxFmt(v.payFee)}원 = 지급액 ${taxFmt(v.payout)}원\nAdmin 보관금에서 상점주에게 지급합니다. 진행할까요?`)) return;
+            try{
+                const r=await fetch(`${API_URL}/api/tax/settle`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:v.seller, month })});
+                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
+                alert(`정산 완료: ${d.count}건, 지급액 ${taxFmt(d.payout)}원 지급 (수수료 ${taxFmt(d.payFee)}원은 Admin 매출).`);
+                loadSettlement();
+            }catch(e){ showToast('정산 실패: '+(e.message||'')); }
+        };
+        // 🧾 Admin 수수료 매출 세금계산서 — 플랫폼 자체 수수료 매출 1건 발행(상점 발행 후)
+        window.issueAdminRevenueTax=async function(){
+            const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
+            const month=taxG('tax-month'); const rev=window.taxAdminRevenue||0;
+            if(rev<=0){ showToast('발행할 Admin 수수료 매출이 없습니다.'); return; }
+            if(!confirm(`${month} 거래/결제 수수료 매출 ${taxFmt(rev)}원에 대한 Admin 매출 세금계산서를 발행합니다.`)) return;
+            try{
+                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:'(Admin)', buyer:'(Admin)', supplier, recipient:supplier, item:{name:month+' 거래/결제 수수료 매출'}, supplyAmount:rev, taxAmount:0, totalAmount:rev, writeDate:month+'-01', batchMonth:month, invoiceType:'admin_revenue' })});
+                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
+                showToast('Admin 수수료 매출 세금계산서 발행 완료. PDF를 엽니다.');
+                taxPrintInvoice({ supplier, recipient:supplier, month, supplyAmount:rev, taxAmount:0, totalAmount:rev, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
+                loadTaxHistory();
+            }catch(e){ showToast('발행 실패: '+(e.message||'')); }
+        };
         window.issueOneTax=async function(i){
             const v=window.taxSettlement[i]; if(!v) return;
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const month=taxG('tax-month');
             try{
-                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:v.seller, buyer:v.seller, supplier, recipient:{name:(v.bizName||v.seller)}, item:{name:month+' 플랫폼 이용 수수료'}, supplyAmount:v.feeSubtotal, taxAmount:v.vatOnFees, totalAmount:v.commissionTotal, writeDate:month+'-01', batchMonth:month })});
+                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:v.seller, buyer:v.seller, supplier, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:month+' 플랫폼 이용 수수료'}, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee, writeDate:month+'-01', batchMonth:month })});
                 const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
                 showToast(`${v.seller} 세금계산서 발행 완료. PDF를 엽니다.`);
-                taxPrintInvoice({ supplier, recipient:{name:(v.bizName||v.seller)}, month, supplyAmount:v.feeSubtotal, taxAmount:v.vatOnFees, totalAmount:v.commissionTotal, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
+                taxPrintInvoice({ supplier, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, month, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
                 loadTaxHistory();
             }catch(e){ showToast('발행 실패: '+(e.message||'')); }
         };
@@ -2885,7 +2976,7 @@
             if(!sel.length){ showToast('발행할 업체를 선택하세요.'); return; }
             const month=taxG('tax-month');
             if(!confirm(`${sel.length}개 업체에 ${month} 수수료 세금계산서를 일괄 발행합니다.`)) return;
-            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:(v.bizName||v.seller)}, supplyAmount:v.feeSubtotal, taxAmount:v.vatOnFees, totalAmount:v.commissionTotal }));
+            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:month+' 플랫폼 이용 수수료'}, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee }));
             try{
                 const r=await fetch(`${API_URL}/api/tax/issue-bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ supplier, vendors, writeDate:month+'-01', batchMonth:month })});
                 const d=await r.json(); if(!r.ok) throw new Error(d.error||'실패');
@@ -3821,6 +3912,8 @@
                     'approved':  { txt: '승인됨·결제완료', bg: '#d1fae5', color: '#065f46', icon: '✓' },
                     'shipping':  { txt: '배송중',     bg: '#dbeafe', color: '#1e40af', icon: '🚚' },
                     'delivered': { txt: '배송완료',   bg: '#e0e7ff', color: '#3730a3', icon: '📦' },
+                    'confirmed': { txt: '구매확정·정산대기', bg: '#dcfce7', color: '#166534', icon: '🔒' },
+                    'refund_requested': { txt: '환불요청', bg: '#ffedd5', color: '#9a3412', icon: '⚠' },
                     'refunded':  { txt: '환불완료',   bg: '#fee2e2', color: '#991b1b', icon: '↩' },
                     'rejected':  { txt: '거절됨',     bg: '#fee2e2', color: '#991b1b', icon: '✕' },
                     'cancelled': { txt: '구매자 취소', bg: '#e5e7eb', color: '#475569', icon: '○' },
@@ -3836,6 +3929,7 @@
                     if(o.status === 'approved') acts = _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     else if(o.status === 'shipping') acts = _obtn('송장 수정','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     else if(o.status === 'delivered') acts = _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
+                    else if(o.status === 'refund_requested') acts = _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     h += `<div style="background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:12px 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; cursor:pointer; transition:0.2s;"
                         onclick="window.openOrderInChatRoom('${o.buyer}', '${o.id}')"
                         onmouseover="this.style.boxShadow='var(--shadow-hover)'; this.style.borderColor='var(--primary)';"
@@ -7908,6 +8002,24 @@ pdfjsScript,
             }
         }
 
+        // 💰 [에스크로] 구매자: 구매확정 → 정산 대기(자금 이동 없음). 상점이 Admin 통합관리일 때 의미.
+        window.confirmPurchaseOrder = async function(orderId){
+            if(!confirm('구매를 확정하시겠습니까?\n확정 후에는 정산이 진행되며, 이후 환불이 제한될 수 있습니다.')) return;
+            try{
+                const r=await fetch(`${API_URL}/api/order/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ orderId })});
+                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
+                showToast('구매확정 완료. 정산 대기 상태입니다.'); loadMyPurchases();
+            }catch(e){ showToast('구매확정 실패: '+(e.message||'')); }
+        };
+        // 💰 [에스크로] 구매자: 환불 요청 → 상점이 수락(환불완료)하면 Admin 보관금이 반환됨
+        window.requestOrderRefund = async function(orderId){
+            const reason = prompt('환불 사유를 입력하세요.'); if(reason===null) return;
+            try{
+                const r=await fetch(`${API_URL}/api/order/refund-request`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ orderId, reason: reason||'' })});
+                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
+                showToast('환불요청을 접수했습니다. 상점 승인 후 환불됩니다.'); loadMyPurchases();
+            }catch(e){ showToast('환불요청 실패: '+(e.message||'')); }
+        };
         function renderMyPurchases(purchases) {
             const list = document.getElementById('my-purchases-list');
             if(!list) return;
@@ -7964,7 +8076,7 @@ pdfjsScript,
                         ${(function(){
                             const st = p.orderStatus, cur = p.courier, no = p.tracking;
                             if(!st || st==='pending' || st==='approved' && !cur && !no) return '';
-                            const stLabel = {approved:'배송 준비중', shipping:'배송중', delivered:'배송 완료', refunded:'환불됨'}[st] || '';
+                            const stLabel = {approved:'배송 준비중', shipping:'배송중', delivered:'배송 완료', confirmed:'구매확정', settled:'정산완료', refund_requested:'환불요청', refunded:'환불됨'}[st] || '';
                             let line = stLabel ? `<span style="display:inline-block; background:#eef2ff; color:#3730a3; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700;">🚚 ${stLabel}</span>` : '';
                             if(cur || no){
                                 const url = window.courierTrackUrl(cur, no);
@@ -7981,6 +8093,8 @@ pdfjsScript,
                             ${hasPdf ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.openPackagePdf('${p.productId}')">주문서 PDF 보기</button>` : ''}
                             ${p.is_package ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.placeAdditionalOrder('${p.productId}')">추가 주문 / 재주문</button>` : ''}
                             <button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.contactSellerFromPurchase('${escSeller.replace(/'/g, "\\'")}')">판매자 채팅</button>
+                            ${(p.orderId && (p.orderStatus==='shipping' || p.orderStatus==='delivered')) ? `<button class="btn btn-success" style="padding:6px 12px; font-size:11px;" onclick="window.confirmPurchaseOrder('${p.orderId}')">구매확정</button>` : ''}
+                            ${(p.orderId && ['approved','shipping','delivered','confirmed'].includes(p.orderStatus)) ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px; color:#ea580c; border-color:#ea580c;" onclick="window.requestOrderRefund('${p.orderId}')">환불요청</button>` : ''}
                             ${canRefund ? `<button class="btn btn-danger" style="padding:6px 12px; font-size:11px;" onclick="window.requestRefund(${p.txId}, '${escName.replace(/'/g, "\\'")}')">환불 요청</button>` : ''}
                         </div>
                     </div>

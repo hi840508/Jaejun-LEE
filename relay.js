@@ -192,6 +192,8 @@ function initTables() {
         // 🧾 세금계산서용: 상점(공급자) 구분(business/individual) + 번호(사업자등록번호/주민등록번호)
         db.run(`ALTER TABLE stores ADD COLUMN bizType TEXT DEFAULT 'business'`, () => {});
         db.run(`ALTER TABLE stores ADD COLUMN bizNo TEXT`, () => {});
+        // 💰 [에스크로] Admin 통합관리 상점 플래그: 1이면 이 상점 판매대금은 Admin(hi840508)이 보관→정산으로 지급
+        db.run(`ALTER TABLE stores ADD COLUMN admin_managed INTEGER DEFAULT 0`, () => {});
         // 🚀 [v6] order_orders 컬럼 추가 (구버전 DB 호환)
         db.run(`ALTER TABLE product_orders ADD COLUMN pdf_filled_data TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN buyer_info TEXT`, () => {});
@@ -199,6 +201,13 @@ function initTables() {
         db.run(`ALTER TABLE product_orders ADD COLUMN tracking TEXT`, () => {});   // 🚚 배송 송장번호(선택)
         db.run(`ALTER TABLE product_orders ADD COLUMN courier TEXT`, () => {});    // 🚚 택배사 코드
         db.run(`ALTER TABLE product_orders ADD COLUMN amount INTEGER DEFAULT 0`, () => {});
+        // 💰 [에스크로] 배송완료 시각(자동확정 3일 기준) · 구매확정 시각 · Admin 보관금액 · 정산완료 여부
+        db.run(`ALTER TABLE product_orders ADD COLUMN delivered_at TEXT`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN confirmed_at TEXT`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN escrow_held INTEGER DEFAULT 0`, () => {});   // Admin이 이 주문건으로 보관중인 금액(승인 시 구매자→Admin)
+        db.run(`ALTER TABLE product_orders ADD COLUMN settled INTEGER DEFAULT 0`, () => {});       // 1이면 정산(상점 지급) 완료
+        db.run(`ALTER TABLE product_orders ADD COLUMN settled_at TEXT`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN settle_month TEXT`, () => {});               // 정산 귀속월(YYYY-MM)
         db.run(`ALTER TABLE transactions ADD COLUMN refunded INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN email TEXT`, () => {});
@@ -242,6 +251,10 @@ function initTables() {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_vat_rate', '10')`, () => {});
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_pay_fee_rate', '2.7')`, () => {});
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_sw_fee', '10000')`, () => {});
+            // 💰 [정산 신규변수] 카드결제 수수료율 2.4% + 거래 수수료율 0.6% (SW월사용료·VAT 폐지). 결제수수료=두 율의 합, 지급액=매출−결제수수료.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_card_fee_rate', '2.4')`, () => {});
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_txn_fee_rate', '0.6')`, () => {});
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_supplier', '')`, () => {});   // 공급자(플랫폼) 정보 JSON — 마지막 입력값 자동 저장
         });
         // 🔐 로그인 세션(토큰) — 자금/민감 엔드포인트의 신원을 요청 본문이 아닌 서버 세션으로 판정
         db.run(`CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, name TEXT, created INTEGER)`, () => {
@@ -282,6 +295,8 @@ function loadAdminUsers() {
     });
 }
 function isAdminName(name) { return !!name && ADMIN_USERS.has(name); }
+// 💰 [에스크로] 자금이 귀속되는 Admin 계정(첫 관리자, 기본 hi840508). 구매 대금 보관·정산 지급의 주체.
+function _adminAccount() { const a = ADMIN_USERS.values().next().value; return a || 'hi840508'; }
 function requireAdmin(req, res) {
     const me = authUser(req);
     if (!me) { res.status(401).json({ error: '로그인이 필요합니다.' }); return null; }
@@ -865,7 +880,16 @@ app.post('/api/product/submit-order', (req, res) => {
         });
 });
 
+// 💰 [에스크로] 주문 상품의 상점이 Admin 통합관리(admin_managed=1)인지 조회 → cb(managed:boolean, store)
+function _orderStoreManaged(ord, cb) {
+    db.get(`SELECT s.id AS sid, s.admin_managed AS am, s.name AS sname FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e, row) => {
+        cb(!!(row && Number(row.am) === 1), row || null);
+    });
+}
+
 // 🚀 [v6] 판매자가 주문 승인 → 결제 처리 + status='approved'
+//  · 일반 상점: 배민식 카드수령(잔액 이동 없이 매출기록만).
+//  · 💰 Admin 통합관리 상점: 승인 시 구매자 잔액 → Admin(hi840508) 보관(에스크로). 구매확정 후 정산으로 상점에 지급.
 app.post('/api/order/approve', (req, res) => {
     const seller = requireUser(req, res); if (!seller) return;   // ★신원=토큰
     const { orderId } = req.body;
@@ -876,18 +900,40 @@ app.post('/api/order/approve', (req, res) => {
         if(ord.status === 'rejected' || ord.status === 'cancelled') return res.status(400).json({ error: '취소/거절된 주문은 승인 불가' });
 
         const amount = ord.amount || 0;
-        // ★배민식 카드수령 모델★: 승인 = 주문확정 + 매출기록만. 구매자 Earth 잔액을 차감/이체하지 않는다(결제는 Admin이 카드로 수령,
-        //  업체 대금은 월정산으로 지급). 기존엔 구매자 잔액을 요구해 승인이 막히고 거래기록·구매내역이 비던 문제를 해결.
         db.get(`SELECT name FROM products WHERE id = ?`, [ord.productId], (e3, pRow) => {
             const pName = (pRow && pRow.name) || ord.productId;
             const date = new Date().toLocaleString('ko-KR');
-            db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, 'original', ?, ?)`,
-                [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date],
-                function(ie) {
-                    if (ie) return res.status(500).json({ error: ie.message });
-                    const txId = this.lastID;
-                    db.run(`UPDATE product_orders SET status = 'approved', txId = ? WHERE id = ?`, [txId, orderId], () => res.json({ success: true, txId, amount }));
-                });
+            _orderStoreManaged(ord, (managed) => {
+                if (managed && amount > 0) {
+                    // 💰 에스크로: 구매자 잔액 → Admin 계정 보관(원자적 조건부 차감). 잔액 부족 시 승인 불가.
+                    const admin = _adminAccount();
+                    db.serialize(() => {
+                        db.run('BEGIN IMMEDIATE');
+                        db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [amount, ord.buyer, amount], function(ue) {
+                            if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
+                            if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '구매자 잔액이 부족하여 승인할 수 없습니다. (에스크로 결제)' }); }
+                            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, admin]);
+                            db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, 'original', ?, ?)`,
+                                [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date],
+                                function(ie) {
+                                    if (ie) { db.run('ROLLBACK'); return res.status(500).json({ error: ie.message }); }
+                                    const txId = this.lastID;
+                                    db.run(`UPDATE product_orders SET status = 'approved', txId = ?, escrow_held = ? WHERE id = ?`, [txId, amount, orderId]);
+                                    db.run('COMMIT', () => res.json({ success: true, txId, amount, escrow: true }));
+                                });
+                        });
+                    });
+                } else {
+                    // ★배민식 카드수령 모델★(일반 상점): 승인 = 주문확정 + 매출기록만. 구매자 잔액 이동 없음.
+                    db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date) VALUES (?, ?, ?, ?, ?, 'original', ?, ?)`,
+                        [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date],
+                        function(ie) {
+                            if (ie) return res.status(500).json({ error: ie.message });
+                            const txId = this.lastID;
+                            db.run(`UPDATE product_orders SET status = 'approved', txId = ? WHERE id = ?`, [txId, orderId], () => res.json({ success: true, txId, amount }));
+                        });
+                }
+            });
         });
     });
 });
@@ -926,29 +972,89 @@ app.post('/api/order/status', (req, res) => {
         if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if (ord.seller !== seller) return res.status(403).json({ error: '본인 판매 주문만 변경 가능' });
         if (status === 'refunded') {
-            // ★환불 수락(배민식)★: 잔액 이동 없이 매출 취소 표시. 가드로 중복환불·미결제환불 차단.
+            // ★환불 수락★: 매출 취소 표시 + (에스크로 상점이면) Admin 보관금액을 구매자에게 반환. 중복환불·미결제환불·정산완료 차단.
             if (ord.status === 'refunded') return res.status(400).json({ error: '이미 환불 처리된 주문입니다.' });
-            if (!['approved', 'shipping', 'delivered'].includes(ord.status)) return res.status(400).json({ error: '승인/배송 상태의 주문만 환불할 수 있습니다.' });
-            const _finish = () => db.run(`UPDATE product_orders SET status = 'refunded' WHERE id = ?`, [orderId], () => res.json({ success: true }));
-            if (ord.txId) {
-                // 원 거래를 매출취소 처리 + 매출취소 거래기록 생성(거래내역·영수증·정산에 반영)
-                db.get(`SELECT * FROM transactions WHERE id = ?`, [ord.txId], (e3, otx) => {
-                    db.serialize(() => {
+            if (ord.settled) return res.status(400).json({ error: '이미 정산 완료된 주문은 환불할 수 없습니다.' });
+            if (!['approved', 'shipping', 'delivered', 'refund_requested', 'confirmed'].includes(ord.status)) return res.status(400).json({ error: '승인/배송/확정 상태의 주문만 환불할 수 있습니다.' });
+            const hold = ord.escrow_held || 0;
+            const _finish = () => db.run(`UPDATE product_orders SET status = 'refunded', escrow_held = 0 WHERE id = ?`, [orderId], () => res.json({ success: true, refundedToBuyer: hold > 0 ? hold : 0 }));
+            const _markTx = () => {
+                if (ord.txId) {
+                    db.get(`SELECT * FROM transactions WHERE id = ?`, [ord.txId], (e3, otx) => {
                         db.run(`UPDATE transactions SET refunded = 1 WHERE id = ?`, [ord.txId]);   // 매출 취소(구매내역·정산에서 제외)
                         if (otx) {
                             const now = new Date().toLocaleString('ko-KR'); const rawDate = new Date().toISOString();
                             db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, refunded) VALUES (?, ?, ?, ?, ?, 'refund', ?, ?, 1)`,
-                                [otx.seller, otx.buyer, otx.productId, `[매출취소] ${otx.productName || ''}`, otx.amount, rawDate, now]);
-                        }
-                        _finish();
+                                [otx.seller, otx.buyer, otx.productId, `[매출취소] ${otx.productName || ''}`, otx.amount, rawDate, now], () => _finish());
+                        } else { _finish(); }
+                    });
+                } else { _finish(); }
+            };
+            if (hold > 0) {
+                // 💰 에스크로 반환: Admin 보관금액 → 구매자 잔액(원자적). 결제 취소 = 구매자 환불.
+                const admin = _adminAccount();
+                db.serialize(() => {
+                    db.run('BEGIN IMMEDIATE');
+                    db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [hold, admin, hold], function(ue) {
+                        if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
+                        if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: 'Admin 보관 잔액이 부족하여 환불할 수 없습니다.' }); }
+                        db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [hold, ord.buyer]);
+                        db.run('COMMIT', () => _markTx());
                     });
                 });
-            } else { _finish(); }
+            } else { _markTx(); }
         } else {
-            db.run(`UPDATE product_orders SET status = ?, tracking = ?, courier = ? WHERE id = ?`, [status, tracking || ord.tracking || null, req.body.courier || ord.courier || null, orderId], () => res.json({ success: true }));
+            // 배송완료 시각 기록(자동확정 3일 기준). 배송중/완료 상태 변경.
+            const dlvAt = (status === 'delivered') ? (ord.delivered_at || new Date().toISOString()) : ord.delivered_at;
+            db.run(`UPDATE product_orders SET status = ?, tracking = ?, courier = ?, delivered_at = ? WHERE id = ?`, [status, tracking || ord.tracking || null, req.body.courier || ord.courier || null, dlvAt || null, orderId], () => res.json({ success: true }));
         }
     });
 });
+
+// 💰 [에스크로] 구매자: 구매확정 → 정산대기(confirmed). 자금은 Admin이 계속 보관, 이후 Admin의 정산 버튼으로 상점에 지급.
+//  배송완료(delivered) 또는 배송중(shipping) 주문을 구매자가 확정. (지급 이체는 여기서 하지 않음 — 정산 시 처리)
+app.post('/api/order/confirm', (req, res) => {
+    const buyer = requireUser(req, res); if (!buyer) return;
+    const { orderId } = req.body;
+    db.get(`SELECT * FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+        if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        if (ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 확정할 수 있습니다.' });
+        if (ord.status === 'confirmed') return res.json({ success: true, message: '이미 구매확정됨' });
+        if (!['delivered', 'shipping', 'approved'].includes(ord.status)) return res.status(400).json({ error: '배송/승인 상태의 주문만 구매확정할 수 있습니다.' });
+        const now = new Date();
+        const month = now.toISOString().slice(0, 7);   // YYYY-MM (정산 귀속월)
+        db.run(`UPDATE product_orders SET status = 'confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, orderId], () => res.json({ success: true }));
+    });
+});
+
+// 💰 [에스크로] 구매자: 환불 요청 → status='refund_requested'. 상점 주인이 /api/order/status(refunded)로 승인하면 Admin 보관금 → 구매자 반환.
+app.post('/api/order/refund-request', (req, res) => {
+    const buyer = requireUser(req, res); if (!buyer) return;
+    const { orderId, reason } = req.body;
+    db.get(`SELECT * FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+        if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        if (ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 환불 요청할 수 있습니다.' });
+        if (ord.settled) return res.status(400).json({ error: '정산 완료된 주문은 환불 요청할 수 없습니다.' });
+        if (!['approved', 'shipping', 'delivered', 'confirmed'].includes(ord.status)) return res.status(400).json({ error: '진행중인 주문만 환불 요청할 수 있습니다.' });
+        db.run(`UPDATE product_orders SET status = 'refund_requested', memo = COALESCE(memo,'') || ? WHERE id = ?`, ['\n[환불요청] ' + (reason || ''), orderId], () => res.json({ success: true }));
+    });
+});
+
+// 💰 [에스크로] 3일 자동 구매확정 스윕: 배송완료(delivered) 후 3일 지난 에스크로 주문을 자동 confirmed 처리(구매자 미확정 시).
+//  자금 이동 없음(정산 대기로 전환만). 1시간마다 실행 + 부팅 30초 후 1회.
+function _autoConfirmSweep() {
+    try {
+        const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+        db.all(`SELECT id, delivered_at FROM product_orders WHERE status='delivered' AND escrow_held > 0 AND settled = 0 AND delivered_at IS NOT NULL AND delivered_at <= ?`, [cutoff], (e, rows) => {
+            if (e || !rows || !rows.length) return;
+            const now = new Date(); const month = now.toISOString().slice(0, 7);
+            rows.forEach(r => db.run(`UPDATE product_orders SET status='confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, r.id], () => {}));
+            console.log(`[에스크로] 자동 구매확정 ${rows.length}건 (배송완료 3일 경과)`);
+        });
+    } catch (_) {}
+}
+setTimeout(_autoConfirmSweep, 30 * 1000);
+setInterval(_autoConfirmSweep, 60 * 60 * 1000);
 
 // 🚀 [v6] 단일 주문 조회 (orderId 기준; 채팅 카드 클릭 시 사용)
 app.get('/api/order/:orderId', (req, res) => {
@@ -1479,23 +1585,25 @@ async function _postToPaxbill(pathKey, payload){
     if (!r.ok) throw new Error('팍스빌 API 오류: ' + ((data && (data.message||data.error||data.raw)) || ('HTTP ' + r.status)));
     return Object.assign({ ok:true, mock:false }, data || {});
 }
-// 정산 변수 조회(기본값 포함)
+// 정산 변수 조회(신규: 카드결제 수수료율 2.4% + 거래 수수료율 0.6%. SW월사용료·VAT 폐지)
 function _taxConfig(cb){
-    db.all(`SELECT key,value FROM settings WHERE key IN ('tax_vat_rate','tax_pay_fee_rate','tax_sw_fee')`, [], (e, rows) => {
+    db.all(`SELECT key,value FROM settings WHERE key IN ('tax_card_fee_rate','tax_txn_fee_rate')`, [], (e, rows) => {
         const m = {}; (rows||[]).forEach(r => m[r.key] = r.value);
-        cb({ vatRate: parseFloat(m.tax_vat_rate)||10, payFeeRate: parseFloat(m.tax_pay_fee_rate)||2.7, swFee: parseInt(m.tax_sw_fee)||10000 });
+        let cardFeeRate = parseFloat(m.tax_card_fee_rate); if (isNaN(cardFeeRate)) cardFeeRate = 2.4;
+        let txnFeeRate  = parseFloat(m.tax_txn_fee_rate);  if (isNaN(txnFeeRate))  txnFeeRate = 0.6;
+        cb({ cardFeeRate, txnFeeRate, payFeeRate: cardFeeRate + txnFeeRate });
     });
 }
-// 매출 → 정산 내역(수수료·VAT·지급액) 계산
+// 매출 → 정산 내역 계산. 결제수수료 = (카드율+거래율)%, 지급액 = 매출 − 결제수수료. VAT·SW 없음.
+//  예) 매출 10000, 카드2.4+거래0.6=3% → 결제수수료 300, 지급액 9700. (수수료 300은 Admin 매출로 귀속)
 function _settleCalc(salesTotal, cfg){
     salesTotal = _n(salesTotal);
-    const payFee = Math.round(salesTotal * (cfg.payFeeRate/100));
-    const swFee = _n(cfg.swFee);
-    const feeSubtotal = payFee + swFee;
-    const vatOnFees = Math.round(feeSubtotal * (cfg.vatRate/100));
-    const commissionTotal = feeSubtotal + vatOnFees;   // 세금계산서 발행액(공급가=feeSubtotal, 세액=vatOnFees)
-    const payout = salesTotal - commissionTotal;        // 업체 지급액
-    return { salesTotal, payFee, swFee, feeSubtotal, vatOnFees, commissionTotal, payout };
+    const cardFee = Math.round(salesTotal * (_n(cfg.cardFeeRate)/100));
+    const txnFee  = Math.round(salesTotal * (_n(cfg.txnFeeRate)/100));
+    const payFee  = cardFee + txnFee;                    // 결제수수료(=Admin 수수료 수입)
+    const payout  = salesTotal - payFee;                 // 상점 지급액
+    // 하위호환 필드(commissionTotal/feeSubtotal=수수료, vatOnFees/swFee=0)
+    return { salesTotal, cardFee, txnFee, payFee, feeRate: _n(cfg.cardFeeRate)+_n(cfg.txnFeeRate), payout, commissionTotal: payFee, feeSubtotal: payFee, vatOnFees: 0, swFee: 0 };
 }
 const _salesWhere = `t.productId IS NOT NULL AND IFNULL(t.refunded,0)=0 AND t.purchaseType IS NOT NULL AND t.purchaseType NOT IN ('refund','signup_bonus')`;
 
@@ -1505,10 +1613,43 @@ app.get('/api/tax/config/status', (req, res) => { res.json(_paxbillStatus()); })
 app.get('/api/tax/config', (req, res) => { _taxConfig(cfg => res.json(cfg)); });
 app.post('/api/tax/config', (req, res) => {
     if (!requireAdmin(req, res)) return;
-    const map = { tax_vat_rate: req.body.vatRate, tax_pay_fee_rate: req.body.payFeeRate, tax_sw_fee: req.body.swFee };
+    const map = { tax_card_fee_rate: req.body.cardFeeRate, tax_txn_fee_rate: req.body.txnFeeRate };
     const entries = Object.entries(map).filter(([k, v]) => v != null && v !== '');
     if (!entries.length) return _taxConfig(cfg => res.json({ success: true, config: cfg }));
     let n = 0; entries.forEach(([k, v]) => db.run(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [k, String(v)], () => { if (++n === entries.length) _taxConfig(cfg => res.json({ success: true, config: cfg })); }));
+});
+// 🏬 [상점 관리] Admin: 등록된 상점 목록/검색 + Admin 통합관리(admin_managed) 여부. 체크 시 해당 상점은 에스크로/정산 대상.
+app.get('/api/admin/stores', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const q = String(req.query.q || '').trim();
+    let where = `1=1`; const params = [];
+    if (q) { where += ` AND (s.name LIKE ? OR s.owner LIKE ? OR IFNULL(s.bizNo,'') LIKE ?)`; const like = '%' + q + '%'; params.push(like, like, like); }
+    db.all(`SELECT s.id, s.name, s.owner, s.status, s.bizType, s.bizNo, IFNULL(s.admin_managed,0) admin_managed,
+                   (SELECT realname FROM users WHERE name = s.owner) ownerRealname,
+                   (SELECT COUNT(*) FROM products p WHERE p.storeId = s.id) productCount
+            FROM stores s WHERE ${where} ORDER BY s.admin_managed DESC, s.name ASC LIMIT 500`, params,
+        (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json({ stores: rows || [] }));
+});
+app.post('/api/admin/store/manage', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const { storeId, managed } = req.body || {};
+    if (!storeId) return res.status(400).json({ error: 'storeId 필요' });
+    db.run(`UPDATE stores SET admin_managed = ? WHERE id = ?`, [managed ? 1 : 0, storeId],
+        function(err) { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true, storeId, managed: managed ? 1 : 0, changed: this.changes }); });
+});
+// 🧾 공급자(플랫폼) 정보 서버 영속화 — 항상 마지막 입력값 자동 저장(settings.tax_supplier JSON). 프런트 localStorage와 병행.
+app.get('/api/tax/supplier', (req, res) => {
+    db.get(`SELECT value FROM settings WHERE key='tax_supplier'`, [], (e, row) => {
+        let obj = null; try { obj = row && row.value ? JSON.parse(row.value) : null; } catch (_) {}
+        res.json({ supplier: obj });
+    });
+});
+app.post('/api/tax/supplier', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const sup = req.body && req.body.supplier ? req.body.supplier : req.body;
+    let json = ''; try { json = JSON.stringify(sup || {}); } catch (_) { json = ''; }
+    db.run(`INSERT INTO settings(key,value) VALUES('tax_supplier',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [json],
+        (err) => err ? res.status(500).json({ error: err.message }) : res.json({ success: true }));
 });
 // Admin: 전체 업체 판매내역(월 선택)
 app.get('/api/admin/tax/sales', (req, res) => {
@@ -1521,30 +1662,74 @@ app.get('/api/admin/tax/sales', (req, res) => {
             FROM transactions t LEFT JOIN users u ON t.buyer=u.name
             WHERE ${where} ORDER BY t.id DESC LIMIT 1000`, params, (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json(rows || []));
 });
-// Admin: 업체별 정산(매출 합계 + 수수료/VAT/지급액)
+// Admin: 상점별 정산(구매확정된 에스크로 주문 기준). 매출=확정·미정산 주문 합계, 결제수수료·지급액 계산.
+//  admin_managed 상점만(escrow_held>0). 정산월=구매확정 귀속월(settle_month).
 app.get('/api/admin/tax/settlement', (req, res) => {
     if (!requireAdmin(req, res)) return;
     const month = String(req.query.month || '').slice(0, 7);
+    const owner = String(req.query.owner || '').trim();   // 특정 상점주만(선택)
     _taxConfig((cfg) => {
-        let where = _salesWhere; const params = [];
-        if (month) { where += ` AND substr(IFNULL(t.rawDate,t.date),1,7)=?`; params.push(month); }
-        db.all(`SELECT t.seller, COUNT(*) cnt, SUM(t.amount) salesTotal,
-                    (SELECT realname FROM users WHERE name = t.seller) sellerRealname,
+        let where = `o.status='confirmed' AND o.escrow_held>0 AND o.settled=0`; const params = [];
+        if (month) { where += ` AND o.settle_month=?`; params.push(month); }
+        if (owner) { where += ` AND o.seller=?`; params.push(owner); }
+        db.all(`SELECT o.seller, COUNT(*) cnt, SUM(o.escrow_held) salesTotal,
+                    (SELECT realname FROM users WHERE name = o.seller) sellerRealname,
                     GROUP_CONCAT(DISTINCT p.storeId) storeIds,
                     GROUP_CONCAT(DISTINCT s.name) brands,
-                    GROUP_CONCAT(DISTINCT t.productName) products
-                FROM transactions t
-                LEFT JOIN products p ON p.id = t.productId
+                    GROUP_CONCAT(DISTINCT s.bizNo) bizNos
+                FROM product_orders o
+                LEFT JOIN products p ON p.id = o.productId
                 LEFT JOIN stores s ON p.storeId = s.id
-                WHERE ${where} GROUP BY t.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
+                WHERE ${where} GROUP BY o.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
             const vendors = (rows || []).map(r => Object.assign({
                 seller: r.seller, count: r.cnt,
-                // 🧾 거래처 표기명 = 사업자등록증상 상호/실명(realname). 없으면 브랜드명, 그것도 없으면 ID.
                 bizName: (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
-                storeIds: r.storeIds || '', brands: r.brands || '', products: r.products || ''
+                bizNo: (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
+                storeIds: r.storeIds || '', brands: r.brands || ''
             }, _settleCalc(r.salesTotal, cfg)));
-            res.json({ month, config: cfg, vendors });
+            const adminRevenue = vendors.reduce((s, v) => s + (v.payFee || 0), 0);   // 거래 수수료 = Admin 매출
+            res.json({ month, config: cfg, vendors, adminRevenue });
+        });
+    });
+});
+// 💰 Admin: 정산 실행 — 확정·미정산 주문의 지급액(매출−결제수수료)을 Admin→상점주 계정으로 이체, 주문 settled=1. 수수료는 Admin 매출로 잔류.
+app.post('/api/tax/settle', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const seller = String(req.body.seller || '').trim();
+    const month = String(req.body.month || '').slice(0, 7);
+    if (!seller) return res.status(400).json({ error: '정산 대상 상점(seller)이 없습니다.' });
+    _taxConfig((cfg) => {
+        let where = `status='confirmed' AND escrow_held>0 AND settled=0 AND seller=?`; const params = [seller];
+        if (month) { where += ` AND settle_month=?`; params.push(month); }
+        db.all(`SELECT id, escrow_held FROM product_orders WHERE ${where}`, params, (e, rows) => {
+            if (e) return res.status(500).json({ error: e.message });
+            if (!rows || !rows.length) return res.status(400).json({ error: '정산할 구매확정 주문이 없습니다.' });
+            const salesTotal = rows.reduce((s, r) => s + (r.escrow_held || 0), 0);
+            const calc = _settleCalc(salesTotal, cfg);
+            const admin = _adminAccount();
+            const payout = calc.payout;
+            const ids = rows.map(r => r.id);
+            const raw = new Date().toISOString();
+            // 💰 본인(Admin) 상점 정산: 자금이 이미 Admin 지갑에 있으므로 자기이체 없이 주문만 settled 처리(수수료·지급 개념 미적용, 전액 Admin 귀속).
+            if (seller === admin) {
+                db.run(`UPDATE product_orders SET settled = 1, settled_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`, [raw, ...ids],
+                    (ue) => ue ? res.status(500).json({ error: ue.message })
+                              : res.json({ success: true, seller, selfStore: true, count: rows.length, salesTotal, payFee: 0, payout: salesTotal, adminRevenue: 0 }));
+                return;
+            }
+            db.serialize(() => {
+                db.run('BEGIN IMMEDIATE');
+                db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [payout, admin, payout], function(ue) {
+                    if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
+                    if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: 'Admin 보관 잔액이 부족합니다.' }); }
+                    db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [payout, seller]);
+                    const now = new Date().toLocaleString('ko-KR');
+                    db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate) VALUES (?, ?, ?, ?, ?)`, [admin, seller, payout, now, raw]);
+                    db.run(`UPDATE product_orders SET settled = 1, settled_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`, [raw, ...ids]);
+                    db.run('COMMIT', () => res.json({ success: true, seller, count: rows.length, salesTotal, payFee: calc.payFee, payout, adminRevenue: calc.payFee }));
+                });
+            });
         });
     });
 });
