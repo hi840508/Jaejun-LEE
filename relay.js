@@ -223,6 +223,7 @@ function initTables() {
         db.run(`ALTER TABLE users ADD COLUMN privacy_agreed_at TEXT`, () => {});   // 🔐 개인정보 수집·이용 동의 시각
         db.run(`ALTER TABLE users ADD COLUMN force_pwd_change INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE transfers ADD COLUMN rawDate TEXT`, () => {});
+        db.run(`ALTER TABLE transfers ADD COLUMN memo TEXT`, () => {});   // 💰 정산 입금 상세(정산에 포함된 판매 항목 JSON)
         db.run(`ALTER TABLE deposits ADD COLUMN rawDate TEXT`, () => {});
         db.run(`ALTER TABLE withdrawals ADD COLUMN rawDate TEXT`, () => {});
         // 🚀 products: 패키지 메타 (대표 파일 + PDF + 추가 파일 묶음 JSON)
@@ -990,7 +991,8 @@ app.post('/api/order/status', (req, res) => {
             // ★환불 수락★: 매출 취소 표시 + (에스크로 상점이면) Admin 보관금액을 구매자에게 반환. 중복환불·미결제환불·정산완료 차단.
             if (ord.status === 'refunded') return res.status(400).json({ error: '이미 환불 처리된 주문입니다.' });
             if (ord.settled) return res.status(400).json({ error: '이미 정산 완료된 주문은 환불할 수 없습니다.' });
-            if (!['approved', 'shipping', 'delivered', 'refund_requested', 'confirmed'].includes(ord.status)) return res.status(400).json({ error: '승인/배송/확정 상태의 주문만 환불할 수 있습니다.' });
+            if (ord.status === 'confirmed') return res.status(400).json({ error: '구매확정된 주문은 환불할 수 없습니다.' });
+            if (!['approved', 'shipping', 'delivered', 'refund_requested'].includes(ord.status)) return res.status(400).json({ error: '배송 완료 전(구매확정 전) 주문만 환불할 수 있습니다.' });
             const hold = ord.escrow_held || 0;
             const _finish = () => db.run(`UPDATE product_orders SET status = 'refunded', escrow_held = 0 WHERE id = ?`, [orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'refunded', hold > 0 ? `↩️ [환불 완료] 결제금액(${hold.toLocaleString()}원)이 구매자에게 환불되었습니다.` : '↩️ [환불 처리] 주문이 환불 처리되었습니다.'); res.json({ success: true, refundedToBuyer: hold > 0 ? hold : 0 }); });
             const _markTx = () => {
@@ -1056,7 +1058,8 @@ app.post('/api/order/refund-request', (req, res) => {
         if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if (ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 환불 요청할 수 있습니다.' });
         if (ord.settled) return res.status(400).json({ error: '정산 완료된 주문은 환불 요청할 수 없습니다.' });
-        if (!['approved', 'shipping', 'delivered', 'confirmed'].includes(ord.status)) return res.status(400).json({ error: '진행중인 주문만 환불 요청할 수 있습니다.' });
+        if (ord.status === 'confirmed') return res.status(400).json({ error: '구매확정된 주문은 환불 요청할 수 없습니다.' });
+        if (!['approved', 'shipping', 'delivered'].includes(ord.status)) return res.status(400).json({ error: '배송 완료 전(구매확정 전) 주문만 환불 요청할 수 있습니다.' });
         db.run(`UPDATE product_orders SET status = 'refund_requested', memo = COALESCE(memo,'') || ? WHERE id = ?`, ['\n[환불요청] ' + (reason || ''), orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'refund_requested', '↩️ [환불 요청] 구매자가 환불을 요청했습니다. 판매자 승인 시 환불됩니다.' + (reason ? ' 사유: ' + reason : '')); res.json({ success: true }); });
     });
 });
@@ -1453,6 +1456,7 @@ app.get('/api/transactions/:name', async (req, res) => {
             (SELECT status FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_status,
             (SELECT id FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_request_id,
             p.is_package as p_is_package, p.package_data as p_package_data, p.storeId as p_storeId,
+            (SELECT escrow_held FROM product_orders WHERE txId = t.id LIMIT 1) as escrowHeld,
             s.name as storeName, s.category as storeCategory,
             (SELECT realname FROM users WHERE name = t.seller) as sellerRealname,
             (SELECT realname FROM users WHERE name = t.buyer) as buyerRealname
@@ -1468,8 +1472,13 @@ app.get('/api/transactions/:name', async (req, res) => {
         let history = [];
         txs.forEach(t => {
             const isBuyer = t.buyer === name;
+            const escrowHeld = t.escrowHeld || 0;   // 💰 Admin 에스크로(통합관리) 판매 여부
+            // 🦷 Admin 통합관리(에스크로) 판매은 판매자(상점) 거래내역에 '자산판매'로 표시하지 않는다.
+            //    (판매 대금은 정산 입금 기록으로만 표시 — 아래 transfers 정산 입금 항목에서 정산 항목과 함께 보임)
+            if (escrowHeld > 0 && !isBuyer) return;
             const refStatus = t.refund_status;
             const refundable = isBuyer && !t.refunded && refStatus !== 'pending'
+                && escrowHeld === 0   // 에스크로 구매는 주문(구매내역/채팅카드)에서 환불 요청 — 거래내역 환불 버튼 비활성
                 && t.productId && t.purchaseType !== 'refund' && t.purchaseType !== 'signup_bonus'
                 && !['보안 수표 발행', '보안 수표 환원 충전', '신규 가입 정산 한도 축하금'].includes(t.productName);
             let baseType;
@@ -1498,7 +1507,17 @@ app.get('/api/transactions/:name', async (req, res) => {
                 counterpartyRealname: (isBuyer ? t.sellerRealname : t.buyerRealname) || null
             });
         });
-        tfs.forEach(t => history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, rawDate: t.rawDate || t.date, amount: t.amount, seller: t.receiver || t.sender, sender: t.sender, receiver: t.receiver }));
+        tfs.forEach(t => {
+            let settle = null; try { if (t.memo) { const mo = JSON.parse(t.memo); if (mo && mo.kind === 'settlement') settle = mo; } } catch (_) {}
+            if (settle && t.receiver === name) {
+                // 💰 정산 입금 — 어떤 항목의 정산인지 상세(items)와 함께 하나의 기록으로 표시
+                history.push({ type: '정산 입금', date: t.date, rawDate: t.rawDate || t.date, amount: t.amount,
+                    seller: t.sender, sender: t.sender, receiver: t.receiver,
+                    settle: { month: settle.month || '', salesTotal: settle.salesTotal || 0, payFee: settle.payFee || 0, payout: settle.payout || t.amount, items: settle.items || [] } });
+            } else {
+                history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, rawDate: t.rawDate || t.date, amount: t.amount, seller: t.receiver || t.sender, sender: t.sender, receiver: t.receiver });
+            }
+        });
         dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, rawDate: d.rawDate || d.date, amount: d.amount, seller: 'Earth(Root)' }));
         wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, rawDate: w.rawDate || w.date, amount: w.amount, seller: '지정 등록 계좌' }));
 
@@ -1781,9 +1800,9 @@ app.post('/api/tax/settle', (req, res) => {
     const month = String(req.body.month || '').slice(0, 7);
     if (!seller) return res.status(400).json({ error: '정산 대상 상점(seller)이 없습니다.' });
     _taxConfig((cfg) => {
-        let where = `status='confirmed' AND escrow_held>0 AND settled=0 AND seller=?`; const params = [seller];
-        if (month) { where += ` AND settle_month=?`; params.push(month); }
-        db.all(`SELECT id, escrow_held FROM product_orders WHERE ${where}`, params, (e, rows) => {
+        let where = `o.status='confirmed' AND o.escrow_held>0 AND o.settled=0 AND o.seller=?`; const params = [seller];
+        if (month) { where += ` AND o.settle_month=?`; params.push(month); }
+        db.all(`SELECT o.id, o.escrow_held, o.buyer, pr.name AS productName FROM product_orders o LEFT JOIN products pr ON pr.id = o.productId WHERE ${where}`, params, (e, rows) => {
             if (e) return res.status(500).json({ error: e.message });
             if (!rows || !rows.length) return res.status(400).json({ error: '정산할 구매확정 주문이 없습니다.' });
             const salesTotal = rows.reduce((s, r) => s + (r.escrow_held || 0), 0);
@@ -1792,6 +1811,9 @@ app.post('/api/tax/settle', (req, res) => {
             const payout = calc.payout;
             const ids = rows.map(r => r.id);
             const raw = new Date().toISOString();
+            // 💰 정산 입금 상세(거래내역에서 '어떤 항목의 정산인지' 표시용): 포함된 판매 항목 리스트
+            const settleMemo = JSON.stringify({ kind: 'settlement', month: month || '', salesTotal, payFee: calc.payFee, payout,
+                items: rows.map(r => ({ orderId: r.id, name: r.productName || r.id, buyer: r.buyer, amount: r.escrow_held || 0 })) });
             // 💰 본인(Admin) 상점 정산: 자금이 이미 Admin 지갑에 있으므로 자기이체 없이 주문만 settled 처리(수수료·지급 개념 미적용, 전액 Admin 귀속).
             if (seller === admin) {
                 db.run(`UPDATE product_orders SET settled = 1, settled_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`, [raw, ...ids],
@@ -1806,7 +1828,7 @@ app.post('/api/tax/settle', (req, res) => {
                     if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: 'Admin 보관 잔액이 부족합니다.' }); }
                     db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [payout, seller]);
                     const now = new Date().toLocaleString('ko-KR');
-                    db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate) VALUES (?, ?, ?, ?, ?)`, [admin, seller, payout, now, raw]);
+                    db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate, memo) VALUES (?, ?, ?, ?, ?, ?)`, [admin, seller, payout, now, raw, settleMemo]);
                     db.run(`UPDATE product_orders SET settled = 1, settled_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`, [raw, ...ids]);
                     db.run('COMMIT', () => res.json({ success: true, seller, count: rows.length, salesTotal, payFee: calc.payFee, payout, adminRevenue: calc.payFee }));
                 });
