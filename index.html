@@ -5830,6 +5830,12 @@ pdfjsScript,
             try {
                 const detRes = await fetch(`${API_URL}/api/product/detail/${id}`);
                 const p = await detRes.json();
+                // 🦷 [치과 기공소] 카테고리가 치과 기공소(dental_lab)이면 주문서 등록 여부와 무관하게
+                //    주문서 상품과 동일한 결제 프로세스(주문 전송→판매자 승인→에스크로→배송→구매확정→정산)로 라우팅.
+                if(p && purchaseType === 'original' && (p.storeCategory === 'dental_lab')) {
+                    openOrderFormModal(p, amount, seller, purchaseType);
+                    return;
+                }
                 if(p && p.is_package && purchaseType === 'original') {
                     // PDF 주문서가 포함됐는지 확인
                     let hasPdfForm = false;
@@ -5869,6 +5875,7 @@ pdfjsScript,
             const pkgRaw = product.package_data;
             let pkg = { files: [], memo: '' };
             try { pkg = JSON.parse(pkgRaw || '{}'); } catch(e){}
+            if(!Array.isArray(pkg.files)) pkg.files = [];   // 🦷 주문서(패키지) 없는 상품(예: 치과 기공소)도 주문 모달 동작 보장
             window.orderFormState = { product, amount, seller, purchaseType, packageFiles: pkg.files || [], buyerFiles: [], buyerMemo: '', pdfFormText: '', pdfFilledData: null, pdfFile: pkg.files.find(f => f.role === 'order_form') || pkg.files.find(f => /\.pdf$/i.test(f.filename||'')) };
 
             const body = document.getElementById('order-form-body');
