@@ -194,6 +194,9 @@ function initTables() {
         db.run(`ALTER TABLE stores ADD COLUMN bizNo TEXT`, () => {});
         // 💰 [에스크로] Admin 통합관리 상점 플래그: 1이면 이 상점 판매대금은 Admin(hi840508)이 보관→정산으로 지급
         db.run(`ALTER TABLE stores ADD COLUMN admin_managed INTEGER DEFAULT 0`, () => {});
+        // 🦷 [기공소] 보철 품목/수가 config(JSON) — 상세 의뢰서의 취급 품목·수가. 캡처: 분류/보철명/수가/폰틱수가, 탭(일반보철·임플란트/덴처/교정)
+        db.run(`ALTER TABLE stores ADD COLUMN rx_items TEXT`, () => {});
+        db.run(`ALTER TABLE products ADD COLUMN rx_form INTEGER DEFAULT 0`, () => {});   // 1=기공소 의뢰서 작성용 기본 상품(가격 미정)
         // 🚀 [v6] order_orders 컬럼 추가 (구버전 DB 호환)
         db.run(`ALTER TABLE product_orders ADD COLUMN pdf_filled_data TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN buyer_info TEXT`, () => {});
@@ -783,15 +786,56 @@ app.post('/api/cloud/usage', (req, res) => {
     });
 });
 
+// 🦷 [기공소] 기본 보철 품목/수가 시드(상점이 편집 가능). tab: general(일반보철·임플란트)/denture(덴처)/ortho(교정)
+function _defaultRxItems() {
+    return [
+        { tab:'general', category:'임플란트', name:'Implant PFM Crown(직접인상)', price:60000, pontic:50000 },
+        { tab:'general', category:'임플란트', name:'Implant PFM Crown(보험)+기성ABT/밀링&지그', price:90000, pontic:0 },
+        { tab:'general', category:'임플란트', name:'Implant Full Zirconia Crown+커스텀 어버트먼트', price:90000, pontic:40000 },
+        { tab:'general', category:'프렙', name:'PFM Crown', price:45000, pontic:40000 },
+        { tab:'general', category:'프렙', name:'지르코니아 크라운', price:60000, pontic:50000 },
+        { tab:'general', category:'프렙', name:'풀지르코니아 임플란트 크라운(전치)', price:70000, pontic:0 },
+        { tab:'general', category:'프렙', name:'골드크라운(A type)', price:25000, pontic:20000 },
+        { tab:'general', category:'프렙', name:'인레이/온레이(골드)', price:25000, pontic:0 },
+        { tab:'general', category:'프렙', name:'세라믹 인레이/온레이', price:35000, pontic:0 },
+        { tab:'general', category:'프렙', name:'라미네이트', price:60000, pontic:0 },
+        { tab:'general', category:'기타', name:'서지컬 가이드', price:500000, pontic:0 },
+        { tab:'general', category:'기타', name:'임시치아(템포러리)', price:5000, pontic:0 },
+        { tab:'general', category:'기타', name:'커스텀 어버트먼트', price:40000, pontic:0 },
+        { tab:'denture', category:'덴처', name:'레진 총의치(Full Denture)', price:250000, pontic:0 },
+        { tab:'denture', category:'덴처', name:'메탈 부분의치(Metal Partial Denture)', price:300000, pontic:0 },
+        { tab:'denture', category:'덴처', name:'클래스프(Clasp) 추가', price:20000, pontic:0 },
+        { tab:'denture', category:'덴처', name:'릴라인(Reline)', price:50000, pontic:0 },
+        { tab:'denture', category:'덴처', name:'리베이스(Rebase)', price:70000, pontic:0 },
+        { tab:'denture', category:'덴처', name:'의치 수리(Repair)', price:30000, pontic:0 },
+        { tab:'ortho', category:'교정', name:'투명교정 장치(1단계)', price:50000, pontic:0 },
+        { tab:'ortho', category:'교정', name:'투명 리테이너', price:30000, pontic:0 },
+        { tab:'ortho', category:'교정', name:'하와이안 리테이너', price:35000, pontic:0 },
+        { tab:'ortho', category:'교정', name:'확장장치(Expansion)', price:80000, pontic:0 },
+        { tab:'ortho', category:'교정', name:'리테이너 수리', price:20000, pontic:0 }
+    ];
+}
 app.post('/api/store/create', (req, res) => {
     db.get(`SELECT id FROM stores WHERE name = ?`, [req.body.name], (err, row) => {
         if (row) return res.status(400).json({ error: "이미 존재하는 명칭의 상점입니다." });
         const category = req.body.category || 'general';
         const bizType = req.body.bizType === 'individual' ? 'individual' : 'business';
         const bizNo = String(req.body.bizNo || '').replace(/\D/g, '');
-        db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description, category, bizType, bizNo) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
-            ['STR_' + Date.now(), req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || '', category, bizType, bizNo],
-            () => res.json({ success: true }));
+        const storeId = 'STR_' + Date.now();
+        // 🦷 기공소: 취급 품목/수가 시드(요청 body의 rxItems가 있으면 사용, 없으면 기본 시드)
+        const isLab = (category === 'dental_lab');
+        let rxItems = null;
+        if (isLab) { try { rxItems = Array.isArray(req.body.rxItems) && req.body.rxItems.length ? req.body.rxItems : _defaultRxItems(); } catch (_) { rxItems = _defaultRxItems(); } }
+        db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description, category, bizType, bizNo, rx_items) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`,
+            [storeId, req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || '', category, bizType, bizNo, rxItems ? JSON.stringify(rxItems) : null],
+            () => {
+                // 🦷 기공소 상점: '의뢰서 작성' 기본 상품 자동 등록(가격 미정=0, rx_form=1). 별도 주문서 없이 간편/상세 의뢰서로 주문.
+                if (isLab) {
+                    db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, seller, rx_form) VALUES (?, ?, 'html_enc', ?, ?, 0, 0, ?, 1)`,
+                        ['PRD_' + Date.now(), storeId, '의뢰서 작성 (간편/상세)', '치과 기공 의뢰서를 작성하여 주문합니다. 상세 의뢰서는 취급 품목 수가로 금액이 자동 산정됩니다.', req.body.owner], () => {});
+                }
+                res.json({ success: true, storeId });
+            });
     });
 });
 
@@ -928,6 +972,18 @@ function _closeOrderRoom(orderId, buyer, seller) {
     } catch (_) {}
 }
 
+// 🦷 [기공소] 거래 성립 시(승인) 해당 상점이 기공소면 구매자 즐겨찾기에 자동 등록.
+function _autoFavIfLab(buyer, productId) {
+    try {
+        db.get(`SELECT s.name AS sname, s.category AS cat FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [productId], (e, row) => {
+            if (!row || row.cat !== 'dental_lab' || !row.sname) return;
+            db.get(`SELECT id FROM favorite_stores WHERE userName = ? AND targetStore = ?`, [buyer, row.sname], (e2, fav) => {
+                if (!fav) db.run(`INSERT INTO favorite_stores (userName, targetStore) VALUES (?, ?)`, [buyer, row.sname], () => {});
+            });
+        });
+    } catch (_) {}
+}
+
 // 💰 [에스크로] 주문 상품의 상점이 Admin 통합관리(admin_managed=1)인지 조회 → cb(managed:boolean, store)
 function _orderStoreManaged(ord, cb) {
     db.get(`SELECT s.id AS sid, s.admin_managed AS am, s.name AS sname FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e, row) => {
@@ -967,7 +1023,7 @@ app.post('/api/order/approve', (req, res) => {
                                     if (ie) { db.run('ROLLBACK'); return res.status(500).json({ error: ie.message }); }
                                     const txId = this.lastID;
                                     db.run(`UPDATE product_orders SET status = 'approved', txId = ?, escrow_held = ? WHERE id = ?`, [txId, amount, orderId]);
-                                    db.run('COMMIT', () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', `✅ [주문 승인] 결제(${amount.toLocaleString()}원)가 완료되어 주문이 확정되었습니다. 배송을 준비합니다.`); res.json({ success: true, txId, amount, escrow: true }); });
+                                    db.run('COMMIT', () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', `✅ [주문 승인] 결제(${amount.toLocaleString()}원)가 완료되어 주문이 확정되었습니다. 배송을 준비합니다.`); _autoFavIfLab(ord.buyer, ord.productId); res.json({ success: true, txId, amount, escrow: true }); });
                                 });
                         });
                     });
@@ -978,7 +1034,7 @@ app.post('/api/order/approve', (req, res) => {
                         function(ie) {
                             if (ie) return res.status(500).json({ error: ie.message });
                             const txId = this.lastID;
-                            db.run(`UPDATE product_orders SET status = 'approved', txId = ? WHERE id = ?`, [txId, orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', '✅ [주문 승인] 주문이 확정되었습니다. 배송을 준비합니다.'); res.json({ success: true, txId, amount }); });
+                            db.run(`UPDATE product_orders SET status = 'approved', txId = ? WHERE id = ?`, [txId, orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', '✅ [주문 승인] 주문이 확정되었습니다. 배송을 준비합니다.'); _autoFavIfLab(ord.buyer, ord.productId); res.json({ success: true, txId, amount }); });
                         });
                 }
             });
@@ -1400,6 +1456,27 @@ app.post('/api/favorite/toggle', (req, res) => {
     });
 });
 app.get('/api/favorites/:userName', (req, res) => { db.all(`SELECT targetStore FROM favorite_stores WHERE userName = ?`, [req.params.userName], (err, rows) => res.json(rows ? rows.map(r => r.targetStore) : [])); });
+
+// 🦷 [기공소] 상점 보철 품목/수가 조회·저장(상세 의뢰서 취급 품목·자동 수가)
+app.get('/api/store/rx-items/:storeId', (req, res) => {
+    db.get(`SELECT id, name, category, rx_items FROM stores WHERE id = ?`, [req.params.storeId], (e, row) => {
+        if (!row) return res.json({ storeId: req.params.storeId, storeName: '', items: [] });
+        let items = []; try { items = row.rx_items ? JSON.parse(row.rx_items) : []; } catch (_) {}
+        if ((!items || !items.length) && row.category === 'dental_lab') items = _defaultRxItems();
+        res.json({ storeId: row.id, storeName: row.name, category: row.category, items });
+    });
+});
+app.post('/api/store/rx-items', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const { storeId, items } = req.body || {};
+    if (!storeId) return res.status(400).json({ error: 'storeId 필요' });
+    db.get(`SELECT owner FROM stores WHERE id = ?`, [storeId], (e, row) => {
+        if (!row) return res.status(404).json({ error: '상점을 찾을 수 없음' });
+        if (row.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '상점 주인만 수정할 수 있습니다.' });
+        const arr = Array.isArray(items) ? items.slice(0, 500).map(it => ({ tab:String(it.tab||'general'), category:String(it.category||''), name:String(it.name||''), price:_n(it.price), pontic:_n(it.pontic) })).filter(x => x.name) : [];
+        db.run(`UPDATE stores SET rx_items = ? WHERE id = ?`, [JSON.stringify(arr), storeId], (ue) => ue ? res.status(500).json({ error: ue.message }) : res.json({ success: true, count: arr.length }));
+    });
+});
 // ⚡ 채팅 히스토리: 최근 N개만 반환(무제한 SELECT + base64 첨부 전송으로 인한 로딩 지연 해결). before 커서로 이전 대화 더보기.
 app.get('/api/chat/:roomId', (req, res) => {
     const lim = Math.min(Number(req.query.limit) || 40, 100);
