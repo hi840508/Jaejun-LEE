@@ -1631,6 +1631,7 @@
                 </div>
                 <!-- 카메라 촬영 모달 (getUserMedia 라이브 프리뷰 → 촬영) -->
                 <input type="file" id="chat-camera-fallback" accept="image/*" capture="environment" style="display:none;" onchange="window.handleChatFileAttach && window.handleChatFileAttach(event.target.files)">
+                <input type="file" id="chat-screenshot-pick" accept="image/*" style="display:none;" onchange="window.handleChatFileAttach && window.handleChatFileAttach(event.target.files)">
                 <div id="camera-capture-modal" style="display:none; position:fixed; inset:0; z-index:3000; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; flex-direction:column;">
                     <video id="camera-capture-video" autoplay playsinline style="max-width:92vw; max-height:70vh; border-radius:12px; background:#000;"></video>
                     <div style="display:flex; gap:12px; margin-top:16px;">
@@ -7086,7 +7087,12 @@ pdfjsScript,
         window.captureScreenToChat = async function() {
             if(!activeChatFriend) return showToast('먼저 대화방을 여세요.');
             const menu = document.getElementById('chat-action-menu'); if(menu) menu.style.display='none';
-            if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return showToast('이 브라우저는 화면 캡처를 지원하지 않습니다.');
+            // 📱 모바일 등 getDisplayMedia 미지원 → 기기 화면 캡처(전원+볼륨)를 갤러리에서 선택해 공유하는 폴백.
+            if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                showToast('휴대폰 화면 캡처(전원+볼륨 버튼)를 찍은 뒤, 그 이미지를 선택해 공유하세요.');
+                const gp = document.getElementById('chat-screenshot-pick'); if(gp){ gp.value=''; gp.click(); }
+                return;
+            }
             try {
                 const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
                 const track = stream.getVideoTracks()[0];
