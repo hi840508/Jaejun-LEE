@@ -1364,11 +1364,18 @@
                             <input type="date" id="hist-to" style="padding:5px 8px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;" onchange="setHistoryPeriod('custom')">
                         </div>
                         <div id="hist-summary" style="font-size:11px; color:var(--text-sub); margin-top:8px;"></div>
+                        <!-- 선택 항목 일괄 다운로드 (수입/지출 체크박스 → 엑셀/PDF) -->
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px;">
+                            <label style="font-size:12px; color:var(--text-main); display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="hist-check-all" onclick="toggleAllHist(this)"> 전체 선택</label>
+                            <button class="btn btn-success" style="padding:7px 14px; font-size:12px;" onclick="histDownloadExcel()">📊 엑셀 다운로드</button>
+                            <button class="btn btn-secondary" style="padding:7px 14px; font-size:12px;" onclick="histDownloadPDF()">📄 PDF 다운로드</button>
+                            <span id="hist-sel-count" style="font-size:11px; color:var(--text-sub);"></span>
+                        </div>
                     </div>
 
                     <div style="overflow-x:auto; border-radius:8px; border:1px solid var(--border-color);">
                         <table class="history-table">
-                            <thead><tr><th>일시</th><th>종류</th><th>상세 내역</th><th>대상</th><th>변동 금액</th><th>환불 처리</th></tr></thead>
+                            <thead><tr><th style="text-align:center; width:34px;">선택</th><th>일시</th><th>종류</th><th>상세 내역</th><th>대상</th><th>변동 금액</th><th>환불 처리</th></tr></thead>
                             <tbody id="history-body"></tbody>
                         </table>
                     </div>
@@ -8651,7 +8658,7 @@ pdfjsScript,
             const eWithdraw = document.getElementById('stat-total-withdraw'); if(eWithdraw) eWithdraw.innerText = totalWithdraw.toLocaleString();
 
             if(list.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:var(--text-sub);">선택한 기간에 거래 내역이 없습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-sub);">선택한 기간에 거래 내역이 없습니다.</td></tr>';
                 summary.innerText = `총 ${window.historyAll.length}건 중 0건 표시`;
                 return;
             }
@@ -8713,10 +8720,77 @@ pdfjsScript,
                     : '';
 
                 const receiptBtn = `<button class="btn btn-secondary" style="padding:5px 10px; font-size:11px; border-radius:6px;" onclick="event.stopPropagation(); issueReceiptPDF(${_ridx})" title="이 거래의 영수증 발급">영수증</button>`;
-                buf += `<tr ${rowAttrs}><td style="white-space:nowrap;">${h.date}</td><td><b style="color:var(--text-main);">${h.type}</b></td><td>${detailHtml}</td><td>${partner || '시스템 본부'}${isClickable ? ' <span style="font-size:10px; color:var(--primary); margin-left:4px;">▶ 대화방</span>' : ''}</td><td style="font-weight:bold; font-size:14px; ${color}">${sign}${Number(h.amount).toLocaleString()}원</td><td><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">${refundCell}${receiptBtn}</div></td></tr>`;
+                const chkCell = `<td style="text-align:center;" onclick="event.stopPropagation();"><input type="checkbox" class="hist-sel" data-i="${_ridx}" onclick="updateHistSelCount()"></td>`;
+                buf += `<tr ${rowAttrs}>${chkCell}<td style="white-space:nowrap;">${h.date}</td><td><b style="color:var(--text-main);">${h.type}</b></td><td>${detailHtml}</td><td>${partner || '시스템 본부'}${isClickable ? ' <span style="font-size:10px; color:var(--primary); margin-left:4px;">▶ 대화방</span>' : ''}</td><td style="font-weight:bold; font-size:14px; ${color}">${sign}${Number(h.amount).toLocaleString()}원</td><td><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">${refundCell}${receiptBtn}</div></td></tr>`;
             });
             tbody.innerHTML = buf;
+            const ca = document.getElementById('hist-check-all'); if(ca) ca.checked = false;
+            updateHistSelCount();
         }
+
+        // 📥 거래내역 선택 다운로드(수입/지출 체크 → 엑셀/PDF)
+        function toggleAllHist(cb){ document.querySelectorAll('.hist-sel').forEach(x => x.checked = cb.checked); updateHistSelCount(); }
+        function updateHistSelCount(){ const n = document.querySelectorAll('.hist-sel:checked').length; const el = document.getElementById('hist-sel-count'); if(el) el.textContent = n ? `${n}건 선택됨` : ''; }
+        function _histSelectedRows(){
+            const list = getFilteredHistory();
+            const idxs = Array.from(document.querySelectorAll('.hist-sel:checked')).map(x => parseInt(x.getAttribute('data-i'),10));
+            return idxs.map(i => list[i]).filter(Boolean);
+        }
+        function _histRowFields(h){
+            const isOut = (h.buyer === currentUser.name || h.sender === currentUser.name || (h.type||'').includes('출금') || h.type === '환불 지급');
+            const sign = isOut ? '-' : '+';
+            const inout = isOut ? '지출' : '수입';
+            const partner = h.counterpartyRealname || h.storeName || h.seller || h.receiver || h.sender || '시스템 본부';
+            const product = (h.productName || (h.settle ? ('정산 ' + (h.settle.month||'') + ' (' + ((h.settle.items||[]).length) + '건)') : '')) || '-';
+            return { date: h.date||'', type: h.type||'', inout, partner, product, amount: Number(h.amount||0), signed: sign + Number(h.amount||0) };
+        }
+        window.histDownloadExcel = function(){
+            const rows = _histSelectedRows();
+            if(!rows.length) return showToast('다운로드할 항목을 체크하세요.');
+            const header = ['일시','종류','수입/지출','대상(거래처)','상세','금액(원)'];
+            const csvRows = [header];
+            let sumIn = 0, sumOut = 0;
+            rows.forEach(h => { const f = _histRowFields(h); if(f.inout==='지출') sumOut += f.amount; else sumIn += f.amount;
+                csvRows.push([f.date, f.type, f.inout, f.partner, f.product, f.signed]); });
+            csvRows.push([]); csvRows.push(['합계','','수입', '', '', '+'+sumIn], ['','','지출','','','-'+sumOut]);
+            const esc = v => { const s = String(v==null?'':v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+            const csv = csvRows.map(r => (r||[]).map(esc).join(',')).join('\r\n');
+            const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });   // BOM → Excel 한글 정상
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = `거래내역_${currentUser.name}_${new Date().toISOString().slice(0,10)}.csv`;
+            document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+            showToast(`${rows.length}건을 엑셀(CSV)로 저장했습니다. (Excel에서 열림)`);
+        };
+        // 팝업 차단·모바일에서도 동작하는 인쇄(숨은 iframe로 렌더 후 print → PDF 저장)
+        function _printHtmlViaIframe(html){
+            const old = document.getElementById('__print_iframe'); if(old) old.remove();
+            const ifr = document.createElement('iframe'); ifr.id='__print_iframe';
+            ifr.style.cssText = 'position:fixed; right:0; bottom:0; width:0; height:0; border:0; opacity:0;';
+            document.body.appendChild(ifr);
+            const doc = ifr.contentWindow.document; doc.open(); doc.write(html); doc.close();
+            setTimeout(()=>{ try { ifr.contentWindow.focus(); ifr.contentWindow.print(); } catch(e){ showToast('인쇄 실패: '+(e.message||e)); } }, 350);
+        }
+        window.histDownloadPDF = function(){
+            const rows = _histSelectedRows();
+            if(!rows.length) return showToast('다운로드할 항목을 체크하세요.');
+            const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            let sumIn = 0, sumOut = 0;
+            const trs = rows.map(h => { const f = _histRowFields(h); if(f.inout==='지출') sumOut += f.amount; else sumIn += f.amount;
+                const col = f.inout==='지출' ? '#b91c1c' : '#166534';
+                return `<tr><td>${esc(f.date)}</td><td>${esc(f.type)}</td><td style="color:${col};font-weight:700;">${esc(f.inout)}</td><td>${esc(f.partner)}</td><td>${esc(f.product)}</td><td style="text-align:right;color:${col};font-weight:700;">${esc(f.signed)}원</td></tr>`;
+            }).join('');
+            const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>거래내역</title>'
+                +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;color:#111;padding:24px;}h1{font-size:20px;margin:0 0 4px;}.s{color:#666;font-size:12px;margin-bottom:16px;}table{width:100%;border-collapse:collapse;font-size:12px;}th,td{border:1px solid #ddd;padding:7px 8px;text-align:left;}th{background:#f1f5f9;}tfoot td{font-weight:800;background:#f8fafc;}@media print{.noprint{display:none;}}</style></head><body>'
+                +'<h1>거래 내역</h1><div class="s">'+esc(currentUser.name)+' ('+esc(currentUser.realname||'')+') · 발행 '+esc(new Date().toLocaleString('ko-KR'))+' · '+rows.length+'건</div>'
+                +'<table><thead><tr><th>일시</th><th>종류</th><th>수입/지출</th><th>대상</th><th>상세</th><th style="text-align:right;">금액</th></tr></thead><tbody>'
+                + trs
+                +'</tbody><tfoot><tr><td colspan="5">수입 합계</td><td style="text-align:right;color:#166534;">+'+sumIn.toLocaleString()+'원</td></tr>'
+                +'<tr><td colspan="5">지출 합계</td><td style="text-align:right;color:#b91c1c;">-'+sumOut.toLocaleString()+'원</td></tr></tfoot></table>'
+                +'<div class="noprint" style="text-align:center;margin-top:18px;"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;font-weight:700;background:#2563eb;color:#fff;border:0;border-radius:8px;cursor:pointer;">PDF로 저장 / 인쇄</button></div>'
+                +'</body></html>';
+            _printHtmlViaIframe(html);
+            showToast(`${rows.length}건 PDF 인쇄 창을 준비했습니다. (PDF로 저장 선택)`);
+        };
 
         // 🚀 [v7p3] 거래내역 행 클릭 시 대화방 열기
         window.openChatFromHistory = async function(partnerName) {
@@ -8821,17 +8895,16 @@ pdfjsScript,
             const title = isCancel ? '매출 취소 영수증 (환불)' : '거래 영수증';
             const hdBg = isCancel ? '#b91c1c' : '#2a2a2a';
             const amtLabel = isCancel ? '취소 금액' : '결제 금액';
-            const w = window.open('', 'receipt', 'width=460,height=700'); if(!w){ showToast('팝업 차단을 해제하세요.'); return; }
-            w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>'+esc(title)+'</title>'
+            const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>'+esc(title)+'</title>'
                 +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;margin:0;color:#111;}.hd{background:'+hdBg+';color:#fff;padding:16px 20px;}.hd h1{margin:0;font-size:18px;}.hd .s{font-size:11px;opacity:.8;margin-top:3px;}.b{padding:18px 20px;}table{width:100%;border-collapse:collapse;font-size:13px;}td{padding:8px 4px;border-bottom:1px solid #eee;}td.l{color:#6b7280;width:34%;}.amt{display:flex;justify-content:space-between;align-items:center;border-top:2px solid '+hdBg+';margin-top:12px;padding-top:14px;}.amt .v{font-size:22px;font-weight:900;'+(isCancel?'color:#b91c1c;':'')+'}.ft{color:#9aa;font-size:11px;margin-top:16px;line-height:1.6;}@media print{.noprint{display:none;}}</style></head><body>'
                 +'<div class="hd"><h1>'+esc(title)+'</h1><div class="s">'+(isCancel?'Sales Cancellation / Refund Receipt':'Transaction Receipt')+' · 오름앤파트너스</div></div><div class="b"><table>'
                 + rows.map(r=>`<tr><td class="l">${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')
                 +'</table><div class="amt"><span style="color:#6b7280;">'+esc(amtLabel)+'</span><span class="v">'+esc(amt)+'</span></div>'
                 +'<div class="ft">본 영수증은 오름앤파트너스 거래 원장에서 자동 발행되었습니다.<br>발행 시각: '+esc(new Date().toLocaleString('ko-KR'))+'</div>'
                 +'<div class="noprint" style="text-align:center;margin-top:16px;"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;font-weight:700;background:#2563eb;color:#fff;border:0;border-radius:8px;cursor:pointer;">PDF로 저장 / 인쇄</button></div>'
-                +'</div></body></html>');
-            w.document.close();
-            showToast("영수증 창을 열었습니다. (PDF로 저장/인쇄)");
+                +'</div></body></html>';
+            _printHtmlViaIframe(html);   // 팝업 차단·모바일에서도 동작(숨은 iframe 인쇄)
+            showToast("영수증 인쇄 창을 준비했습니다. (PDF로 저장/인쇄)");
         }
 
         // 🚀 환불 요청 (판매자 승인 대기 상태 생성, 자금 이동 X)
