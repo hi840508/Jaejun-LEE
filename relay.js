@@ -283,6 +283,23 @@ function _setOrderRoom(roomId, buyer, seller) { if (roomId && String(roomId).sta
 function _loadOrderRooms() { db.all(`SELECT roomId, buyer, seller FROM chat_rooms WHERE roomId LIKE 'room_ord_%'`, [], (e, rows) => { (rows || []).forEach(r => { if (r.roomId) ORDER_ROOMS.set(r.roomId, { buyer: r.buyer, seller: r.seller }); }); }); }
 setTimeout(_loadOrderRooms, 600);
 
+// 🦷 [기공소 백필] 기능 추가 전 생성된 기공소 상점에도 '의뢰서 작성' 기본 상품 + 수가 시드 보장(부팅 1회, 멱등).
+function _backfillLabStores() {
+    db.all(`SELECT id, owner, rx_items FROM stores WHERE category = 'dental_lab'`, [], (e, stores) => {
+        if (e || !stores) return;
+        stores.forEach(s => {
+            if (!s.rx_items) { try { db.run(`UPDATE stores SET rx_items = ? WHERE id = ?`, [JSON.stringify(_defaultRxItems()), s.id], () => {}); } catch (_) {} }
+            db.get(`SELECT id FROM products WHERE storeId = ? AND rx_form = 1 LIMIT 1`, [s.id], (e2, prod) => {
+                if (prod) return;   // 이미 있음 → 중복 생성 방지
+                db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, seller, rx_form) VALUES (?, ?, 'html_enc', ?, ?, 0, 0, ?, 1)`,
+                    ['PRD_RX_' + s.id, s.id, '의뢰서 작성 (간편/상세)', '치과 기공 의뢰서를 작성하여 주문합니다. 상세 의뢰서는 취급 품목 수가로 금액이 자동 산정됩니다.', s.owner || ''], () => {});
+            });
+        });
+        console.log('[기공소 백필] dental_lab 상점 ' + stores.length + '곳 의뢰서 상품·수가 점검');
+    });
+}
+setTimeout(_backfillLabStores, 1500);
+
 // 🔐 세션 토큰: 로그인 시 발급, 이후 x-auth-token 헤더로 서버가 사용자 판정(본문 신원 위조 차단)
 const SESSIONS = new Map();   // token -> { name }
 function issueToken(name) {
