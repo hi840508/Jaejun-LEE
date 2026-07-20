@@ -217,6 +217,14 @@ function initTables() {
         db.run(`ALTER TABLE users ADD COLUMN approval_status TEXT DEFAULT 'approved'`, () => {});  // approved | pending | rejected
         db.run(`ALTER TABLE users ADD COLUMN approval_note TEXT`, () => {});      // 승인/거절 사유
         db.run(`ALTER TABLE users ADD COLUMN shipping_address TEXT`, () => {});
+        // 🧾 세금계산서용 사업자 정보(공급받는자 자동 반영): 회원가입~발행 연결
+        db.run(`ALTER TABLE users ADD COLUMN biz_no TEXT`, () => {});         // 사업자등록번호(개인=주민 대체 가능)
+        db.run(`ALTER TABLE users ADD COLUMN biz_company TEXT`, () => {});    // 상호(사업자등록증상)
+        db.run(`ALTER TABLE users ADD COLUMN biz_ceo TEXT`, () => {});        // 대표자명
+        db.run(`ALTER TABLE users ADD COLUMN biz_addr TEXT`, () => {});       // 사업장 주소
+        db.run(`ALTER TABLE users ADD COLUMN biz_industry TEXT`, () => {});   // 업태
+        db.run(`ALTER TABLE users ADD COLUMN biz_item TEXT`, () => {});       // 종목
+        db.run(`ALTER TABLE users ADD COLUMN tax_email TEXT`, () => {});      // 세금계산서 수신 이메일
         db.run(`ALTER TABLE users ADD COLUMN reset_otp TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN reset_otp_expiry INTEGER`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN reset_otp_used INTEGER DEFAULT 0`, () => {});
@@ -437,6 +445,10 @@ app.post('/api/auth/logout', (req, res) => { revokeToken(req.headers['x-auth-tok
 
 app.post('/api/auth/register', (req, res) => {
     const { name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc, privacy_agreed } = req.body;
+    // 🧾 세금계산서용 사업자 정보(선택 — 사업자는 발행 자동반영에 사용)
+    const biz_no = _digits(req.body.biz_no || ''), biz_company = String(req.body.biz_company || ''), biz_ceo = String(req.body.biz_ceo || ''),
+          biz_addr = String(req.body.biz_addr || ''), biz_industry = String(req.body.biz_industry || ''), biz_item = String(req.body.biz_item || ''),
+          tax_email = String(req.body.tax_email || email || '');
     // 🔐 개인정보 수집·이용 동의(필수) — 미동의 시 가입 거부
     if(!privacy_agreed) return res.status(400).json({ error: '개인정보 수집·이용 동의가 필요합니다.' });
     // 🚀 [v8+] 의료·약무 관련 업종은 자격증 필수 + Admin 승인 대기
@@ -446,8 +458,8 @@ app.post('/api/auth/register', (req, res) => {
     const approvalStatus = needsApproval ? 'pending' : 'approved';
     const privacyAgreedAt = new Date().toISOString();   // 동의 시각 기록(보관 근거)
 
-    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_doc, approval_status, privacy_agreed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, hashPassword(password), realname, bank, account, needsApproval ? 0 : 10000, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus, privacyAgreedAt], (err) => {
+    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_doc, approval_status, privacy_agreed_at, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, hashPassword(password), realname, bank, account, needsApproval ? 0 : 10000, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus, privacyAgreedAt, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
         // 승인 대기는 보너스 X. 자동 승인 회원만 10,000원 정산 한도 축하금
         if(!needsApproval) {
@@ -510,13 +522,17 @@ app.post('/api/user/update', (req, res) => {
     const target = me;
     // 비밀번호는 새로 입력했을 때만 변경(빈 값이면 유지) + 해시 저장
     const pw = req.body.password;
+    // 🧾 세금계산서용 사업자 정보 — 값이 오면 갱신, 없으면(undefined) 기존 유지(COALESCE)
+    const bz = req.body, hasBz = (k) => (bz[k] !== undefined ? (k==='biz_no' ? _digits(bz[k]) : String(bz[k])) : null);
+    const bizSet = `, biz_no = COALESCE(?, biz_no), biz_company = COALESCE(?, biz_company), biz_ceo = COALESCE(?, biz_ceo), biz_addr = COALESCE(?, biz_addr), biz_industry = COALESCE(?, biz_industry), biz_item = COALESCE(?, biz_item), tax_email = COALESCE(?, tax_email)`;
+    const bizVals = [hasBz('biz_no'), hasBz('biz_company'), hasBz('biz_ceo'), hasBz('biz_addr'), hasBz('biz_industry'), hasBz('biz_item'), hasBz('tax_email')];
     if (pw && String(pw).length > 0) {
-        db.run(`UPDATE users SET password = ?, realname = ?, bank = ?, account = ?, profilePic = ?, phone = ?, email = ?, shipping_address = ? WHERE name = ?`,
-            [hashPassword(pw), req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.email || '', req.body.shipping_address || '', target],
+        db.run(`UPDATE users SET password = ?, realname = ?, bank = ?, account = ?, profilePic = ?, phone = ?, email = ?, shipping_address = ?${bizSet} WHERE name = ?`,
+            [hashPassword(pw), req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.email || '', req.body.shipping_address || '', ...bizVals, target],
             () => res.json({ success: true }));
     } else {
-        db.run(`UPDATE users SET realname = ?, bank = ?, account = ?, profilePic = ?, phone = ?, email = ?, shipping_address = ? WHERE name = ?`,
-            [req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.email || '', req.body.shipping_address || '', target],
+        db.run(`UPDATE users SET realname = ?, bank = ?, account = ?, profilePic = ?, phone = ?, email = ?, shipping_address = ?${bizSet} WHERE name = ?`,
+            [req.body.realname, req.body.bank, req.body.account, req.body.profilePic, req.body.phone || '', req.body.email || '', req.body.shipping_address || '', ...bizVals, target],
             () => res.json({ success: true }));
     }
 });
@@ -543,7 +559,7 @@ app.get('/api/users/search', (req, res) => {
         [like, like, like, exclude], (err, rows) => res.json(rows || []));
 });
 // 🚀 전체 사용자 정보 (잔액 + 프로필 + 전화 + 이메일 + 주소)
-app.get('/api/users/:name', (req, res) => { db.get(`SELECT name, balance, profilePic, phone, email, shipping_address, realname FROM users WHERE name = ?`, [req.params.name], (err, row) => res.json(row || { balance: 0 })); });
+app.get('/api/users/:name', (req, res) => { db.get(`SELECT name, balance, profilePic, phone, email, shipping_address, realname, business_type, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email FROM users WHERE name = ?`, [req.params.name], (err, row) => res.json(row || { balance: 0 })); });
 
 // 🚀 ============ 비밀번호 찾기 (OTP 흐름) ============
 // Step 1: ID로 가입된 이메일 조회 (마스킹된 형태 반환)
@@ -1760,19 +1776,22 @@ app.get('/api/admin/tax/settlement', (req, res) => {
         if (month) { where += ` AND o.settle_month=?`; params.push(month); }
         if (owner) { where += ` AND o.seller=?`; params.push(owner); }
         db.all(`SELECT o.seller, COUNT(*) cnt, SUM(o.escrow_held) salesTotal,
-                    (SELECT realname FROM users WHERE name = o.seller) sellerRealname,
+                    su.realname sellerRealname, su.biz_no su_bizno, su.biz_company su_company, su.biz_ceo su_ceo,
+                    su.biz_addr su_addr, su.biz_industry su_industry, su.biz_item su_item, su.tax_email su_taxemail, su.email su_email,
                     GROUP_CONCAT(DISTINCT p.storeId) storeIds,
                     GROUP_CONCAT(DISTINCT s.name) brands,
                     GROUP_CONCAT(DISTINCT s.bizNo) bizNos
                 FROM product_orders o
                 LEFT JOIN products p ON p.id = o.productId
                 LEFT JOIN stores s ON p.storeId = s.id
+                LEFT JOIN users su ON su.name = o.seller
                 WHERE ${where} GROUP BY o.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
             const vendors = (rows || []).map(r => Object.assign({
                 seller: r.seller, count: r.cnt,
-                bizName: (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
-                bizNo: (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
+                bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
+                bizNo: r.su_bizno || (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
+                bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '', taxEmail: r.su_taxemail || r.su_email || '',
                 storeIds: r.storeIds || '', brands: r.brands || ''
             }, _settleCalc(r.salesTotal, cfg)));
             const adminRevenue = vendors.reduce((s, v) => s + (v.payFee || 0), 0);   // 거래 수수료 = Admin 매출
@@ -1790,19 +1809,22 @@ app.get('/api/admin/tax/settled', (req, res) => {
         if (month) { where += ` AND o.settle_month=?`; params.push(month); }
         if (owner) { where += ` AND o.seller=?`; params.push(owner); }
         db.all(`SELECT o.seller, COUNT(*) cnt, SUM(o.escrow_held) salesTotal, MAX(o.settled_at) settledAt,
-                    (SELECT realname FROM users WHERE name = o.seller) sellerRealname,
+                    su.realname sellerRealname, su.biz_no su_bizno, su.biz_company su_company, su.biz_ceo su_ceo,
+                    su.biz_addr su_addr, su.biz_industry su_industry, su.biz_item su_item, su.tax_email su_taxemail, su.email su_email,
                     GROUP_CONCAT(DISTINCT p.storeId) storeIds,
                     GROUP_CONCAT(DISTINCT s.name) brands,
                     GROUP_CONCAT(DISTINCT s.bizNo) bizNos
                 FROM product_orders o
                 LEFT JOIN products p ON p.id = o.productId
                 LEFT JOIN stores s ON p.storeId = s.id
+                LEFT JOIN users su ON su.name = o.seller
                 WHERE ${where} GROUP BY o.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
             const vendors = (rows || []).map(r => Object.assign({
                 seller: r.seller, count: r.cnt, settledAt: r.settledAt || '',
-                bizName: (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
-                bizNo: (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
+                bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
+                bizNo: r.su_bizno || (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
+                bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '', taxEmail: r.su_taxemail || r.su_email || '',
                 storeIds: r.storeIds || '', brands: r.brands || ''
             }, _settleCalc(r.salesTotal, cfg)));
             const adminRevenue = vendors.reduce((s, v) => s + (v.payFee || 0), 0);

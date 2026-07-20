@@ -900,6 +900,22 @@
                 <div class="input-group"><label>정산 은행명</label><input type="text" id="reg-bank" placeholder="예: 우리은행"></div>
                 <div class="input-group"><label>정산 수령 계좌번호</label><input type="text" id="reg-account" placeholder="숫자만 입력"></div>
 
+                <!-- 🧾 사업자 정보 (세금계산서 발행용) — 사업자 유형 선택 시 표시 -->
+                <div id="reg-biz-zone" style="display:none;">
+                    <div style="height:1px; background:var(--border-color); margin:10px 0;"></div>
+                    <label style="font-weight:700; font-size:13px; display:block; margin-bottom:6px;">사업자 정보 (세금계산서 발행용)</label>
+                    <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:9px 12px; border-radius:8px; font-size:11px; color:#1e3a8a; margin-bottom:8px; line-height:1.5;">
+                        수수료 세금계산서의 <b>공급받는자</b> 정보로 사용됩니다. 정확히 입력해 주세요. (나중에 설정에서 수정 가능)
+                    </div>
+                    <div class="input-group"><label>사업자등록번호 <span style="color:var(--danger);">*</span></label><input type="text" id="reg-biz-no" placeholder="예: 123-45-67890"></div>
+                    <div class="input-group"><label>상호 <span style="color:var(--danger);">*</span></label><input type="text" id="reg-biz-company" placeholder="사업자등록증상 상호"></div>
+                    <div class="input-group"><label>대표자명</label><input type="text" id="reg-biz-ceo" placeholder="예: 홍길동"></div>
+                    <div class="input-group"><label>사업장 주소</label><input type="text" id="reg-biz-addr" placeholder="사업장 소재지"></div>
+                    <div class="input-group"><label>업태</label><input type="text" id="reg-biz-industry" placeholder="예: 제조, 도소매, 서비스"></div>
+                    <div class="input-group"><label>종목</label><input type="text" id="reg-biz-item" placeholder="예: 치과기공, 의료기기"></div>
+                    <div class="input-group"><label>세금계산서 이메일</label><input type="email" id="reg-tax-email" placeholder="세금계산서 수신 이메일"></div>
+                </div>
+
                 <!-- 🔐 개인정보 수집·이용 동의 (필수) -->
                 <div style="margin-top:14px;">
                     <label style="font-weight:700; font-size:13px; display:block; margin-bottom:6px;">개인정보 수집·이용 동의 <span style="color:var(--danger);">*</span></label>
@@ -1788,6 +1804,18 @@
             <div class="input-group"><label>배송지 주소</label><input type="text" id="modal-shipping" placeholder="배송 받을 주소"></div>
             <div class="input-group"><label>정산 연동 은행</label><input type="text" id="modal-bank"></div>
             <div class="input-group"><label>정산 계좌번호</label><input type="text" id="modal-account"></div>
+
+            <!-- 🧾 사업자 정보 (세금계산서 발행용) -->
+            <div style="height:1px; background:var(--border-color); margin:8px 0;"></div>
+            <label style="font-weight:700; font-size:13px; display:block; margin-bottom:6px;">사업자 정보 (세금계산서 발행용)</label>
+            <div class="input-group"><label>사업자등록번호</label><input type="text" id="modal-biz-no" placeholder="예: 123-45-67890"></div>
+            <div class="input-group"><label>상호</label><input type="text" id="modal-biz-company" placeholder="사업자등록증상 상호"></div>
+            <div class="input-group"><label>대표자명</label><input type="text" id="modal-biz-ceo" placeholder="예: 홍길동"></div>
+            <div class="input-group"><label>사업장 주소</label><input type="text" id="modal-biz-addr" placeholder="사업장 소재지"></div>
+            <div class="input-group"><label>업태</label><input type="text" id="modal-biz-industry" placeholder="예: 제조, 도소매, 서비스"></div>
+            <div class="input-group"><label>종목</label><input type="text" id="modal-biz-item" placeholder="예: 치과기공, 의료기기"></div>
+            <div class="input-group"><label>세금계산서 이메일</label><input type="email" id="modal-tax-email" placeholder="세금계산서 수신 이메일"></div>
+
             <button class="btn btn-success" style="width:100%; padding:14px;" onclick="saveProfile()">설정 저장</button>
             
             <button class="btn btn-danger" id="admin-db-reset-btn" style="width:100%; padding:12px; display:none; margin-top:5px; background:#7f1d1d;" onclick="adminForceResetDB()">⚠️ 전체 데이터 초기화 (DB 초기화)</button>
@@ -2503,8 +2531,14 @@
             const email = document.getElementById('reg-email').value.trim();
             const shipping_address = document.getElementById('reg-shipping').value.trim();
             const business_type = document.getElementById('reg-business-type').value;
+            // 🧾 사업자 정보 (세금계산서 발행용)
+            const _v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+            const biz_no = _v('reg-biz-no'), biz_company = _v('reg-biz-company'), biz_ceo = _v('reg-biz-ceo');
+            const biz_addr = _v('reg-biz-addr'), biz_industry = _v('reg-biz-industry'), biz_item = _v('reg-biz-item'), tax_email = _v('reg-tax-email');
             if(!name || !password || !realname || !bank || !account) return showToast("ID/비밀번호/실명/은행/계좌는 필수입니다.");
             if(!business_type) return showToast("업체 유형을 선택해 주세요.");
+            // 개인 외 사업자 유형은 사업자등록번호·상호를 권장(필수)
+            if(business_type && business_type !== 'individual' && (!biz_no || !biz_company)) return showToast("사업자 정보의 사업자등록번호와 상호를 입력해 주세요. (세금계산서 발행용)");
             if(!email) return showToast("이메일을 입력해 주세요. (비밀번호 분실 시 OTP 수신용)");
             if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast("이메일 형식이 올바르지 않습니다.");
             // 🔐 개인정보 수집·이용 동의(필수)
@@ -2527,7 +2561,7 @@
             } catch(e){ /* 서버 다운 시 일단 진행 */ }
 
             try {
-                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc, privacy_agreed: true }) });
+                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, privacy_agreed: true }) });
                 const data = await res.json();
                 if(res.ok) {
                     if(data.needsApproval) {
@@ -2571,6 +2605,9 @@
             const regulated = (window.REGULATED_TYPES || []).includes(sel.value);
             zone.style.display = regulated ? 'block' : 'none';
             if(!regulated) { window.__pendingLicenseDataUrl = null; }
+            // 🧾 사업자 정보(세금계산서 발행용) — 개인 외 모든 사업자 유형에서 표시
+            const bizZone = document.getElementById('reg-biz-zone');
+            if(bizZone) bizZone.style.display = (sel.value && sel.value !== 'individual') ? 'block' : 'none';
         };
 
         // 🚀 [v8+] 자격증 파일 선택 → base64 변환 + 미리보기
@@ -2735,6 +2772,23 @@
             const phoneEl = document.getElementById('modal-phone'); if(phoneEl) phoneEl.value = currentUser.phone || '';
             const emailEl = document.getElementById('modal-email'); if(emailEl) emailEl.value = currentUser.email || '';
             const shipEl = document.getElementById('modal-shipping'); if(shipEl) shipEl.value = currentUser.shipping_address || '';
+            // 🧾 사업자 정보 (세금계산서 발행용) — currentUser에 담긴 값으로 프리필
+            const _setV = (id, val) => { const el = document.getElementById(id); if(el) el.value = val || ''; };
+            _setV('modal-biz-no', currentUser.biz_no); _setV('modal-biz-company', currentUser.biz_company);
+            _setV('modal-biz-ceo', currentUser.biz_ceo); _setV('modal-biz-addr', currentUser.biz_addr);
+            _setV('modal-biz-industry', currentUser.biz_industry); _setV('modal-biz-item', currentUser.biz_item);
+            _setV('modal-tax-email', currentUser.tax_email);
+            // 최신 값 보강: 서버에서 사업자 정보 재조회하여 프리필(로그인 응답에 누락됐을 경우 대비)
+            try {
+                fetch(`${API_URL}/api/users/${encodeURIComponent(currentUser.name)}`).then(r=>r.json()).then(u=>{
+                    if(!u || u.error) return;
+                    ['biz_no','biz_company','biz_ceo','biz_addr','biz_industry','biz_item','tax_email'].forEach(k=>{ if(u[k]!=null) currentUser[k]=u[k]; });
+                    _setV('modal-biz-no', currentUser.biz_no); _setV('modal-biz-company', currentUser.biz_company);
+                    _setV('modal-biz-ceo', currentUser.biz_ceo); _setV('modal-biz-addr', currentUser.biz_addr);
+                    _setV('modal-biz-industry', currentUser.biz_industry); _setV('modal-biz-item', currentUser.biz_item);
+                    _setV('modal-tax-email', currentUser.tax_email);
+                }).catch(()=>{});
+            } catch(e){}
             document.getElementById('modal-profile-pic').src = currentUser.profilePic || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>";
             tempProfilePicBase64 = currentUser.profilePic; openModal('profile-modal');
             if(window.applyAdminUIState) applyAdminUIState(isAdmin);
@@ -2746,15 +2800,20 @@
             const phone = (document.getElementById('modal-phone') && document.getElementById('modal-phone').value.trim()) || '';
             const email = (document.getElementById('modal-email') && document.getElementById('modal-email').value.trim()) || '';
             const shipping_address = (document.getElementById('modal-shipping') && document.getElementById('modal-shipping').value.trim()) || '';
+            // 🧾 사업자 정보 (세금계산서 발행용)
+            const _pv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+            const biz_no = _pv('modal-biz-no'), biz_company = _pv('modal-biz-company'), biz_ceo = _pv('modal-biz-ceo');
+            const biz_addr = _pv('modal-biz-addr'), biz_industry = _pv('modal-biz-industry'), biz_item = _pv('modal-biz-item'), tax_email = _pv('modal-tax-email');
             if(!realname || !bank || !account) return showToast("실명/은행/계좌는 필수입니다.");
             if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast("이메일 형식이 올바르지 않습니다.");
             try {
                 // 🔐 비밀번호는 새로 입력했을 때만 전송(빈 값이면 기존 유지). 서버가 해시 저장.
-                const body = { name: currentUser.name, realname, bank, account, phone, email, shipping_address, profilePic: tempProfilePicBase64 };
+                const body = { name: currentUser.name, realname, bank, account, phone, email, shipping_address, profilePic: tempProfilePicBase64, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email };
                 if(password) body.password = password;
                 const res = await fetch(`${API_URL}/api/user/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
                 if(res.ok) {
                     currentUser.realname = realname; currentUser.bank = bank; currentUser.account = account; currentUser.phone = phone; currentUser.email = email; currentUser.shipping_address = shipping_address; currentUser.profilePic = tempProfilePicBase64;
+                    currentUser.biz_no = biz_no; currentUser.biz_company = biz_company; currentUser.biz_ceo = biz_ceo; currentUser.biz_addr = biz_addr; currentUser.biz_industry = biz_industry; currentUser.biz_item = biz_item; currentUser.tax_email = tax_email;
                     if(tempProfilePicBase64) document.getElementById('my-profile-pic').src = tempProfilePicBase64;
                     const str = `[${bank}] ${account} (${realname})`; const modalAccEl = document.getElementById('modal-withdraw-account-info'); if(modalAccEl) modalAccEl.innerText = str;
                     
@@ -3237,7 +3296,7 @@
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const month=taxG('tax-month');
             openTaxInvoiceForm({
-                supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'' }, seller:v.seller,
+                supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'', ceoName:v.bizCeo||'', address:v.bizAddr||'', bizType:v.bizIndustry||'', bizClass:v.bizItem||'', email:v.taxEmail||'' }, seller:v.seller,
                 items:[{ month:(month||'').slice(5,7), name:month+' 거래/결제 수수료', qty:1, totalAmount:v.payFee }],
                 writeDate:(month?month+'-01':''), batchMonth:month
             });
@@ -3595,7 +3654,7 @@
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const month=taxG('tax-month');
             openTaxInvoiceForm({
-                supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'' }, seller:v.seller,
+                supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'', ceoName:v.bizCeo||'', address:v.bizAddr||'', bizType:v.bizIndustry||'', bizClass:v.bizItem||'', email:v.taxEmail||'' }, seller:v.seller,
                 items:[{ month:(month||'').slice(5,7), name:month+' 거래/결제 수수료', qty:1, totalAmount:v.payFee }],
                 writeDate:(month?month+'-01':''), batchMonth:month
             });
