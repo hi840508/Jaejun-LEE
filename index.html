@@ -1622,8 +1622,21 @@
                 <div class="emoji-picker" id="emoji-picker"></div>
 
                 <div class="chat-action-menu" id="chat-action-menu">
-                    <h5 style="color:var(--success);">1:1 간편 송금</h5>
-                    <div style="display:flex; gap:5px;"><input type="number" id="chat-transfer-amount" placeholder="송금액 (원)"><button class="btn btn-success" style="padding:6px; font-size:12px; flex-shrink:0;" onclick="sendTransferInChat()">이체</button></div>
+                    <h5 style="color:var(--primary);">캡처 공유</h5>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn btn-outline" style="flex:1; padding:10px; font-size:13px;" onclick="captureCameraToChat()" title="카메라로 촬영하여 대화방에 공유">📷 카메라 촬영</button>
+                        <button class="btn btn-outline" style="flex:1; padding:10px; font-size:13px;" onclick="captureScreenToChat()" title="화면을 캡처하여 대화방에 공유">🖥 화면 캡처</button>
+                    </div>
+                    <div style="font-size:10px; color:var(--text-sub); margin-top:2px;">촬영/캡처한 이미지가 대화방에 바로 공유됩니다.</div>
+                </div>
+                <!-- 카메라 촬영 모달 (getUserMedia 라이브 프리뷰 → 촬영) -->
+                <input type="file" id="chat-camera-fallback" accept="image/*" capture="environment" style="display:none;" onchange="window.handleChatFileAttach && window.handleChatFileAttach(event.target.files)">
+                <div id="camera-capture-modal" style="display:none; position:fixed; inset:0; z-index:3000; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; flex-direction:column;">
+                    <video id="camera-capture-video" autoplay playsinline style="max-width:92vw; max-height:70vh; border-radius:12px; background:#000;"></video>
+                    <div style="display:flex; gap:12px; margin-top:16px;">
+                        <button class="btn btn-success" style="padding:12px 22px; font-size:15px;" onclick="doCameraShot()">📸 촬영 · 공유</button>
+                        <button class="btn" style="padding:12px 22px; font-size:15px; background:#334155; color:#fff;" onclick="closeCameraCapture()">닫기</button>
+                    </div>
                 </div>
 
                 <!-- 🚀 [v8+] 채팅 파일 첨부 — 원본 절대 첨부 X, 항상 HTML 번들로 변환 -->
@@ -7030,7 +7043,66 @@ pdfjsScript,
         }
 
         function toggleChatActionMenu() { const menu = document.getElementById('chat-action-menu'); menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex'; }
-        
+
+        // 📷 캡처 공유 — 촬영/캡처한 이미지를 File로 만들어 기존 채팅 첨부 경로(handleChatFileAttach)로 대화방에 공유
+        function _shareCanvasToChat(canvas, prefix) {
+            try {
+                canvas.toBlob(function(blob) {
+                    if(!blob) return showToast('캡처 실패');
+                    const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+                    const file = new File([blob], (prefix||'capture') + '_' + ts + '.png', { type: 'image/png' });
+                    if(typeof window.handleChatFileAttach === 'function') window.handleChatFileAttach([file]);
+                }, 'image/png', 0.92);
+            } catch(e){ showToast('공유 실패: ' + (e.message||e)); }
+        }
+        let _camStream = null;
+        window.captureCameraToChat = async function() {
+            if(!activeChatFriend) return showToast('먼저 대화방을 여세요.');
+            const menu = document.getElementById('chat-action-menu'); if(menu) menu.style.display='none';
+            // getUserMedia 지원 시 라이브 프리뷰 → 촬영. 미지원(구형/권한불가) 시 파일입력 카메라 폴백.
+            if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { const fb=document.getElementById('chat-camera-fallback'); if(fb) fb.click(); return; }
+            try {
+                _camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+                const v = document.getElementById('camera-capture-video'); v.srcObject = _camStream;
+                document.getElementById('camera-capture-modal').style.display = 'flex';
+            } catch(e) {
+                // 권한 거부/카메라 없음 → 파일입력 카메라 폴백
+                const fb=document.getElementById('chat-camera-fallback'); if(fb) fb.click();
+            }
+        };
+        window.doCameraShot = function() {
+            const v = document.getElementById('camera-capture-video');
+            if(!v || !v.videoWidth) return showToast('카메라 준비 중입니다. 잠시 후 다시 시도하세요.');
+            const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+            c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+            _shareCanvasToChat(c, 'camera');
+            closeCameraCapture();
+        };
+        window.closeCameraCapture = function() {
+            try { if(_camStream) { _camStream.getTracks().forEach(t=>t.stop()); _camStream=null; } } catch(_){}
+            const m = document.getElementById('camera-capture-modal'); if(m) m.style.display='none';
+            const v = document.getElementById('camera-capture-video'); if(v) v.srcObject=null;
+        };
+        window.captureScreenToChat = async function() {
+            if(!activeChatFriend) return showToast('먼저 대화방을 여세요.');
+            const menu = document.getElementById('chat-action-menu'); if(menu) menu.style.display='none';
+            if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return showToast('이 브라우저는 화면 캡처를 지원하지 않습니다.');
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                const track = stream.getVideoTracks()[0];
+                const v = document.createElement('video'); v.srcObject = stream; v.muted = true;
+                await v.play();
+                await new Promise(r => setTimeout(r, 250));   // 첫 프레임 안정화
+                const c = document.createElement('canvas'); c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
+                c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+                track.stop(); stream.getTracks().forEach(t=>t.stop());
+                _shareCanvasToChat(c, 'screen');
+            } catch(e) {
+                if(e && e.name === 'NotAllowedError') return;   // 사용자가 취소
+                showToast('화면 캡처 실패: ' + (e.message||e));
+            }
+        };
+
         // 🚀 회원 검색 (이름/실명/전화로 부분 매칭, 검색 결과 인라인 표시)
         let _friendSearchTimer = null;
         window.searchUsersForFriend = function() {
