@@ -1870,23 +1870,36 @@ async function _issueOne(body){
     const seller = String(b.seller || '').trim();            // 공급받는자(업체)
     const supplier = b.supplier || {};                        // 공급자(플랫폼/Admin)
     const recipient = b.recipient || { name: seller };        // 공급받는자(업체)
-    const item = b.item || {};
-    const supplyAmount = _n(b.supplyAmount != null ? b.supplyAmount : item.supplyAmount);
-    let taxAmount = _n(b.taxAmount != null ? b.taxAmount : item.taxAmount);
-    let totalAmount = _n(b.totalAmount != null ? b.totalAmount : (supplyAmount + taxAmount));
+    // 🧾 품목(최대 16). items 배열이 오면 그대로, 없으면 단일 item(하위호환)으로 구성.
+    const _mkItem = (it) => { it = it || {}; const s = _n(it.supplyAmount), t = _n(it.taxAmount); let tot = _n(it.totalAmount); if (!tot) tot = s + t;
+        return { month: String(it.month||''), day: String(it.day||''), name:String(it.name||''), spec:String(it.spec||''), qty:(it.qty===''||it.qty==null)?'':Number(it.qty), unitPrice:_n(it.unitPrice), supplyAmount:s, taxAmount:t, totalAmount:tot, remark:String(it.remark||'') }; };
+    let items = (Array.isArray(b.items) && b.items.length) ? b.items.map(_mkItem).filter(x => x.name || x.supplyAmount || x.totalAmount) : null;
+    if (!items || !items.length) { const item = b.item || {}; items = [_mkItem({ name: item.name || '플랫폼 이용 수수료', spec:item.spec, qty:item.qty||1, supplyAmount: (b.supplyAmount!=null?b.supplyAmount:item.supplyAmount), taxAmount: (b.taxAmount!=null?b.taxAmount:item.taxAmount), totalAmount: (b.totalAmount!=null?b.totalAmount:item.totalAmount), remark:item.remark })]; }
+    if (items.length > 16) items = items.slice(0, 16);
+    // 합계: 명시 총액이 오면 사용, 아니면 품목 합.
+    let supplyAmount = (b.supplyAmount != null) ? _n(b.supplyAmount) : items.reduce((s, it) => s + it.supplyAmount, 0);
+    let taxAmount = (b.taxAmount != null) ? _n(b.taxAmount) : items.reduce((s, it) => s + it.taxAmount, 0);
+    let totalAmount = (b.totalAmount != null) ? _n(b.totalAmount) : items.reduce((s, it) => s + it.totalAmount, 0);
     if (!totalAmount) totalAmount = supplyAmount + taxAmount;
     if (!supplier.name || !_digits(supplier.bizNo)) throw new Error('공급자(플랫폼) 상호·사업자번호를 입력하세요.');
     if (totalAmount <= 0) throw new Error('발행 금액이 0원입니다.');
+    const pay = b.payment || {};
     const payload = {
-        documentType: 'tax_invoice', issueType: 'normal', purposeType: b.purposeType || 'receipt', taxType: 'taxable',
+        documentType: (b.docType === 'invoice') ? 'invoice' : 'tax_invoice',   // 세금계산서 | 계산서(면세)
+        issueType: b.issueType || 'normal',                 // 일반|영세율|위수탁|위수탁영세율
+        recipientIdType: b.recipientIdType || 'biz',         // 공급받는자구분: biz|resident|foreign
+        purposeType: b.purposeType || 'receipt',             // 영수(receipt) | 청구(claim)
+        taxType: b.taxType || 'taxable',
         writeDate: b.writeDate || new Date().toISOString().slice(0, 10), supplyDate: b.supplyDate || null, sendToNts: true,
         seller, buyer: b.buyer || '', batchMonth: b.batchMonth || null,
-        supplier: { bizNo:_digits(supplier.bizNo), name:String(supplier.name||''), ceoName:String(supplier.ceoName||''), address:String(supplier.address||''), bizType:String(supplier.bizType||''), bizClass:String(supplier.bizClass||''), email:String(supplier.email||''), phone:String(supplier.phone||'') },
-        recipient: { bizNo:_digits(recipient.bizNo), name:String(recipient.name||seller), ceoName:String(recipient.ceoName||''), address:String(recipient.address||''), bizType:String(recipient.bizType||''), bizClass:String(recipient.bizClass||''), email:String(recipient.email||''), phone:String(recipient.phone||'') },
-        items: [{ name:String(item.name||'플랫폼 이용 수수료'), spec:String(item.spec||''), qty:Number(item.qty)||1, supplyAmount, taxAmount, totalAmount, remark:String(item.remark||'') }],
+        supplier: { bizNo:_digits(supplier.bizNo), subBizNo:String(supplier.subBizNo||''), name:String(supplier.name||''), ceoName:String(supplier.ceoName||''), address:String(supplier.address||''), bizType:String(supplier.bizType||''), bizClass:String(supplier.bizClass||''), email:String(supplier.email||''), phone:String(supplier.phone||'') },
+        recipient: { bizNo:_digits(recipient.bizNo), subBizNo:String(recipient.subBizNo||''), name:String(recipient.name||seller), ceoName:String(recipient.ceoName||''), address:String(recipient.address||''), bizType:String(recipient.bizType||''), bizClass:String(recipient.bizClass||''), email:String(recipient.email||''), email2:String(recipient.email2||''), phone:String(recipient.phone||'') },
+        items,
+        payment: { cash:_n(pay.cash), check:_n(pay.check), note:_n(pay.note), credit:_n(pay.credit) },   // 현금·수표·어음·외상미수금
         amounts: { supplyAmount, taxAmount, totalAmount }, memo: String(b.memo || '')
     };
-    const pax = await _postToPaxbill('issue', payload);
+    // 발급보류(draft): 팍스빌 전송 없이 '작성중'으로 저장. 아니면 실제 발급.
+    const pax = b.draft ? { mock: true, invoiceNo: 'DRAFT-' + Date.now(), issueStatus: 'draft', ntsStatus: 'not_sent' } : await _postToPaxbill('issue', payload);
     const now = _taxNow();
     const invoiceNo = pax.invoiceNo || ('TAX-' + Date.now());
     const issueStatus = pax.issueStatus || 'issued';

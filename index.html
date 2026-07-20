@@ -1948,6 +1948,149 @@
         </div>
     </div>
 
+    <!-- 🧾 전자세금계산서 발행 폼 (자비스/팍스빌 표준 레이아웃) -->
+    <div class="modal-overlay" id="tax-invoice-form-modal">
+        <div class="modal-content" style="max-width:1020px; gap:0; padding:0;">
+            <div class="modal-header" style="padding:16px 20px; margin:0;">
+                <span>🧾 전자세금계산서 발행</span>
+                <button class="close-btn-x" onclick="closeModal('tax-invoice-form-modal')">&times;</button>
+            </div>
+            <div style="padding:16px 20px; overflow-y:auto;">
+                <style>
+                    #tax-invoice-form-modal .tif-tabs{display:flex;gap:0;border-bottom:2px solid #2563eb;margin-bottom:14px;}
+                    #tax-invoice-form-modal .tif-tab{padding:9px 22px;font-size:14px;font-weight:800;border:1px solid #cbd5e1;border-bottom:none;background:#f1f5f9;color:#64748b;cursor:pointer;border-radius:8px 8px 0 0;margin-right:4px;}
+                    #tax-invoice-form-modal .tif-tab.active{background:#fff;color:#2563eb;border-color:#2563eb;border-bottom:2px solid #fff;margin-bottom:-2px;}
+                    #tax-invoice-form-modal .tif-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-bottom:10px;font-size:13px;}
+                    #tax-invoice-form-modal .tif-row>label{font-weight:700;color:#334155;}
+                    #tax-invoice-form-modal .tif-blocks{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+                    @media(max-width:820px){#tax-invoice-form-modal .tif-blocks{grid-template-columns:1fr;}}
+                    #tax-invoice-form-modal .tif-block{border-radius:10px;padding:12px;}
+                    #tax-invoice-form-modal .tif-block.sup{background:#fdf2f8;border:1px solid #f9a8d4;}
+                    #tax-invoice-form-modal .tif-block.rec{background:#eff6ff;border:1px solid #93c5fd;}
+                    #tax-invoice-form-modal .tif-block h5{margin:0 0 8px;font-size:14px;font-weight:900;}
+                    #tax-invoice-form-modal .tif-block.sup h5{color:#be185d;}
+                    #tax-invoice-form-modal .tif-block.rec h5{color:#1d4ed8;}
+                    #tax-invoice-form-modal .tif-fld{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+                    #tax-invoice-form-modal .tif-fld>label{width:74px;flex:none;font-size:12px;font-weight:700;color:#475569;}
+                    #tax-invoice-form-modal .tif-fld input{flex:1;min-width:0;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;font-family:inherit;}
+                    #tax-invoice-form-modal .tif-half{display:flex;gap:6px;flex:1;min-width:0;}
+                    #tax-invoice-form-modal table.tif-items{width:100%;border-collapse:collapse;font-size:12px;}
+                    #tax-invoice-form-modal table.tif-items th,#tax-invoice-form-modal table.tif-items td{border:1px solid #cbd5e1;padding:3px 4px;text-align:center;}
+                    #tax-invoice-form-modal table.tif-items th{background:#f1f5f9;font-weight:800;color:#334155;white-space:nowrap;}
+                    #tax-invoice-form-modal table.tif-items input{width:100%;box-sizing:border-box;padding:5px 4px;border:1px solid #d1d5db;border-radius:4px;font-size:12px;text-align:right;font-family:inherit;}
+                    #tax-invoice-form-modal table.tif-items input.tleft{text-align:left;}
+                    #tax-invoice-form-modal table.tif-items input.tcen{text-align:center;}
+                    #tax-invoice-form-modal .tif-mini-btn{padding:4px 8px;font-size:11px;font-weight:800;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;white-space:nowrap;}
+                    #tax-invoice-form-modal .tif-mini-btn.calc{background:#e0e7ff;color:#3730a3;border-color:#a5b4fc;}
+                    #tax-invoice-form-modal .tif-mini-btn.del{background:#fee2e2;color:#991b1b;border-color:#fca5a5;}
+                    #tax-invoice-form-modal .tif-sum{display:flex;gap:0;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;margin:12px 0;}
+                    #tax-invoice-form-modal .tif-sum>div{flex:1;padding:8px 10px;text-align:center;border-right:1px solid #e2e8f0;}
+                    #tax-invoice-form-modal .tif-sum>div:last-child{border-right:none;}
+                    #tax-invoice-form-modal .tif-sum .k{font-size:11px;color:#64748b;font-weight:700;}
+                    #tax-invoice-form-modal .tif-sum .v{font-size:16px;font-weight:900;color:#0f172a;margin-top:2px;}
+                    #tax-invoice-form-modal table.tif-pay{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;}
+                    #tax-invoice-form-modal table.tif-pay th,#tax-invoice-form-modal table.tif-pay td{border:1px solid #cbd5e1;padding:6px;text-align:center;}
+                    #tax-invoice-form-modal table.tif-pay th{background:#f1f5f9;font-weight:800;}
+                    #tax-invoice-form-modal table.tif-pay input{width:100%;box-sizing:border-box;padding:5px;border:1px solid #d1d5db;border-radius:4px;text-align:right;font-size:12px;font-family:inherit;}
+                    #tax-invoice-form-modal .tif-foot{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;padding-top:6px;border-top:1px solid #e2e8f0;margin-top:6px;}
+                </style>
+                <!-- 세금계산서 / 계산서(면세) 탭 -->
+                <div class="tif-tabs">
+                    <div class="tif-tab active" id="tif-tab-tax" onclick="tifSetDocType('tax_invoice')">세금계산서</div>
+                    <div class="tif-tab" id="tif-tab-inv" onclick="tifSetDocType('invoice')">계산서(면세)</div>
+                </div>
+                <!-- 종류 / 공급받는자구분 -->
+                <div class="tif-row" style="justify-content:space-between;">
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <label style="color:#e11d48;">＊종류</label>
+                        <label style="font-weight:500;"><input type="radio" name="tif-issuetype" value="normal" checked onchange="tifRecalcAll()"> 일반</label>
+                        <label style="font-weight:500;"><input type="radio" name="tif-issuetype" value="zero_rate" onchange="tifRecalcAll()"> 영세율</label>
+                        <label style="font-weight:500;"><input type="radio" name="tif-issuetype" value="consign" onchange="tifRecalcAll()"> 위수탁</label>
+                        <label style="font-weight:500;"><input type="radio" name="tif-issuetype" value="consign_zero" onchange="tifRecalcAll()"> 위수탁영세율</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <label style="color:#e11d48;">＊공급받는자구분</label>
+                        <label style="font-weight:500;"><input type="radio" name="tif-recipient-idtype" value="biz" checked> 사업자등록번호</label>
+                        <label style="font-weight:500;"><input type="radio" name="tif-recipient-idtype" value="resident"> 주민등록번호</label>
+                        <label style="font-weight:500;"><input type="radio" name="tif-recipient-idtype" value="foreign"> 외국인</label>
+                    </div>
+                </div>
+                <div style="font-size:11px;color:#64748b;margin-bottom:8px;">이메일을 입력하면 해당 메일주소로 전자(세금)계산서가 발송됩니다.</div>
+                <!-- 공급자 / 공급받는자 블록 -->
+                <div class="tif-blocks">
+                    <div class="tif-block sup">
+                        <h5>공급자</h5>
+                        <div class="tif-fld"><label>＊등록번호</label><input id="tif-sup-bizno" inputmode="numeric"><input id="tif-sup-subbizno" placeholder="종사업장" style="width:70px;flex:none;"></div>
+                        <div class="tif-fld"><label>＊상호</label><input id="tif-sup-name"><label style="width:auto;">＊성명</label><input id="tif-sup-ceo" style="max-width:120px;"></div>
+                        <div class="tif-fld"><label>사업장</label><input id="tif-sup-address"></div>
+                        <div class="tif-fld"><label>업태</label><input id="tif-sup-biztype"><label style="width:auto;">종목</label><input id="tif-sup-bizclass"></div>
+                        <div class="tif-fld"><label>이메일</label><input id="tif-sup-email" type="email"><label style="width:auto;">연락처</label><input id="tif-sup-phone" style="max-width:130px;"></div>
+                    </div>
+                    <div class="tif-block rec">
+                        <h5>공급받는자</h5>
+                        <div class="tif-fld"><label>＊등록번호</label><input id="tif-rec-bizno" inputmode="numeric"><input id="tif-rec-subbizno" placeholder="종사업장" style="width:70px;flex:none;"></div>
+                        <div class="tif-fld"><label>＊상호</label><input id="tif-rec-name"><label style="width:auto;">＊성명</label><input id="tif-rec-ceo" style="max-width:120px;"></div>
+                        <div class="tif-fld"><label>사업장</label><input id="tif-rec-address"></div>
+                        <div class="tif-fld"><label>업태</label><input id="tif-rec-biztype"><label style="width:auto;">종목</label><input id="tif-rec-bizclass"></div>
+                        <div class="tif-fld"><label>이메일</label><input id="tif-rec-email" type="email"><input id="tif-rec-email2" type="email" placeholder="이메일2"></div>
+                        <div class="tif-fld"><label>연락처</label><input id="tif-rec-phone"></div>
+                    </div>
+                </div>
+                <!-- 작성일자 / 비고 -->
+                <div class="tif-row">
+                    <label style="color:#e11d48;">＊작성일자</label>
+                    <input type="date" id="tif-writedate" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;">
+                    <label style="margin-left:12px;">비고</label>
+                    <input id="tif-memo" style="flex:1;min-width:180px;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;">
+                </div>
+                <!-- 합계 요약 -->
+                <div class="tif-sum">
+                    <div><div class="k">합계금액</div><div class="v" id="tif-total">0</div></div>
+                    <div><div class="k">공급가액</div><div class="v" id="tif-supply">0</div></div>
+                    <div><div class="k">세액</div><div class="v" id="tif-tax">0</div></div>
+                </div>
+                <!-- 품목 그리드 -->
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+                    <button class="tif-mini-btn" onclick="tifAddRow()">＋ 품목추가</button>
+                    <button class="tif-mini-btn del" onclick="tifRemoveLastRow()">－ 품목삭제</button>
+                    <span style="font-size:11px;color:#64748b;">품목은 최대 <b>16개</b>까지 추가·삭제 가능 · [계산] 버튼은 합계를 공급가액·세액으로 나눕니다.</span>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="tif-items">
+                        <thead><tr>
+                            <th style="width:34px;">월</th><th style="width:34px;">일</th><th style="min-width:150px;">품목</th>
+                            <th style="width:60px;">규격</th><th style="width:52px;">수량</th><th style="width:80px;">단가</th>
+                            <th style="width:90px;">합계</th><th style="width:90px;">공급가액</th><th style="width:80px;">세액</th>
+                            <th style="width:70px;">비고</th><th style="width:48px;">계산</th><th style="width:44px;">삭제</th>
+                        </tr></thead>
+                        <tbody id="tif-items"></tbody>
+                    </table>
+                </div>
+                <!-- 현금/수표/어음/외상미수금 + 청구/영수 -->
+                <table class="tif-pay" style="margin-top:12px;">
+                    <thead><tr><th>현금</th><th>수표</th><th>어음</th><th>외상미수금</th><th style="width:180px;">이 금액을</th></tr></thead>
+                    <tbody><tr>
+                        <td><input id="tif-cash" inputmode="numeric"></td>
+                        <td><input id="tif-check" inputmode="numeric"></td>
+                        <td><input id="tif-note" inputmode="numeric"></td>
+                        <td><input id="tif-credit" inputmode="numeric"></td>
+                        <td style="white-space:nowrap;">
+                            <label style="font-weight:600;"><input type="radio" name="tif-purpose" value="claim" checked> 청구</label>
+                            <label style="font-weight:600;margin-left:8px;"><input type="radio" name="tif-purpose" value="receipt"> 영수</label> 함
+                        </td>
+                    </tr></tbody>
+                </table>
+                <!-- 하단 버튼 -->
+                <div class="tif-foot">
+                    <button class="btn btn-outline" style="padding:10px 20px;" onclick="tifPreview()">발급미리보기</button>
+                    <button class="btn btn-secondary" style="padding:10px 20px;" onclick="tifIssue(true)">발급보류</button>
+                    <button class="btn btn-success" style="padding:10px 24px;font-weight:900;" onclick="tifIssue(false)">발급하기</button>
+                    <button class="btn btn-outline" style="padding:10px 20px;" onclick="tifReset()">초기화</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 🚀 [v7] 글로벌 파일 미리보기 모달 (채팅 파일 + 어디서든 호출 가능) -->
     <div id="chat-file-preview-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:9998; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(8px);">
         <div style="position:fixed; top:20px; left:24px; right:80px; color:#fff; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(0,0,0,0.5); padding:8px 16px; border-radius:20px;" id="cfp-title">파일</div>
@@ -3077,30 +3220,27 @@
             }catch(e){ showToast('정산 실패: '+(e.message||'')); }
         };
         // 🧾 Admin 수수료 매출 세금계산서 — 플랫폼 자체 수수료 매출 1건 발행(상점 발행 후)
-        window.issueAdminRevenueTax=async function(){
+        // 🧾 Admin 수수료 매출 세금계산서 — 폼을 플랫폼(공급자=공급받는자)로 프리필하여 오픈
+        window.issueAdminRevenueTax=function(){
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const month=taxG('tax-month'); const rev=window.taxAdminRevenue||0;
             if(rev<=0){ showToast('발행할 Admin 수수료 매출이 없습니다.'); return; }
-            if(!confirm(`${month} 거래/결제 수수료 매출 ${taxFmt(rev)}원에 대한 Admin 매출 세금계산서를 발행합니다.`)) return;
-            try{
-                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:'(Admin)', buyer:'(Admin)', supplier, recipient:supplier, item:{name:month+' 거래/결제 수수료 매출'}, supplyAmount:rev, taxAmount:0, totalAmount:rev, writeDate:month+'-01', batchMonth:month, invoiceType:'admin_revenue' })});
-                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
-                showToast('Admin 수수료 매출 세금계산서 발행 완료. PDF를 엽니다.');
-                taxPrintInvoice({ supplier, recipient:supplier, month, supplyAmount:rev, taxAmount:0, totalAmount:rev, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
-                loadTaxHistory();
-            }catch(e){ showToast('발행 실패: '+(e.message||'')); }
+            openTaxInvoiceForm({
+                supplier, recipient:supplier, seller:'(Admin)',
+                items:[{ month:(month||'').slice(5,7), name:month+' 거래/결제 수수료 매출', qty:1, totalAmount:rev }],
+                writeDate:(month?month+'-01':''), batchMonth:month, invoiceType:'admin_revenue'
+            });
         };
-        window.issueOneTax=async function(i){
+        // 정산(미정산) 업체 발행 버튼 → 폼 프리필 오픈
+        window.issueOneTax=function(i){
             const v=window.taxSettlement[i]; if(!v) return;
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const month=taxG('tax-month');
-            try{
-                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:v.seller, buyer:v.seller, supplier, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:month+' 플랫폼 이용 수수료'}, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee, writeDate:month+'-01', batchMonth:month })});
-                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
-                showToast(`${v.seller} 세금계산서 발행 완료. PDF를 엽니다.`);
-                taxPrintInvoice({ supplier, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, month, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
-                loadTaxHistory();
-            }catch(e){ showToast('발행 실패: '+(e.message||'')); }
+            openTaxInvoiceForm({
+                supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'' }, seller:v.seller,
+                items:[{ month:(month||'').slice(5,7), name:month+' 거래/결제 수수료', qty:1, totalAmount:v.payFee }],
+                writeDate:(month?month+'-01':''), batchMonth:month
+            });
         };
         window.issueBulkTax=async function(){
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
@@ -3178,6 +3318,176 @@
                 +'</body></html>');
             w.document.close();
         }
+
+        // ================= 🧾 전자세금계산서 발행 폼 (자비스/팍스빌 표준 레이아웃) =================
+        window._tifDocType='tax_invoice'; window._tifBatchMonth=''; window._tifInvoiceType='commission'; window._tifSeller='';
+        function taxS_txt(id,v){ const e=document.getElementById(id); if(e) e.textContent=v; }
+        function tifRadio(name){ const el=document.querySelector(`input[name="${name}"]:checked`); return el?el.value:''; }
+        function tifSetRadio(name,val){ const el=document.querySelector(`input[name="${name}"][value="${val}"]`); if(el) el.checked=true; }
+        window.tifSetDocType=function(t){
+            window._tifDocType=t;
+            const a=document.getElementById('tif-tab-tax'), b=document.getElementById('tif-tab-inv');
+            if(a) a.classList.toggle('active', t==='tax_invoice');
+            if(b) b.classList.toggle('active', t==='invoice');
+            tifRecalcAll();
+        };
+        // 과세 여부: 세금계산서 + (일반/위수탁)만 과세. 계산서(면세)·영세율·위수탁영세율 => 세액0
+        function tifIsTaxable(){ const it=tifRadio('tif-issuetype'); return window._tifDocType==='tax_invoice' && (it==='normal'||it==='consign'); }
+        function tifRows(){ return Array.from(document.querySelectorAll('#tif-items tr')); }
+        function tifRowVal(tr,cls){ const e=tr.querySelector('.'+cls); return e?e.value:''; }
+        function tifRowHtml(d){ d=d||{};
+            return `<tr>
+                <td><input class="tcen r-m" value="${taxEscH(d.month||'')}"></td>
+                <td><input class="tcen r-d" value="${taxEscH(d.day||'')}"></td>
+                <td><input class="tleft r-name" value="${taxEscH(d.name||'')}"></td>
+                <td><input class="tcen r-spec" value="${taxEscH(d.spec||'')}"></td>
+                <td><input class="tcen r-qty" value="${(d.qty!=null&&d.qty!=='')?taxEscH(d.qty):''}"></td>
+                <td><input class="r-unit" value="${d.unitPrice?taxFmt(d.unitPrice):''}"></td>
+                <td><input class="r-tot" value="${d.totalAmount?taxFmt(d.totalAmount):''}" oninput="tifRecalcSummary()"></td>
+                <td><input class="r-sup" value="${d.supplyAmount?taxFmt(d.supplyAmount):''}" oninput="tifRecalcSummary()"></td>
+                <td><input class="r-tax" value="${d.taxAmount?taxFmt(d.taxAmount):''}" oninput="tifRecalcSummary()"></td>
+                <td><input class="tleft r-rmk" value="${taxEscH(d.remark||'')}"></td>
+                <td><button class="tif-mini-btn calc" onclick="tifCalcRow(this)">계산</button></td>
+                <td><button class="tif-mini-btn del" onclick="tifRemoveRow(this)">삭제</button></td>
+            </tr>`;
+        }
+        window.tifAddRow=function(d){ const tb=document.getElementById('tif-items'); if(!tb) return null; if(tifRows().length>=16){ showToast('품목은 최대 16개까지 가능합니다.'); return null; } tb.insertAdjacentHTML('beforeend', tifRowHtml(d)); return tb.lastElementChild; };
+        window.tifRemoveRow=function(btn){ const tr=btn.closest('tr'); if(tr) tr.remove(); if(!tifRows().length) tifAddRow(); tifRecalcSummary(); };
+        window.tifRemoveLastRow=function(){ const rows=tifRows(); if(rows.length<=1){ showToast('최소 1개 품목은 필요합니다.'); return; } rows[rows.length-1].remove(); tifRecalcSummary(); };
+        // 계산: 합계 → 공급가액·세액 자동 분해 (과세: 공급=round(합계/1.1), 세액=합계−공급 / 면세·영세율: 세액0)
+        window.tifCalcRow=function(btn){ const tr=btn.closest('tr'); if(!tr) return;
+            const qty=taxNum(tifRowVal(tr,'r-qty')), unit=taxNum(tifRowVal(tr,'r-unit'));
+            let tot=taxNum(tifRowVal(tr,'r-tot'));
+            if(!tot && qty && unit) tot=qty*unit;
+            let sup, tax;
+            if(tifIsTaxable()){ sup=Math.round(tot/1.1); tax=tot-sup; } else { sup=tot; tax=0; }
+            tr.querySelector('.r-tot').value = tot?taxFmt(tot):'';
+            tr.querySelector('.r-sup').value = sup?taxFmt(sup):'';
+            tr.querySelector('.r-tax').value = tax?taxFmt(tax):'';
+            tifRecalcSummary();
+        };
+        window.tifRecalcAll=function(){ tifRows().forEach(tr=>{ const btn=tr.querySelector('.calc'); if(btn && taxNum(tifRowVal(tr,'r-tot'))) tifCalcRow(btn); }); tifRecalcSummary(); };
+        window.tifRecalcSummary=function(){ let s=0,t=0,g=0; tifRows().forEach(tr=>{ s+=taxNum(tifRowVal(tr,'r-sup')); t+=taxNum(tifRowVal(tr,'r-tax')); g+=taxNum(tifRowVal(tr,'r-tot')); }); if(!g) g=s+t; taxS_txt('tif-supply',taxFmt(s)); taxS_txt('tif-tax',taxFmt(t)); taxS_txt('tif-total',taxFmt(g)); };
+        // 폼 열기(정산·매출 발행 버튼에서 프리필). supplier=플랫폼, recipient=거래처, items=1건.
+        window.openTaxInvoiceForm=function(opts){
+            opts=opts||{};
+            const sup=opts.supplier||getTaxSupplier();
+            taxS('tif-sup-bizno',sup.bizNo||''); taxS('tif-sup-subbizno',sup.subBizNo||'');
+            taxS('tif-sup-name',sup.name||''); taxS('tif-sup-ceo',sup.ceoName||'');
+            taxS('tif-sup-address',sup.address||''); taxS('tif-sup-biztype',sup.bizType||'');
+            taxS('tif-sup-bizclass',sup.bizClass||''); taxS('tif-sup-email',sup.email||''); taxS('tif-sup-phone',sup.phone||'');
+            const rec=opts.recipient||{};
+            taxS('tif-rec-bizno',rec.bizNo||''); taxS('tif-rec-subbizno',rec.subBizNo||'');
+            taxS('tif-rec-name',rec.name||''); taxS('tif-rec-ceo',rec.ceoName||'');
+            taxS('tif-rec-address',rec.address||''); taxS('tif-rec-biztype',rec.bizType||'');
+            taxS('tif-rec-bizclass',rec.bizClass||''); taxS('tif-rec-email',rec.email||''); taxS('tif-rec-email2',rec.email2||''); taxS('tif-rec-phone',rec.phone||'');
+            tifSetRadio('tif-issuetype',opts.issueType||'normal');
+            tifSetRadio('tif-recipient-idtype',opts.recipientIdType||'biz');
+            tifSetRadio('tif-purpose',opts.purposeType||'claim');
+            taxS('tif-writedate',opts.writeDate||(new Date().toISOString().slice(0,10)));
+            taxS('tif-memo',opts.memo||'');
+            window._tifBatchMonth=opts.batchMonth||'';
+            window._tifInvoiceType=opts.invoiceType||'commission';
+            window._tifSeller=opts.seller||'';
+            const tb=document.getElementById('tif-items'); tb.innerHTML='';
+            const items=(opts.items&&opts.items.length)?opts.items:[{}];
+            items.slice(0,16).forEach(it=>tifAddRow(it));
+            const pay=opts.payment||{};
+            taxS('tif-cash',pay.cash?taxFmt(pay.cash):''); taxS('tif-check',pay.check?taxFmt(pay.check):'');
+            taxS('tif-note',pay.note?taxFmt(pay.note):''); taxS('tif-credit',pay.credit?taxFmt(pay.credit):'');
+            tifSetDocType(opts.docType||'tax_invoice');  // rows 존재 후 호출 → 과세 자동계산
+            openModal('tax-invoice-form-modal');
+        };
+        window.tifReset=function(){
+            const tb=document.getElementById('tif-items'); if(tb){ tb.innerHTML=''; tifAddRow(); }
+            ['tif-rec-bizno','tif-rec-subbizno','tif-rec-name','tif-rec-ceo','tif-rec-address','tif-rec-biztype','tif-rec-bizclass','tif-rec-email','tif-rec-email2','tif-rec-phone','tif-memo','tif-cash','tif-check','tif-note','tif-credit'].forEach(id=>taxS(id,''));
+            tifSetRadio('tif-issuetype','normal'); tifSetRadio('tif-recipient-idtype','biz'); tifSetRadio('tif-purpose','claim');
+            taxS('tif-writedate',new Date().toISOString().slice(0,10));
+            tifSetDocType('tax_invoice');
+        };
+        function tifCollect(){
+            const items=tifRows().map(tr=>({
+                month:tifRowVal(tr,'r-m').trim(), day:tifRowVal(tr,'r-d').trim(),
+                name:tifRowVal(tr,'r-name').trim(), spec:tifRowVal(tr,'r-spec').trim(),
+                qty:tifRowVal(tr,'r-qty').trim(), unitPrice:taxNum(tifRowVal(tr,'r-unit')),
+                totalAmount:taxNum(tifRowVal(tr,'r-tot')), supplyAmount:taxNum(tifRowVal(tr,'r-sup')),
+                taxAmount:taxNum(tifRowVal(tr,'r-tax')), remark:tifRowVal(tr,'r-rmk').trim()
+            })).filter(it=>it.name||it.totalAmount||it.supplyAmount);
+            const supplier={ bizNo:taxDigits(taxG('tif-sup-bizno')), subBizNo:taxG('tif-sup-subbizno'), name:taxG('tif-sup-name'), ceoName:taxG('tif-sup-ceo'), address:taxG('tif-sup-address'), bizType:taxG('tif-sup-biztype'), bizClass:taxG('tif-sup-bizclass'), email:taxG('tif-sup-email'), phone:taxG('tif-sup-phone') };
+            const recipient={ bizNo:taxDigits(taxG('tif-rec-bizno')), subBizNo:taxG('tif-rec-subbizno'), name:taxG('tif-rec-name'), ceoName:taxG('tif-rec-ceo'), address:taxG('tif-rec-address'), bizType:taxG('tif-rec-biztype'), bizClass:taxG('tif-rec-bizclass'), email:taxG('tif-rec-email'), email2:taxG('tif-rec-email2'), phone:taxG('tif-rec-phone') };
+            return {
+                docType:window._tifDocType||'tax_invoice',
+                issueType:tifRadio('tif-issuetype'), recipientIdType:tifRadio('tif-recipient-idtype'),
+                purposeType:tifRadio('tif-purpose'), taxType:tifIsTaxable()?'taxable':'free',
+                writeDate:taxG('tif-writedate'), memo:taxG('tif-memo'),
+                batchMonth:window._tifBatchMonth||(taxG('tif-writedate')||'').slice(0,7),
+                invoiceType:window._tifInvoiceType||'commission',
+                seller:window._tifSeller||recipient.name, buyer:window._tifSeller||recipient.name,
+                supplier, recipient, items,
+                payment:{ cash:taxNum(taxG('tif-cash')), check:taxNum(taxG('tif-check')), note:taxNum(taxG('tif-note')), credit:taxNum(taxG('tif-credit')) }
+            };
+        }
+        function tifValidate(f){
+            if(!f.supplier.name||!f.supplier.bizNo){ showToast('공급자 상호·등록번호를 입력하세요.'); return false; }
+            if(!f.items.some(it=>taxNum(it.totalAmount)>0||taxNum(it.supplyAmount)>0)){ showToast('합계 금액이 0보다 큰 품목을 최소 1개 입력하세요.'); return false; }
+            return true;
+        }
+        function tifBuildPrintHtml(f, invoiceNo){
+            const sup=f.supplier||{}, rec=f.recipient||{};
+            const bizFmt=s=>{ s=taxDigits(s); return s.length===10?(s.slice(0,3)+'-'+s.slice(3,5)+'-'+s.slice(5)):s; };
+            const title=f.docType==='invoice'?'계산서':'세금계산서';
+            let s=0,t=0,g=0;
+            const rows=(f.items||[]).map(it=>{ s+=taxNum(it.supplyAmount); t+=taxNum(it.taxAmount); g+=taxNum(it.totalAmount);
+                return '<tr><td class="c">'+taxEscH(it.month||'')+'</td><td class="c">'+taxEscH(it.day||'')+'</td><td>'+taxEscH(it.name||'')+'</td><td class="c">'+taxEscH(it.spec||'')+'</td><td class="c">'+taxEscH(it.qty||'')+'</td><td class="r">'+(it.unitPrice?taxFmt(it.unitPrice):'')+'</td><td class="r">'+taxFmt(it.supplyAmount)+'</td><td class="r">'+taxFmt(it.taxAmount)+'</td><td class="r">'+taxFmt(it.totalAmount)+'</td><td>'+taxEscH(it.remark||'')+'</td></tr>';
+            }).join('');
+            if(!g) g=s+t;
+            const mock=invoiceNo&&/^(MOCK|DRAFT)/.test(String(invoiceNo));
+            const pay=f.payment||{};
+            return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>'+title+'</title>'
+              +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;padding:24px;color:#111;}h1{text-align:center;font-size:22px;margin:0 0 4px;}.sub{text-align:center;color:#666;font-size:12px;margin-bottom:14px;}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;}th,td{border:1px solid #333;padding:5px 7px;}th{background:#f1f5f9;}.r{text-align:right;}.c{text-align:center;}.amt{font-size:15px;font-weight:900;}.no{color:#666;font-size:11px;text-align:center;}@media print{.noprint{display:none;}}</style></head><body>'
+              +'<h1>전자'+title+(f.issueType==='zero_rate'||f.issueType==='consign_zero'?' (영세율)':'')+'</h1>'
+              +'<div class="sub">'+(invoiceNo?('관리번호 '+taxEscH(invoiceNo)+' · '):'')+'작성일자 '+taxEscH(f.writeDate||'')+' · '+(f.purposeType==='claim'?'청구':'영수')+'</div>'
+              +'<table><tr><th style="width:12%;">구분</th><th>공급자</th><th>공급받는자</th></tr>'
+              +'<tr><th>등록번호</th><td>'+bizFmt(sup.bizNo)+'</td><td>'+bizFmt(rec.bizNo)+'</td></tr>'
+              +'<tr><th>상호</th><td>'+taxEscH(sup.name||'')+'</td><td>'+taxEscH(rec.name||'')+'</td></tr>'
+              +'<tr><th>성명</th><td>'+taxEscH(sup.ceoName||'')+'</td><td>'+taxEscH(rec.ceoName||'')+'</td></tr>'
+              +'<tr><th>사업장</th><td>'+taxEscH(sup.address||'')+'</td><td>'+taxEscH(rec.address||'')+'</td></tr>'
+              +'<tr><th>업태/종목</th><td>'+taxEscH((sup.bizType||'')+' / '+(sup.bizClass||''))+'</td><td>'+taxEscH((rec.bizType||'')+' / '+(rec.bizClass||''))+'</td></tr>'
+              +'<tr><th>이메일</th><td>'+taxEscH(sup.email||'')+'</td><td>'+taxEscH([rec.email,rec.email2].filter(Boolean).join(', '))+'</td></tr></table>'
+              +'<table><tr><th class="r" colspan="10">합계금액 '+taxFmt(g)+' (공급가액 '+taxFmt(s)+' · 세액 '+taxFmt(t)+')</th></tr>'
+              +'<tr><th>월</th><th>일</th><th>품목</th><th>규격</th><th>수량</th><th class="r">단가</th><th class="r">공급가액</th><th class="r">세액</th><th class="r">합계</th><th>비고</th></tr>'
+              +rows+'</table>'
+              +'<table><tr><th>현금</th><th>수표</th><th>어음</th><th>외상미수금</th><th>합계</th></tr>'
+              +'<tr><td class="r">'+taxFmt(pay.cash)+'</td><td class="r">'+taxFmt(pay.check)+'</td><td class="r">'+taxFmt(pay.note)+'</td><td class="r">'+taxFmt(pay.credit)+'</td><td class="r amt">'+taxFmt(g)+'</td></tr></table>'
+              +'<p class="no">본 '+title+'는 Earth 정산 시스템에서 발행되었습니다.'+(mock?' (작성중/테스트 · 국세청 미전송)':'')+'</p>'
+              +'<div class="noprint" style="text-align:center;margin-top:16px;"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;font-weight:700;background:#2563eb;color:#fff;border:0;border-radius:8px;cursor:pointer;">PDF로 저장 / 인쇄</button></div>'
+              +'</body></html>';
+        }
+        window.tifPreview=function(){
+            const f=tifCollect(); if(!f.supplier.name){ showToast('공급자 정보를 입력하세요.'); return; }
+            const html=tifBuildPrintHtml(f, 'PREVIEW');
+            if(typeof _printHtmlViaIframe==='function') _printHtmlViaIframe(html);
+            else { const w=window.open('','tax_pv','width=840,height=1000'); if(w){ w.document.write(html); w.document.close(); } }
+        };
+        // 폼의 공급자 블록 → 탭 공급자(#sup-*) 및 서버에 기억
+        function tifSyncSupplier(sup){
+            taxS('sup-name',sup.name||''); taxS('sup-bizno',sup.bizNo||''); taxS('sup-ceo',sup.ceoName||'');
+            taxS('sup-email',sup.email||''); taxS('sup-address',sup.address||''); taxS('sup-biztype',sup.bizType||''); taxS('sup-bizclass',sup.bizClass||'');
+            try{ persistTaxSupplier(true); }catch(e){}
+        }
+        window.tifIssue=async function(draft){
+            const f=tifCollect(); if(!tifValidate(f)) return;
+            f.draft=!!draft;
+            tifSyncSupplier(f.supplier);
+            try{
+                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)});
+                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
+                showToast(draft?'발급보류(작성중)로 저장했습니다.':('세금계산서 발급 완료: '+(d.invoiceNo||'')));
+                closeModal('tax-invoice-form-modal');
+                if(typeof loadTaxHistory==='function') loadTaxHistory();
+                if(typeof loadSettlement==='function' && !draft) loadSettlement();
+            }catch(e){ showToast('발행 실패: '+(e.message||'')); }
+        };
 
         // ================= 👑 Admin 전체 주문 · 거래 모니터링 =================
         window.__aoStatusMeta = {
@@ -3279,17 +3589,16 @@
                 </tr>`).join('');
             }catch(e){ body.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
-        window.issueSettledOne=async function(i){
+        // 정산완료 업체 발행 버튼 → 폼 프리필 오픈
+        window.issueSettledOne=function(i){
             const v=window.taxSettled[i]; if(!v) return;
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const month=taxG('tax-month');
-            try{
-                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:v.seller, buyer:v.seller, supplier, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:month+' 거래/결제 수수료'}, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee, writeDate:month+'-01', batchMonth:month })});
-                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
-                showToast(`${v.seller} 세금계산서 발행 완료. PDF를 엽니다.`);
-                taxPrintInvoice({ supplier, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, month, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
-                loadTaxHistory();
-            }catch(e){ showToast('발행 실패: '+(e.message||'')); }
+            openTaxInvoiceForm({
+                supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'' }, seller:v.seller,
+                items:[{ month:(month||'').slice(5,7), name:month+' 거래/결제 수수료', qty:1, totalAmount:v.payFee }],
+                writeDate:(month?month+'-01':''), batchMonth:month
+            });
         };
         window.issueBulkSettled=async function(){
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
@@ -3305,18 +3614,15 @@
                 loadTaxHistory();
             }catch(e){ showToast('일괄 발행 실패: '+(e.message||'')); }
         };
-        window.issueSettledAdminRevenueTax=async function(){
+        window.issueSettledAdminRevenueTax=function(){
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const month=taxG('tax-month'); const rev=window.taxSettledAdminRevenue||0;
             if(rev<=0){ showToast('발행할 정산완료 Admin 수수료 매출이 없습니다.'); return; }
-            if(!confirm(`${month} 거래/결제 수수료 매출(정산완료분) ${taxFmt(rev)}원에 대한 Admin 매출 세금계산서를 발행합니다.`)) return;
-            try{
-                const r=await fetch(`${API_URL}/api/tax/issue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ seller:'(Admin)', buyer:'(Admin)', supplier, recipient:supplier, item:{name:month+' 거래/결제 수수료 매출(정산완료분)'}, supplyAmount:rev, taxAmount:0, totalAmount:rev, writeDate:month+'-01', batchMonth:month, invoiceType:'admin_revenue' })});
-                const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
-                showToast('정산완료분 Admin 수수료 매출 세금계산서 발행 완료. PDF를 엽니다.');
-                taxPrintInvoice({ supplier, recipient:supplier, month, supplyAmount:rev, taxAmount:0, totalAmount:rev, invoiceNo:d.invoiceNo, writeDate:month+'-01' });
-                loadTaxHistory();
-            }catch(e){ showToast('발행 실패: '+(e.message||'')); }
+            openTaxInvoiceForm({
+                supplier, recipient:supplier, seller:'(Admin)',
+                items:[{ month:(month||'').slice(5,7), name:month+' 거래/결제 수수료 매출(정산완료분)', qty:1, totalAmount:rev }],
+                writeDate:(month?month+'-01':''), batchMonth:month, invoiceType:'admin_revenue'
+            });
         };
 
         function switchTab(id) {
