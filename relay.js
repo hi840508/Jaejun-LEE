@@ -266,6 +266,12 @@ function initTables() {
 initTables();
 setTimeout(loadAdminUsers, 500);   // 부팅 후 admin_users 설정 반영(기본 '이재준')
 
+// 💬 주문 대화방(room_ord_<orderId>)은 id로 참가자를 파싱할 수 없으므로 chat_rooms에서 buyer/seller를 캐시(소켓 스코프 전송용).
+const ORDER_ROOMS = new Map();
+function _setOrderRoom(roomId, buyer, seller) { if (roomId && String(roomId).startsWith('room_ord_')) ORDER_ROOMS.set(String(roomId), { buyer, seller }); }
+function _loadOrderRooms() { db.all(`SELECT roomId, buyer, seller FROM chat_rooms WHERE roomId LIKE 'room_ord_%'`, [], (e, rows) => { (rows || []).forEach(r => { if (r.roomId) ORDER_ROOMS.set(r.roomId, { buyer: r.buyer, seller: r.seller }); }); }); }
+setTimeout(_loadOrderRooms, 600);
+
 // 🔐 세션 토큰: 로그인 시 발급, 이후 x-auth-token 헤더로 서버가 사용자 판정(본문 신원 위조 차단)
 const SESSIONS = new Map();   // token -> { name }
 function issueToken(name) {
@@ -635,36 +641,36 @@ app.get('/api/friends/:userName', (req, res) => { db.all(`SELECT u.name, u.profi
 
 app.get('/api/chat/active-rooms/:name', (req, res) => {
     const name = req.params.name;
-    // 🚀 INSTR로 안전하게 참여자 매칭. roomId 형식 = room_msg_userA_userB (정렬됨)
-    // '_' + roomId + '_' 안에 '_userName_' 부분문자열이 있으면 참여 → 양쪽 모두 정확히 매칭
-    const query = `
-        SELECT id, roomId, sender, message, date, senderPic
-        FROM chats
-        WHERE id IN (SELECT MAX(id) FROM chats GROUP BY roomId)
-          AND INSTR('_' || roomId || '_', '_' || ? || '_') > 0
-        ORDER BY id DESC`;
-    db.all(query, [name], (err, rows) => {
-        if(err) { console.error('active-rooms query error:', err); return res.json([]); }
-        if(!rows || rows.length === 0) return res.json([]);
-        // 각 방의 상대방 프로필 사진을 별도 조회 (정확한 partnerName으로)
-        const tasks = rows.map(r => new Promise(resolve => {
-            // roomId에서 'room_msg_' 제거 후 사용자명 분리. 본인이 아닌 쪽이 상대방.
-            const stripped = r.roomId.replace('room_msg_', '');
-            const parts = stripped.split('_');
-            const partnerName = parts.filter(n => n !== name)[0] || '이재준';
-            db.get(`SELECT profilePic FROM users WHERE name = ?`, [partnerName], (e, u) => {
-                resolve({
-                    roomId: r.roomId,
-                    partnerName,
-                    lastMsg: r.message,
-                    lastDate: r.date,
-                    lastMsgId: r.id,        // 🔔 미읽음 판정용(로컬 읽음표시와 비교)
-                    lastSender: r.sender,   // 🔔 마지막 발신자(내가 보낸 것이면 미읽음 아님)
-                    partnerPic: u ? u.profilePic : null
-                });
+    // A) 일반(쌍) 대화방: chats에서 room_msg_ 마지막 메시지 + INSTR 참가자 매칭
+    const qPair = `SELECT id, roomId, sender, message, date FROM chats
+        WHERE id IN (SELECT MAX(id) FROM chats WHERE roomId LIKE 'room_msg_%' GROUP BY roomId)
+          AND INSTR('_' || roomId || '_', '_' || ? || '_') > 0`;
+    // B) 💬 주문 대화방(room_ord_): chat_rooms에서 ended=0 인 것만(구매확정 시 ended=1로 목록에서 사라짐) + 마지막 메시지
+    const qOrder = `SELECT cr.roomId, cr.buyer, cr.seller, cr.storeName, cr.lastProductName,
+                           c.id AS lastMsgId, c.sender AS lastSender, c.message AS lastMsg, c.date AS lastDate
+                    FROM chat_rooms cr
+                    LEFT JOIN chats c ON c.id = (SELECT MAX(id) FROM chats WHERE roomId = cr.roomId)
+                    WHERE cr.roomId LIKE 'room_ord_%' AND cr.ended = 0 AND (cr.buyer = ? OR cr.seller = ?)`;
+    db.all(qPair, [name], (e1, pairRows) => {
+        db.all(qOrder, [name, name], (e2, ordRows) => {
+            const out = [];
+            (pairRows || []).forEach(r => {
+                const parts = String(r.roomId).replace('room_msg_', '').split('_');
+                const partnerName = parts.filter(n => n !== name)[0] || '이재준';
+                out.push({ roomId: r.roomId, partnerName, lastMsg: r.message, lastDate: r.date, lastMsgId: r.id, lastSender: r.sender, isOrder: false });
             });
-        }));
-        Promise.all(tasks).then(result => res.json(result)).catch(() => res.json([]));
+            (ordRows || []).forEach(r => {
+                const partnerName = (r.buyer === name) ? r.seller : r.buyer;
+                out.push({ roomId: r.roomId, partnerName: partnerName || '', lastMsg: r.lastMsg || ('[' + (r.lastProductName || '주문') + '] 대화'), lastDate: r.lastDate || '', lastMsgId: r.lastMsgId || 0, lastSender: r.lastSender || '', isOrder: true, storeName: r.storeName || '', productName: r.lastProductName || '' });
+            });
+            const tasks = out.map(o => new Promise(resolve => {
+                db.get(`SELECT profilePic FROM users WHERE name = ?`, [o.partnerName], (e, u) => { o.partnerPic = u ? u.profilePic : null; resolve(o); });
+            }));
+            Promise.all(tasks).then(result => {
+                result.sort((a, b) => (new Date(b.lastDate || 0).getTime() || 0) - (new Date(a.lastDate || 0).getTime() || 0));
+                res.json(result);
+            }).catch(() => res.json(out));
+        });
     });
 });
 
@@ -882,10 +888,11 @@ app.post('/api/product/submit-order', (req, res) => {
 });
 
 // 💬 [채팅 상태알림] 주문 상태가 바뀔 때 구매자·판매자 채팅방에 시스템 메시지 기록 + order_status 이벤트(카드 갱신용) 방출.
-function _orderRoomId(buyer, seller) { return 'room_msg_' + [String(buyer || ''), String(seller || '')].sort().join('_'); }
+function _orderRoomId(orderId) { return 'room_ord_' + orderId; }   // 💬 주문별 고유 대화방 id
 function _notifyOrderStatus(buyer, seller, orderId, status, msg) {
     try {
-        const roomId = _orderRoomId(buyer, seller);
+        const roomId = _orderRoomId(orderId);
+        _setOrderRoom(roomId, buyer, seller);   // 참가자 캐시 보강(소켓 전송용)
         if (msg) {
             const date = new Date().toLocaleString('ko-KR');
             db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, '__system__', NULL, ?, ?)`, [roomId, msg, date], function() {
@@ -893,6 +900,15 @@ function _notifyOrderStatus(buyer, seller, orderId, status, msg) {
             });
         }
         try { _emitToRoomUsers(roomId, 'order_status', { orderId, status, buyer, seller }); } catch (_) {}   // 채팅 주문카드 실시간 갱신
+    } catch (_) {}
+}
+// 💬 구매확정 시 해당 주문 대화방 종료(목록에서 사라짐). ended=1 + 양측에 room_closed 이벤트.
+function _closeOrderRoom(orderId, buyer, seller) {
+    try {
+        const roomId = _orderRoomId(orderId);
+        _setOrderRoom(roomId, buyer, seller);
+        db.run(`UPDATE chat_rooms SET ended = 1 WHERE roomId = ?`, [roomId], () => {});
+        try { _emitToRoomUsers(roomId, 'room_closed', { roomId, orderId, buyer, seller }); } catch (_) {}
     } catch (_) {}
 }
 
@@ -1046,7 +1062,7 @@ app.post('/api/order/confirm', (req, res) => {
         if (!['delivered', 'shipping', 'approved'].includes(ord.status)) return res.status(400).json({ error: '배송/승인 상태의 주문만 구매확정할 수 있습니다.' });
         const now = new Date();
         const month = now.toISOString().slice(0, 7);   // YYYY-MM (정산 귀속월)
-        db.run(`UPDATE product_orders SET status = 'confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'confirmed', '🎉 [구매 확정] 구매가 확정되었습니다. (정산 대기)'); res.json({ success: true }); });
+        db.run(`UPDATE product_orders SET status = 'confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'confirmed', '🎉 [구매 확정] 구매가 확정되었습니다. (정산 대기) 이 대화방은 종료됩니다.'); _closeOrderRoom(orderId, ord.buyer, ord.seller); res.json({ success: true }); });
     });
 });
 
@@ -1072,7 +1088,7 @@ function _autoConfirmSweep() {
         db.all(`SELECT id, buyer, seller, delivered_at FROM product_orders WHERE status='delivered' AND escrow_held > 0 AND settled = 0 AND delivered_at IS NOT NULL AND delivered_at <= ?`, [cutoff], (e, rows) => {
             if (e || !rows || !rows.length) return;
             const now = new Date(); const month = now.toISOString().slice(0, 7);
-            rows.forEach(r => db.run(`UPDATE product_orders SET status='confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, r.id], () => { _notifyOrderStatus(r.buyer, r.seller, r.id, 'confirmed', '🎉 [자동 구매확정] 배송완료 3일 경과로 구매가 자동 확정되었습니다. (정산 대기)'); }));
+            rows.forEach(r => db.run(`UPDATE product_orders SET status='confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, r.id], () => { _notifyOrderStatus(r.buyer, r.seller, r.id, 'confirmed', '🎉 [자동 구매확정] 배송완료 3일 경과로 구매가 자동 확정되었습니다. (정산 대기) 이 대화방은 종료됩니다.'); _closeOrderRoom(r.id, r.buyer, r.seller); }));
             console.log(`[에스크로] 자동 구매확정 ${rows.length}건 (배송완료 3일 경과)`);
         });
     } catch (_) {}
@@ -1197,6 +1213,7 @@ app.post('/api/reviews/summary', (req, res) => {
 app.post('/api/chat-room/upsert', (req, res) => {
     const { roomId, type, buyer, seller, storeId, storeName, lastProductId, lastProductName } = req.body;
     const now = new Date().toISOString();
+    _setOrderRoom(roomId, buyer, seller);   // 💬 주문방 참가자 캐시(소켓 전송용)
     db.get(`SELECT id FROM chat_rooms WHERE roomId = ?`, [roomId], (err, row) => {
         if(row) {
             // 업데이트
@@ -1941,8 +1958,12 @@ app.post('/api/tax/invoices/:id/refresh', async (req, res) => {
     });
 });
 
-// 🔐 방(room_msg_a_b) 참가자 도출 — 개인 룸 대상 전송용
-function _roomParticipants(roomId) { return String(roomId || '').replace('room_msg_', '').split('_').filter(Boolean); }
+// 🔐 방 참가자 도출 — 개인 룸 대상 전송용. 주문방(room_ord_)은 id로 파싱 불가 → chat_rooms 캐시(ORDER_ROOMS)에서 해석.
+function _roomParticipants(roomId) {
+    const id = String(roomId || '');
+    if (id.startsWith('room_ord_')) { const m = ORDER_ROOMS.get(id); return m ? [m.buyer, m.seller].filter(Boolean) : []; }
+    return id.replace('room_msg_', '').split('_').filter(Boolean);
+}
 // 두 참가자의 개인 룸에만 이벤트 전송(예전 io.emit 전체 브로드캐스트 → 무관한 사용자에게까지 채팅 노출되던 문제 제거). 크로스룸 알림은 개인 룸으로 유지.
 function _emitToRoomUsers(roomId, event, payload) {
     const parts = _roomParticipants(roomId);

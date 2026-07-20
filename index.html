@@ -2501,6 +2501,8 @@
                 const card = document.querySelector('.kt-card-msg[data-order-id="'+d.orderId+'"]');
                 if(card && window.checkAndReplaceOrderCard) window.checkAndReplaceOrderCard(card.id, d.orderId, card.dataset.productName||'', +(card.dataset.amount||0));
             });
+            // 💬 주문 대화방 종료(구매확정/3일 자동확정) — 판매자/타 기기 포함, 열려있으면 목록으로 이동 + 리스트 갱신
+            socket.on('room_closed', d => { try { if(d && typeof currentChatRoomId !== 'undefined' && currentChatRoomId === d.roomId) { if(typeof backToDrawerList === 'function') backToDrawerList(); } if(typeof loadChatList === 'function') loadChatList(); } catch(e){} });
 
             // 초대 URL 처리 (자동 친구 등록 + 대화방 즉시 개설; 양측 모두 별도 새로고침 없이 반영)
             const urlParams = new URLSearchParams(window.location.search);
@@ -4262,7 +4264,8 @@
             try { await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: buyer }) }); } catch(_){}
             const drawer = document.getElementById('messenger-drawer');
             if(drawer && !drawer.classList.contains('open')) drawer.classList.add('open');
-            setTimeout(() => openMessengerChat(buyer), 100);
+            // 💬 주문별 고유 대화방으로 진입 (판매자/구매자 모두 동일 방). orderId 없으면 기존 쌍 대화방으로 폴백.
+            setTimeout(() => openMessengerChat(buyer, orderId ? ('room_ord_' + orderId) : undefined), 100);
         };
 
         // 🚀 상점 홍보 QR 생성 + JPG 다운로드
@@ -6354,9 +6357,26 @@ pdfjsScript,
             // 자체완결 주문서 HTML 생성 (구매자 정보 + 메모 + PDF 답변 + 첨부 파일 모두 포함)
             const orderHtml = buildOrderConfirmationHTML(st.product, st, memo, pdfText, buyerFilesB64, buyerInfo);
 
-            // 친구 등록 + 채팅방 자동 개설
+            // 친구 등록 (buyer↔seller DM 유지)
             try { await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: st.seller }) }); } catch(_){}
-            const roomId = createRoomId(currentUser.name, st.seller);
+
+            // 서버에 pending 주문 저장 — 주문별 고유 대화방(room_ord_<orderId>)을 만들려면 orderId를 먼저 확보해야 함
+            const submitRes = await fetch(`${API_URL}/api/product/submit-order`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({
+                    productId: st.product.id, buyer: currentUser.name, seller: st.seller,
+                    bundle_html: orderHtml, memo, form_data: { pdfText, buyerFilesMeta: buyerFilesB64.map(f => ({ filename: f.filename, type: f.type })) },
+                    pdf_filled_data: pdfText, buyer_info: buyerInfo,
+                    amount: st.amount, status: 'pending'
+                })
+            });
+            const submitData = await submitRes.json();
+            if(!submitRes.ok) return showToast(submitData.error || '주문 전송 실패');
+            if(!submitData.orderId) return showToast('주문 ID를 받지 못했습니다. 다시 시도해 주세요.');
+
+            // 💬 주문마다 새 대화방 개설 (한 쌍-한 방이 아니라 주문별 1방). 구매자는 이 방으로 진입.
+            const roomId = 'room_ord_' + submitData.orderId;
+            currentChatRoomId = roomId;
             if(socket && socket.connected) socket.emit('join_room', roomId);
 
             // 상점 정보 조회 (대화방 이름에 사용)
@@ -6371,26 +6391,13 @@ pdfjsScript,
                 }
             } catch(_){}
 
-            // 채팅방 메타 upsert (브랜드명 + 최신 상품명)
+            // 채팅방 메타 upsert (buyer/seller 필수 — 서버가 소켓 전송용 참가자 캐시) + 브랜드명/최신 상품명
             try {
                 await fetch(`${API_URL}/api/chat-room/upsert`, {
                     method:'POST', headers:{'Content-Type':'application/json'},
                     body: JSON.stringify({ roomId, type: 'order', buyer: currentUser.name, seller: st.seller, storeId, storeName, lastProductId: st.product.id, lastProductName: st.product.name })
                 });
             } catch(_){}
-
-            // 서버에 pending 주문 저장
-            const submitRes = await fetch(`${API_URL}/api/product/submit-order`, {
-                method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({
-                    productId: st.product.id, buyer: currentUser.name, seller: st.seller,
-                    bundle_html: orderHtml, memo, form_data: { pdfText, buyerFilesMeta: buyerFilesB64.map(f => ({ filename: f.filename, type: f.type })) },
-                    pdf_filled_data: pdfText, buyer_info: buyerInfo,
-                    amount: st.amount, status: 'pending'
-                })
-            });
-            const submitData = await submitRes.json();
-            if(!submitRes.ok) return showToast(submitData.error || '주문 전송 실패');
 
             // 🚀 [v7+] 채팅 카드 전송 — orderId 포함
             const summaryMsg = `[ORDER_PENDING]${submitData.orderId}|${st.product.id}|${(st.product.name||'').replace(/\|/g, ' ')}|${st.amount}|${buyerFilesB64.length}|${(memo||'').replace(/\|/g, ' ').substring(0, 60)}`;
@@ -6448,7 +6455,7 @@ pdfjsScript,
                 if(drawer && !drawer.classList.contains('open')) {
                     if(typeof toggleMessengerDrawer === 'function') toggleMessengerDrawer();
                 }
-                if(typeof openMessengerChat === 'function') openMessengerChat(st.seller); 
+                if(typeof openMessengerChat === 'function') openMessengerChat(st.seller, roomId);
             }, 700);
         };
 
@@ -6979,10 +6986,11 @@ pdfjsScript,
         // 🚀 [v7p3] 판매자가 방에 진입한 주문을 추적 — 알림 억제
         window.__seenOrderRooms = new Set();
 
-        function openMessengerChat(friendName) {
+        function openMessengerChat(friendName, roomIdOverride) {
             const drawer = document.getElementById('messenger-drawer'); if(!drawer.classList.contains('open')) drawer.classList.add('open');
             activeChatFriend = friendName; document.getElementById('active-chat-title').innerText = `${friendName === '이재준' ? 'Root Admin (고객센터)' : friendName}`;
-            currentChatRoomId = `room_msg_${[currentUser.name, friendName].sort().join('_')}`;
+            // 💬 주문 대화방 등은 실제 roomId를 명시적으로 넘겨받는다. 미지정 시 기존 쌍(room_msg_) 규칙 유지.
+            currentChatRoomId = roomIdOverride || `room_msg_${[currentUser.name, friendName].sort().join('_')}`;
             if(unreadCounts[currentChatRoomId]) unreadCounts[currentChatRoomId] = 0;
 
             // 🚀 [v7p3] 이 방의 friend(상대방)를 본 친구 목록에 추가 → pending 알림 억제
@@ -7402,7 +7410,8 @@ pdfjsScript,
                 if(firstOrder) {
                     const drawer = document.getElementById('messenger-drawer');
                     if(drawer && !drawer.classList.contains('open')) drawer.classList.add('open');
-                    setTimeout(() => openMessengerChat(firstOrder.buyer), 100);
+                    // 💬 승인 대기 배너 → 해당 주문의 고유 대화방으로 진입
+                    setTimeout(() => openMessengerChat(firstOrder.buyer, firstOrder.id ? ('room_ord_' + firstOrder.id) : undefined), 100);
                 }
             };
         };
@@ -7444,11 +7453,14 @@ pdfjsScript,
                     let picHtml = r.partnerPic ? `<img class="profile-pic" src="${r.partnerPic}">` : `<div class="profile-pic"></div>`;
                     if(r.partnerName === '이재준') picHtml = `<div class="profile-pic" style="background:var(--danger); color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px;">CS</div>`;
 
-                    // 🚀 [v6] 주문 채팅방이면 "브랜드명 / 상품명" 표시
+                    // 🚀 [v6] 주문 채팅방이면 "브랜드명 / 상품명" 표시 — 같은 상대와의 여러 주문방을 구분하려면 상품명 라벨 필수
+                    const isOrderRoom = r.isOrder || (meta && meta.type === 'order');
                     let titleHtml;
-                    if(meta && meta.type === 'order') {
-                        const brandLabel = meta.storeName ? `<span style="background:#dbeafe; color:#1e40af; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:bold; margin-right:4px;">${meta.storeName}</span>` : '';
-                        const productLabel = meta.lastProductName ? ` / ${meta.lastProductName}` : '';
+                    if(isOrderRoom) {
+                        const sName = r.storeName || (meta && meta.storeName) || '';
+                        const pName = r.productName || (meta && meta.lastProductName) || '';
+                        const brandLabel = sName ? `<span style="background:#dbeafe; color:#1e40af; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:bold; margin-right:4px;">${sName}</span>` : '';
+                        const productLabel = pName ? ` <span style="color:var(--text-sub); font-weight:normal; font-size:11px;">🧾 ${pName}</span>` : '';
                         const partnerDisplay = r.partnerName === '이재준' ? 'Root Admin' : r.partnerName;
                         titleHtml = `<b style="font-size:13px;">${brandLabel}${partnerDisplay}${productLabel}</b>`;
                     } else {
@@ -7465,7 +7477,7 @@ pdfjsScript,
                         : r.lastMsg.includes('[META_QR]')?'🎫 [상품권 도착]'
                         : r.lastMsg;
 
-                    container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${r.partnerName.replace(/'/g, "\\'")}')">${picHtml}<div style="flex:1; min-width:0;"><div style="display:flex; justify-content:space-between;">${titleHtml}<span style="font-size:10px; color:var(--text-sub);">${r.lastDate}</span></div><div style="font-size:12px; color:var(--text-sub); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-top:4px;">${lastMsgPreview}</div></div>${badge}</div>`;
+                    container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${r.partnerName.replace(/'/g, "\\'")}', '${(r.roomId||'').replace(/'/g, "\\'")}')">${picHtml}<div style="flex:1; min-width:0;"><div style="display:flex; justify-content:space-between;">${titleHtml}<span style="font-size:10px; color:var(--text-sub);">${r.lastDate}</span></div><div style="font-size:12px; color:var(--text-sub); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-top:4px;">${lastMsgPreview}</div></div>${badge}</div>`;
                 });
             } catch(e){
                 if(window.__earthDiag) window.__earthDiag('loadChatList error: '+(e.message||e), true);
@@ -8268,6 +8280,9 @@ pdfjsScript,
                 const r=await fetch(`${API_URL}/api/order/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ orderId })});
                 const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
                 showToast('구매확정 완료. 정산 대기 상태입니다.'); loadMyPurchases(); if(window.refreshOrderChatCard) window.refreshOrderChatCard(orderId);
+                // 💬 구매확정 시 이 주문 대화방은 서버에서 종료(ended=1)됨 → 열려있으면 목록으로 돌아가고 리스트 갱신
+                if(typeof currentChatRoomId !== 'undefined' && currentChatRoomId === 'room_ord_' + orderId && typeof backToDrawerList === 'function') backToDrawerList();
+                if(typeof loadChatList === 'function') loadChatList();
             }catch(e){ showToast('구매확정 실패: '+(e.message||'')); }
         };
         // 💰 [에스크로] 구매자: 환불 요청 → 상점이 수락(환불완료)하면 Admin 보관금이 반환됨
