@@ -9332,8 +9332,8 @@ pdfjsScript,
                     h += `<div class="refund-req-row">
                         <div class="top">
                             <div>
-                                <b style="font-size:13px;">${r.productName}</b>
-                                <span style="font-size:11px; color:var(--text-sub); margin-left:6px;">구매자: ${r.buyer} · ${r.request_date}</span>
+                                <b style="font-size:13px;">${String(r.productName==null?'':r.productName).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</b>
+                                <span style="font-size:11px; color:var(--text-sub); margin-left:6px;">구매자: ${String(r.buyer==null?'':r.buyer).replace(/</g,'&lt;').replace(/>/g,'&gt;')} · ${String(r.request_date==null?'':r.request_date).replace(/</g,'&lt;')}</span>
                             </div>
                             <div style="font-weight:900; color:var(--danger); font-size:14px;">-${Number(r.amount).toLocaleString()}원</div>
                         </div>
@@ -9350,6 +9350,8 @@ pdfjsScript,
 
         // 🚀 판매자: 환불 승인/거절 결정
         window.decideRefund = async function(requestId, decision) {
+            // 🛡️ 유효한 사용자 클릭에서만 동작(잘못된 호출로 인한 자동 confirm 방지)
+            if((decision !== 'approve' && decision !== 'reject') || requestId == null || typeof requestId === 'function') return;
             const label = decision === 'approve' ? '승인하여 환불 지급' : '거절';
             if(!confirm(`이 환불 요청을 ${label}하시겠습니까?`)) return;
             try {
@@ -9363,12 +9365,12 @@ pdfjsScript,
                     showToast(data.error || "처리 실패");
                 }
             } catch(e){ showToast("네트워크 오류"); }
-        }
+        };
 
         /* ============================================================
            🦷 치과 기공소 의뢰서(Rx) 시스템 — 품목/수가 관리 + 간편/상세 의뢰서 + 치식 차트 + 상용구
            ============================================================ */
-        (function(){
+        ;(function(){
             const RX_TABS = [
                 { id:'general', label:'일반 보철 / 임플란트' },
                 { id:'denture', label:'덴처' },
@@ -9422,23 +9424,57 @@ pdfjsScript,
             const DECI_UPPER_R = [55,54,53,52,51], DECI_UPPER_L = [61,62,63,64,65];
             const DECI_LOWER_R = [85,84,83,82,81], DECI_LOWER_L = [71,72,73,74,75];
             let _toothSel = new Set(), _toothDeci = false, _toothCb = null;
-            function _toothBtn(n){
-                const on = _toothSel.has(n);
-                return `<button type="button" onclick="rxToggleTooth(${n})" style="width:34px;height:40px;margin:2px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${on?'#2563eb':'#cbd5e1'};background:${on?'#2563eb':'#f8fafc'};color:${on?'#fff':'#334155'};">${n}</button>`;
+            // 🦷 FDI 마지막 자리로 치아 종류 판별(모양 결정)
+            function _toothType(n){
+                const d = n % 10;
+                if(_toothDeci){ if(d<=2) return 'incisor'; if(d===3) return 'canine'; return 'molar'; }
+                if(d<=2) return 'incisor'; if(d===3) return 'canine'; if(d<=5) return 'premolar'; return 'molar';
             }
-            function _toothRow(rArr,lArr){
-                return `<div style="display:flex;justify-content:center;align-items:center;flex-wrap:nowrap;">
-                    <div style="display:flex;">${rArr.map(_toothBtn).join('')}</div>
-                    <div style="width:2px;height:36px;background:#e2e8f0;margin:0 6px;"></div>
-                    <div style="display:flex;">${lArr.map(_toothBtn).join('')}</div>
+            // 치아 실루엣 SVG(크라운 위 / 뿌리 아래). flip=true면 상악(뿌리 위로) 반전.
+            function _toothSvg(type, on, flip){
+                const fill = on ? '#3b82f6' : '#ffffff';
+                const crown = on ? '#60a5fa' : '#eef2f7';
+                const st = on ? '#1d4ed8' : '#94a3b8';
+                const sw = 'stroke="'+st+'" stroke-width="1.6" stroke-linejoin="round"';
+                let inner = '';
+                if(type==='molar'){
+                    inner = `<path d="M11,58 Q9,42 8,38 Q4,34 4,22 Q4,6 22,5 Q40,6 40,22 Q40,34 36,38 Q35,42 33,58 Q31,60 29,58 L27,44 Q22,42 17,44 L15,58 Q13,60 11,58 Z" fill="${fill}" ${sw}/>`+
+                            `<path d="M4,22 Q4,9 22,8 Q40,9 40,22 Q40,30 36,33 Q22,29 8,33 Q4,30 4,22 Z" fill="${crown}" ${sw}/>`;
+                } else if(type==='premolar'){
+                    inner = `<path d="M15,58 Q13,42 12,38 Q8,34 8,22 Q8,7 22,6 Q36,7 36,22 Q36,34 32,38 Q31,42 29,58 Q26,60 24,57 L22,44 L20,57 Q18,60 15,58 Z" fill="${fill}" ${sw}/>`+
+                            `<path d="M8,22 Q8,10 22,9 Q36,10 36,22 Q36,29 32,32 Q22,29 12,32 Q8,29 8,22 Z" fill="${crown}" ${sw}/>`;
+                } else if(type==='canine'){
+                    inner = `<path d="M18,58 Q17,40 16,34 Q12,30 12,20 Q12,10 22,4 Q32,10 32,20 Q32,30 28,34 Q27,40 26,58 Q24,60 22,58 Q20,60 18,58 Z" fill="${fill}" ${sw}/>`+
+                            `<path d="M12,20 Q12,11 22,5 Q32,11 32,20 Q32,27 28,30 Q22,27 16,30 Q12,27 12,20 Z" fill="${crown}" ${sw}/>`;
+                } else { // incisor
+                    inner = `<path d="M18,58 Q17,40 16,34 Q13,30 13,20 Q13,8 22,6 Q31,8 31,20 Q31,30 28,34 Q27,40 26,58 Q24,60 22,58 Q20,60 18,58 Z" fill="${fill}" ${sw}/>`+
+                            `<path d="M13,20 Q13,9 22,7 Q31,9 31,20 Q31,28 27,31 Q22,28 17,31 Q13,28 13,20 Z" fill="${crown}" ${sw}/>`;
+                }
+                return `<svg width="40" height="52" viewBox="0 0 44 62" style="${flip?'transform:scaleY(-1);':''}display:block;">${inner}</svg>`;
+            }
+            function _toothCell(n, flip){
+                const on = _toothSel.has(n);
+                return `<div onclick="rxToggleTooth(${n})" title="치아 ${n}" style="position:relative;width:44px;height:56px;margin:1px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;">
+                    ${_toothSvg(_toothType(n), on, flip)}
+                    <span style="position:absolute;font-size:11px;font-weight:800;pointer-events:none;color:${on?'#ffffff':'#475569'};text-shadow:${on?'0 1px 1px rgba(0,0,0,.25)':'none'};">${n}</span>
+                </div>`;
+            }
+            function _toothRow(rArr,lArr,arch){
+                const flip = (arch==='upper');
+                const cells = a => a.map(n=>_toothCell(n,flip)).join('');
+                return `<div style="display:flex;justify-content:center;align-items:${flip?'flex-end':'flex-start'};flex-wrap:nowrap;">
+                    <div style="display:flex;align-items:inherit;">${cells(rArr)}</div>
+                    <div style="width:2px;height:48px;background:#cbd5e1;margin:0 8px;align-self:center;"></div>
+                    <div style="display:flex;align-items:inherit;">${cells(lArr)}</div>
                 </div>`;
             }
             function _renderToothGrid(){
                 const g = document.getElementById('rx-tooth-grid'); if(!g) return;
+                const mid = '<div style="height:1px;background:#e2e8f0;margin:12px 0;"></div>';
                 if(_toothDeci){
-                    g.innerHTML = _toothRow(DECI_UPPER_R, DECI_UPPER_L) + '<div style="height:10px;"></div>' + _toothRow(DECI_LOWER_R, DECI_LOWER_L);
+                    g.innerHTML = _toothRow(DECI_UPPER_R, DECI_UPPER_L, 'upper') + mid + _toothRow(DECI_LOWER_R, DECI_LOWER_L, 'lower');
                 } else {
-                    g.innerHTML = _toothRow(PERM_UPPER_R, PERM_UPPER_L) + '<div style="height:10px;"></div>' + _toothRow(PERM_LOWER_R, PERM_LOWER_L);
+                    g.innerHTML = _toothRow(PERM_UPPER_R, PERM_UPPER_L, 'upper') + mid + _toothRow(PERM_LOWER_R, PERM_LOWER_L, 'lower');
                 }
                 const cnt = document.getElementById('rx-tooth-count'); if(cnt) cnt.textContent = _toothSel.size + '개 선택';
             }
@@ -9463,7 +9499,7 @@ pdfjsScript,
                                 <span onclick="rxCloseOverlay('rx-tooth-modal')" style="cursor:pointer;font-size:24px;color:#94a3b8;line-height:1;margin-left:6px;">&times;</span>
                             </div>
                         </div>
-                        <div id="rx-tooth-grid" style="border:1px solid #e2e8f0;border-radius:12px;padding:16px 8px;background:#fff;"></div>
+                        <div id="rx-tooth-grid" style="border:1px solid #e2e8f0;border-radius:12px;padding:16px 8px;background:linear-gradient(#fbfdff,#f4f7fb);overflow-x:auto;"></div>
                         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:14px;">
                             <div style="display:flex;gap:6px;flex-wrap:wrap;">
                                 <button class="btn btn-outline" type="button" style="padding:8px 12px;font-size:12px;" onclick="rxToothSelectArch('upper')">상악 선택</button>
