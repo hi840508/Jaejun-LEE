@@ -1368,7 +1368,16 @@ app.get('/api/search/users-and-stores', (req, res) => {
 app.get('/api/products', (req, res) => { db.all(`SELECT * FROM products ORDER BY id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/products/active', (req, res) => { db.all(`SELECT p.* FROM products p JOIN stores s ON p.storeId = s.id WHERE s.status = 'active' AND p.storeId NOT LIKE 'room_msg_%' ORDER BY p.id DESC`, [], (err, rows) => res.json(rows || [])); });
 app.get('/api/product/detail/:id', (req, res) => { db.get(`SELECT p.*, s.category AS storeCategory, IFNULL(s.admin_managed,0) AS storeManaged FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [req.params.id], (err, row) => res.json(row || {})); });
-app.post('/api/product/edit', (req, res) => { db.run(`UPDATE products SET name = ?, description = ?, stream_time = ?, stream_unit = ?, price_stream = ?, price_original = ? WHERE id = ?`, [req.body.name, req.body.description, Number(req.body.stream_time)||0, req.body.stream_unit, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, req.body.id], () => res.json({ success: true })); });
+app.post('/api/product/edit', (req, res) => {
+    const b = req.body || {};
+    // 제공된 필드만 갱신(COALESCE) — 썸네일만 바꿀 때 이름/설명이 지워지지 않도록.
+    db.run(`UPDATE products SET name = COALESCE(?, name), description = COALESCE(?, description), stream_time = COALESCE(?, stream_time), stream_unit = COALESCE(?, stream_unit), price_stream = COALESCE(?, price_stream), price_original = COALESCE(?, price_original), thumbnail = COALESCE(?, thumbnail) WHERE id = ?`,
+        [ b.name != null ? b.name : null, b.description != null ? b.description : null,
+          b.stream_time != null ? (Number(b.stream_time)||0) : null, b.stream_unit != null ? b.stream_unit : null,
+          b.price_stream != null ? (Number(b.price_stream)||0) : null, b.price_original != null ? (Number(b.price_original)||0) : null,
+          b.thumbnail != null ? b.thumbnail : null, b.id ],
+        () => res.json({ success: true }));
+});
 
 app.post('/api/admin/product/delete', (req, res) => { 
     if(!requireAdmin(req,res)) return;

@@ -4266,7 +4266,7 @@
                         const price = Number(p.price_original||p.price_stream||0);
                         const safeName = (p.name||'').replace(/'/g,"\\'");
                         h += `<div onclick="openProductFromShowcase('${p.id}', event)" style="background:#fff; border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:8px; cursor:pointer; transition:0.15s; display:flex; gap:8px; align-items:center;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border-color)'">
-                            <div style="width:48px; height:48px; border-radius:6px; background:#f1f5f9 url('${p.thumbnail||''}') center/cover no-repeat; flex-shrink:0;"></div>
+                            <div style="width:48px; height:48px; border-radius:6px; background:#f1f5f9 url('${(p.thumbnail||window.prodThumbSrc(p))}') center/cover no-repeat; flex-shrink:0;"></div>
                             <div style="min-width:0; flex:1;">
                                 <div style="font-size:12px; font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${(p.name||'').replace(/</g,'&lt;')}</div>
                                 <div style="font-size:11px; color:var(--primary); font-weight:700;">${price.toLocaleString()}원</div>
@@ -5622,13 +5622,13 @@ pdfjsScript,
                     const isSel = window.selectedProductsForBundle.has(p.id); const ratio = p.compression_ratio || getCompressionRatio(p.id + p.name);
                     const pkgBadge = '';   // 패키지 뱃지 제거(요청)
                     b += `<div class="karrot-card ${isSel?'selected':''}" id="card-${p.id}">
-                        <div class="karrot-thumb" onclick="openUniversalViewer('${p.id}', true)"><img src="${p.thumbnail}"></div>
+                        <div class="karrot-thumb" onclick="openUniversalViewer('${p.id}', true)"><img src="${window.prodThumbSrc(p)}" onerror="this.onerror=null;this.src=window.PROD_ICON;"></div>
                         <div class="karrot-info">
                             <div id="name-${p.id}" class="editable-field karrot-title" contenteditable="false">${p.name}${pkgBadge}</div>
                             <div class="karrot-seller">상점 ID: ${p.storeId}</div>
                             <div id="desc-${p.id}" class="editable-field karrot-desc" contenteditable="false">${p.description || '상품 설명 추가...'}</div>
                             <div class="karrot-price">판매가: <span id="p_ori-${p.id}" class="editable-field">${p.price_original}</span>원</div>
-                            <div class="karrot-actions"><button class="btn btn-secondary" id="btn-edit-${p.id}" onclick="toggleEditMode('${p.id}')">정보 수정</button><button class="btn btn-danger" onclick="deleteProduct('${p.id}')">파기</button></div>
+                            <div class="karrot-actions"><button class="btn btn-secondary" id="btn-edit-${p.id}" onclick="toggleEditMode('${p.id}')">정보 수정</button><button class="btn btn-outline" onclick="changeProductImage('${p.id}')" title="상품 이미지 변경">🖼 이미지</button><button class="btn btn-danger" onclick="deleteProduct('${p.id}')">파기</button></div>
                         </div>
                         <div class="check-circle" onclick="toggleProductSelect('${p.id}', this, event)">${isSel?'✔':''}</div>
                     </div>`;
@@ -5644,6 +5644,30 @@ pdfjsScript,
         window.toggleProductSelect = function(id, el, e) {
             e.stopPropagation(); if(window.selectedProductsForBundle.has(id)) { window.selectedProductsForBundle.delete(id); el.innerText = ''; el.parentElement.classList.remove('selected'); } 
             else { window.selectedProductsForBundle.add(id); el.innerText = '✔'; el.parentElement.classList.add('selected'); }
+        };
+
+        // 🖼 상품 썸네일 기본 아이콘(빈 이미지 대신). rx_form=의뢰서 아이콘, 그 외 일반 상품 아이콘.
+        window.RX_ICON = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="10" fill="#ede9fe"/><rect x="19" y="12" width="26" height="40" rx="4" fill="#fff" stroke="#7c3aed" stroke-width="2.5"/><path d="M25 24h14M25 31h14M25 38h9" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linecap="round"/></svg>');
+        window.PROD_ICON = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="10" fill="#f1f5f9"/><path d="M14 44l11-11 8 8 6-6 11 11" fill="none" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="23" cy="23" r="4" fill="#94a3b8"/></svg>');
+        window.prodThumbSrc = function(p){ return (p && p.thumbnail) ? p.thumbnail : (p && Number(p.rx_form)===1 ? window.RX_ICON : window.PROD_ICON); };
+        // 🖼 상품 이미지 변경(다운스케일 256px → dataURL 저장). 상점 관리 상품 카드에서 사용.
+        window.changeProductImage = function(id){
+            const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
+            inp.onchange = () => { const f = inp.files && inp.files[0]; if(!f) return;
+                const rd = new FileReader();
+                rd.onload = e => { const img = new Image(); img.onload = async () => {
+                    try {
+                        const max=256; let w=img.width, h=img.height; const sc=Math.min(1, max/Math.max(w,h)); w=Math.max(1,Math.round(w*sc)); h=Math.max(1,Math.round(h*sc));
+                        const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h);
+                        const dataUrl = c.toDataURL('image/jpeg', 0.85);
+                        const r = await fetch(`${API_URL}/api/product/edit`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id, thumbnail:dataUrl})});
+                        if(!r.ok) throw new Error('저장 실패');
+                        showToast('상품 이미지가 변경되었습니다.'); loadMyStore();
+                    } catch(err){ showToast('이미지 변경 실패: '+(err.message||err)); }
+                }; img.src = e.target.result; };
+                rd.readAsDataURL(f);
+            };
+            inp.click();
         };
 
         window.toggleEditMode = async (id) => {
@@ -6353,7 +6377,7 @@ pdfjsScript,
 
                     h += `<div class="clean-card">
                         <div class="img-wrap" onclick="openProductPreview('${p.id}', ${isMine||bOri ? 'true':'false'})">
-                            <img src="${p.thumbnail || ''}" alt="${(p.name||'').replace(/"/g,'&quot;')}" onerror="this.style.background='#f1f5f9'; this.src='';">
+                            <img src="${window.prodThumbSrc(p)}" alt="${(p.name||'').replace(/"/g,'&quot;')}" onerror="this.onerror=null;this.src=window.PROD_ICON;">
                             ${showNewTag ? '<div class="tag-new">NEW</div>' : ''}
                             ${discountPct > 0 ? `<div class="tag-discount">-${discountPct}%</div>` : ''}
                         </div>
@@ -9699,7 +9723,8 @@ pdfjsScript,
 
             function orderInfoHtml(){
                 const cu = currentUser || {};
-                const clinic = cu.biz_company || cu.realname || cu.name || '';
+                // 🦷 거래처 = 상점명(입장한 기공소 상점). storeName 없으면 상점정보/구매자 상호로 폴백.
+                const clinic = (window.rxOrderState && window.rxOrderState.storeName) || cu.biz_company || cu.realname || cu.name || '';
                 const today = new Date(); const yyyy=today.getFullYear(), mm=String(today.getMonth()+1).padStart(2,'0'), dd=String(today.getDate()).padStart(2,'0');
                 return `
                 <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:14px;">
