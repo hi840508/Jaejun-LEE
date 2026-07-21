@@ -1204,6 +1204,12 @@
                             <input type="url" id="prod-link-url" placeholder="예: https://oreumpartners.com/main/main.asp" style="width:100%; padding:8px; border-radius:6px; border:1px solid #c7d2fe;">
                             <div style="font-size:11px; color:#4338ca; margin-top:4px;">입력하면 파일 없이도 등록되며, 상품 클릭 시 이 페이지로 연결됩니다.</div>
                         </div>
+                        <!-- 🦷 기공소 카테고리: 수가 품목에서 선택 → 상품명/가격 자동입력(읽기전용). 가격 수정은 수가 관리에서만. -->
+                        <div id="prod-rx-pick-row" style="display:none; margin-bottom:10px; background:#f5f3ff; border:1px solid #ddd6fe; border-radius:8px; padding:10px 12px;">
+                            <label style="font-size:12px; font-weight:bold; color:#5b21b6; display:block; margin-bottom:4px;">🦷 보철 품목 선택 (수가) <span style="color:var(--danger);">*</span></label>
+                            <select id="prod-rx-pick" onchange="onProdRxPick()" style="width:100%; padding:9px 10px; border-radius:6px; border:1px solid #ddd6fe; font-size:13px; background:#fff;"><option value="">보철 품목을 선택하세요…</option></select>
+                            <div style="font-size:11px; color:#7c3aed; margin-top:4px;">가격은 <b>보철 품목·수가 관리</b>에서만 수정됩니다. 상품엔 사진/설명만 추가하세요.</div>
+                        </div>
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                             <div>
                                 <label style="font-size:12px; font-weight:bold; color:var(--text-main); display:block; margin-bottom:4px;">상품명 <span style="color:var(--danger);">*</span></label>
@@ -5011,6 +5017,7 @@
                     stepBox.style.borderColor = '#2a2a2a';
                     stepBox.style.background = '#f4f4f5';
                 }
+                _syncLabProductForm(sel.value);
             } else {
                 overlay.style.display = 'block';
                 content.style.display = 'none';
@@ -5018,7 +5025,47 @@
                     stepBox.style.borderColor = '#2a2a2a';
                     stepBox.style.background = '#f4f4f5';
                 }
+                _syncLabProductForm('');
             }
+        };
+        // 🦷 기공소 매장이면 수가 품목 드롭다운 노출 + 상품명/가격 자동입력(읽기전용). 일반 매장이면 자유 입력.
+        window._syncLabProductForm = async function(storeId){
+            const row = document.getElementById('prod-rx-pick-row');
+            const nameEl = document.getElementById('prod-name');
+            const priceEl = document.getElementById('prod-price-original');
+            const st = (window.myBrandStores||[]).find(s=>s.id===storeId);
+            const isLab = !!(st && st.category === 'dental_lab');
+            if(!row) return;
+            if(!isLab){
+                row.style.display = 'none';
+                if(nameEl){ nameEl.readOnly = false; nameEl.style.background=''; nameEl.placeholder='예: 맞춤형 명함 디자인 패키지'; }
+                if(priceEl){ priceEl.readOnly = false; priceEl.style.background=''; priceEl.placeholder='예: 10000'; }
+                return;
+            }
+            row.style.display = 'block';
+            if(nameEl){ nameEl.readOnly = true; nameEl.style.background='#f1f5f9'; nameEl.value=''; nameEl.placeholder='아래 보철 품목을 선택하면 자동 입력'; }
+            if(priceEl){ priceEl.readOnly = true; priceEl.style.background='#f1f5f9'; priceEl.value=''; priceEl.placeholder='수가에서 자동 입력'; }
+            const psel = document.getElementById('prod-rx-pick');
+            if(psel) psel.innerHTML = '<option value="">불러오는 중…</option>';
+            try {
+                const r = await fetch(`${API_URL}/api/store/rx-items/${encodeURIComponent(storeId)}`);
+                const d = await r.json();
+                const items = (d.items||[]).filter(x=>(x.name||'').trim());
+                window.__labRxItems = items;
+                if(psel){
+                    psel.innerHTML = items.length
+                        ? ('<option value="">보철 품목을 선택하세요…</option>' + items.map((x,i)=>`<option value="${i}">${(x.name||'').replace(/</g,'&lt;')} · ${(Number(x.price)||0).toLocaleString()}원${x.category?(' ('+x.category+')'):''}</option>`).join(''))
+                        : '<option value="">등록된 보철 품목이 없습니다 — 수가 관리에서 먼저 등록하세요</option>';
+                }
+            } catch(_){ if(psel) psel.innerHTML = '<option value="">품목 로드 실패</option>'; }
+        };
+        window.onProdRxPick = function(){
+            const psel = document.getElementById('prod-rx-pick');
+            const it = (window.__labRxItems||[])[Number(psel && psel.value)];
+            const nameEl = document.getElementById('prod-name');
+            const priceEl = document.getElementById('prod-price-original');
+            if(it){ if(nameEl) nameEl.value = it.name||''; if(priceEl) priceEl.value = Number(it.price)||0; }
+            else { if(nameEl) nameEl.value=''; if(priceEl) priceEl.value=''; }
         };
 
         window.submitNewProduct = async function() {
@@ -6452,6 +6499,8 @@ pdfjsScript,
                 }
 
                 let h = '';
+                window.__marketProds = prods;   // 의뢰서 작성 버튼에서 상품 조회용
+                const labStore = !!(window.currentMarketFilterStore && window.currentMarketFilterStore.category === 'dental_lab');
                 prods.forEach((p, idx) => {
                     const isMine = p.seller === currentUser.name;
                     const bOri = history.find(hi => hi.buyer === currentUser.name && hi.productId === p.id && hi.purchaseType === 'original' && !hi.refunded);
@@ -6465,6 +6514,10 @@ pdfjsScript,
                         // 🦷 기공소 의뢰서 작성 기본 상품: 가격 대신 '의뢰서 작성' 버튼(간편/상세 선택)
                         const safeName = (p.name||'').replace(/'/g,"\\'");
                         actions = `<button class="btn-original" onclick="buyAsset('${p.id}', '${safeName}', 0, '${p.seller}', 'original')" title="의뢰서 작성" style="width:100%; background:linear-gradient(135deg,#7c3aed,#5b21b6);">🦷 의뢰서 작성 (간편/상세)</button>`;
+                    } else if(labStore) {
+                        // 🦷 기공소 카테고리 상품(수가 품목): 가격(수가) 표시 + 품목명 자동완성 의뢰서 작성 버튼 고정
+                        const priceLab = `<div style="font-size:12px;color:#64748b;margin-bottom:6px;">수가 <b style="color:var(--text-main);">${Number(price).toLocaleString()}원</b> · 금액은 의뢰서 확인 후 기공소가 확정</div>`;
+                        actions = priceLab + `<button class="btn-original" onclick="startProductRx('${p.id}')" title="의뢰서 작성" style="width:100%; background:linear-gradient(135deg,#7c3aed,#5b21b6);">🦷 의뢰서 작성 (간편/상세)</button>`;
                     } else {
                         const safeName = (p.name||'').replace(/'/g,"\\'");
                         const ownedBadge = bOri ? `<div style="font-size:10px; color:var(--success); font-weight:600; margin-bottom:4px;">이미 구매함 · "내 구매"에서 열람 가능</div>` : '';
@@ -10054,13 +10107,25 @@ pdfjsScript,
 
             /* ---------- 의뢰서: 간편/상세 선택 ---------- */
             window.rxOrderState = null;
+            // 🦷 기공소 상품(수가 품목) 카드에서 '의뢰서 작성' → 품목명 자동완성으로 의뢰서 시작.
+            window.startProductRx = function(pId){
+                const p = (window.__marketProds||[]).find(x=>String(x.id)===String(pId));
+                if(!p) return showToast('상품 정보를 찾을 수 없습니다.');
+                openRxChoiceModal(p, 0, p.seller, 'original');
+            };
+            function _rxProductInfoHtml(){
+                const st = window.rxOrderState; if(!st || !st.preselectName) return '';
+                const thumb = st.productThumb ? `<img src="${st.productThumb}" style="width:64px;height:64px;object-fit:cover;border-radius:10px;flex:none;border:1px solid #e2e8f0;">` : '<div style="width:64px;height:64px;border-radius:10px;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-size:26px;flex:none;">🦷</div>';
+                return `<div style="display:flex;gap:12px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:14px;">${thumb}<div style="min-width:0;"><div style="font-size:11px;color:#94a3b8;font-weight:700;">선택한 품목</div><div style="font-size:14px;font-weight:800;color:var(--primary);">${esc(st.preselectName)}</div>${st.productDesc?`<div style="font-size:12px;color:#64748b;margin-top:2px;white-space:pre-wrap;">${esc(st.productDesc)}</div>`:''}</div></div>`;
+            }
             window.openRxChoiceModal = async function(product, amount, seller, purchaseType){
                 let items = [], storeName = '', storeId = product.storeId || '';
                 try {
                     const res = await fetch(`${API_URL}/api/store/rx-items/${encodeURIComponent(storeId)}`);
                     const d = await res.json(); items = d.items||[]; storeName = d.storeName||''; storeId = d.storeId||storeId;
                 } catch(_){}
-                window.rxOrderState = { product, seller, amount:0, storeId, storeName, mode:'simple', rxItems:items, attachFiles:[], items:[] };
+                const preName = (product && Number(product.rx_form) !== 1) ? (product.name||'') : '';
+                window.rxOrderState = { product, seller, amount:0, storeId, storeName, mode:'simple', rxItems:items, attachFiles:[], items:[], preselectName:preName, productThumb:(product&&product.thumbnail)||'', productDesc:(product&&product.description)||'' };
                 overlay('rx-choice-modal', `
                     <div style="padding:22px 24px;text-align:center;">
                         <h3 style="margin:0 0 4px;font-size:20px;font-weight:900;color:var(--primary);">의뢰서 선택</h3>
@@ -10124,7 +10189,7 @@ pdfjsScript,
             window.openSimpleRxForm = function(){
                 const st = window.rxOrderState; if(!st) return;
                 st.mode = 'simple'; window._rxAmPm='am';
-                if(!st.items.length) st.items = [{ makeType:'신규 제작', teeth:[], name:'', memo:'' }];
+                if(!st.items.length) st.items = [{ makeType:'신규 제작', teeth:[], name:(st.preselectName||''), memo:'' }];
                 overlay('rx-form-modal', `
                     <div style="padding:20px 24px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--primary);padding-bottom:10px;margin-bottom:14px;">
@@ -10132,6 +10197,7 @@ pdfjsScript,
                             <span onclick="rxCloseOverlay('rx-form-modal')" style="cursor:pointer;font-size:24px;color:#94a3b8;line-height:1;">&times;</span>
                         </div>
                         <div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px;padding:10px 14px;border-radius:8px;margin-bottom:14px;">ⓘ 간편 의뢰서는 금액 미정으로 전송되며, 기공소가 확인 후 수가를 확정합니다.</div>
+                        ${_rxProductInfoHtml()}
                         ${orderInfoHtml()}
                         <div style="font-size:15px;font-weight:800;color:var(--primary);margin-bottom:10px;">기공물 정보</div>
                         <div id="rx-items-container"></div>
@@ -10149,7 +10215,14 @@ pdfjsScript,
             window.openDetailRxForm = function(){
                 const st = window.rxOrderState; if(!st) return;
                 st.mode = 'detail'; window._rxAmPm='am';
-                if(!st.items.length) st.items = [{ teeth:[], selected:[], memo:'' }];
+                if(!st.items.length){
+                    const sel = [];
+                    if(st.preselectName && Array.isArray(st.rxItems)){
+                        const mi = st.rxItems.find(x=>(x.name||'')===st.preselectName);
+                        if(mi) sel.push({ name:mi.name, category:mi.category||'', price:Number(mi.price)||0, pontic:Number(mi.pontic)||0, ponticCount:0 });
+                    }
+                    st.items = [{ teeth:[], selected:sel, memo:'' }];
+                }
                 overlay('rx-form-modal', `
                     <div style="padding:20px 24px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #059669;padding-bottom:10px;margin-bottom:14px;">
@@ -10157,6 +10230,7 @@ pdfjsScript,
                             <span onclick="rxCloseOverlay('rx-form-modal')" style="cursor:pointer;font-size:24px;color:#94a3b8;line-height:1;">&times;</span>
                         </div>
                         <div style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:12px;padding:10px 14px;border-radius:8px;margin-bottom:14px;">ⓘ 등록된 보철 품목/수가에서 선택하면 합계가 자동 계산되어 결제 예정 금액으로 전송됩니다.</div>
+                        ${_rxProductInfoHtml()}
                         ${orderInfoHtml()}
                         <div style="font-size:15px;font-weight:800;color:#059669;margin-bottom:10px;">기공물 정보 (품목 선택)</div>
                         <div id="rx-items-container"></div>
