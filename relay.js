@@ -248,6 +248,7 @@ function initTables() {
         db.run(`ALTER TABLE product_orders ADD COLUMN pay_method TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN pg_approval TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN remake_of INTEGER`, () => {});   // 🔁 리메이크/리페어: 원주문 id
+        db.run(`ALTER TABLE transactions ADD COLUMN make_kind TEXT`, () => {});         // 🦷 기공: 신규제작/리메이크/리페어 구분
         db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_at INTEGER`, () => {});        // ⏱ 거절 후 자동 삭제 예정 시각(epoch ms)
         db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_after_id INTEGER`, () => {});  // 이 chat id 이후 새 대화 없으면 삭제
         db.run(`ALTER TABLE users ADD COLUMN card_pw TEXT`, () => {});   // (선택) 회원가입 시 카드 비밀번호 4자리 — 실 PG 대비 저장만, 현재 미검증
@@ -1272,9 +1273,10 @@ app.post('/api/order/pay', (req, res) => {
                 db.run(`UPDATE product_orders SET status='approved', pay_method=? WHERE id=? AND status='awaiting_payment'`, [payMethod, orderId], function(fe){
                     if (fe) { db.run('ROLLBACK'); return res.status(500).json({ error: fe.message }); }
                     if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '이미 처리된 주문입니다.' }); }
+                    const makeKind = /^\[리메이크\]/.test(ord.memo || '') ? '리메이크' : (/^\[리페어\]/.test(ord.memo || '') ? '리페어' : '신규제작');
                     const _afterHold = () => {
-                        db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, pay_method, pg_approval) VALUES (?, ?, ?, ?, ?, 'original', ?, ?, ?, ?)`,
-                            [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date, payMethod, ord.pg_approval || null],
+                        db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, pay_method, pg_approval, make_kind) VALUES (?, ?, ?, ?, ?, 'original', ?, ?, ?, ?, ?)`,
+                            [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date, payMethod, ord.pg_approval || null, makeKind],
                             function(ie){
                                 if (ie) { db.run('ROLLBACK'); return res.status(500).json({ error: ie.message }); }
                                 const txId = this.lastID;
@@ -2126,6 +2128,7 @@ app.get('/api/transactions/:name', async (req, res) => {
                 amount: t.amount, productName: t.productName, buyer: t.buyer, seller: isBuyer ? t.seller : t.buyer,
                 refunded: !!t.refunded, refundable, refundStatus: refStatus, refundRequestId: t.refund_request_id,
                 storeName: t.storeName || null, storeId: t.p_storeId || null, fileNames: fileNames,
+                makeKind: t.make_kind || null, storeCategory: t.storeCategory || null,   // 🦷 기공: 신규제작/리메이크/리페어
                 // 🧾 거래처 표기명(세금계산서와 통일): 상대방 실명(상호) → 없으면 브랜드 → ID
                 counterpartyRealname: (isBuyer ? t.sellerRealname : t.buyerRealname) || null
             });
