@@ -1151,7 +1151,7 @@ function _autoFavIfLab(buyer, productId) {
 
 // 💰 [에스크로] 주문 상품의 상점이 Admin 통합관리(admin_managed=1)인지 조회 → cb(managed:boolean, store)
 function _orderStoreManaged(ord, cb) {
-    db.get(`SELECT s.id AS sid, s.admin_managed AS am, s.name AS sname FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e, row) => {
+    db.get(`SELECT s.id AS sid, s.admin_managed AS am, s.name AS sname, s.category AS cat FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e, row) => {
         cb(!!(row && Number(row.am) === 1), row || null);
     });
 }
@@ -1174,8 +1174,20 @@ app.post('/api/order/approve', (req, res) => {
             const pName = (pRow && pRow.name) || ord.productId;
             const date = new Date().toLocaleString('ko-KR');
             const payTag = isCard ? 'card' : 'balance';
-            _orderStoreManaged(ord, (managed) => {
+            _orderStoreManaged(ord, (managed, info) => {
                 const admin = _adminAccount();
+                const isLab = !!(info && info.cat === 'dental_lab');
+                // 🦷 기공소: 승인=금액확정만(결제 없음). status→awaiting_payment. 구매자가 결제해야 에스크로 보관 시작.
+                if (isLab) {
+                    if (amount <= 0) return res.status(400).json({ error: '금액이 확정되지 않았습니다. 먼저 확정 금액을 입력하고 승인하세요.' });
+                    db.run(`UPDATE product_orders SET status='awaiting_payment' WHERE id=? AND status='pending'`, [orderId], function(fe){
+                        if (fe) return res.status(500).json({ error: fe.message });
+                        if (this.changes === 0) return res.status(400).json({ error: '이미 처리된 주문입니다.' });
+                        _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'awaiting_payment', `✅ [승인] 기공소가 금액(${amount.toLocaleString()}원)을 확정·승인했습니다. 구매자님이 결제하면 제작이 진행됩니다.`);
+                        return res.json({ success: true, awaitingPayment: true, amount });
+                    });
+                    return;
+                }
                 // 🔒 [간편 의뢰서 0원 우회 차단] 에스크로(Admin 통합관리) 상점 주문은 금액 미확정(<=0)이면 승인 불가 → 재견적으로 금액 확정 후 승인.
                 if (managed && amount <= 0) return res.status(400).json({ error: '금액이 확정되지 않은 의뢰서입니다. 먼저 금액을 확정(재견적)하세요.' });
                 if (managed && amount > 0) {
@@ -1230,6 +1242,57 @@ app.post('/api/order/approve', (req, res) => {
                         });
                     });
                 }
+            });
+        });
+    });
+});
+
+// 💳 구매자 결제 — 기공소가 금액확정·승인(awaiting_payment)한 주문을 구매자가 결제 → 에스크로 보관(→approved).
+app.post('/api/order/pay', (req, res) => {
+    const buyer = requireUser(req, res); if (!buyer) return;   // ★신원=토큰
+    const { orderId } = req.body;
+    const payMethod = (req.body.payMethod === 'card') ? 'card' : 'balance';
+    db.get(`SELECT * FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+        if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        if (ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 결제할 수 있습니다.' });
+        if (ord.status === 'approved') return res.json({ success: true, message: '이미 결제됨', txId: ord.txId });   // 멱등
+        if (ord.status !== 'awaiting_payment') return res.status(400).json({ error: '결제할 수 있는 상태가 아닙니다.' });
+        const amount = ord.amount || 0;
+        if (!(amount > 0)) return res.status(400).json({ error: '확정 금액이 없습니다.' });
+        const admin = _adminAccount();
+        const isCard = payMethod === 'card';
+        db.get(`SELECT name FROM products WHERE id = ?`, [ord.productId], (e3, pRow) => {
+            const pName = (pRow && pRow.name) || ord.productId;
+            const date = new Date().toLocaleString('ko-KR');
+            db.serialize(() => {
+                db.run('BEGIN IMMEDIATE');
+                db.run(`UPDATE product_orders SET status='approved', pay_method=? WHERE id=? AND status='awaiting_payment'`, [payMethod, orderId], function(fe){
+                    if (fe) { db.run('ROLLBACK'); return res.status(500).json({ error: fe.message }); }
+                    if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '이미 처리된 주문입니다.' }); }
+                    const _afterHold = () => {
+                        db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, pay_method, pg_approval) VALUES (?, ?, ?, ?, ?, 'original', ?, ?, ?, ?)`,
+                            [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date, payMethod, ord.pg_approval || null],
+                            function(ie){
+                                if (ie) { db.run('ROLLBACK'); return res.status(500).json({ error: ie.message }); }
+                                const txId = this.lastID;
+                                db.run(`UPDATE product_orders SET txId=?, escrow_held=? WHERE id=?`, [txId, amount, orderId]);
+                                db.run('COMMIT', () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', `💳 [결제 완료] 결제(${amount.toLocaleString()}원)가 완료되어 에스크로 보관되었습니다. 기공소가 제작을 시작합니다.`); _autoFavIfLab(ord.buyer, ord.productId); res.json({ success: true, txId, amount, escrow: true, payMethod }); });
+                            });
+                    };
+                    if (isCard) {
+                        db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, admin], function(ue){
+                            if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
+                            _afterHold();
+                        });
+                    } else {
+                        db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [amount, ord.buyer, amount], function(ue){
+                            if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
+                            if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '잔액이 부족합니다. 충전 후 결제하세요.' }); }
+                            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, admin]);
+                            _afterHold();
+                        });
+                    }
+                });
             });
         });
     });
