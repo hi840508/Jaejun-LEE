@@ -1272,6 +1272,8 @@
                         <button class="btn btn-outline" style="padding:8px 14px; font-size:12px; display:none;" onclick="loadMyPurchases()">새로고침</button>
                     </div>
                 </div>
+                <!-- 🚀 대기 중 주문(승인 전) — 채팅을 닫아도 여기서 확인/취소 가능 -->
+                <div id="my-pending-orders-wrap" style="display:none;"></div>
                 <div class="panel" style="padding:0; overflow:hidden;">
                     <div style="padding:10px 14px; background:#f8fafc; border-bottom:1px solid var(--border-color); display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                         <input type="text" id="my-purchases-search" placeholder="상품명 / 판매자 검색..." style="flex:1; min-width:200px; padding:8px 12px; border-radius:6px; border:1px solid var(--border-color); outline:none;" oninput="filterMyPurchases()">
@@ -2375,14 +2377,27 @@
         (function(){
             const _origFetch = window.fetch.bind(window);
             window.fetch = function(input, opts){
+                let u = '';
                 try {
-                    const u = (typeof input === 'string') ? input : (input && input.url) || '';
+                    u = (typeof input === 'string') ? input : (input && input.url) || '';
                     if (window.EARTH_TOKEN && (u.indexOf(API_URL) === 0 || u.indexOf('/api/') === 0)) {
                         opts = Object.assign({}, opts);
                         opts.headers = Object.assign({}, (opts && opts.headers) || {}, { 'x-auth-token': window.EARTH_TOKEN });
                     }
                 } catch(_){}
-                return _origFetch(input, opts);
+                const p = _origFetch(input, opts);
+                // 🔐 401(만료/무효 세션) 감지 → 토큰 정리 + 로그인 화면 복귀. auth 엔드포인트 자체는 제외(로그인 루프 방지).
+                try {
+                    const isApi = (u.indexOf(API_URL) === 0 || u.indexOf('/api/') === 0);
+                    const isAuthEp = /\/api\/auth\//.test(u);
+                    if (isApi && !isAuthEp && window.EARTH_TOKEN) {
+                        return p.then(function(res){
+                            if (res && res.status === 401) { try { if (window.__handleSessionExpired) window.__handleSessionExpired(); } catch(_){} }
+                            return res;
+                        });
+                    }
+                } catch(_){}
+                return p;
             };
         })();
 
@@ -2544,6 +2559,7 @@
             const biz_no = _v('reg-biz-no'), biz_company = _v('reg-biz-company'), biz_ceo = _v('reg-biz-ceo');
             const biz_addr = _v('reg-biz-addr'), biz_industry = _v('reg-biz-industry'), biz_item = _v('reg-biz-item'), tax_email = _v('reg-tax-email');
             if(!name || !password || !realname || !bank || !account) return showToast("ID/비밀번호/실명/은행/계좌는 필수입니다.");
+            if(password.length < 4) return showToast("비밀번호는 4자 이상이어야 합니다.");
             if(!business_type) return showToast("업체 유형을 선택해 주세요.");
             // 개인 외 사업자 유형은 사업자등록번호·상호를 권장(필수)
             if(business_type && business_type !== 'individual' && (!biz_no || !biz_company)) return showToast("사업자 정보의 사업자등록번호와 상호를 입력해 주세요. (세금계산서 발행용)");
@@ -2658,6 +2674,24 @@
 
         function logout() { _postAuthToParent(null); try{ if(window.EARTH_TOKEN) fetch(`${API_URL}/api/auth/logout`, { method:'POST', headers:{ 'x-auth-token': window.EARTH_TOKEN } }); }catch(_){} setEarthToken(''); localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
 
+        // 🔐 세션 만료(401) 처리 — 토큰 제거 + 안내 토스트 + 로그인 화면 복귀. 중복 호출 방지(짧은 디바운스).
+        window.__handleSessionExpired = function(){
+            if(window.__sessionExpiredHandling) return;
+            window.__sessionExpiredHandling = true;
+            try { setEarthToken(''); } catch(_){}
+            try { localStorage.removeItem('earth_auto_login'); } catch(_){}
+            try { _postAuthToParent(null); } catch(_){}
+            currentUser = null; isAdmin = false;
+            try { if(window.stopPendingOrdersPolling) window.stopPendingOrdersPolling(); } catch(_){}
+            try { showToast('세션이 만료되었습니다. 다시 로그인해 주세요.'); } catch(_){}
+            try {
+                const ws = document.getElementById('workspace-section'); if(ws) ws.style.display = 'none';
+                const ls = document.getElementById('login-section'); if(ls) ls.style.display = 'block';
+                const lw = document.getElementById('login-wrap'); if(lw) lw.style.display = 'block';
+            } catch(_){}
+            setTimeout(function(){ window.__sessionExpiredHandling = false; }, 4000);
+        };
+
         function loginSuccess(data) {
             currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
             _postAuthToParent(data);   // ★Earth 일원화★ 부모 앱에 로그인 상태 통지(세션복원 포함 — 모든 로그인이 여기로 수렴)
@@ -2699,6 +2733,29 @@
             // 🔐 소켓 핸드셰이크에 세션 토큰 전달 → 서버가 신원 바인딩 + 개인 룸 가입(스코프 전송 수신). 발신자 위조 차단.
             socket = io(API_URL, { transports: ['websocket', 'polling'], auth: { token: window.EARTH_TOKEN || localStorage.getItem('earth_token') || '' } });
             socket.on('receive_message', handleReceiveMessage);
+            // 🚀 [v9] 재접속 처리 — 서버에 오프라인 큐가 없으므로 재연결 시 채팅목록/현재방 히스토리를 다시 동기화 + 대기 첨부 flush
+            socket.on('connect', () => {
+                if(window.__socketWasConnected) {
+                    try { if(typeof loadChatList === 'function') loadChatList(); } catch(_){}
+                    try {
+                        const roomOpen = document.getElementById('view-chat-room') && document.getElementById('view-chat-room').classList.contains('active');
+                        if(currentChatRoomId) socket.emit('join_room', currentChatRoomId);
+                        if(roomOpen && activeChatFriend && typeof openMessengerChat === 'function') openMessengerChat(activeChatFriend, currentChatRoomId);
+                    } catch(_){}
+                    try { if(window.__flushPendingChatAttach) window.__flushPendingChatAttach(); } catch(_){}
+                    try { showToast('네트워크에 다시 연결되었습니다.'); } catch(_){}
+                }
+                window.__socketWasConnected = true;
+                const ind = document.getElementById('chat-conn-indicator'); if(ind) ind.remove();
+            });
+            socket.on('disconnect', () => {
+                if(document.getElementById('chat-conn-indicator')) return;
+                const ind = document.createElement('div');
+                ind.id = 'chat-conn-indicator';
+                ind.textContent = '⚠ 연결 끊김 — 재연결 시도 중…';
+                ind.style.cssText = 'position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:#dc2626; color:#fff; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:700; z-index:99998; box-shadow:0 4px 12px rgba(0,0,0,.25);';
+                document.body.appendChild(ind);
+            });
             // 🚀 실시간 친구 추가 알림 (별도 새로고침 없이 친구목록/대화방 즉시 갱신)
             socket.on('friend_added', handleFriendAdded);
             // 🚀 [v8+] 메시지 수정/삭제 실시간 반영
@@ -4566,6 +4623,7 @@
                     'shipping':  { txt: '배송중',     bg: '#dbeafe', color: '#1e40af', icon: '🚚' },
                     'delivered': { txt: '배송완료',   bg: '#e0e7ff', color: '#3730a3', icon: '📦' },
                     'confirmed': { txt: '구매확정·정산대기', bg: '#dcfce7', color: '#166534', icon: '🔒' },
+                    'settled':   { txt: '정산완료',   bg: '#dcfce7', color: '#166534', icon: '💰' },
                     'refund_requested': { txt: '환불요청', bg: '#ffedd5', color: '#9a3412', icon: '⚠' },
                     'refunded':  { txt: '환불완료',   bg: '#fee2e2', color: '#991b1b', icon: '↩' },
                     'rejected':  { txt: '거절됨',     bg: '#fee2e2', color: '#991b1b', icon: '✕' },
@@ -4575,11 +4633,19 @@
                 const _obtn = (label,color,fn)=>`<button onclick="event.stopPropagation(); ${fn}" style="padding:5px 9px; font-size:11px; font-weight:700; border:1px solid ${color}; color:${color}; background:#fff; border-radius:6px; cursor:pointer; white-space:nowrap;">${label}</button>`;
                 let h = '';
                 orders.forEach(o => {
-                    const stat = statusLabels[o.status] || { txt: o.status, bg: '#fff', color: '#64748b', icon: '·' };
+                    // 💰 정산완료(settled=1)면 상태를 '정산완료'로 표기(구매확정·정산대기 → 정산완료)
+                    const stKey = (o.settled && (o.status === 'confirmed' || o.status === 'settled')) ? 'settled' : o.status;
+                    const stat = statusLabels[stKey] || { txt: o.status, bg: '#fff', color: '#64748b', icon: '·' };
                     const dt = (o.created_at || '').replace('T', ' ').substring(0, 16);
                     const isPending = o.status === 'pending';
                     let acts = '';
-                    if(o.status === 'approved') acts = _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
+                    if(o.status === 'pending') {
+                        // 🚀 판매 관리에서도 승인/거절 가능(대화방 밖) — 금액 0(간편 의뢰서)은 재견적 먼저
+                        if(Number(o.amount||0) === 0) acts += _obtn('💰 금액확정','#f59e0b',`requoteOrderPrompt('${o.id}')`);
+                        acts += _obtn('승인','#059669',`approvePendingOrder('${o.id}','${(o.productName||'').replace(/'/g,"\\'")}',${Number(o.amount||0)})`);
+                        acts += _obtn('거절','#dc2626',`rejectPendingOrder('${o.id}')`);
+                    }
+                    else if(o.status === 'approved') acts = _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     else if(o.status === 'shipping') acts = _obtn('송장 수정','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     else if(o.status === 'delivered') acts = _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     else if(o.status === 'refund_requested') acts = _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
@@ -4768,8 +4834,13 @@
 
         window.handleFilesSelected = async function(files) {
             scannedFiles = Array.from(files); if(scannedFiles.length === 0) return; const storeId = document.getElementById('target-brand-selector').value; if(!storeId) return showToast("상향 콤보박스에서 상점을 선택하세요.");
+            // 🚀 가격을 묻고 검증 — 기존엔 무음으로 10,000원 고정 등록되던 버그
+            const _raw = prompt(`등록할 ${scannedFiles.length}개 상품의 판매가(원)를 입력하세요.`, '');
+            if(_raw === null) return;
+            const price = Number((_raw||'').trim());
+            if((_raw||'').trim()==='' || !Number.isFinite(price) || price < 0 || !Number.isInteger(price)) return showToast("판매가를 0원 이상의 정수로 입력하세요.");
             showToast("Zlib 압축 및 보안 인코딩 변환 개시...");
-            for(let i=0; i<scannedFiles.length; i++) { await uploadProductToServer(scannedFiles[i], 1000, 10000, 7, 'd', storeId); }
+            for(let i=0; i<scannedFiles.length; i++) { await uploadProductToServer(scannedFiles[i], 0, price, 7, 'd', storeId); }
             showToast("상품 등록 완료"); loadMyStore();
             const fp = document.getElementById('file-picker'); if(fp) fp.value = '';
         }
@@ -4951,7 +5022,8 @@
         window.submitNewProduct = async function() {
             const name = document.getElementById('prod-name').value.trim();
             const pStr = 0;
-            const pOri = parseInt(document.getElementById('prod-price-original').value) || 10000;
+            const _priceRaw = (document.getElementById('prod-price-original').value || '').trim();
+            const pOri = Number(_priceRaw);
             const description = document.getElementById('prod-description').value.trim();
             const storeId = document.getElementById('target-brand-selector').value;
             const files = window.prodFormState.files;
@@ -4961,6 +5033,8 @@
             const linkUrl = (isAdmin && document.getElementById('prod-link-url')) ? document.getElementById('prod-link-url').value.trim() : '';
             if(!name) return showToast("상품명을 입력하세요.");
             if(!storeId) return showToast("상점을 먼저 선택하세요.");
+            // 🚀 판매가 검증 — 빈칸/음수/비숫자는 거부(기존엔 무음으로 10,000원 기본값 적용되던 버그)
+            if(_priceRaw === '' || !Number.isFinite(pOri) || pOri < 0 || !Number.isInteger(pOri)) return showToast("판매가를 0원 이상의 정수로 입력하세요.");
             if(!linkUrl && files.length === 0) return showToast("최소 1개 이상의 상품 파일을 등록하세요. (관리자는 홈페이지 주소 입력 가능)");
 
             // 링크 상품 경로: 파일 인코딩 없이 URL만 등록
@@ -5576,7 +5650,7 @@ pdfjsScript,
             showToast(arr.length === 1 ? `${arr[0].name} 업로드 중...` : `${arr.length}개 파일 업로드 중...`);
 
             const pic = document.getElementById('my-profile-pic').src;
-            let okCount = 0;
+            let sentCount = 0, queuedCount = 0;
             for(const f of arr) {
                 try {
                     const url = await window.uploadChatAttachment(f);
@@ -5586,17 +5660,32 @@ pdfjsScript,
                     const msg = `[FILE_ATTACH]${f.name}|${sizeKB}|${mime}|${url}`;
                     if(socket && socket.connected) {
                         socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
+                        sentCount++;
+                    } else {
+                        // 오프라인: 재연결 시 전송하도록 대기열에 저장(파일은 이미 서버 URL로 업로드됨)
+                        (window.__pendingChatEmits = window.__pendingChatEmits || []).push({ roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
+                        queuedCount++;
                     }
                     appendMainMessage(currentUser.name, msg, pic);
-                    okCount++;
                 } catch(e) {
                     showToast(`${f.name} 전송 실패: ${e.message || e}`);
                     if(window.__earthDiag) window.__earthDiag('handleChatFileAttach error: ' + (e.message || e), true);
                 }
             }
-            if(okCount) showToast(`전송 완료 · ${okCount}개 파일 (URL 방식 — 재로딩 없음)`);
+            // 연결 상태에 맞는 정확한 안내(끊긴 상태에서 "전송 완료" 거짓말 방지)
+            if(queuedCount && !sentCount) showToast(`오프라인 상태 · ${queuedCount}개 파일은 재연결 시 자동 전송됩니다.`);
+            else if(queuedCount) showToast(`전송 ${sentCount}개 완료 · ${queuedCount}개는 재연결 대기 중`);
+            else if(sentCount) showToast(`전송 완료 · ${sentCount}개 파일 (URL 방식 — 재로딩 없음)`);
             const ca = document.getElementById('chat-quick-attach'); if(ca) ca.value = '';
         }
+        // 🚀 [v9] 재연결 시 대기 중이던 채팅 emit(첨부 포함) 일괄 전송
+        window.__flushPendingChatAttach = function(){
+            if(!socket || !socket.connected) return;
+            const q = window.__pendingChatEmits || []; window.__pendingChatEmits = [];
+            if(!q.length) return;
+            q.forEach(m => { try { socket.emit('send_message', m); } catch(_){} });
+            try { showToast(`대기 중이던 첨부 ${q.length}건을 전송했습니다.`); } catch(_){}
+        };
 
         function uploadProductToServer(file, pStream, pOriginal, duration, unit, storeId) {
             return new Promise((resolve) => {
@@ -6313,8 +6402,8 @@ pdfjsScript,
                 if(q) prods = prods.filter(p => p.name.toLowerCase().includes(q) || (p.description && p.description.toLowerCase().includes(q)));
 
                 // 정렬
-                if(window.marketSortMode === 'price_asc') prods.sort((a,b) => (a.price_stream||0) - (b.price_stream||0));
-                else if(window.marketSortMode === 'price_desc') prods.sort((a,b) => (b.price_original||0) - (a.price_original||0));
+                if(window.marketSortMode === 'price_asc') prods.sort((a,b) => (Number(a.price_original)||0) - (Number(b.price_original)||0));
+                else if(window.marketSortMode === 'price_desc') prods.sort((a,b) => (Number(b.price_original)||0) - (Number(a.price_original)||0));
                 // latest는 서버에서 이미 id DESC 정렬
 
                 const histRes = await fetch(`${API_URL}/api/transactions/${currentUser.name}`); const history = await histRes.json() || [];
@@ -6407,7 +6496,11 @@ pdfjsScript,
                     </div>`;
                 });
                 grid.innerHTML = h;
-            } catch(e){ console.error('loadMarketplace error:', e); }
+            } catch(e){
+                console.error('loadMarketplace error:', e);
+                const g = document.getElementById('market-grid');
+                if(g) g.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:36px 20px; color:var(--danger); font-size:13px; background:#fff; border:1px dashed var(--border-color); border-radius:12px;">⚠️ 상품을 불러오지 못했습니다.<br><span style="font-size:11px; color:var(--text-sub);">${(e.message||'').replace(/</g,'&lt;')}</span><br><button class="btn btn-outline" onclick="loadMarketplace()" style="margin-top:10px; padding:6px 16px; font-size:12px;">🔄 다시 시도</button></div>`;
+            }
         }
 
         // 🚀 [v8] 상품 미리보기 (구매 안한 경우에는 결제 안내 토스트)
@@ -6977,6 +7070,23 @@ pdfjsScript,
 
                 const btn = document.getElementById('btn-download-original');
                 btn.style.display = allowDownload ? 'block' : 'none';
+                // 🔧 이전에 열었던 상품의 STALE 클로저 제거 후, 이 상품(단일/패키지 모두)로 다운로드 재바인딩
+                btn.onclick = null;
+                if(allowDownload) {
+                    btn.onclick = function() {
+                        const ctx = { seller: p.seller, timestamp: new Date().toLocaleString('ko-KR'), purchaseInfo: { amount: p.price_original || 0, purchaseType: 'original' } };
+                        const htmlContent = buildStandaloneViewerHTML(p, ctx);
+                        const blob = new Blob([htmlContent], { type: 'text/html' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const safe = (p.name || 'asset').replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ_.-]/g, '_');
+                        a.download = `${safe}_Bundle.html`;
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        showToast("원본 다운로드 완료");
+                    };
+                }
 
                 setTimeout(async () => {
                     try {
@@ -7063,22 +7173,7 @@ pdfjsScript,
                                 }
                             }
 
-                            if(allowDownload) {
-                                btn.onclick = function() {
-                                    const ctx = { seller: p.seller, timestamp: new Date().toLocaleString('ko-KR'), purchaseInfo: { amount: p.price_original || 0, purchaseType: 'original' } };
-                                    const htmlContent = buildStandaloneViewerHTML(p, ctx);
-                                    const blob = new Blob([htmlContent], { type: 'text/html' });
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = url;
-                                    // 🚀 [v7] 상품명을 파일명으로 (파일 이름이 아니라)
-                                    const safe = (p.name || 'asset').replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ_.-]/g, '_');
-                                    a.download = `${safe}_Bundle.html`;
-                                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                                    setTimeout(() => URL.revokeObjectURL(url), 1000);
-                                    showToast("원본 다운로드 완료");
-                                };
-                            }
+                            // (다운로드 버튼은 상단에서 단일/패키지 공통으로 이미 바인딩됨 — STALE 클로저 방지)
                         }
                         else {
                             display.innerHTML = `<div style="color:var(--danger);">상품 데이터가 비어 있습니다.</div>`;
@@ -8082,8 +8177,11 @@ pdfjsScript,
         function encryptAndSellFileInChat(event) {
             const file = event.target.files[0]; if(!file || !currentChatRoomId) return;
             const oriEl = document.getElementById('chat-file-p-ori');
-            const pOri = (oriEl && parseInt(oriEl.value)) || 10000;
-            
+            const _rawP = (oriEl && oriEl.value || '').trim();
+            const pOri = Number(_rawP);
+            // 🚀 판매가 검증 — 빈칸/음수/비숫자 거부(기존엔 무음으로 10,000원 기본 적용)
+            if(_rawP === '' || !Number.isFinite(pOri) || pOri < 0 || !Number.isInteger(pOri)) { showToast("판매가를 0원 이상의 정수로 입력하세요."); if(event.target) event.target.value=''; return; }
+
             showToast("1:1 비공개 상품 암호화 생성 중...");
             const reader = new FileReader();
             reader.onload = async function(e) {
@@ -8547,8 +8645,15 @@ pdfjsScript,
                 const safeMemo = (memo||'').replace(/</g,'&lt;');
                 const isSeller = !isMe;
                 const cardId = 'oc_' + orderId + '_' + Math.random().toString(36).substr(2, 6);
+                // 💰 금액 0(간편 의뢰서 등) — 판매자는 승인 전에 재견적으로 금액 확정. (에스크로 상점은 서버가 금액 0 승인 차단)
+                const requoteRow = (isSeller && amt === 0)
+                    ? `<div class="oc-requote-row" style="display:flex; gap:6px; padding:0 12px 8px; align-items:center;">
+                        <input type="number" id="rq-${orderId}" min="1" placeholder="확정 금액(원)" style="flex:1; padding:7px 8px; border:1px solid #cbd5e1; border-radius:8px; font-size:12px;">
+                        <button onclick="requoteOrder('${orderId}')" style="background:#f59e0b; color:#fff; border:none; padding:8px 10px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;">💰 금액 확정</button>
+                    </div>`
+                    : '';
                 const actionButtons = isSeller
-                    ? `<div style="display:flex; gap:6px; padding:0 12px 12px;">
+                    ? `${requoteRow}<div class="oc-seller-actions" style="display:flex; gap:6px; padding:0 12px 12px;">
                         <button onclick="rejectPendingOrder('${orderId}')" style="flex:1; background:#fff; color:var(--danger); border:1px solid var(--danger); padding:8px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer;">거절</button>
                         <button onclick="approvePendingOrder('${orderId}', '${safePName.replace(/'/g, "\\'")}', ${amt})" style="flex:2; background:var(--success); color:#fff; border:none; padding:8px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer;">승인 + 결제 처리</button>
                     </div>`
@@ -8560,7 +8665,7 @@ pdfjsScript,
                         <div style="font-size:14px; font-weight:600; margin-top:2px; word-break:break-all;">${safePName}</div>
                     </div>
                     <div style="padding:10px 12px;">
-                        <div style="font-size:18px; font-weight:800; color:#f59e0b; text-align:center;">${amt.toLocaleString()}원</div>
+                        <div class="oc-amt" style="font-size:18px; font-weight:800; color:#f59e0b; text-align:center;">${amt.toLocaleString()}원</div>
                         ${safeMemo ? `<div style="background:#fef9c3; padding:6px 8px; border-radius:6px; font-size:11px; color:#713f12; margin:8px 0; word-break:break-all;">${safeMemo}${memo.length > 60 ? '…' : ''}</div>` : ''}
                         ${fileCnt > 0 ? `<div style="font-size:11px; color:var(--text-sub); margin:4px 0;">첨부 파일 ${fileCnt}개</div>` : ''}
                         <button onclick="viewPendingOrderHtml('${orderId}')" style="width:100%; background:var(--primary); color:#fff; border:none; padding:8px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; margin-top:8px;">주문서 + 구매자 정보 열기</button>
@@ -8684,24 +8789,86 @@ pdfjsScript,
             if(res.ok) { showToast("결제가 완료되었습니다. 상품 소유권이 인증되었습니다."); updateUserBalance(); switchTab('history'); setTimeout(()=>openUniversalViewer(id, true), 400); } else { const d = await res.json(); showToast(d.error); }
         }
 
+        // 💰 [v9] 재견적(금액 확정) — 판매자, pending 주문만. 에스크로 상점은 금액 0 승인 불가 → 확정 후 승인 가능.
+        function _applyRequoteToCard(orderId, amount){
+            const card = document.querySelector('.kt-card-msg[data-order-id="'+orderId+'"]');
+            if(!card) return;
+            const pName = card.dataset.productName || '';
+            card.setAttribute('data-amount', String(amount));
+            const amtEl = card.querySelector('.oc-amt'); if(amtEl) amtEl.textContent = amount.toLocaleString()+'원';
+            const rq = card.querySelector('.oc-requote-row'); if(rq) rq.remove();
+            const act = card.querySelector('.oc-seller-actions');
+            if(act){
+                act.innerHTML = '';
+                const rej = document.createElement('button');
+                rej.style.cssText = 'flex:1; background:#fff; color:var(--danger); border:1px solid var(--danger); padding:8px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer;';
+                rej.textContent = '거절'; rej.onclick = function(){ rejectPendingOrder(orderId); };
+                const app = document.createElement('button');
+                app.style.cssText = 'flex:2; background:var(--success); color:#fff; border:none; padding:8px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer;';
+                app.textContent = '승인 + 결제 처리'; app.onclick = function(){ approvePendingOrder(orderId, pName, amount); };
+                act.appendChild(rej); act.appendChild(app);
+            }
+        }
+        async function _postRequote(orderId, amount){
+            const res = await fetch(`${API_URL}/api/order/requote`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, amount }) });
+            const data = await res.json().catch(()=>({}));
+            if(!res.ok) throw new Error(data.error || '금액 확정 실패');
+            return data;
+        }
+        window.requoteOrder = async function(orderId){
+            const inp = document.getElementById('rq-' + orderId);
+            const amount = inp ? parseInt(inp.value, 10) : NaN;
+            if(!Number.isFinite(amount) || amount <= 0) return showToast('확정 금액을 1원 이상 숫자로 입력하세요.');
+            if(!confirm(`주문 금액을 ${amount.toLocaleString()}원으로 확정합니다. 확정 후 승인할 수 있습니다.`)) return;
+            try {
+                await _postRequote(orderId, amount);
+                showToast(`금액 확정 · ${amount.toLocaleString()}원. 이제 승인할 수 있습니다.`);
+                _applyRequoteToCard(orderId, amount);
+                const smt = document.getElementById('tab-sales-mgmt');
+                if(smt && smt.classList.contains('active') && window.loadMySalesOrders) loadMySalesOrders();
+            } catch(e){ showToast('금액 확정 실패: ' + (e.message||e)); }
+        };
+        window.requoteOrderPrompt = async function(orderId){
+            const v = prompt('확정 금액(원)을 입력하세요.');
+            if(v === null) return;
+            const amount = parseInt(v, 10);
+            if(!Number.isFinite(amount) || amount <= 0) return showToast('확정 금액을 1원 이상 숫자로 입력하세요.');
+            try {
+                await _postRequote(orderId, amount);
+                showToast(`금액 확정 · ${amount.toLocaleString()}원`);
+                _applyRequoteToCard(orderId, amount);
+                if(window.loadMySalesOrders) loadMySalesOrders();
+            } catch(e){ showToast('금액 확정 실패: ' + (e.message||e)); }
+        };
+
         // 🚀 [v6] 주문 승인/거절/취소 + 전체 보기
         window.approvePendingOrder = async function(orderId, productName, amount) {
-            if(!confirm(`${productName} 주문을 승인하시겠습니까?\n\n구매자에게서 ${Number(amount).toLocaleString()}원이 즉시 결제됩니다.`)) return;
+            if(!confirm(`${productName} 주문을 승인하시겠습니까?`)) return;
             try {
                 const res = await fetch(`${API_URL}/api/order/approve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, seller: currentUser.name }) });
                 const data = await res.json();
                 if(!res.ok) return showToast(data.error || '승인 실패');
-                showToast(`승인 완료 + ${Number(amount).toLocaleString()}원 결제 처리됨`);
+                // 서버 응답 기준으로 문구 결정 — 에스크로 상점만 승인 시 결제, 배민식(일반)은 매출 기록만.
+                const amt = Number(data.amount != null ? data.amount : amount) || 0;
+                if(data.escrow) showToast(`주문 승인 완료 · ${amt.toLocaleString()}원 결제(에스크로 보관) 처리됨`);
+                else showToast(`주문 승인 완료 · 매출 기록됨 (승인 시 즉시 결제 없음)`);
                 updateUserBalance();
-                // 채팅에 승인 알림
+                // 채팅에 승인 알림 — 주문 대화방(room_ord_<id>)으로. 연결 시 echo가 렌더하므로 낙관적 append 생략(중복 방지),
+                // 오프라인이면서 그 방을 보고 있을 때만 즉시 렌더.
+                const roomId = 'room_ord_' + orderId;
+                const sysMsg = `[ORDER_APPROVED]${productName}|${amt}`;
                 if(socket && socket.connected) {
-                    socket.emit('send_message', { roomId: currentChatRoomId, sender: '__system__', senderPic: null, message: `[ORDER_APPROVED]${productName}|${amount}` });
+                    socket.emit('join_room', roomId);
+                    socket.emit('send_message', { roomId, sender: '__system__', senderPic: null, message: sysMsg });
+                } else if(currentChatRoomId === roomId) {
+                    appendMainMessage('__system__', sysMsg, null);
                 }
-                appendMainMessage('__system__', `[ORDER_APPROVED]${productName}|${amount}`, null);
                 // 🚀 [v7p4] 배너 즉시 사라지게 + 캐시 카운트도 0으로 리셋
                 window.__pendingOrdersPoll.prevSellerCount = 0;
                 if(window.hideOrderApprovalBanner) window.hideOrderApprovalBanner();
                 if(window.checkPendingOrders) window.checkPendingOrders();
+                const smt = document.getElementById('tab-sales-mgmt');
+                if(smt && smt.classList.contains('active') && window.loadMySalesOrders) loadMySalesOrders();
             } catch(e) { showToast('승인 처리 실패: ' + (e.message || e)); }
         };
 
@@ -8720,14 +8887,20 @@ pdfjsScript,
                     const ord = await ordRes.json();
                     pName = (ord && ord.productId) || '';
                 } catch(_){}
+                const roomId = 'room_ord_' + orderId;
+                const sysMsg = `[ORDER_REJECTED]${pName}|${reason || ''}`;
                 if(socket && socket.connected) {
-                    socket.emit('send_message', { roomId: currentChatRoomId, sender: '__system__', senderPic: null, message: `[ORDER_REJECTED]${pName}|${reason || ''}` });
+                    socket.emit('join_room', roomId);
+                    socket.emit('send_message', { roomId, sender: '__system__', senderPic: null, message: sysMsg });
+                } else if(currentChatRoomId === roomId) {
+                    appendMainMessage('__system__', sysMsg, null);
                 }
-                appendMainMessage('__system__', `[ORDER_REJECTED]${pName}|${reason || ''}`, null);
                 // 🚀 [v7p4] 배너 즉시 사라지게 + 캐시 카운트 0으로 리셋
                 window.__pendingOrdersPoll.prevSellerCount = 0;
                 if(window.hideOrderApprovalBanner) window.hideOrderApprovalBanner();
                 if(window.checkPendingOrders) window.checkPendingOrders();
+                const smt = document.getElementById('tab-sales-mgmt');
+                if(smt && smt.classList.contains('active') && window.loadMySalesOrders) loadMySalesOrders();
             } catch(e) { showToast('거절 실패: ' + (e.message || e)); }
         };
 
@@ -8739,6 +8912,9 @@ pdfjsScript,
                 if(!res.ok) return showToast(data.error || '취소 실패');
                 showToast(`✕ 주문 취소됨`);
                 if(window.checkPendingOrders) window.checkPendingOrders();
+                if(window.loadMyPendingOrders) window.loadMyPendingOrders();
+                const card = document.querySelector('.kt-card-msg[data-order-id="'+orderId+'"]');
+                if(card && window.checkAndReplaceOrderCard) window.checkAndReplaceOrderCard(card.id, orderId, card.dataset.productName||'', +(card.dataset.amount||0));
             } catch(e) { showToast('취소 실패: ' + (e.message || e)); }
         };
 
@@ -8768,7 +8944,9 @@ pdfjsScript,
                     fireMobileNotification(data.sender, data.message);
                 } else if(data.id) {
                     // 🚀 [v8+] 내 메시지 echo — 직전 낙관적 렌더 버블에 id 부여 (수정/삭제 가능하도록)
-                    attachIdToMyLastMessage(data.message, data.id);
+                    // 다른 기기/탭에서 보낸 내 메시지는 낙관적 버블이 없으므로 새로 append.
+                    const tagged = attachIdToMyLastMessage(data.message, data.id);
+                    if(!tagged) appendMainMessage(data.sender, data.message, data.senderPic, null, data.id);
                 }
             } else if (data.sender !== currentUser.name) {
                 if (!unreadCounts[data.roomId]) unreadCounts[data.roomId] = 0; unreadCounts[data.roomId]++;
@@ -8783,7 +8961,7 @@ pdfjsScript,
         // 🚀 내 마지막 (id 없는) 메시지 버블에 서버 id를 부여하고 수정/삭제 메뉴 추가
         function attachIdToMyLastMessage(message, msgId) {
             const lines = document.querySelectorAll('#main-chat-body .kt-msg-line.me:not([data-msg-id])');
-            if(!lines.length) return;
+            if(!lines.length) return false;   // 낙관적 버블 없음(다른 기기/탭) → 호출부에서 append
             const line = lines[lines.length - 1];
             const bubble = line.querySelector('.kt-bubble');
             // 텍스트 일치 확인 (특수 카드는 제외)
@@ -8797,6 +8975,7 @@ pdfjsScript,
                 btn.onclick = (e) => openMsgMenu(e, msgId);
                 line.insertBefore(btn, bubble);
             }
+            return true;
         }
 
         // 🚀 [v8+] 메시지 수정/삭제 실시간 핸들러
@@ -8845,11 +9024,54 @@ pdfjsScript,
                 const purchases = await res.json() || [];
                 window.myPurchasesAll = purchases;
                 renderMyPurchases(purchases);
+                if(window.loadMyPendingOrders) loadMyPendingOrders();
             } catch(e) {
                 if(window.__earthDiag) window.__earthDiag('loadMyPurchases error: ' + (e.message || e), true);
                 list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--danger); font-size:13px;">⚠️ 구매 내역 로딩 실패: <code>${(e.message||'').replace(/</g,'&lt;')}</code><br><button class="btn btn-outline" onclick="loadMyPurchases()" style="margin-top:8px; padding:6px 14px; font-size:12px;">🔄 다시 시도</button></div>`;
             }
         }
+
+        // 🚀 대기 중 주문(승인 전) 로드 — /api/orders/pending 의 buyerPendingOrders. 각 카드에 대화방 이동 + 취소.
+        window.loadMyPendingOrders = async function(){
+            const wrap = document.getElementById('my-pending-orders-wrap');
+            if(!wrap || !currentUser) return;
+            try {
+                const r = await fetch(`${API_URL}/api/orders/pending/${encodeURIComponent(currentUser.name)}`);
+                if(!r.ok) { wrap.style.display='none'; return; }
+                const data = await r.json();
+                const list = data.buyerPendingOrders || [];
+                if(!list.length) { wrap.style.display='none'; wrap.innerHTML=''; return; }
+                let h = `<div class="panel" style="padding:14px 16px; margin-bottom:10px; border:1px solid #fde68a; background:#fffbeb;">
+                    <div style="font-size:13px; font-weight:800; color:#92400e; margin-bottom:10px;">⏳ 대기 중 주문 (판매자 승인 전) · ${list.length}건</div>
+                    <div style="display:flex; flex-direction:column; gap:8px;">`;
+                list.forEach(o => {
+                    const nm = (o.productName || '상품').replace(/</g,'&lt;');
+                    const sel = (o.seller || '').replace(/</g,'&lt;');
+                    const dt = (o.created_at || '').replace('T',' ').substring(0,16);
+                    const amt = Number(o.amount||0);
+                    h += `<div style="background:#fff; border:1px solid var(--border-color); border-radius:10px; padding:10px 12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:140px;">
+                            <div style="font-size:13px; font-weight:700; color:var(--text-main); word-break:break-all;">${nm}</div>
+                            <div style="font-size:11px; color:var(--text-sub); margin-top:2px;">판매자 ${sel} · ${dt}</div>
+                        </div>
+                        <div style="font-size:14px; font-weight:800; color:${amt>0?'var(--text-main)':'var(--warning)'};">${amt>0?amt.toLocaleString()+'원':'금액 미정'}</div>
+                        <div style="display:flex; gap:6px;">
+                            <button onclick="openBuyerOrderRoom('${(o.seller||'').replace(/'/g,"\\'")}','${o.id}')" style="padding:6px 10px; font-size:11px; font-weight:700; border:1px solid var(--primary); color:var(--primary); background:#fff; border-radius:6px; cursor:pointer;">대화방</button>
+                            <button onclick="cancelPendingOrder('${o.id}')" style="padding:6px 10px; font-size:11px; font-weight:700; border:1px solid var(--danger); color:var(--danger); background:#fff; border-radius:6px; cursor:pointer;">취소</button>
+                        </div>
+                    </div>`;
+                });
+                h += `</div></div>`;
+                wrap.innerHTML = h;
+                wrap.style.display = 'block';
+            } catch(e) { wrap.style.display='none'; }
+        };
+        // 구매자: 주문별 대화방 열기(room_ord_<id>)
+        window.openBuyerOrderRoom = function(seller, orderId){
+            const d = document.getElementById('messenger-drawer');
+            if(d && !d.classList.contains('open')) d.classList.add('open');
+            setTimeout(()=>{ if(window.openMessengerChat) openMessengerChat(seller, 'room_ord_' + orderId); }, 100);
+        };
 
         // 💰 [에스크로] 구매자: 구매확정 → 정산 대기(자금 이동 없음). 상점이 Admin 통합관리일 때 의미.
         window.confirmPurchaseOrder = async function(orderId){
@@ -8926,7 +9148,9 @@ pdfjsScript,
                         <div style="font-size:11px; color:var(--text-sub); margin-bottom:6px;">판매자 <b>${escSeller}</b> · ${date}</div>
                         <div style="font-size:13px; font-weight:900; color:var(--primary); margin-bottom:8px;">${Number(p.amount||0).toLocaleString()}원${count>1?` <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(누계 ${Number(group.totalSpent).toLocaleString()}원)</span>`:''}</div>
                         ${(function(){
-                            const st = p.orderStatus, cur = p.courier, no = p.tracking;
+                            // 💰 정산완료(settled)면 상태 라벨을 정산완료로(구매확정 → 정산완료)
+                            const st = (p.settled && (p.orderStatus==='confirmed' || p.orderStatus==='settled')) ? 'settled' : p.orderStatus;
+                            const cur = p.courier, no = p.tracking;
                             if(!st || st==='pending' || st==='approved' && !cur && !no) return '';
                             const stLabel = {approved:'배송 준비중', shipping:'배송중', delivered:'배송 완료', confirmed:'구매확정', settled:'정산완료', refund_requested:'환불요청', refunded:'환불됨'}[st] || '';
                             let line = stLabel ? `<span style="display:inline-block; background:#eef2ff; color:#3730a3; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700;">🚚 ${stLabel}</span>` : '';
@@ -8945,7 +9169,7 @@ pdfjsScript,
                             ${hasPdf ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.openPackagePdf('${p.productId}')">주문서 PDF 보기</button>` : ''}
                             ${p.is_package ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.placeAdditionalOrder('${p.productId}')">추가 주문 / 재주문</button>` : ''}
                             <button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.contactSellerFromPurchase('${escSeller.replace(/'/g, "\\'")}')">판매자 채팅</button>
-                            ${(p.orderId && (p.orderStatus==='shipping' || p.orderStatus==='delivered')) ? `<button class="btn btn-success" style="padding:6px 12px; font-size:11px;" onclick="window.confirmPurchaseOrder('${p.orderId}')">구매확정</button>` : ''}
+                            ${(p.orderId && ['approved','shipping','delivered'].includes(p.orderStatus)) ? `<button class="btn btn-success" style="padding:6px 12px; font-size:11px;" onclick="window.confirmPurchaseOrder('${p.orderId}')">구매확정</button>` : ''}
                             ${(p.orderId && ['approved','shipping','delivered'].includes(p.orderStatus)) ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px; color:#ea580c; border-color:#ea580c;" onclick="window.requestOrderRefund('${p.orderId}')">환불요청</button>` : ''}
                             ${canRefund ? `<button class="btn btn-danger" style="padding:6px 12px; font-size:11px;" onclick="window.requestRefund(${p.txId}, '${escName.replace(/'/g, "\\'")}')">환불 요청</button>` : ''}
                         </div>
@@ -9052,9 +9276,16 @@ pdfjsScript,
         window.historyPeriodMode = 'all'; // all | today | week | month | lastmonth | year | custom
 
         async function loadHistory() {
-            const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`);
-            window.historyAll = await res.json() || [];
-            renderHistory();
+            const tbody = document.getElementById('history-body');
+            try {
+                const res = await fetch(`${API_URL}/api/transactions/${currentUser.name}`);
+                if(!res.ok) throw new Error('HTTP ' + res.status);
+                window.historyAll = await res.json() || [];
+                renderHistory();
+            } catch(e) {
+                if(window.__earthDiag) window.__earthDiag('loadHistory error: ' + (e.message||e), true);
+                if(tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--danger); font-size:13px;">⚠️ 거래 내역을 불러오지 못했습니다.<br><span style="font-size:11px; color:var(--text-sub);">${(e.message||'').replace(/</g,'&lt;')}</span><br><button class="btn btn-outline" onclick="loadHistory()" style="margin-top:8px; padding:6px 16px; font-size:12px;">🔄 다시 시도</button></td></tr>`;
+            }
         }
 
         window.setHistoryPeriod = function(mode, el) {
@@ -9214,7 +9445,7 @@ pdfjsScript,
 
                 const receiptBtn = `<button class="btn btn-secondary" style="padding:5px 10px; font-size:11px; border-radius:6px;" onclick="event.stopPropagation(); issueReceiptPDF(${_ridx})" title="이 거래의 영수증 발급">영수증</button>`;
                 const chkCell = `<td style="text-align:center;" onclick="event.stopPropagation();"><input type="checkbox" class="hist-sel" data-i="${_ridx}" onclick="updateHistSelCount()"></td>`;
-                buf += `<tr ${rowAttrs}>${chkCell}<td style="white-space:nowrap;">${h.date}</td><td><b style="color:var(--text-main);">${h.type}</b></td><td>${detailHtml}</td><td>${partner || '시스템 본부'}${isClickable ? ' <span style="font-size:10px; color:var(--primary); margin-left:4px;">▶ 대화방</span>' : ''}</td><td style="font-weight:bold; font-size:14px; ${color}">${sign}${Number(h.amount).toLocaleString()}원</td><td><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">${refundCell}${receiptBtn}</div></td></tr>`;
+                buf += `<tr ${rowAttrs}>${chkCell}<td style="white-space:nowrap;">${h.date}</td><td><b style="color:var(--text-main);">${h.type}</b></td><td>${detailHtml}</td><td>${partner || '시스템 본부'}${isClickable ? ' <span style="font-size:10px; color:var(--primary); margin-left:4px;">▶ 대화방</span>' : ''}</td><td style="font-weight:bold; font-size:14px; ${color}">${sign}${(Number(h.amount)||0).toLocaleString()}원</td><td><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">${refundCell}${receiptBtn}</div></td></tr>`;
             });
             tbody.innerHTML = buf;
             const ca = document.getElementById('hist-check-all'); if(ca) ca.checked = false;
@@ -9944,7 +10175,12 @@ pdfjsScript,
                 </div>`;
             }
             function _detailItemHtml(it,i){
-                const lines = (it.selected||[]).map((s,j)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:5px 10px;margin-top:4px;font-size:12px;"><span>${esc(s.name)} <span style="color:#64748b;">(${esc(s.category)} · ${won(s.price)})</span></span><button type="button" onclick="rxRemoveSel(${i},${j})" style="border:none;background:none;color:var(--danger);cursor:pointer;">✕</button></div>`).join('');
+                const lines = (it.selected||[]).map((s,j)=>{
+                    const ponticInput = (Number(s.pontic)>0)
+                        ? `<span style="display:inline-flex;align-items:center;gap:3px;color:#64748b;white-space:nowrap;">가공치<input type="number" min="0" value="${Number(s.ponticCount)||0}" onchange="rxSetPonticCount(${i},${j},this.value)" style="width:42px;padding:3px 4px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;" title="가공치(폰틱) 개수 · 단가 ${won(s.pontic)}">개</span>`
+                        : '';
+                    return `<div style="display:flex;justify-content:space-between;align-items:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:5px 10px;margin-top:4px;font-size:12px;gap:8px;"><span style="flex:1;min-width:0;">${esc(s.name)} <span style="color:#64748b;">(${esc(s.category)} · ${won(s.price)})</span></span>${ponticInput}<button type="button" onclick="rxRemoveSel(${i},${j})" style="border:none;background:none;color:var(--danger);cursor:pointer;">✕</button></div>`;
+                }).join('');
                 return `<div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:10px;background:#fff;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                         <b style="font-size:14px;">품목 ${i+1}</b>
@@ -10021,14 +10257,21 @@ pdfjsScript,
                 if(!st || _pickerItemIdx<0 || !ov) return;
                 syncRxItemsFromDOM();
                 const it = st.items[_pickerItemIdx]; it.selected = it.selected||[];
-                ov.querySelectorAll('.rx-pick-chk').forEach(c=>{ if(c.checked) it.selected.push({ name:c.dataset.name, price:Number(c.dataset.price)||0, pontic:Number(c.dataset.pontic)||0, category:c.dataset.cat, tab:c.dataset.tab }); });
+                ov.querySelectorAll('.rx-pick-chk').forEach(c=>{ if(c.checked) it.selected.push({ name:c.dataset.name, price:Number(c.dataset.price)||0, pontic:Number(c.dataset.pontic)||0, ponticCount:0, category:c.dataset.cat, tab:c.dataset.tab }); });
                 closeOv('rx-picker-modal');
                 _renderRxItems();
+            };
+            // 폰틱(가공치) 개수 설정 — 상세 의뢰서: 선택 보철의 가공치 수를 저장하고 재계산
+            window.rxSetPonticCount = function(i, j, val){
+                const st = window.rxOrderState; if(!st || !st.items[i] || !st.items[i].selected || !st.items[i].selected[j]) return;
+                st.items[i].selected[j].ponticCount = Math.max(0, Number(val)||0);
+                rxRecalc();
             };
             window.rxRecalc = function(){
                 const st = window.rxOrderState; if(!st || st.mode!=='detail') return 0;
                 let sum = 0;
-                st.items.forEach(it=>{ const tc = Math.max((it.teeth||[]).length,1); (it.selected||[]).forEach(s=>{ sum += (Number(s.price)||0) * tc; }); });
+                // 합계 = 보철 수가 × 치아수 + 폰틱(가공치) 수가 × 가공치수 — 브릿지의 가공치까지 청구
+                st.items.forEach(it=>{ const tc = Math.max((it.teeth||[]).length,1); (it.selected||[]).forEach(s=>{ sum += (Number(s.price)||0) * tc + (Number(s.pontic)||0) * (Number(s.ponticCount)||0); }); });
                 st.amount = sum;
                 const el = document.getElementById('rx-total'); if(el) el.textContent = won(sum);
                 return sum;
@@ -10041,8 +10284,12 @@ pdfjsScript,
                         return `<tr><td>${i+1}</td><td>${esc(it.makeType||'')}</td><td>${esc((it.teeth||[]).join(', ')||'-')}</td><td>${esc(it.name||'-')}</td><td>${esc(it.memo||'')}</td></tr>`;
                     }
                     const tc = Math.max((it.teeth||[]).length,1);
-                    const sub = (it.selected||[]).map(s=>`${esc(s.name)} (${won(s.price)}×${tc})`).join('<br>') || '-';
-                    const line = (it.selected||[]).reduce((a,s)=>a+(Number(s.price)||0)*tc,0);
+                    const sub = (it.selected||[]).map(s=>{
+                        const pc = Number(s.ponticCount)||0;
+                        const ponticTxt = (Number(s.pontic)>0 && pc>0) ? ` + 가공치 ${won(s.pontic)}×${pc}` : '';
+                        return `${esc(s.name)} (${won(s.price)}×${tc}${ponticTxt})`;
+                    }).join('<br>') || '-';
+                    const line = (it.selected||[]).reduce((a,s)=>a+(Number(s.price)||0)*tc+(Number(s.pontic)||0)*(Number(s.ponticCount)||0),0);
                     return `<tr><td>${i+1}</td><td>${esc((it.teeth||[]).join(', ')||'-')}</td><td>${sub}</td><td>${esc(it.memo||'')}</td><td style="text-align:right;">${won(line)}</td></tr>`;
                 }).join('');
                 const head = st.mode==='simple'
