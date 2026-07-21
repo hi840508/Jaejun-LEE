@@ -10154,7 +10154,7 @@ pdfjsScript,
                         <div><label style="font-size:11px;color:#64748b;">거래처 (자동)</label><div style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#eef2ff;font-size:13px;font-weight:600;color:#3730a3;">✅ ${esc(clinic)}</div></div>
                         <div><label style="font-size:11px;color:#64748b;">담당 원장님</label><input id="rx-oi-doctor" placeholder="담당 원장님 이름" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>
                         <div><label style="font-size:11px;color:#64748b;">환자명</label><input id="rx-oi-patient" placeholder="환자명" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>
-                        <div><label style="font-size:11px;color:#64748b;">생년월일</label><input id="rx-oi-birth" placeholder="생년월일 입력" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>
+                        <div><label style="font-size:11px;color:#64748b;">생년월일</label><div style="display:flex;gap:4px;"><input id="rx-oi-birth" placeholder="생년월일 입력" style="flex:1;min-width:0;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"><input type="date" id="rx-oi-birth-picker" onchange="rxBirthFromPicker(this.value)" style="width:1px;opacity:0;position:absolute;pointer-events:none;"><button type="button" onclick="rxOpenBirthPicker()" title="달력에서 선택" style="flex:none;padding:0 12px;border:1px solid #cbd5e1;background:#f1f5f9;border-radius:8px;cursor:pointer;font-size:15px;">📅</button></div></div>
                         <div><label style="font-size:11px;color:#64748b;">성별</label><select id="rx-oi-gender" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"><option value="">알 수 없음</option><option value="남성">남성</option><option value="여성">여성</option></select></div>
                         <div><label style="font-size:11px;color:#64748b;">차트번호</label><input id="rx-oi-chart" placeholder="차트번호 입력" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>
                         <div style="grid-column:1/-1;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
@@ -10174,6 +10174,8 @@ pdfjsScript,
                     </div>
                 </div>`;
             }
+            window.rxOpenBirthPicker = function(){ const p=document.getElementById('rx-oi-birth-picker'); if(!p) return; try { if(p.showPicker) p.showPicker(); else p.click(); } catch(_){ p.click(); } };
+            window.rxBirthFromPicker = function(v){ const b=document.getElementById('rx-oi-birth'); if(b && v) b.value = v; };
             window._rxAmPm = 'am';
             window.rxSetAmPm = function(v){ window._rxAmPm = v; const am=document.getElementById('rx-ampm-am'), pm=document.getElementById('rx-ampm-pm'); if(am&&pm){ const on='padding:9px 16px;border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; const off='padding:9px 16px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; am.style.cssText=v==='am'?on:off; pm.style.cssText=v==='pm'?on:off; } };
             window.rxAddFiles = function(fileList){ const st=window.rxOrderState; if(!st) return; st.attachFiles = st.attachFiles.concat(Array.from(fileList||[])); _renderRxFileList(); };
@@ -10515,9 +10517,11 @@ pdfjsScript,
                     pending:{t:'승인 대기',bg:'#fef3c7',fg:'#92400e',i:'⏳'},
                     awaiting_payment:{t:'결제 대기 (금액 확정)',bg:'#ffedd5',fg:'#9a3412',i:'💳'},
                     approved:{t:'결제완료·제작 준비',bg:'#dcfce7',fg:'#166534',i:'✅'},
-                    shipping:{t:'제작·배송중',bg:'#dbeafe',fg:'#1e40af',i:'🚚'},
+                    shipping:{t:'제작완료·배송중',bg:'#dbeafe',fg:'#1e40af',i:'🚚'},
                     delivered:{t:'배송 완료',bg:'#e0e7ff',fg:'#3730a3',i:'📦'},
                     confirmed:{t:'구매 확정',bg:'#e2e8f0',fg:'#334155',i:'✔️'},
+                    refund_requested:{t:'환불 요청됨',bg:'#fef2f2',fg:'#b91c1c',i:'↩️'},
+                    refunded:{t:'환불 완료',bg:'#f4f4f5',fg:'#71717a',i:'↩️'},
                     rejected:{t:'거절됨',bg:'#fee2e2',fg:'#991b1b',i:'❌'},
                     cancelled:{t:'취소됨',bg:'#f4f4f5',fg:'#71717a',i:'⊘'}
                 };
@@ -10530,21 +10534,38 @@ pdfjsScript,
             };
             // 의뢰서 주문 카드 = 3줄(주문서 보기[금액] / 현재 상태 / 액션). 상태별로 액션을 재구성.
             window.__orderPinCtx = window.__orderPinCtx || {};
-            function _orderPinActions(d, status, amount){
-                var oid = d.orderId;
+            function _orderPinActions(d, o){
+                var oid = d.orderId, status = o.status, amount = Number(o.amount)||0;
+                var trk = o.tracking ? String(o.tracking).replace(/</g,'&lt;') : '';
+                var trkLine = trk ? '<div style="font-size:11px;color:#475569;margin-bottom:6px;">🚚 송장번호 <b>'+trk+'</b></div>' : '';
                 if(!d.isMe){
-                    // 판매자(기공소): 대기중엔 금액확정+승인/거절, 확정 후엔 구매자 결제 대기 안내
+                    // 판매자(기공소)
                     if(status==='pending'){
                         return '<div style="display:flex;gap:6px;margin-bottom:6px;"><input type="number" id="rqp-'+oid+'" min="1" value="'+(amount>0?amount:'')+'" placeholder="확정 금액(원)" style="flex:1;padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;"></div>'
                             + '<div style="display:flex;gap:6px;"><button onclick="rejectPendingOrder(\''+oid+'\')" style="flex:1;background:#fff;color:var(--danger);border:1px solid var(--danger);padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">거절</button>'
                             + '<button onclick="labQuoteApprove(\''+oid+'\')" style="flex:2;background:var(--success);color:#fff;border:0;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">금액 확정 &amp; 승인</button></div>';
                     }
                     if(status==='awaiting_payment') return '<div style="text-align:center;font-size:11px;color:#9a3412;font-weight:700;">💳 구매자 결제를 기다리는 중…</div>';
+                    if(status==='approved'){
+                        // 결제완료·제작준비 → 기공소가 송장 입력(배송중) 또는 배송완료 처리
+                        return '<div style="display:flex;gap:6px;margin-bottom:6px;"><input type="text" id="trk-'+oid+'" placeholder="송장번호 입력(선택)" style="flex:1;padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;"></div>'
+                            + '<div style="display:flex;gap:6px;"><button onclick="labShip(\''+oid+'\')" style="flex:1;background:#2563eb;color:#fff;border:0;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">🚚 배송 시작</button>'
+                            + '<button onclick="labDeliver(\''+oid+'\')" style="flex:1;background:#4f46e5;color:#fff;border:0;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">📦 배송 완료</button></div>';
+                    }
+                    if(status==='shipping') return trkLine + '<button onclick="labDeliver(\''+oid+'\')" style="width:100%;background:#4f46e5;color:#fff;border:0;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">📦 배송 완료 처리</button>';
+                    if(status==='delivered') return trkLine + '<div style="text-align:center;font-size:11px;color:#475569;font-weight:700;">구매확정 대기 중…</div>';
                     return '';
                 } else {
-                    // 구매자(치과): 대기중 취소 / 금액확정 후 결제하기
+                    // 구매자(치과)
                     if(status==='pending') return '<button onclick="cancelPendingOrder(\''+oid+'\')" style="width:100%;background:#fff;color:var(--text-sub);border:1px solid var(--border-color);padding:7px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;">주문 취소</button>';
-                    if(status==='awaiting_payment') return '<button onclick="payOrder(\''+oid+'\','+(Number(amount)||0)+')" style="width:100%;background:var(--gradient-btn);color:#fff;border:0;padding:9px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">💳 결제하기 · '+(Number(amount||0).toLocaleString())+'원</button>';
+                    if(status==='awaiting_payment') return '<button onclick="payOrder(\''+oid+'\','+amount+')" style="width:100%;background:var(--gradient-btn);color:#fff;border:0;padding:9px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">💳 결제하기 · '+(amount.toLocaleString())+'원</button>';
+                    if(status==='approved') return '<div style="text-align:center;font-size:11px;color:#166534;font-weight:700;">✅ 결제 완료 · 기공소가 제작/배송을 준비합니다…</div>';
+                    if(status==='shipping' || status==='delivered'){
+                        return trkLine
+                            + '<button onclick="buyerConfirm(\''+oid+'\')" style="width:100%;background:var(--success);color:#fff;border:0;padding:9px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;margin-bottom:6px;">🎉 구매 확정</button>'
+                            + '<div style="display:flex;gap:6px;"><button onclick="requestRemake(\''+oid+'\',\'remake\')" style="flex:1;background:#fff;color:#b45309;border:1px solid #f59e0b;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">🔁 리메이크</button>'
+                            + '<button onclick="requestRemake(\''+oid+'\',\'repair\')" style="flex:1;background:#fff;color:#b45309;border:1px solid #f59e0b;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">🔧 리페어</button></div>';
+                    }
                     return '';
                 }
             }
@@ -10557,7 +10578,7 @@ pdfjsScript,
                     const amt = Number(o.amount)||0;
                     Array.from(document.querySelectorAll('.rxdoc-amt[data-order="'+orderId+'"]')).forEach(a=>{ a.textContent = amt>0 ? (amt.toLocaleString()+'원') : '금액 미정'; });
                     const d = (window.__orderPinCtx && window.__orderPinCtx[orderId]) || { orderId:orderId, isMe:false };
-                    Array.from(document.querySelectorAll('.rxdoc-actions[data-order="'+orderId+'"]')).forEach(a=>{ const h = _orderPinActions(d, o.status, amt); a.innerHTML = h; a.style.display = h ? 'block' : 'none'; });
+                    Array.from(document.querySelectorAll('.rxdoc-actions[data-order="'+orderId+'"]')).forEach(a=>{ const h = _orderPinActions(d, o); a.innerHTML = h; a.style.display = h ? 'block' : 'none'; });
                 } catch(_){}
             };
             // 🦷 의뢰서 주문 카드를 채팅 상단에 고정(sticky) — 3줄 컴팩트.
@@ -10609,6 +10630,60 @@ pdfjsScript,
                     if(window.updateUserBalance) updateUserBalance();
                     refreshRxDocStatus(orderId);
                 } catch(_){ /* pgPay 취소 */ }
+            };
+            // 🚚 기공소: 송장번호 입력(배송중) / 배송완료 처리 (채팅 카드에서)
+            window.labShip = async function(orderId){
+                const inp = document.getElementById('trk-'+orderId);
+                const tracking = (inp && inp.value || '').trim();
+                try {
+                    const r = await fetch(`${API_URL}/api/order/status`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, seller: currentUser.name, status:'shipping', tracking }) });
+                    const dj = await r.json().catch(()=>({}));
+                    if(!r.ok) return showToast(dj.error || '배송 처리 실패');
+                    showToast(tracking ? ('배송 시작 · 송장 '+tracking) : '배송이 시작되었습니다.');
+                    refreshRxDocStatus(orderId);
+                } catch(e){ showToast('배송 처리 실패'); }
+            };
+            window.labDeliver = async function(orderId){
+                if(!confirm('배송 완료로 처리할까요? 구매자에게 배송 완료로 표시됩니다.')) return;
+                try {
+                    const r = await fetch(`${API_URL}/api/order/status`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, seller: currentUser.name, status:'delivered' }) });
+                    const dj = await r.json().catch(()=>({}));
+                    if(!r.ok) return showToast(dj.error || '배송완료 처리 실패');
+                    showToast('배송 완료 처리됨');
+                    refreshRxDocStatus(orderId);
+                } catch(e){ showToast('배송완료 처리 실패'); }
+            };
+            // 🎉 구매자: 구매 확정
+            window.buyerConfirm = async function(orderId){
+                if(!confirm('구매를 확정할까요? 확정 후에는 이 대화방이 종료됩니다.')) return;
+                try {
+                    const r = await fetch(`${API_URL}/api/order/confirm`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, buyer: currentUser.name }) });
+                    const dj = await r.json().catch(()=>({}));
+                    if(!r.ok) return showToast(dj.error || '구매확정 실패');
+                    showToast('🎉 구매가 확정되었습니다.');
+                } catch(e){ showToast('구매확정 실패'); }
+            };
+            // 🔁 구매자: 리메이크/리페어 요청 → 새 주문(처음 구매와 동일 흐름) 생성 + 새 대화방으로 이동
+            window.requestRemake = async function(orderId, kind){
+                const label = kind==='repair' ? '리페어' : '리메이크';
+                const reason = prompt(label+' 요청 사유/요청사항을 입력해 주세요 (선택):', '');
+                if(reason === null) return;
+                try {
+                    const r = await fetch(`${API_URL}/api/order/remake`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, kind, reason: reason||'', buyer: currentUser.name }) });
+                    const d = await r.json().catch(()=>({}));
+                    if(!r.ok || !d.orderId) return showToast(d.error || (label+' 요청 실패'));
+                    const newId = d.orderId;
+                    const roomId = 'room_ord_' + newId;
+                    currentChatRoomId = roomId;
+                    if(socket && socket.connected) socket.emit('join_room', roomId);
+                    try { await fetch(`${API_URL}/api/chat-room/upsert`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roomId, type:'order', buyer: currentUser.name, seller: d.seller, storeId: d.storeId, storeName: d.storeName, lastProductId:'', lastProductName: (label+' · '+(d.productName||'')) }) }); } catch(_){}
+                    const pic = (document.getElementById('my-profile-pic')||{}).src || '';
+                    const rxDocMsg = `[RX_DOC]${newId}|0|${(label+' · '+(d.productName||'')).replace(/\|/g,' ')}`;
+                    const ensureSocket = async () => { if(socket&&socket.connected) return true; for(let i=0;i<10;i++){ await new Promise(rs=>setTimeout(rs,200)); if(socket&&socket.connected) return true; } return false; };
+                    if(await ensureSocket() && socket){ socket.emit('join_room', roomId); socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: rxDocMsg }); }
+                    showToast('🔁 '+label+' 요청 전송 · 기공소가 금액을 확정하면 결제 후 진행됩니다.');
+                    setTimeout(()=>{ if(typeof openMessengerChat==='function') openMessengerChat(d.seller, roomId); }, 300);
+                } catch(e){ showToast(label+' 요청 실패: ' + (e.message||e)); }
             };
 
             /* ---------- 제출 (submitOrderForApproval 흐름 재현) ---------- */

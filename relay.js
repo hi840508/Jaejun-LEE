@@ -247,6 +247,9 @@ function initTables() {
         db.run(`ALTER TABLE transactions ADD COLUMN pg_approval TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN pay_method TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN pg_approval TEXT`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN remake_of INTEGER`, () => {});   // 🔁 리메이크/리페어: 원주문 id
+        db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_at INTEGER`, () => {});        // ⏱ 거절 후 자동 삭제 예정 시각(epoch ms)
+        db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_after_id INTEGER`, () => {});  // 이 chat id 이후 새 대화 없으면 삭제
         db.run(`ALTER TABLE users ADD COLUMN card_pw TEXT`, () => {});   // (선택) 회원가입 시 카드 비밀번호 4자리 — 실 PG 대비 저장만, 현재 미검증
 
         // 🚀 [v8+] 전역 설정 (Admin 권한 비밀번호 등) — 초기값 'mars'
@@ -1302,13 +1305,51 @@ app.post('/api/order/pay', (req, res) => {
 app.post('/api/order/reject', (req, res) => {
     const seller = requireUser(req, res); if (!seller) return;   // ★신원=토큰
     const { orderId, reason } = req.body;
-    db.get(`SELECT seller, status FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+    db.get(`SELECT buyer, seller, status FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
         if(err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if(ord.seller !== seller) return res.status(403).json({ error: '본인에게 온 주문만 거절할 수 있습니다.' });
         if(ord.status !== 'pending') return res.status(400).json({ error: '이미 처리된 주문입니다.' });
-        db.run(`UPDATE product_orders SET status = 'rejected', memo = COALESCE(memo, '') || ? WHERE id = ? AND status = 'pending'`, ['\n[거절 사유] ' + (reason||''), orderId], () => res.json({ success: true }));
+        db.run(`UPDATE product_orders SET status = 'rejected', memo = COALESCE(memo, '') || ? WHERE id = ? AND status = 'pending'`, ['\n[거절 사유] ' + (reason||''), orderId], () => {
+            // ⏱ 거절 후 새 대화가 없으면 24시간 뒤 대화방 자동 삭제(모든 참여자). 거절 안내 메시지 이후 id 기준.
+            const roomId = _orderRoomId(orderId);
+            _setOrderRoom(roomId, ord.buyer, ord.seller);
+            const date = new Date().toLocaleString('ko-KR');
+            const msg = '❌ [주문 거절] 기공소가 의뢰를 거절했습니다.' + (reason ? (' 사유: ' + reason) : '') + '\n※ 새로운 대화가 없으면 24시간 후 이 대화방은 자동으로 사라집니다.';
+            db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, '__system__', NULL, ?, ?)`, [roomId, msg, date], function() {
+                const mid = this.lastID;
+                try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: mid, date }); } catch (_) {}
+                try { _emitToRoomUsers(roomId, 'order_status', { orderId, status: 'rejected', buyer: ord.buyer, seller: ord.seller }); } catch (_) {}
+                const expireAt = Date.now() + 24 * 60 * 60 * 1000;
+                db.run(`UPDATE chat_rooms SET expire_at = ?, expire_after_id = ? WHERE roomId = ?`, [expireAt, mid, roomId], () => {});
+                res.json({ success: true });
+            });
+        });
     });
 });
+
+// ⏱ 거절 대화방 자동 삭제 스윕: expire_at 경과 & 그 이후 새 대화 없으면 방+대화 삭제(모든 참여자에서 사라짐). 새 대화가 있으면 예약 취소.
+function _rejectRoomSweep() {
+    try {
+        const now = Date.now();
+        db.all(`SELECT roomId, expire_after_id, buyer, seller FROM chat_rooms WHERE expire_at IS NOT NULL AND expire_at <= ?`, [now], (e, rows) => {
+            if (e || !rows || !rows.length) return;
+            rows.forEach(r => {
+                db.get(`SELECT MAX(id) AS mx FROM chats WHERE roomId = ?`, [r.roomId], (e2, row2) => {
+                    const mx = (row2 && row2.mx) || 0;
+                    if (mx > (r.expire_after_id || 0)) {
+                        db.run(`UPDATE chat_rooms SET expire_at = NULL, expire_after_id = NULL WHERE roomId = ?`, [r.roomId], () => {});   // 새 대화 → 취소
+                    } else {
+                        db.run(`DELETE FROM chats WHERE roomId = ?`, [r.roomId], () => {});
+                        db.run(`DELETE FROM chat_rooms WHERE roomId = ?`, [r.roomId], () => {});
+                        try { _emitToRoomUsers(r.roomId, 'room_closed', { roomId: r.roomId, buyer: r.buyer, seller: r.seller }); } catch (_) {}
+                    }
+                });
+            });
+        });
+    } catch (_) {}
+}
+setTimeout(_rejectRoomSweep, 40 * 1000);
+setInterval(_rejectRoomSweep, 30 * 60 * 1000);
 
 // 🚀 [v6] 구매자가 자신의 pending 주문 취소
 app.post('/api/order/cancel', (req, res) => {
@@ -1415,6 +1456,35 @@ app.post('/api/order/confirm', (req, res) => {
         const now = new Date();
         const month = _kstMonth();   // YYYY-MM (정산 귀속월, KST 기준)
         db.run(`UPDATE product_orders SET status = 'confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'confirmed', '🎉 [구매 확정] 구매가 확정되었습니다. (정산 대기) 이 대화방은 종료됩니다.'); _closeOrderRoom(orderId, ord.buyer, ord.seller); res.json({ success: true }); });
+    });
+});
+
+// 🔁 [리메이크/리페어] 구매자가 배송 단계 주문에 대해 재제작/수리를 요청 → 원주문 복제한 새 pending 주문 생성.
+//   이후 흐름은 처음 구매와 동일: 기공소 금액확정·승인(awaiting_payment) → 구매자 결제 → 배송 → 구매확정 → 정산(수수료 동일).
+app.post('/api/order/remake', (req, res) => {
+    const buyer = requireUser(req, res); if (!buyer) return;
+    const kind = req.body.kind === 'repair' ? 'repair' : 'remake';
+    const label = kind === 'repair' ? '리페어' : '리메이크';
+    const reason = (req.body.reason || '').toString().slice(0, 500);
+    const orderId = req.body.orderId;
+    db.get(`SELECT * FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+        if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        if (ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 요청할 수 있습니다.' });
+        if (!['shipping', 'delivered'].includes(ord.status)) return res.status(400).json({ error: '배송(제작완료·배송중/배송완료) 단계 주문만 리메이크/리페어를 요청할 수 있습니다.' });
+        const date = new Date().toLocaleString('ko-KR');
+        const noteHtml = `<div style="margin-top:16px;padding:12px;border:2px dashed #f59e0b;border-radius:8px;color:#92400e;"><b>[${label} 요청]</b> 원주문 #${orderId}${reason ? (' · ' + String(reason).replace(/</g, '&lt;')) : ''}</div>`;
+        const newBundle = (ord.bundle_html || '') + noteHtml;
+        const newMemo = `[${label}] 원주문 #${orderId}` + (reason ? (' · ' + reason) : '');
+        db.run(`INSERT INTO product_orders (productId, buyer, seller, bundle_html, memo, form_data, pdf_filled_data, buyer_info, status, amount, created_at, pay_method, remake_of) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, 'balance', ?)`,
+            [ord.productId, ord.buyer, ord.seller, newBundle, newMemo, ord.form_data || '{}', '', ord.buyer_info || '{}', date, orderId],
+            function(ie) {
+                if (ie) return res.status(500).json({ error: ie.message });
+                const newId = this.lastID;
+                db.get(`SELECT p.name AS pname, s.id AS sid, s.name AS sname FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e2, row) => {
+                    _notifyOrderStatus(ord.buyer, ord.seller, newId, 'pending', `🔁 [${label} 요청] 구매자가 ${label}를 요청했습니다. 기공소가 금액을 확정·승인하면 구매자 결제 후 진행됩니다.`);
+                    res.json({ success: true, orderId: newId, label, seller: ord.seller, storeId: (row && row.sid) || '', storeName: (row && row.sname) || '', productName: (row && row.pname) || label });
+                });
+            });
     });
 });
 
