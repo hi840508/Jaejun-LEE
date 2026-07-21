@@ -1369,11 +1369,18 @@ app.post('/api/order/requote', (req, res) => {
     const { orderId } = req.body;
     const amount = Math.floor(Number(req.body.amount) || 0);
     if (!(amount > 0)) return res.status(400).json({ error: '재견적 금액을 확인하세요. (1원 이상)' });
-    db.get(`SELECT buyer, seller, status FROM product_orders WHERE id = ?`, [orderId], (e, ord) => {
+    db.get(`SELECT buyer, seller, status, bundle_html FROM product_orders WHERE id = ?`, [orderId], (e, ord) => {
         if (e || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if (ord.seller !== seller) return res.status(403).json({ error: '본인에게 온 주문만 재견적할 수 있습니다.' });
         if (ord.status !== 'pending') return res.status(400).json({ error: '대기(pending) 주문만 재견적할 수 있습니다.' });
-        db.run(`UPDATE product_orders SET amount = ? WHERE id = ? AND status = 'pending'`, [amount, orderId], function(ue) {
+        // 🧾 기공 의뢰서의 '금액 미정'을 최종 확정 금액으로 갱신(마지막 금액 미정 항목 = 이번 사이클/리메이크 #2).
+        let nb = ord.bundle_html || '';
+        const finalDiv = `<div class="amt" style="color:#2563eb;">최종 확정 금액: ${amount.toLocaleString()}원</div>`;
+        const amtRe = /<div class="amt"[^>]*>[^<]*금액 미정[^<]*<\/div>/;
+        if (amtRe.test(nb)) nb = nb.replace(amtRe, finalDiv);
+        else if (nb.includes('</body>')) nb = nb.replace('</body>', finalDiv + '</body>');
+        else nb += finalDiv;
+        db.run(`UPDATE product_orders SET amount = ?, bundle_html = ? WHERE id = ? AND status = 'pending'`, [amount, nb, orderId], function(ue) {
             if (ue) return res.status(500).json({ error: ue.message });
             if (this.changes === 0) return res.status(400).json({ error: '이미 처리된 주문입니다.' });
             _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'pending', `💰 [금액 확정] 의뢰 금액이 ${amount.toLocaleString()}원으로 확정되었습니다. 승인 시 결제됩니다.`);
@@ -1472,19 +1479,28 @@ app.post('/api/order/remake', (req, res) => {
         if (ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 요청할 수 있습니다.' });
         if (!['shipping', 'delivered'].includes(ord.status)) return res.status(400).json({ error: '배송(제작완료·배송중/배송완료) 단계 주문만 리메이크/리페어를 요청할 수 있습니다.' });
         const date = new Date().toLocaleString('ko-KR');
-        const noteHtml = `<div style="margin-top:16px;padding:12px;border:2px dashed #f59e0b;border-radius:8px;color:#92400e;"><b>[${label} 요청]</b> 원주문 #${orderId}${reason ? (' · ' + String(reason).replace(/</g, '&lt;')) : ''}</div>`;
-        const newBundle = (ord.bundle_html || '') + noteHtml;
-        const newMemo = `[${label}] 원주문 #${orderId}` + (reason ? (' · ' + reason) : '');
-        db.run(`INSERT INTO product_orders (productId, buyer, seller, bundle_html, memo, form_data, pdf_filled_data, buyer_info, status, amount, created_at, pay_method, remake_of) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, 'balance', ?)`,
-            [ord.productId, ord.buyer, ord.seller, newBundle, newMemo, ord.form_data || '{}', '', ord.buyer_info || '{}', date, orderId],
-            function(ie) {
-                if (ie) return res.status(500).json({ error: ie.message });
-                const newId = this.lastID;
-                db.get(`SELECT p.name AS pname, s.id AS sid, s.name AS sname FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e2, row) => {
-                    _notifyOrderStatus(ord.buyer, ord.seller, newId, 'pending', `🔁 [${label} 요청] 구매자가 ${label}를 요청했습니다. 기공소가 금액을 확정·승인하면 구매자 결제 후 진행됩니다.`);
-                    res.json({ success: true, orderId: newId, label, seller: ord.seller, storeId: (row && row.sid) || '', storeName: (row && row.sname) || '', productName: (row && row.pname) || label });
+        // 1) 원 사이클(현재 배송분) 구매확정 처리 → 정산 대상. 단, 대화방은 유지(리메이크 진행).
+        const nowISO = new Date().toISOString();
+        db.run(`UPDATE product_orders SET status='confirmed', confirmed_at=?, settle_month=? WHERE id=? AND status IN ('shipping','delivered')`, [nowISO, _kstMonth(), orderId], function() {
+            // 2) 같은 기공 의뢰서에 '기공물 정보 #2 (리메이크/리페어)'를 추가한 새 주문 생성(처음 구매와 동일 흐름).
+            const sec2 = `<h2>기공물 정보 #2 · ${label}</h2>`
+                + `<div class="grid"><div><b>구분</b> ${label}</div><div><b>원주문</b> #${orderId}</div></div>`
+                + (reason ? `<div class="sec">요청사항: ${String(reason).replace(/</g, '&lt;')}</div>` : '')
+                + `<div class="amt" style="color:#b45309;">금액 미정 (기공소 확정 예정)</div>`;
+            let nb = ord.bundle_html || '';
+            if (nb.includes('</body>')) nb = nb.replace('</body>', sec2 + '</body>'); else nb += sec2;
+            const newMemo = `[${label}] 원주문 #${orderId}` + (reason ? (' · ' + reason) : '');
+            db.run(`INSERT INTO product_orders (productId, buyer, seller, bundle_html, memo, form_data, pdf_filled_data, buyer_info, status, amount, created_at, pay_method, remake_of) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, 'balance', ?)`,
+                [ord.productId, ord.buyer, ord.seller, nb, newMemo, ord.form_data || '{}', '', ord.buyer_info || '{}', date, orderId],
+                function(ie) {
+                    if (ie) return res.status(500).json({ error: ie.message });
+                    const newId = this.lastID;
+                    db.get(`SELECT p.name AS pname, s.id AS sid, s.name AS sname FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e2, row) => {
+                        _notifyOrderStatus(ord.buyer, ord.seller, newId, 'pending', `🔁 [${label} 요청] 구매자가 ${label}를 요청했습니다. 기공소가 금액을 확정·승인하면 구매자 결제 후 진행됩니다.`);
+                        res.json({ success: true, orderId: newId, label, seller: ord.seller, storeId: (row && row.sid) || '', storeName: (row && row.sname) || '', productName: (row && row.pname) || label });
+                    });
                 });
-            });
+        });
     });
 });
 

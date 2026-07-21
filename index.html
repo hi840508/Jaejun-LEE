@@ -10430,7 +10430,7 @@ pdfjsScript,
                 return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
                     <title>기공 의뢰서 - ${esc(info.patientName||'')}</title>
                     <style>html,body{background:#fff;}body{font-family:'Malgun Gothic',sans-serif;color:#1f2937;padding:24px;max-width:820px;margin:0 auto;}@media print{.noprint{display:none;}}h1{font-size:22px;color:#2563eb;border-bottom:3px solid #2563eb;padding-bottom:8px;}h2{font-size:15px;margin-top:22px;color:#334155;}table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}th,td{border:1px solid #e2e8f0;padding:7px 9px;text-align:left;vertical-align:top;}th{background:#eff6ff;color:#1e40af;}.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:13px;margin-top:8px;}.grid div{padding:4px 0;border-bottom:1px dashed #e2e8f0;}.amt{margin-top:18px;font-size:18px;font-weight:800;text-align:right;color:#2563eb;}.sec{margin-top:12px;font-size:12px;color:#64748b;}</style></head><body>
-                    <h1>🦷 ${st.mode==='simple'?'간편':'상세'} 기공 의뢰서</h1>
+                    <h1>🦷 기공 의뢰서</h1>
                     <div class="sec">기공소: ${esc(st.storeName||'')} · 작성: ${esc(info.timestamp||'')}</div>
                     <h2>주문 정보</h2>
                     <div class="grid">
@@ -10538,7 +10538,9 @@ pdfjsScript,
                 var oid = d.orderId, status = o.status, amount = Number(o.amount)||0;
                 var trk = o.tracking ? String(o.tracking).replace(/</g,'&lt;') : '';
                 var trkLine = trk ? '<div style="font-size:11px;color:#475569;margin-bottom:6px;">🚚 송장번호 <b>'+trk+'</b></div>' : '';
-                if(!d.isMe){
+                // 역할은 주문의 buyer 기준으로 확정(핀 컨텍스트 의존 제거 → 배송완료에서 구매자 액션 누락 방지)
+                var isBuyer = !!(currentUser && o.buyer && currentUser.name === o.buyer);
+                if(!isBuyer){
                     // 판매자(기공소)
                     if(status==='pending'){
                         return '<div style="display:flex;gap:6px;margin-bottom:6px;"><input type="number" id="rqp-'+oid+'" min="1" value="'+(amount>0?amount:'')+'" placeholder="확정 금액(원)" style="flex:1;padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;"></div>'
@@ -10672,17 +10674,11 @@ pdfjsScript,
                     const r = await fetch(`${API_URL}/api/order/remake`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, kind, reason: reason||'', buyer: currentUser.name }) });
                     const d = await r.json().catch(()=>({}));
                     if(!r.ok || !d.orderId) return showToast(d.error || (label+' 요청 실패'));
-                    const newId = d.orderId;
-                    const roomId = 'room_ord_' + newId;
-                    currentChatRoomId = roomId;
-                    if(socket && socket.connected) socket.emit('join_room', roomId);
-                    try { await fetch(`${API_URL}/api/chat-room/upsert`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roomId, type:'order', buyer: currentUser.name, seller: d.seller, storeId: d.storeId, storeName: d.storeName, lastProductId:'', lastProductName: (label+' · '+(d.productName||'')) }) }); } catch(_){}
+                    // 같은 대화방·같은 기공 의뢰서(기공물 정보 #2 추가)로 이어감 → 새 주문 카드로 상단 갱신
                     const pic = (document.getElementById('my-profile-pic')||{}).src || '';
-                    const rxDocMsg = `[RX_DOC]${newId}|0|${(label+' · '+(d.productName||'')).replace(/\|/g,' ')}`;
-                    const ensureSocket = async () => { if(socket&&socket.connected) return true; for(let i=0;i<10;i++){ await new Promise(rs=>setTimeout(rs,200)); if(socket&&socket.connected) return true; } return false; };
-                    if(await ensureSocket() && socket){ socket.emit('join_room', roomId); socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: rxDocMsg }); }
+                    const rxDocMsg = `[RX_DOC]${d.orderId}|0|기공 의뢰서 · ${label}`;
+                    if(socket && socket.connected && currentChatRoomId){ socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: rxDocMsg }); }
                     showToast('🔁 '+label+' 요청 전송 · 기공소가 금액을 확정하면 결제 후 진행됩니다.');
-                    setTimeout(()=>{ if(typeof openMessengerChat==='function') openMessengerChat(d.seller, roomId); }, 300);
                 } catch(e){ showToast(label+' 요청 실패: ' + (e.message||e)); }
             };
 
@@ -10742,7 +10738,7 @@ pdfjsScript,
 
                 // 🦷 의뢰서 = 서버에 bundle_html 저장됨(주문서 보기에서 흰 배경으로 표시/인쇄). 채팅엔 병합 카드 1개만.
                 //   [RX_DOC]orderId|amount|label — 카드에서 주문서 보기/상태/결제·승인 처리.
-                const rxLabel = (modeLabel + ' · ' + info.patientName).replace(/\|/g,' ');
+                const rxLabel = ('기공 의뢰서 · ' + info.patientName).replace(/\|/g,' ');
                 const rxDocMsg = `[RX_DOC]${submitData.orderId}|${st.amount||0}|${rxLabel}`;
 
                 const ensureSocket = async () => { if(socket&&socket.connected) return true; for(let i=0;i<10;i++){ await new Promise(r=>setTimeout(r,200)); if(socket&&socket.connected) return true; } return false; };
