@@ -1648,7 +1648,7 @@
                         </svg>
                     </button>
                     <!-- (채팅 상단 '구매 완료' 버튼 제거: 상품 주문 카드에서 구매확정 처리 — 사용자 요청) -->
-                    <button id="chat-exit-btn" style="padding:7px 12px; font-size:12px; border:none; border-radius:20px; background:#334155; color:#fff; font-weight:700; cursor:pointer; flex-shrink:0;" onclick="toggleMessengerDrawer()" title="채팅 나가기">✕ 나가기</button>
+                    <button id="chat-exit-btn" style="padding:7px 12px; font-size:12px; border:none; border-radius:20px; background:#334155; color:#fff; font-weight:700; cursor:pointer; flex-shrink:0;" onclick="backToDrawerList()" title="대화방 목록으로">◀ 뒤로</button>
                 </div>
                 <div class="chat-body" id="main-chat-body"></div>
 
@@ -7652,9 +7652,25 @@ pdfjsScript,
         // --- 🚀 우측 플로팅 메신저 서랍 구조 (친구목록 / 대화방 분리) ---
         function toggleMessengerDrawer() {
             const drawer = document.getElementById('messenger-drawer');
-            if(drawer.classList.contains('open')) { drawer.classList.remove('open'); } 
+            if(drawer.classList.contains('open')) { drawer.classList.remove('open'); }
             else { drawer.classList.add('open'); loadFriendList(); loadChatList(); switchDrawerTab('friends'); }
         }
+        // 🖱 메신저 바깥(백드롭) 클릭 시 닫기 — X와 동일. 위에 뜬 오버레이(z100000)는 백드롭(z4000) 위라 영향 없음.
+        (function _setupMsgrBackdrop(){
+            try {
+                const drawer = document.getElementById('messenger-drawer'); if(!drawer) return;
+                let bd = document.getElementById('messenger-backdrop');
+                if(!bd){
+                    bd = document.createElement('div'); bd.id = 'messenger-backdrop';
+                    bd.style.cssText = 'display:none;position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,0.18);';
+                    bd.addEventListener('mousedown', function(){ if(drawer.classList.contains('open')) toggleMessengerDrawer(); });
+                    document.body.appendChild(bd);
+                }
+                const sync = function(){ bd.style.display = drawer.classList.contains('open') ? 'block' : 'none'; };
+                new MutationObserver(sync).observe(drawer, { attributes:true, attributeFilter:['class'] });
+                sync();
+            } catch(_){}
+        })();
         function switchDrawerTab(tabName) {
             document.querySelectorAll('.m-tab').forEach(t => t.classList.remove('active')); const targetTab = document.querySelector(`.m-tab[onclick="switchDrawerTab('${tabName}')"]`); if(targetTab) targetTab.classList.add('active');
             document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active'));
@@ -7712,6 +7728,16 @@ pdfjsScript,
                     unreadCounts[currentChatRoomId] = 0; updateTabBadge();
                 } finally { window.__chatBulkLoading = false; }
                 body.scrollTop = body.scrollHeight;
+                // 📌 주문 대화방이면 상단 고정 카드를 roomId 기준으로 항상 렌더(메시지 페이지네이션과 무관 → 채팅 많아도 사라지지 않음)
+                if(String(currentChatRoomId||'').startsWith('room_ord_') && window.renderOrderPin){
+                    const _oid = currentChatRoomId.replace('room_ord_','');
+                    fetch(`${API_URL}/api/order/${_oid}`).then(r=>r.json()).then(o=>{
+                        if(!o || !o.status) return;
+                        let _label = '기공 의뢰서';
+                        try { const bi = o.buyer_info ? JSON.parse(o.buyer_info) : {}; if(bi.patientName) _label = '기공 의뢰서 · ' + bi.patientName; } catch(_){}
+                        window.renderOrderPin({ orderId:_oid, amount:Number(o.amount)||0, label:_label, isMe:(currentUser && currentUser.name === o.buyer) });
+                    }).catch(()=>{});
+                }
             }).catch(() => { const body = document.getElementById('main-chat-body'); if(body) body.innerHTML = '<div style="text-align:center;padding:30px;color:#dc2626;font-size:13px;">대화를 불러오지 못했습니다.</div>'; });
             document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-room').classList.add('active'); updateTabBadge();
         }
@@ -9263,7 +9289,9 @@ pdfjsScript,
                             ${p.orderId ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openRxPreview('${p.orderId}')">미리보기</button>` : `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openUniversalViewer && window.openUniversalViewer('${p.productId}', true)">미리보기</button>`}
                             ${hasPdf ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.openPackagePdf('${p.productId}')">주문서 PDF 보기</button>` : ''}
                             ${p.is_package ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.placeAdditionalOrder('${p.productId}')">추가 주문 / 재주문</button>` : ''}
-                            <button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.contactSellerFromPurchase('${escSeller.replace(/'/g, "\\'")}')">판매자 채팅</button>
+                            ${['confirmed','settled','rejected','cancelled','refunded'].includes(p.orderStatus) ? '' : (p.orderId
+                                ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="openMessengerChat('${escSeller.replace(/'/g, "\\'")}','room_ord_${p.orderId}')">판매자 채팅</button>`
+                                : `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.contactSellerFromPurchase('${escSeller.replace(/'/g, "\\'")}')">판매자 채팅</button>`)}
                             ${(p.orderId && ['approved','shipping','delivered'].includes(p.orderStatus)) ? `<button class="btn btn-success" style="padding:6px 12px; font-size:11px;" onclick="window.confirmPurchaseOrder('${p.orderId}')">구매확정</button>` : ''}
                             ${(p.orderId && ['approved','shipping','delivered'].includes(p.orderStatus))
                                 ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px; color:#ea580c; border-color:#ea580c;" onclick="window.requestOrderRefund('${p.orderId}')">환불 요청</button>`
@@ -9541,7 +9569,11 @@ pdfjsScript,
 
                 const receiptBtn = `<button class="btn btn-secondary" style="padding:5px 10px; font-size:11px; border-radius:6px;" onclick="event.stopPropagation(); issueReceiptPDF(${_ridx})" title="이 거래의 영수증 발급">영수증</button>`;
                 const chkCell = `<td style="text-align:center;" onclick="event.stopPropagation();"><input type="checkbox" class="hist-sel" data-i="${_ridx}" onclick="updateHistSelCount()"></td>`;
-                const typeLabel = (h.storeCategory === 'dental_lab' && h.makeKind) ? h.makeKind : h.type;
+                let typeLabel = h.type;
+                if(h.makeKind === '리메이크') typeLabel = '리메이크';
+                else if(h.makeKind === '리페어') typeLabel = '리페어';
+                else if(h.type === '자산 구매') typeLabel = '구매';
+                else if(h.type === '자산 판매') typeLabel = '판매';
                 buf += `<tr ${rowAttrs}>${chkCell}<td style="white-space:nowrap;">${h.date}</td><td><b style="color:var(--text-main);">${typeLabel}</b></td><td>${detailHtml}</td><td>${partner || '시스템 본부'}</td><td style="font-weight:bold; font-size:14px; ${color}">${sign}${(Number(h.amount)||0).toLocaleString()}원</td><td><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">${refundCell}${receiptBtn}</div></td></tr>`;
             });
             tbody.innerHTML = buf;
@@ -10554,8 +10586,11 @@ pdfjsScript,
                     }
                     if(status==='awaiting_payment') return '<div style="text-align:center;font-size:11px;color:#9a3412;font-weight:700;">💳 구매자 결제를 기다리는 중…</div>';
                     if(status==='approved'){
-                        // 결제완료·제작준비 → 기공소가 송장 입력(배송중) 또는 배송완료 처리
-                        return '<div style="display:flex;gap:6px;margin-bottom:6px;"><input type="text" id="trk-'+oid+'" placeholder="송장번호 입력(선택)" style="flex:1;padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;"></div>'
+                        // 결제완료·제작준비 → 기공소가 택배사 선택+송장 입력(배송중) 또는 배송완료 처리
+                        var _cop = Object.keys(window.COURIERS||{}).map(function(k){ return '<option value="'+k+'">'+window.COURIERS[k].name+'</option>'; }).join('');
+                        return '<div style="display:flex;gap:6px;margin-bottom:6px;">'
+                            + '<select id="cur-'+oid+'" style="flex:none;width:108px;padding:6px 4px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;">'+_cop+'</select>'
+                            + '<input type="text" id="trk-'+oid+'" placeholder="송장번호(선택)" style="flex:1;min-width:0;padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;"></div>'
                             + '<div style="display:flex;gap:6px;"><button onclick="labShip(\''+oid+'\')" style="flex:1;background:#2563eb;color:#fff;border:0;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">🚚 배송 시작</button>'
                             + '<button onclick="labDeliver(\''+oid+'\')" style="flex:1;background:#4f46e5;color:#fff;border:0;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">📦 배송 완료</button></div>';
                     }
@@ -10642,8 +10677,9 @@ pdfjsScript,
             window.labShip = async function(orderId){
                 const inp = document.getElementById('trk-'+orderId);
                 const tracking = (inp && inp.value || '').trim();
+                const courier = (document.getElementById('cur-'+orderId)||{}).value || '';
                 try {
-                    const r = await fetch(`${API_URL}/api/order/status`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, seller: currentUser.name, status:'shipping', tracking }) });
+                    const r = await fetch(`${API_URL}/api/order/status`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, seller: currentUser.name, status:'shipping', tracking, courier }) });
                     const dj = await r.json().catch(()=>({}));
                     if(!r.ok) return showToast(dj.error || '배송 처리 실패');
                     showToast(tracking ? ('배송 시작 · 송장 '+tracking) : '배송이 시작되었습니다.');
