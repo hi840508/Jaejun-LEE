@@ -2766,6 +2766,8 @@
                 if(!d || !d.orderId) return;
                 const card = document.querySelector('.kt-card-msg[data-order-id="'+d.orderId+'"]');
                 if(card && window.checkAndReplaceOrderCard) window.checkAndReplaceOrderCard(card.id, d.orderId, card.dataset.productName||'', +(card.dataset.amount||0));
+                // 🦷 의뢰서 PDF 카드 상태 배지도 실시간 갱신
+                if(document.querySelector('.rxdoc-status[data-order="'+d.orderId+'"]') && window.refreshRxDocStatus) window.refreshRxDocStatus(d.orderId);
             });
             // 💬 주문 대화방 종료(구매확정/3일 자동확정) — 판매자/타 기기 포함, 열려있으면 목록으로 이동 + 리스트 갱신
             socket.on('room_closed', d => { try { if(d && typeof currentChatRoomId !== 'undefined' && currentChatRoomId === d.roomId) { if(typeof backToDrawerList === 'function') backToDrawerList(); } if(typeof loadChatList === 'function') loadChatList(); } catch(e){} });
@@ -8709,6 +8711,29 @@ pdfjsScript,
                     ${fileCnt > 0 ? `<div style="font-size:11px; color:#64748b; margin:4px 0;">📂 첨부 파일 ${fileCnt}개</div>` : ''}
                     <button onclick="downloadOrderHTML('${pId}', '${(sender||'').replace(/'/g,"\\'")}')" style="width:100%; background:#1f2937; color:#fff; border:none; padding:8px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; margin-top:6px;">📄 전체 주문서 HTML 열기</button>
                 </div>`;
+            } else if(text.startsWith('[RX_DOC]')) {
+                // 🦷 의뢰서 PDF 카드 — 버튼 없음. 상단에 주문상태 배지, 더블클릭하면 미리보기.
+                // [RX_DOC]orderId|fileName|sizeKB|mime|label|fileRef
+                const parts = text.replace('[RX_DOC]', '').split('|');
+                const rxOrderId = parts[0]; const rxName = parts[1]||'의뢰서.pdf'; const rxSize = parts[2]||'';
+                const rxMime = parts[3]||'application/pdf'; const rxLabel = parts[4]||'의뢰서';
+                const rxRef = parts.slice(5).join('|');
+                const escL = (rxLabel||'').replace(/</g,'&lt;');
+                if(!window.__chatFileRegistry) window.__chatFileRegistry = {};
+                const rxKey = 'rx_' + Math.random().toString(36).substr(2, 10);
+                window.__chatFileRegistry[rxKey] = { filename: rxName, mime: rxMime, content: rxRef };
+                const isPdfDoc = rxMime === 'application/pdf';
+                displayHtml = `<div class="kt-card-msg rxdoc-card" data-rxdoc-order="${rxOrderId}" ondblclick="openChatFilePreview('${rxKey}')" style="max-width:280px; cursor:pointer;" title="더블클릭하면 의뢰서 미리보기">
+                    <div class="rxdoc-status" data-order="${rxOrderId}" style="padding:9px 12px; font-size:12px; font-weight:800; text-align:center; letter-spacing:.2px; background:#f1f5f9; color:#475569;">• 상태 확인 중…</div>
+                    <div class="kt-card-preview" style="background:${isPdfDoc?'#fef3c7':'#dbeafe'}; user-select:none;">
+                        <div class="icon" style="color:${isPdfDoc?'#92400e':'#1e40af'};">${isPdfDoc?'📄':'🌐'}</div>
+                    </div>
+                    <div class="kt-card-meta">
+                        <div class="kt-card-name">🦷 ${escL}</div>
+                        <div class="kt-card-sub">${rxSize?rxSize+'KB · ':''}${isPdfDoc?'PDF 의뢰서':'의뢰서'} · 더블클릭하여 미리보기</div>
+                    </div>
+                </div>`;
+                setTimeout(()=>{ if(window.refreshRxDocStatus) window.refreshRxDocStatus(rxOrderId, document.querySelector('.rxdoc-status[data-order="'+rxOrderId+'"]')); }, 60);
             } else if (text.startsWith('[PRIVATE_ASSET]')) {
                 const parts = text.replace('[PRIVATE_ASSET]', '').split('|'); const pId = parts[0]; const pName = parts[1]; const pStr = Number(parts[2]); const pOri = Number(parts[3]); const pThumb = parts[4];
                 const price = pOri || pStr || 0;
@@ -10322,6 +10347,95 @@ pdfjsScript,
                 </body></html>`;
             }
 
+            // 🦷 의뢰서 PDF 생성 (jsPDF + autotable, 한글 폰트 임베드). Blob(application/pdf) 반환. 실패 시 throw.
+            function buildRxPdfBlob(st, info){
+                if(!window.jspdf || !window.jspdf.jsPDF) throw new Error('PDF 라이브러리 로딩 실패');
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+                const F = ensureKrFont(doc) ? 'NotoKR' : 'helvetica';
+                doc.setFont(F, 'normal');
+                const P = 15; let y = 20;
+                const wc = (n)=> (Number(n)||0).toLocaleString('ko-KR');
+                doc.setFontSize(17); doc.text((st.mode==='simple'?'간편':'상세') + ' 기공 의뢰서', P, y); y += 7;
+                doc.setFontSize(9); doc.setTextColor(110);
+                doc.text('기공소: ' + (st.storeName||'-') + '    작성: ' + (info.timestamp||'-'), P, y);
+                doc.setTextColor(0); y += 5;
+
+                const infoRows = [
+                    ['거래처', info.clinic||'-', '담당 원장님', info.doctor||'-'],
+                    ['환자명', info.patientName||'-', '생년월일', info.birth||'-'],
+                    ['성별', info.gender||'-', '차트번호', info.chartNo||'-'],
+                    ['완성일', ((info.dueDate||'-')+' '+(info.dueAmPm||'')).trim(), '', '']
+                ];
+                doc.autoTable({
+                    startY:y, body:infoRows, theme:'grid',
+                    styles:{ font:F, fontStyle:'normal', fontSize:9, cellPadding:2, textColor:[30,41,59] },
+                    columnStyles:{ 0:{fillColor:[241,245,249], cellWidth:26}, 2:{fillColor:[241,245,249], cellWidth:26} },
+                    didParseCell:function(dd){ dd.cell.styles.font = F; }
+                });
+                y = doc.lastAutoTable.finalY + 6;
+
+                let head, body;
+                if(st.mode==='simple'){
+                    head = [['#','제작구분','치식','품목명','메모']];
+                    body = st.items.map((it,i)=>[String(i+1), it.makeType||'', (it.teeth||[]).join(', ')||'-', it.name||'-', it.memo||'']);
+                } else {
+                    head = [['#','치식','품목(수가×치아수)','메모','금액']];
+                    body = st.items.map((it,i)=>{
+                        const tc = Math.max((it.teeth||[]).length,1);
+                        const sub = (it.selected||[]).map(s=>{
+                            const pc = Number(s.ponticCount)||0;
+                            const pt = (Number(s.pontic)>0&&pc>0)?(' + 가공치 '+wc(s.pontic)+'×'+pc):'';
+                            return s.name+' ('+wc(s.price)+'×'+tc+pt+')';
+                        }).join('\n') || '-';
+                        const line = (it.selected||[]).reduce((a,s)=>a+(Number(s.price)||0)*tc+(Number(s.pontic)||0)*(Number(s.ponticCount)||0),0);
+                        return [String(i+1), (it.teeth||[]).join(', ')||'-', sub, it.memo||'', wc(line)+'원'];
+                    });
+                }
+                doc.autoTable({
+                    startY:y, head, body, theme:'striped',
+                    styles:{ font:F, fontStyle:'normal', fontSize:8.5, cellPadding:2, valign:'middle' },
+                    headStyles:{ font:F, fontStyle:'normal', fillColor:[37,99,235], textColor:[255,255,255], fontSize:9 },
+                    bodyStyles:{ font:F },
+                    columnStyles: st.mode==='detail' ? { 4:{halign:'right'} } : {},
+                    didParseCell:function(dd){ dd.cell.styles.font = F; }
+                });
+                y = doc.lastAutoTable.finalY + 7;
+
+                doc.setFontSize(12);
+                if(st.mode==='detail'){ doc.setTextColor(220,38,38); doc.text('합계 금액: ' + wc(st.amount) + '원', P, y); }
+                else { doc.setTextColor(180,83,9); doc.text('금액 미정 (기공소 확정 예정)', P, y); }
+                doc.setTextColor(0);
+                return doc.output('blob');
+            }
+
+            // 🦷 의뢰서 주문 상태 배지 — status → 직관적 라벨/색상
+            window.rxStatusBadge = function(s){
+                const m = {
+                    pending:{t:'승인 대기',bg:'#fef3c7',fg:'#92400e',i:'⏳'},
+                    approved:{t:'승인·결제완료',bg:'#dcfce7',fg:'#166534',i:'✅'},
+                    shipping:{t:'제작·배송중',bg:'#dbeafe',fg:'#1e40af',i:'🚚'},
+                    delivered:{t:'배송 완료',bg:'#e0e7ff',fg:'#3730a3',i:'📦'},
+                    confirmed:{t:'구매 확정',bg:'#e2e8f0',fg:'#334155',i:'✔️'},
+                    rejected:{t:'거절됨',bg:'#fee2e2',fg:'#991b1b',i:'❌'},
+                    cancelled:{t:'취소됨',bg:'#f4f4f5',fg:'#71717a',i:'⊘'}
+                };
+                return m[s] || {t:(s||'상태 확인 중'),bg:'#f1f5f9',fg:'#475569',i:'•'};
+            };
+            window.renderRxDocStatus = function(el, s){
+                if(!el) return; const b = window.rxStatusBadge(s);
+                el.style.background = b.bg; el.style.color = b.fg;
+                el.textContent = b.i + ' ' + b.t;
+            };
+            window.refreshRxDocStatus = async function(orderId, el){
+                try {
+                    const r = await fetch(API_URL + '/api/order/' + orderId); if(!r.ok) return;
+                    const o = await r.json(); if(!o || !o.status) return;
+                    const list = el ? [el] : Array.from(document.querySelectorAll('.rxdoc-status[data-order="'+orderId+'"]'));
+                    list.forEach(x=>window.renderRxDocStatus(x, o.status));
+                } catch(_){}
+            };
+
             /* ---------- 제출 (submitOrderForApproval 흐름 재현) ---------- */
             window.submitRxOrder = async function(){
                 const st = window.rxOrderState; if(!st||!st.product) return;
@@ -10377,21 +10491,24 @@ pdfjsScript,
                 const pic = (document.getElementById('my-profile-pic')||{}).src || '';
                 const summaryMsg = `[ORDER_PENDING]${submitData.orderId}|${st.product.id}|${productName.replace(/\|/g,' ')}|${st.amount||0}|${filesB64.length}|${modeLabel} ${info.patientName}`;
 
-                // 의뢰서 HTML 파일 첨부
+                // 🦷 의뢰서 PDF 첨부(HTML 대신). 더블클릭 미리보기 + 카드 상단에 주문상태 배지.
                 const safe = productName.replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ_.-]/g,'_');
-                const orderFileName = `${safe}_의뢰서.html`;
-                const blob = new Blob([orderHtml], { type:'text/html' });
+                let blob, fName, fMime;
+                try { blob = buildRxPdfBlob(st, info); fName = `${safe}_의뢰서.pdf`; fMime = 'application/pdf'; }
+                catch(e){ console.warn('의뢰서 PDF 생성 실패 → HTML 폴백', e); blob = new Blob([orderHtml], { type:'text/html' }); fName = `${safe}_의뢰서.html`; fMime = 'text/html'; }
                 const sizeKB = (blob.size/1024).toFixed(1);
                 let fileRef = '';
-                try { fileRef = await window.uploadChatBlob(blob, orderFileName, 'text/html'); }
+                try { fileRef = await window.uploadChatBlob(blob, fName, fMime); }
                 catch(_){ fileRef = await new Promise(r=>{ const fr=new FileReader(); fr.onload=e=>r(e.target.result); fr.readAsDataURL(blob); }); }
-                const fileMsg = `[FILE_ATTACH]${orderFileName}|${sizeKB}|text/html|${fileRef}`;
+                // [RX_DOC]orderId|fileName|sizeKB|mime|label|fileRef  (fileRef가 |를 포함할 수 있어 마지막)
+                const rxLabel = (modeLabel + ' · ' + info.patientName).replace(/\|/g,' ');
+                const rxDocMsg = `[RX_DOC]${submitData.orderId}|${fName}|${sizeKB}|${fMime}|${rxLabel}|${fileRef}`;
 
                 const ensureSocket = async () => { if(socket&&socket.connected) return true; for(let i=0;i<10;i++){ await new Promise(r=>setTimeout(r,200)); if(socket&&socket.connected) return true; } return false; };
                 if(await ensureSocket() && socket){
                     socket.emit('join_room', roomId);
                     socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: summaryMsg });
-                    setTimeout(()=> socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: fileMsg }), 300);
+                    setTimeout(()=> socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: rxDocMsg }), 300);
                 }
 
                 closeOv('rx-form-modal');
