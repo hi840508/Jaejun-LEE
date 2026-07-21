@@ -2507,6 +2507,8 @@
                 if(res.ok && data.exists && data.user) {
                     if(data.mustChangePassword) {
                         window.pendingLoginUser = data.user;
+                        window.pendingLoginToken = data.token;
+                        if(data.token) setEarthToken(data.token);   // 🔐 change-password(requireUser) 호출 전에 토큰 확보
                         openModal('force-pwd-change-modal');
                         return;
                     }
@@ -3086,6 +3088,7 @@
                 // 비밀번호 강제 변경 모달로 전환
                 window.pendingLoginUser = data.user;
                 window.pendingLoginToken = data.token;   // 🔐 최종 로그인 시 저장
+                if(data.token) setEarthToken(data.token);   // 🔐 change-password(requireUser) 호출 전에 토큰 확보
                 openModal('force-pwd-change-modal');
             } catch(e){ showToast("네트워크 오류"); }
         }
@@ -3111,7 +3114,7 @@
                     localStorage.setItem('earth_auto_login', JSON.stringify(window.pendingLoginUser));
                 }
                 showToast("비밀번호 변경 완료. 자동 접속합니다.");
-                setEarthToken(window.pendingLoginToken);   // 🔐 세션 토큰 저장
+                // 🔐 토큰은 위(mustChangePassword/OTP 분기)에서 이미 저장됨 — 여기서 재설정하지 않음(pendingLoginToken이 undefined면 토큰이 지워지는 버그 제거).
                 loginSuccess(window.pendingLoginUser);
                 window.pendingLoginUser = null; window.pendingLoginToken = null;
             } catch(e){ showToast("네트워크 오류"); }
@@ -3953,12 +3956,12 @@
         window.checkoutCart = async function() {
             if(window.cart.length === 0) return showToast("장바구니가 비어있습니다.");
             const total = window.cart.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-            if(!confirm(`총 ${window.cart.length}개 상품을 ${total.toLocaleString()}원에 결제하시겠습니까?\n(거래내역에는 상품별로 개별 기록되어 환불 가능합니다)`)) return;
+            let pay; try { pay = await window.pgPay(total); } catch(_) { return; }   // 잔액/카드 선택(취소 시 중단)
             try {
-                const res = await fetch(`${API_URL}/api/buy/cart`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ buyer: currentUser.name, items: window.cart }) });
+                const res = await fetch(`${API_URL}/api/buy/cart`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ buyer: currentUser.name, items: window.cart, payMethod: pay.method, cardPw: pay.cardPw }) });
                 const data = await res.json();
                 if(res.ok) {
-                    showToast(`✅ ${data.count}개 상품 결제 완료 (${data.total.toLocaleString()}원)`);
+                    showToast(`✅ ${data.count}개 상품 결제 완료 (${data.total.toLocaleString()}원)${pay.method==='card'?' · 카드':''}`);
                     window.cart = []; saveCart();
                     closeModal('cart-modal'); updateUserBalance(); loadMarketplace();
                 } else showToast(data.error || "결제 실패");
@@ -5041,6 +5044,18 @@
             }
         }
 
+        // 🔐 주문서(bundle_html)를 same-origin document.write 대신 sandbox="" iframe(srcdoc)으로 렌더 — 스크립트/동일출처 차단(XSS 방지).
+        window.openBundleHtmlSandboxed = function(html, title){
+            const w = window.open('', '_blank');
+            if(!w) { showToast('팝업 차단을 해제해 주세요.'); return false; }
+            const t = String(title||'주문서').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            // srcdoc 속성값용 이스케이프(& 와 " 만 처리하면 안전) — 내부 스크립트는 sandbox=""로 무력화.
+            const srcdoc = String(html==null?'':html).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+            w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+t+'</title><style>html,body{margin:0;height:100%;background:#1e293b;}iframe{border:0;width:100vw;height:100vh;}</style></head><body><iframe sandbox="" srcdoc="'+srcdoc+'"></iframe></body></html>');
+            w.document.close();
+            return true;
+        };
+
         // 🚀 주문 HTML 다운로드 (서버에 저장된 bundle_html을 가져와서 새 창으로)
         window.downloadOrderHTML = async function(productId, partnerName) {
             try {
@@ -5052,10 +5067,8 @@
                 // 가장 최근에 매칭되는 productId
                 const match = (list || []).filter(o => o.productId === productId).sort((a,b) => b.id - a.id)[0];
                 if(!match || !match.bundle_html) return showToast("주문서를 찾을 수 없습니다.");
-                // 새 창에 HTML 렌더
-                const w = window.open('', '_blank');
-                if(!w) return showToast("팝업 차단을 해제해 주세요.");
-                w.document.write(match.bundle_html); w.document.close();
+                // 🔐 sandbox iframe으로 렌더(스크립트 실행 차단)
+                window.openBundleHtmlSandboxed(match.bundle_html, '주문서');
             } catch(e){ showToast("주문서 로드 실패"); console.error(e); }
         }
 
@@ -6505,6 +6518,59 @@ pdfjsScript,
             } catch(e) { showToast('강제 폐쇄 실패: ' + (e.message||e)); }
         };
         
+        // 💳 ================= PG 카드결제 UX (재사용) =================
+        //  window.pgPay(amount, onConfirm?) — 잔액>0면 [잔액/카드] 선택, 아니면 바로 카드 4자리 입력.
+        //   · onConfirm 콜백을 주면 onConfirm({method,cardPw}) 호출.
+        //   · 콜백 없이 부르면 Promise 반환(resolve {method,cardPw}, 취소 시 reject).
+        function _pgOverlay(innerHtml){
+            let ov = document.getElementById('pg-pay-overlay'); if(ov) ov.remove();
+            ov = document.createElement('div'); ov.id = 'pg-pay-overlay';
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:100000;display:flex;align-items:center;justify-content:center;';
+            ov.innerHTML = '<div style="background:var(--card-bg,#fff);color:var(--text-main,#111);border-radius:16px;padding:22px;width:300px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,0.35);">'+innerHtml+'</div>';
+            document.body.appendChild(ov); return ov;
+        }
+        window._pgClose = function(){ const ov=document.getElementById('pg-pay-overlay'); if(ov) ov.remove(); };
+        function _pgChoice(amount, bal, onBalance, onCard, onCancel){
+            const ov = _pgOverlay(
+                '<div style="font-size:16px;font-weight:800;margin-bottom:4px;">결제 수단 선택</div>'+
+                '<div style="font-size:13px;color:var(--text-sub,#64748b);margin-bottom:16px;">결제 금액 <b>'+Number(amount||0).toLocaleString()+'원</b></div>'+
+                '<button id="pg-btn-balance" style="width:100%;padding:12px;margin-bottom:10px;border:none;border-radius:10px;background:var(--gradient-btn,#6366f1);color:#fff;font-weight:700;cursor:pointer;">잔액으로 결제 <span style="opacity:.85;font-size:12px;">(보유 '+Number(bal||0).toLocaleString()+'원)</span></button>'+
+                '<button id="pg-btn-card" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid var(--border-color,#e2e8f0);border-radius:10px;background:#fff;color:#111;font-weight:700;cursor:pointer;">💳 카드로 결제</button>'+
+                '<button id="pg-btn-cancel" style="width:100%;padding:8px;border:none;background:transparent;color:var(--text-sub,#64748b);cursor:pointer;">취소</button>'
+            );
+            ov.querySelector('#pg-btn-balance').onclick = ()=>{ window._pgClose(); onBalance(); };
+            ov.querySelector('#pg-btn-card').onclick = ()=>{ window._pgClose(); onCard(); };
+            ov.querySelector('#pg-btn-cancel').onclick = ()=>{ window._pgClose(); if(onCancel) onCancel(); };
+        }
+        function _pgCardPrompt(amount, onCard, onCancel){
+            const ov = _pgOverlay(
+                '<div style="font-size:16px;font-weight:800;margin-bottom:4px;">💳 카드 결제</div>'+
+                '<div style="font-size:13px;color:var(--text-sub,#64748b);margin-bottom:14px;">결제 금액 <b>'+Number(amount||0).toLocaleString()+'원</b></div>'+
+                '<div style="font-size:12px;color:var(--text-sub,#64748b);margin-bottom:6px;">카드 비밀번호 4자리</div>'+
+                '<input id="pg-card-pw" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••" style="width:100%;padding:12px;font-size:22px;letter-spacing:10px;text-align:center;border:1px solid var(--border-color,#e2e8f0);border-radius:10px;margin-bottom:14px;box-sizing:border-box;">'+
+                '<button id="pg-card-ok" style="width:100%;padding:12px;margin-bottom:8px;border:none;border-radius:10px;background:var(--gradient-btn,#6366f1);color:#fff;font-weight:700;cursor:pointer;">결제 승인</button>'+
+                '<button id="pg-card-cancel" style="width:100%;padding:8px;border:none;background:transparent;color:var(--text-sub,#64748b);cursor:pointer;">취소</button>'
+            );
+            const inp = ov.querySelector('#pg-card-pw');
+            inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/\D/g,'').slice(0,4); });
+            setTimeout(()=>{ try{ inp.focus(); }catch(_){} }, 50);
+            const submit = ()=>{ const pw=(inp.value||'').replace(/\D/g,''); if(!/^\d{4}$/.test(pw)){ showToast('카드 비밀번호 4자리를 입력하세요.'); return; } window._pgClose(); onCard(pw); };
+            ov.querySelector('#pg-card-ok').onclick = submit;
+            ov.querySelector('#pg-card-cancel').onclick = ()=>{ window._pgClose(); if(onCancel) onCancel(); };
+            inp.addEventListener('keydown', (e)=>{ if(e.key==='Enter') submit(); });
+        }
+        function _pgFlow(amount, resolve, reject){
+            const bal = (window.currentUser && Number(currentUser.balance)) || 0;
+            const cancel = ()=>{ if(reject) reject(new Error('cancelled')); };
+            const askCard = ()=> _pgCardPrompt(amount, (cardPw)=>resolve({ method:'card', cardPw }), cancel);
+            if(bal > 0) _pgChoice(amount, bal, ()=>resolve({ method:'balance' }), askCard, cancel);
+            else askCard();
+        }
+        window.pgPay = function(amount, onConfirm){
+            if(typeof onConfirm === 'function'){ _pgFlow(amount, onConfirm, ()=>{}); return; }
+            return new Promise((resolve, reject)=> _pgFlow(amount, resolve, reject));
+        };
+
         async function buyAsset(id, name, amount, seller, purchaseType) {
             // 🚀 [v7p+] PDF 주문서가 있는 패키지 상품만 채팅 승인 흐름으로 라우팅
             try {
@@ -6540,11 +6606,11 @@ pdfjsScript,
                 console.warn('패키지 검증 실패:', e);
                 if(window.__earthDiag) window.__earthDiag('buyAsset detail fetch fail: ' + (e.message||e), true);
             }
-            // 일반 즉시 결제 흐름
-            if(!confirm(`[${name}] 상품을 결제합니까?`)) return;
+            // 일반 즉시 결제 흐름 — 잔액/카드 결제수단 선택(pgPay)
+            let pay; try { pay = await window.pgPay(amount); } catch(_) { return; }   // 취소
             try {
-                const res = await fetch(`${API_URL}/api/buy`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ buyer: currentUser.name, seller, productId: id, productName: name, amount, purchaseType }) });
-                if(res.ok) { showToast("결제 완료. 상품 뷰어가 열립니다."); loadMarketplace(); updateUserBalance(); switchTab('history'); setTimeout(() => openUniversalViewer(id, purchaseType==='original'), 400); }
+                const res = await fetch(`${API_URL}/api/buy`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ buyer: currentUser.name, seller, productId: id, productName: name, amount, purchaseType, payMethod: pay.method, cardPw: pay.cardPw }) });
+                if(res.ok) { const d = await res.json().catch(()=>({})); showToast(pay.method==='card' ? ('카드 결제 승인 완료' + (d.approvalNo? ' ('+d.approvalNo+')':'')) : "결제 완료. 상품 뷰어가 열립니다."); loadMarketplace(); updateUserBalance(); switchTab('history'); setTimeout(() => openUniversalViewer(id, purchaseType==='original'), 400); }
                 else { const d = await res.json().catch(()=>({error:'서버 응답 오류'})); showToast(d.error || '결제 실패'); }
             } catch(e) {
                 if(window.__earthDiag) window.__earthDiag('buyAsset POST fail: ' + (e.message||e), true);
@@ -6774,6 +6840,10 @@ pdfjsScript,
 
             if(!confirm(`📤 주문서를 ${st.seller}님에게 보냅니다.\n\n결제 예정: ${Number(st.amount).toLocaleString()}원\n(판매자가 채팅에서 ✅ 승인하면 자동 결제됩니다)\n\n계속하시겠습니까?`)) return;
 
+            // 💳 결제수단 선택(잔액/카드). 카드면 주문 시점에 PG 승인. 금액이 0이면 잔액으로 간주(미정 주문).
+            let pay = { method:'balance' };
+            if(Number(st.amount) > 0) { try { pay = await window.pgPay(st.amount); } catch(_) { return; } }
+
             showToast("주문서 패키징 중...");
 
             // 구매자 파일들 → base64
@@ -6798,7 +6868,8 @@ pdfjsScript,
                     productId: st.product.id, buyer: currentUser.name, seller: st.seller,
                     bundle_html: orderHtml, memo, form_data: { pdfText, buyerFilesMeta: buyerFilesB64.map(f => ({ filename: f.filename, type: f.type })) },
                     pdf_filled_data: pdfText, buyer_info: buyerInfo,
-                    amount: st.amount, status: 'pending'
+                    amount: st.amount, status: 'pending',
+                    payMethod: pay.method, cardPw: pay.cardPw
                 })
             });
             const submitData = await submitRes.json();
@@ -8367,6 +8438,8 @@ pdfjsScript,
             });
         };
 
+        // 🔐 채팅 일반 텍스트 XSS 방지용 이스케이프(특수 카드는 자체 이스케이프 유지)
+        function _escChatText(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
         // 🚀 [v7] 채팅 파일 메시지 핸들러 (text registry)
         function appendMainMessage(sender, text, picBase64, dateStr, msgId) {
             const chatBody = document.getElementById('main-chat-body');
@@ -8382,6 +8455,8 @@ pdfjsScript,
             let displayHtml = text;
             // 일반 텍스트 메시지인지 (특수 카드가 아닌 경우만 수정/삭제 허용)
             const isPlainText = !/^\[(TRANSFER|VIDEO_INVITE|FILE_ATTACH|PRIVATE_ASSET|ORDER_|ITEM_SALE|SETTLE)/.test(text);
+            // 🔐 XSS 차단: 일반 텍스트는 insertAdjacentHTML 전에 HTML 이스케이프(특수 카드는 아래 분기에서 자체 처리)
+            if(isPlainText) displayHtml = _escChatText(text);
 
             if(text.startsWith('[TRANSFER]')) {
                 displayHtml = `<div style="padding:4px;"><div style="font-size:11px; opacity:0.7;">자산 이체</div><div style="font-size:18px; font-weight:900; margin-top:2px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</div></div>`;
@@ -8672,10 +8747,8 @@ pdfjsScript,
                 const res = await fetch(`${API_URL}/api/order/${orderId}`);
                 const ord = await res.json();
                 if(!ord || !ord.bundle_html) return showToast('주문 HTML을 찾을 수 없습니다.');
-                const w = window.open('', '_blank');
-                if(!w) return showToast('팝업 차단을 해제해 주세요.');
-                w.document.write(ord.bundle_html);
-                w.document.close();
+                // 🔐 sandbox iframe으로 렌더(스크립트 실행 차단)
+                window.openBundleHtmlSandboxed(ord.bundle_html, '주문서');
             } catch(e) { showToast('주문서 로드 실패: ' + (e.message || e)); }
         };
 
@@ -10017,6 +10090,9 @@ pdfjsScript,
                     if(!hasContent) return showToast('품목명 또는 치식을 입력해 주세요.');
                 }
                 if(!confirm(`📤 ${st.mode==='simple'?'간편':'상세'} 의뢰서를 ${st.seller}님(기공소)에게 보냅니다.\n\n결제 예정: ${st.mode==='detail'?won(st.amount):'금액 미정'}\n(기공소가 채팅에서 승인하면 진행됩니다)\n\n계속하시겠습니까?`)) return;
+                // 💳 결제수단 선택(금액 확정된 상세 의뢰서만). 간편(금액 미정)은 잔액으로 간주 — 승인 시점 결제.
+                let pay = { method:'balance' };
+                if(Number(st.amount) > 0) { try { pay = await window.pgPay(st.amount); } catch(_) { return; } }
                 showToast('의뢰서 전송 중...');
 
                 // 첨부 파일 base64
@@ -10033,7 +10109,7 @@ pdfjsScript,
 
                 const submitRes = await fetch(`${API_URL}/api/product/submit-order`, {
                     method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({ productId: st.product.id, buyer: currentUser.name, seller: st.seller, bundle_html: orderHtml, memo: (st.items.map(it=>it.memo).filter(Boolean).join(' / ')||''), form_data: formData, buyer_info: buyerInfo, amount: st.amount||0, status: 'pending' })
+                    body: JSON.stringify({ productId: st.product.id, buyer: currentUser.name, seller: st.seller, bundle_html: orderHtml, memo: (st.items.map(it=>it.memo).filter(Boolean).join(' / ')||''), form_data: formData, buyer_info: buyerInfo, amount: st.amount||0, status: 'pending', payMethod: pay.method, cardPw: pay.cardPw })
                 });
                 const submitData = await submitRes.json().catch(()=>({}));
                 if(!submitRes.ok || !submitData.orderId) return showToast(submitData.error || '의뢰서 전송 실패');
