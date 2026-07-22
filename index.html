@@ -4293,6 +4293,8 @@
             } catch(e) { window.open(url,'_blank','noopener'); }
         };
         window.setCategoryFilter = function(catId) {
+            // 🔗 링크 상점(제휴 사이트) iframe은 해당 상점 입장 시에만 표시 → 카테고리 전환 시 닫고 쇼케이스 복귀
+            const _ext = document.getElementById('external-store-wrap'); if(_ext && _ext.style.display !== 'none') { _ext.style.display = 'none'; const _ef = document.getElementById('external-store-frame'); if(_ef) _ef.src = 'about:blank'; const _sw = document.getElementById('brand-showcase-wrap'); if(_sw) _sw.style.display = 'block'; const _bd = document.getElementById('brand-backdrop'); if(_bd) _bd.style.display = 'none'; window.currentMarketFilter = null; window.currentMarketFilterStore = null; }
             window.activeCategoryFilter = catId;
             window.renderCategoryChips && window.renderCategoryChips();
             window.renderSidebarCategories && window.renderSidebarCategories();
@@ -7007,6 +7009,9 @@ pdfjsScript,
         window.submitOrderForApproval = async function() {
             const st = window.orderFormState;
             if(!st.product) return;
+            // 🦷 기공소(dental_lab) PDF 주문서: 금액 미설정(0) → 금액미정 흐름(기공소 확정→구매자 결제) + 핀 카드
+            const _isLab = !!(st.product && st.product.storeCategory === 'dental_lab');
+            if(_isLab) st.amount = 0;
             const memo = (document.getElementById('order-buyer-memo').value || '').trim();
             const pdfText = window.orderFormState.pdfFilledData || '';
             const buyerInfo = {
@@ -7123,12 +7128,18 @@ pdfjsScript,
             if(ok && socket) {
                 // 1. 방에 다시 join (이미 join돼 있어도 안전)
                 socket.emit('join_room', roomId);
-                // 2. 주문 카드 메시지
-                socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: summaryMsg });
-                // 3. 주문서 HTML 파일 첨부 메시지
-                setTimeout(() => {
-                    socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: fileMsg });
-                }, 300);
+                if(_isLab){
+                    // 🦷 기공소: 상단 고정 카드(RX_DOC)만 전송 → 금액미정 흐름(주문서 보기=PDF 작성 내용 HTML)
+                    const rxLabel = ('기공 의뢰서 · ' + (st.product.name||'')).replace(/\|/g,' ');
+                    socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: `[RX_DOC]${submitData.orderId}|0|${rxLabel}` });
+                } else {
+                    // 2. 주문 카드 메시지
+                    socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: summaryMsg });
+                    // 3. 주문서 HTML 파일 첨부 메시지
+                    setTimeout(() => {
+                        socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: fileMsg });
+                    }, 300);
+                }
             } else {
                 if(window.__earthDiag) window.__earthDiag('socket not connected for order msg', true);
                 showToast('⚠️ 채팅 서버 연결이 불안정합니다. 잠시 후 채팅에서 다시 확인해 주세요.');
@@ -10169,6 +10180,12 @@ pdfjsScript,
                 return `<div style="display:flex;gap:12px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:14px;">${thumb}<div style="min-width:0;"><div style="font-size:11px;color:#94a3b8;font-weight:700;">선택한 품목</div><div style="font-size:14px;font-weight:800;color:var(--primary);">${esc(st.preselectName)}</div>${st.productDesc?`<div style="font-size:12px;color:#64748b;margin-top:2px;white-space:pre-wrap;">${esc(st.productDesc)}</div>`:''}</div></div>`;
             }
             window.openRxChoiceModal = async function(product, amount, seller, purchaseType){
+                // 📋 PDF 주문서가 등록된 상품이면 간편/상세 대신 PDF 주문서 작성으로(금액 미설정 흐름)
+                let _detail = product;
+                try { const _dr = await fetch(`${API_URL}/api/product/detail/${product.id}`); if(_dr.ok) _detail = await _dr.json(); } catch(_){}
+                let _hasPdf = false;
+                try { const _pkg = JSON.parse(_detail.package_data||'{}'); _hasPdf = (_pkg.files||[]).some(f=>f.role==='order_form'||/\.pdf$/i.test(f.filename||'')); } catch(_){}
+                if(_hasPdf && typeof openOrderFormModal==='function'){ _detail.storeCategory = _detail.storeCategory || 'dental_lab'; openOrderFormModal(_detail, 0, seller, purchaseType); return; }
                 let items = [], storeName = '', storeId = product.storeId || '';
                 try {
                     const res = await fetch(`${API_URL}/api/store/rx-items/${encodeURIComponent(storeId)}`);
@@ -10587,7 +10604,14 @@ pdfjsScript,
             function _orderPinActions(d, o){
                 var oid = d.orderId, status = o.status, amount = Number(o.amount)||0;
                 var trk = o.tracking ? String(o.tracking).replace(/</g,'&lt;') : '';
-                var trkLine = trk ? '<div style="font-size:11px;color:#475569;margin-bottom:6px;">🚚 송장번호 <b>'+trk+'</b></div>' : '';
+                var trkLine = '';
+                if(trk){
+                    var _cn = (window.courierName ? window.courierName(o.courier) : '택배');
+                    var _tu = (window.courierTrackUrl ? window.courierTrackUrl(o.courier, o.tracking) : '');
+                    trkLine = '<div style="font-size:11px;color:#475569;margin-bottom:6px;">🚚 '+_cn+' <b>'+trk+'</b>'
+                        + (_tu ? ' · <a href="'+_tu+'" target="_blank" rel="noopener" style="color:#2563eb;font-weight:700;text-decoration:underline;">배송조회 ↗</a>' : '')
+                        + '</div>';
+                }
                 // 역할은 주문의 buyer 기준으로 확정(핀 컨텍스트 의존 제거 → 배송완료에서 구매자 액션 누락 방지)
                 var isBuyer = !!(currentUser && o.buyer && currentUser.name === o.buyer);
                 if(!isBuyer){
