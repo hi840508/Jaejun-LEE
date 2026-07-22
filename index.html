@@ -1233,6 +1233,10 @@
                                 <input type="file" id="prod-files-input" multiple style="display:none;" onchange="window.onProdFilesSelected && window.onProdFilesSelected(event.target.files)">
                             </div>
                             <div id="prod-files-list" style="margin-top:8px;"></div>
+                            <div id="prod-card-preview-wrap" style="margin-top:14px; display:none;">
+                                <div style="font-size:12px; font-weight:bold; color:var(--text-main); margin-bottom:6px;">🔍 상품 카드 미리보기 (실제 진열 모습)</div>
+                                <div id="prod-card-preview" style="max-width:220px;"></div>
+                            </div>
                         </div>
 
                         <div style="margin-top:12px;">
@@ -1326,7 +1330,7 @@
                     <div style="font-size: 13px; opacity: 0.9; margin-bottom: 5px; font-weight:bold;">Total Available Balance</div>
                     <div style="font-size: 40px; font-weight: 900; margin:5px 0;"><span id="display-balance">0</span> <span style="font-size:20px;">KRW</span></div>
                     <div style="display: flex; gap: 10px; margin-top: 15px; justify-content: center;">
-                        <button class="btn" style="background:#fff; color:var(--primary); font-size:13px; padding:10px 20px; box-shadow:0 2px 5px rgba(0,0,0,0.1);" onclick="openModal('deposit-modal')">입금</button>
+                        <button class="btn" style="background:#fff; color:var(--primary); font-size:13px; padding:10px 20px; box-shadow:0 2px 5px rgba(0,0,0,0.1);" onclick="openModal('deposit-modal')">충전</button>
                         <button class="btn" style="background:rgba(255,255,255,0.2); color:#fff; border:1px solid rgba(255,255,255,0.4); font-size:13px; padding:10px 20px;" onclick="openModal('withdraw-modal')">출금</button>
                         <span id="withdraw-account-info" style="display:none;"></span>
                     </div>
@@ -1707,12 +1711,12 @@
 
     <div class="modal-overlay" id="deposit-modal">
         <div class="modal-content">
-            <div class="modal-header"><span>입금 신청</span><button class="close-btn-x" onclick="closeModal('deposit-modal')">&times;</button></div>
+            <div class="modal-header"><span>충전</span><button class="close-btn-x" onclick="closeModal('deposit-modal')">&times;</button></div>
             <div style="background:#ecfdf5; border:1px solid var(--success); padding:12px; border-radius:8px; font-size:12px; color:#166534; line-height:1.5;">
-                <strong style="font-size:14px;">우리은행 1002-338-118610 (이재준)</strong><br>송금하신 금액을 기입해 주십시오. 로그인 계정과 매칭됩니다.
+                충전하실 금액을 입력해 주세요. 로그인 계정 잔액에 반영됩니다.
             </div>
             <div class="input-group" style="margin-top:10px;"><input type="number" id="modal-deposit-amount" placeholder="금액 (원)"></div>
-            <button class="btn btn-success" style="width:100%; padding:14px;" onclick="executeDeposit()">신청 접수</button>
+            <button class="btn btn-success" style="width:100%; padding:14px;" onclick="executeDeposit()">충전</button>
         </div>
     </div>
 
@@ -1720,7 +1724,7 @@
         <div class="modal-content">
             <div class="modal-header"><span>출금 신청</span><button class="close-btn-x" onclick="closeModal('withdraw-modal')">&times;</button></div>
             <div style="background:#fef2f2; border:1px solid var(--danger); padding:12px; border-radius:8px; font-size:12px; color:#991b1b; line-height:1.5;">
-                * 가용 잔액 <b>10,000원 초과</b> 시 <b>1만 원 단위</b>로만 출금됩니다.<br>계좌: <strong id="modal-withdraw-account-info"></strong>
+                가용 잔액 10,000원 초과 시 1만 원 단위로만 출금됩니다.<br>신청 후 3일 이내 가입하실 때 입력하신 은행 계좌로 입금됩니다.<span id="modal-withdraw-account-info" style="display:none;"></span>
             </div>
             <div class="input-group" style="margin-top:10px;"><input type="number" id="modal-withdraw-amount" placeholder="출금액 (1만원 단위 기입)"></div>
             <button class="btn btn-danger" style="width:100%; padding:14px;" onclick="executeWithdraw()">출금 신청</button>
@@ -4926,11 +4930,37 @@
             if(nameInput && !nameInput.value.trim() && window.prodFormState.files[0]) {
                 nameInput.value = window.prodFormState.files[0].name.replace(/\.[^.]+$/, '');
             }
+            if(window.updateProdCardPreview) window.updateProdCardPreview();
             // 사용자 피드백: 파일이 정상 추가되었음을 시각·청각적으로 알림
             if(arr.length > 0) showToast(`📂 ${arr.length}개 파일 추가됨 (총 ${window.prodFormState.files.length}개)`);
             // input 초기화 → 다음 선택도 같은 파일 가능
             const inp = document.getElementById('prod-files-input'); if(inp) inp.value = '';
         }
+
+        // 🔍 상품 카드 미리보기 — 등록 폼 입력/파일에 따라 실제 진열 카드 모습을 실시간 표시
+        window.updateProdCardPreview = function(){
+            const wrap = document.getElementById('prod-card-preview-wrap');
+            const box = document.getElementById('prod-card-preview');
+            if(!wrap || !box) return;
+            const name = ((document.getElementById('prod-name')||{}).value || '상품명').replace(/</g,'&lt;');
+            const price = Number((document.getElementById('prod-price-original')||{}).value||0);
+            const desc = ((document.getElementById('prod-description')||{}).value || '').replace(/</g,'&lt;');
+            const f = (window.prodFormState.files||[]).find(x=>/^image/.test(x.type||''));
+            let thumb = window.PROD_ICON || '';
+            if(f){ try { thumb = URL.createObjectURL(f); } catch(_){} }
+            wrap.style.display = 'block';
+            box.innerHTML = `<div class="clean-card" style="cursor:default;">
+                <div class="img-wrap"><img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" onerror="this.onerror=null;this.src=window.PROD_ICON;"></div>
+                <div class="info">
+                    <div class="name">${name}</div>
+                    <div style="font-size:11px;color:var(--text-sub);margin:4px 0;">리뷰 없음</div>
+                    <div class="price-row"><span class="price-main">${price.toLocaleString()}원</span></div>
+                    ${desc?`<div class="desc">${desc}</div>`:''}
+                    <div class="actions"><div style="font-size:12px;color:var(--primary);font-weight:700;">눌러서 상세보기 · 결제</div></div>
+                </div>
+            </div>`;
+        };
+        (function _bindProdPreview(){ try { ['prod-name','prod-price-original','prod-description'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('input', function(){ if(window.updateProdCardPreview) window.updateProdCardPreview(); }); }); } catch(_){} })();
 
         window.onProdPdfFileSelected = function(file) {
             if(!file) return;
@@ -4946,6 +4976,7 @@
         window.removeProdFile = function(idx) {
             window.prodFormState.files.splice(idx, 1);
             renderProdFilesList();
+            if(window.updateProdCardPreview) window.updateProdCardPreview();
         }
         window.markAsMainFile = function(idx) {
             // 해당 인덱스를 첫 번째(대표)로 이동
@@ -4954,6 +4985,7 @@
             const [picked] = files.splice(idx, 1);
             files.unshift(picked);
             renderProdFilesList();
+            if(window.updateProdCardPreview) window.updateProdCardPreview();
         }
         window.removeProdPdf = function() {
             window.prodFormState.pdfFile = null;
@@ -6525,24 +6557,17 @@ pdfjsScript,
                     const bOri = history.find(hi => hi.buyer === currentUser.name && hi.productId === p.id && hi.purchaseType === 'original' && !hi.refunded);
                     const price = Number(p.price_original) || Number(p.price_stream) || 0;
 
-                    // 🚀 [v8] 스트리밍 정책 제거 - 단일 구매 버튼만
+                    // 🚀 버튼 제거 — 카드 전체 클릭으로 동작(아래 onProductCardClick). 여기선 안내 문구만.
                     let actions = '';
                     if(isMine) {
-                        actions = `<button class="btn-own" onclick="openUniversalViewer('${p.id}', true)">내 상품 · 미리보기</button>`;
+                        actions = `<div style="font-size:12px;color:var(--text-sub);font-weight:600;">내 상품 · 눌러서 미리보기</div>`;
                     } else if(Number(p.rx_form) === 1) {
-                        // 🦷 기공소 의뢰서 작성 기본 상품: 가격 대신 '의뢰서 작성' 버튼(간편/상세 선택)
-                        const safeName = (p.name||'').replace(/'/g,"\\'");
-                        actions = `<button class="btn-original" onclick="buyAsset('${p.id}', '${safeName}', 0, '${p.seller}', 'original')" title="의뢰서 작성" style="width:100%; background:linear-gradient(135deg,#7c3aed,#5b21b6);">🦷 의뢰서 작성 (간편/상세)</button>`;
+                        actions = `<div style="font-size:12px;color:#5b21b6;font-weight:700;">🦷 눌러서 의뢰서 작성</div>`;
                     } else if(labStore) {
-                        // 🦷 기공소 카테고리 상품(수가 품목): 가격(수가) 표시 + 품목명 자동완성 의뢰서 작성 버튼 고정
-                        const priceLab = `<div style="font-size:12px;color:#64748b;margin-bottom:6px;">수가 <b style="color:var(--text-main);">${Number(price).toLocaleString()}원</b> · 금액은 의뢰서 확인 후 기공소가 확정</div>`;
-                        actions = priceLab + `<button class="btn-original" onclick="startProductRx('${p.id}')" title="의뢰서 작성" style="width:100%; background:linear-gradient(135deg,#7c3aed,#5b21b6);">🦷 의뢰서 작성 (간편/상세)</button>`;
+                        actions = `<div style="font-size:11px;color:#64748b;">수가 <b style="color:var(--text-main);">${Number(price).toLocaleString()}원</b> · 금액은 의뢰서 확인 후 기공소가 확정</div><div style="font-size:12px;color:#5b21b6;font-weight:700;margin-top:4px;">🦷 눌러서 의뢰서 작성</div>`;
                     } else {
-                        const safeName = (p.name||'').replace(/'/g,"\\'");
                         const ownedBadge = bOri ? `<div style="font-size:10px; color:var(--success); font-weight:600; margin-bottom:4px;">이미 구매함 · "내 구매"에서 열람 가능</div>` : '';
-                        actions = ownedBadge + `
-                            <button class="btn-original" onclick="buyAsset('${p.id}', '${safeName}', ${price}, '${p.seller}', 'original')" title="구매하기" style="width:100%;">${Number(price).toLocaleString()}원 구매</button>
-                            <button class="btn-cart" onclick="addToCart('${p.id}', '${safeName}', ${price}, '${p.seller}', 'original', event)" title="장바구니 담기" aria-label="장바구니"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg></button>`;
+                        actions = ownedBadge + `<div style="font-size:12px;color:var(--primary);font-weight:700;">눌러서 상세보기 · 결제</div>`;
                     }
 
                     // 🚀 [v8+] NEW 태그: 등록 7일 이내만 (id에 포함된 타임스탬프 파싱)
@@ -6575,8 +6600,8 @@ pdfjsScript,
                         ratingHtml = `<div style="font-size:11px; color:var(--text-sub); margin:4px 0;">리뷰 없음</div>`;
                     }
 
-                    h += `<div class="clean-card">
-                        <div class="img-wrap" onclick="openProductPreview('${p.id}', ${isMine||bOri ? 'true':'false'})">
+                    h += `<div class="clean-card" style="cursor:pointer;" onclick="onProductCardClick('${p.id}')">
+                        <div class="img-wrap">
                             <img src="${window.prodThumbSrc(p)}" alt="${(p.name||'').replace(/"/g,'&quot;')}" onerror="this.onerror=null;this.src=window.PROD_ICON;">
                             ${showNewTag ? '<div class="tag-new">NEW</div>' : ''}
                             ${discountPct > 0 ? `<div class="tag-discount">-${discountPct}%</div>` : ''}
@@ -6589,7 +6614,7 @@ pdfjsScript,
                             </div>
                             ${p.description ? `<div class="desc">${p.description}</div>` : ''}
                             <div class="actions">${actions}</div>
-                            ${isAdmin && !isMine ? `<button class="btn btn-danger" style="margin-top:4px; padding:4px 6px; font-size:10px; border-radius:4px;" onclick="adminForceDeleteProduct('${p.id}')">Admin 강제 삭제</button>` : ''}
+                            ${isAdmin && !isMine ? `<button class="btn btn-danger" style="margin-top:4px; padding:4px 6px; font-size:10px; border-radius:4px;" onclick="event.stopPropagation(); adminForceDeleteProduct('${p.id}')">Admin 강제 삭제</button>` : ''}
                         </div>
                     </div>`;
                 });
@@ -6600,6 +6625,71 @@ pdfjsScript,
                 if(g) g.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:36px 20px; color:var(--danger); font-size:13px; background:#fff; border:1px dashed var(--border-color); border-radius:12px;">⚠️ 상품을 불러오지 못했습니다.<br><span style="font-size:11px; color:var(--text-sub);">${(e.message||'').replace(/</g,'&lt;')}</span><br><button class="btn btn-outline" onclick="loadMarketplace()" style="margin-top:10px; padding:6px 16px; font-size:12px;">🔄 다시 시도</button></div>`;
             }
         }
+
+        // 🖱 상품 카드 전체 클릭 라우터 — 버튼 제거 대체. 본인=미리보기 / 기공소=의뢰서 / 그 외=상세·결제
+        window.onProductCardClick = function(pid){
+            const p = (window.__marketProds||[]).find(x=>String(x.id)===String(pid)); if(!p) return;
+            if(p.seller === currentUser.name){ if(window.openUniversalViewer) openUniversalViewer(p.id, true); return; }
+            const lab = !!(window.currentMarketFilterStore && window.currentMarketFilterStore.category === 'dental_lab');
+            if(lab || Number(p.rx_form) === 1){ if(window.startProductRx) window.startProductRx(p.id); return; }
+            window.openProductPurchase(p.id);
+        };
+        // 🛒 비기공소 상품: 상세(사진+설명) 화면 → '결제하기' → 결제(에스크로)+판매자 채팅 개설+상단 고정
+        window.openProductPurchase = async function(pid){
+            let p; try { p = await fetch(`${API_URL}/api/product/detail/${pid}`).then(r=>r.json()); } catch(_){}
+            if(!p || !p.id) return showToast('상품 정보를 불러올 수 없습니다.');
+            const price = Number(p.price_original)||Number(p.price_stream)||0;
+            let imgs = []; if(p.thumbnail) imgs.push(p.thumbnail);
+            try { const pkg = JSON.parse(p.package_data||'{}'); (pkg.files||[]).forEach(f=>{ if(/^image/.test(f.type||'')||/\.(png|jpe?g|webp|gif)$/i.test(f.filename||'')) imgs.push(f.content); }); } catch(_){}
+            const esc = s=>String(s==null?'':s).replace(/</g,'&lt;').replace(/"/g,'&quot;');
+            const imgHtml = imgs.length ? imgs.map(s=>`<img src="${s}" style="width:100%;border-radius:10px;margin-bottom:8px;display:block;">`).join('') : '<div style="height:180px;background:#f1f5f9;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:44px;">📦</div>';
+            let m = document.getElementById('product-purchase-modal'); if(!m){ m = document.createElement('div'); m.id='product-purchase-modal'; document.body.appendChild(m); }
+            m.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:14px;';
+            m.onclick = function(e){ if(e.target===m) m.remove(); };
+            m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:640px;width:100%;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.35);">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #e2e8f0;">
+                    <h3 style="margin:0;font-size:18px;font-weight:900;color:var(--primary);">${esc(p.name)}</h3>
+                    <span onclick="var e=document.getElementById('product-purchase-modal');if(e)e.remove();" style="cursor:pointer;font-size:24px;color:#94a3b8;line-height:1;">&times;</span>
+                </div>
+                <div style="padding:16px 18px;overflow:auto;flex:1;">${imgHtml}${p.description?`<div style="font-size:13px;color:#475569;white-space:pre-wrap;margin-top:10px;line-height:1.6;">${esc(p.description)}</div>`:''}</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-top:1px solid #e2e8f0;gap:12px;">
+                    <div style="font-size:20px;font-weight:900;color:var(--primary);">${price.toLocaleString()}원</div>
+                    <button style="padding:12px 28px;background:var(--gradient-btn,#6366f1);color:#fff;border:0;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;" onclick="payProductOrder('${p.id}')">💳 결제하기</button>
+                </div>
+            </div>`;
+        };
+        window.payProductOrder = async function(pid){
+            let prod = (window.__marketProds||[]).find(x=>String(x.id)===String(pid));
+            if(!prod){ try { prod = await fetch(`${API_URL}/api/product/detail/${pid}`).then(r=>r.json()); } catch(_){} }
+            if(!prod || !prod.id) return showToast('상품 정보 오류');
+            const price = Number(prod.price_original)||Number(prod.price_stream)||0;
+            const seller = prod.seller;
+            if(seller === currentUser.name) return showToast('본인 상품입니다.');
+            let pay; try { pay = await window.pgPay(price); } catch(_){ return; }
+            try {
+                const esc = s=>String(s==null?'':s).replace(/</g,'&lt;');
+                const bundle = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>html,body{background:#fff;}body{font-family:'Malgun Gothic',sans-serif;color:#1f2937;padding:24px;max-width:820px;margin:0 auto;}h1{font-size:20px;color:#2563eb;border-bottom:3px solid #2563eb;padding-bottom:8px;}</style></head><body><h1>${esc(prod.name)}</h1><div style="color:#64748b;margin:6px 0;">판매자: ${esc(seller)}</div><div style="margin:12px 0;font-size:18px;font-weight:800;color:#2563eb;">결제 금액: ${price.toLocaleString()}원</div>${prod.description?`<p style="white-space:pre-wrap;">${esc(prod.description)}</p>`:''}</body></html>`;
+                const submitRes = await fetch(`${API_URL}/api/product/submit-order`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ productId: prod.id, buyer: currentUser.name, seller, bundle_html: bundle, memo:'', amount: price, status:'awaiting_payment', payMethod:'balance' }) });
+                const sd = await submitRes.json().catch(()=>({}));
+                if(!submitRes.ok || !sd.orderId) return showToast(sd.error||'주문 생성 실패');
+                const orderId = sd.orderId;
+                const payRes = await fetch(`${API_URL}/api/order/pay`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, buyer: currentUser.name, payMethod: pay.method, cardPw: pay.cardPw }) });
+                const pd = await payRes.json().catch(()=>({}));
+                if(!payRes.ok) return showToast(pd.error||'결제 실패');
+                if(window.updateUserBalance) updateUserBalance();
+                const roomId = 'room_ord_'+orderId; currentChatRoomId = roomId;
+                let storeName=''; try { if(prod.storeId){ const s=await fetch(`${API_URL}/api/store/${prod.storeId}`).then(r=>r.json()); storeName=(s&&s.name)||''; } } catch(_){}
+                try { await fetch(`${API_URL}/api/chat-room/upsert`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roomId, type:'order', buyer: currentUser.name, seller, storeId: prod.storeId||'', storeName, lastProductId: prod.id, lastProductName: prod.name }) }); } catch(_){}
+                try { await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: seller }) }); } catch(_){}
+                const pic = (document.getElementById('my-profile-pic')||{}).src||'';
+                const rxLabel = String(prod.name||'상품').replace(/\|/g,' ');
+                const ensureSocket = async()=>{ if(socket&&socket.connected) return true; for(let i=0;i<10;i++){ await new Promise(r=>setTimeout(r,200)); if(socket&&socket.connected) return true; } return false; };
+                if(await ensureSocket() && socket){ socket.emit('join_room', roomId); socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: `[RX_DOC]${orderId}|${price}|${rxLabel}` }); }
+                const mm=document.getElementById('product-purchase-modal'); if(mm) mm.remove();
+                showToast('결제 완료 · 판매자와 연결되었습니다.');
+                setTimeout(()=>{ const d=document.getElementById('messenger-drawer'); if(d && !d.classList.contains('open') && typeof toggleMessengerDrawer==='function') toggleMessengerDrawer(); if(typeof openMessengerChat==='function') openMessengerChat(seller, roomId); }, 400);
+            } catch(e){ showToast('결제 처리 실패: '+(e.message||e)); }
+        };
 
         // 🚀 [v8] 상품 미리보기 (구매 안한 경우에는 결제 안내 토스트)
         window.openProductPreview = function(pid, allowDownload) {
