@@ -2086,6 +2086,8 @@ app.get('/api/transactions/:name', async (req, res) => {
             (SELECT id FROM refund_requests WHERE txId = t.id ORDER BY id DESC LIMIT 1) as refund_request_id,
             p.is_package as p_is_package, p.package_data as p_package_data, p.storeId as p_storeId,
             (SELECT escrow_held FROM product_orders WHERE txId = t.id LIMIT 1) as escrowHeld,
+            (SELECT settled FROM product_orders WHERE txId = t.id LIMIT 1) as orderSettled,
+            (SELECT status FROM product_orders WHERE txId = t.id LIMIT 1) as orderStatus,
             s.name as storeName, s.category as storeCategory,
             (SELECT realname FROM users WHERE name = t.seller) as sellerRealname,
             (SELECT realname FROM users WHERE name = t.buyer) as buyerRealname
@@ -2102,9 +2104,7 @@ app.get('/api/transactions/:name', async (req, res) => {
         txs.forEach(t => {
             const isBuyer = t.buyer === name;
             const escrowHeld = t.escrowHeld || 0;   // 💰 Admin 에스크로(통합관리) 판매 여부
-            // 🦷 Admin 통합관리(에스크로) 판매은 판매자(상점) 거래내역에 '자산판매'로 표시하지 않는다.
-            //    (판매 대금은 정산 입금 기록으로만 표시 — 아래 transfers 정산 입금 항목에서 정산 항목과 함께 보임)
-            if (escrowHeld > 0 && !isBuyer) return;
+            // (에스크로 판매도 판매자 거래내역에 '판매' 행으로 표시 → 각 행에 매출/정산 상태 표기)
             const refStatus = t.refund_status;
             const refundable = isBuyer && !t.refunded && refStatus !== 'pending'
                 && escrowHeld === 0   // 에스크로 구매는 주문(구매내역/채팅카드)에서 환불 요청 — 거래내역 환불 버튼 비활성
@@ -2133,6 +2133,8 @@ app.get('/api/transactions/:name', async (req, res) => {
                 refunded: !!t.refunded, refundable, refundStatus: refStatus, refundRequestId: t.refund_request_id,
                 storeName: t.storeName || null, storeId: t.p_storeId || null, fileNames: fileNames,
                 makeKind: t.make_kind || null, storeCategory: t.storeCategory || null,   // 🦷 기공: 신규제작/리메이크/리페어
+                isSeller: !isBuyer, escrowHeld: escrowHeld, settled: !!t.orderSettled, orderStatus: t.orderStatus || null,   // 💰 매출/정산 표기용
+                refunded2: !!t.refunded,
                 // 🧾 거래처 표기명(세금계산서와 통일): 상대방 실명(상호) → 없으면 브랜드 → ID
                 counterpartyRealname: (isBuyer ? t.sellerRealname : t.buyerRealname) || null
             });

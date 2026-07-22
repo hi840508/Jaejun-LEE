@@ -1422,7 +1422,7 @@
 
                     <div style="overflow-x:auto; border-radius:8px; border:1px solid var(--border-color);">
                         <table class="history-table">
-                            <thead><tr><th style="text-align:center; width:34px;">선택</th><th>일시</th><th>종류</th><th>상세 내역</th><th>대상</th><th>변동 금액</th><th>환불 처리</th></tr></thead>
+                            <thead><tr><th style="text-align:center; width:34px;">선택</th><th>일시</th><th>종류</th><th>상세 내역</th><th>대상</th><th>매출</th><th>정산 금액</th><th>환불 처리</th></tr></thead>
                             <tbody id="history-body"></tbody>
                         </table>
                     </div>
@@ -9674,18 +9674,19 @@ pdfjsScript,
             const eWithdraw = document.getElementById('stat-total-withdraw'); if(eWithdraw) eWithdraw.innerText = totalWithdraw.toLocaleString();
 
             if(list.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-sub);">선택한 기간에 거래 내역이 없습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px; color:var(--text-sub);">선택한 기간에 거래 내역이 없습니다.</td></tr>';
                 summary.innerText = `총 ${window.historyAll.length}건 중 0건 표시`;
                 return;
             }
 
-            // 합계 계산 (필터 결과)
-            let sumIn = 0, sumOut = 0;
+            // 합계 계산 (필터 결과) — 수입/지출 + 정산(정산완료된 판매 금액 합)
+            let sumIn = 0, sumOut = 0, sumSettle = 0;
             list.forEach(h => {
                 const isOut = (h.buyer === currentUser.name || h.sender === currentUser.name || h.type.includes('출금') || h.type === '환불 지급');
                 if(isOut) sumOut += Number(h.amount) || 0; else sumIn += Number(h.amount) || 0;
+                if(h.isSeller && (h.escrowHeld>0 || h.type==='자산 판매') && h.settled && !h.refunded2) sumSettle += Number(h.amount)||0;   // 정산완료된 판매(열의 정산 금액 합)
             });
-            summary.innerHTML = `📋 ${window.historyAll.length}건 중 <b>${list.length}건</b> 표시 · 수입 <b style="color:var(--success);">+${sumIn.toLocaleString()}원</b> / 지출 <b style="color:var(--danger);">-${sumOut.toLocaleString()}원</b>`;
+            summary.innerHTML = `📋 ${window.historyAll.length}건 중 <b>${list.length}건</b> 표시 · 수입 <b style="color:var(--success);">+${sumIn.toLocaleString()}원</b> / 지출 <b style="color:var(--danger);">-${sumOut.toLocaleString()}원</b> / 정산 <b style="color:var(--primary);">${sumSettle.toLocaleString()}원</b>`;
 
             let buf = '';
             list.forEach((h, _ridx) => {
@@ -9742,7 +9743,15 @@ pdfjsScript,
                 else if(h.makeKind === '리페어') typeLabel = '리페어';
                 else if(h.type === '자산 구매') typeLabel = '구매';
                 else if(h.type === '자산 판매') typeLabel = '판매';
-                buf += `<tr ${rowAttrs}>${chkCell}<td style="white-space:nowrap;">${h.date}</td><td><b style="color:var(--text-main);">${typeLabel}</b></td><td>${detailHtml}</td><td>${partner || '시스템 본부'}</td><td style="font-weight:bold; font-size:14px; ${color}">${sign}${(Number(h.amount)||0).toLocaleString()}원</td><td><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">${refundCell}${receiptBtn}</div></td></tr>`;
+                // 💰 정산 금액 셀 — 판매 행: 정산완료 금액 or '정산 대기중' / 정산입금 행: 지급액 / 그 외: -
+                let settleCell = '<span style="color:#94a3b8;">-</span>';
+                if(h.settle){ settleCell = `<span style="color:#166534; font-weight:700;">${Number(h.settle.payout||h.amount||0).toLocaleString()}원</span>`; }
+                else if(h.isSeller && (h.escrowHeld>0 || h.type==='자산 판매')){
+                    if(h.refunded2 || h.type==='환불 지급'){ settleCell = '<span style="color:#94a3b8;">환불</span>'; }
+                    else if(h.settled){ settleCell = `<span style="color:#166534; font-weight:700;">${(Number(h.amount)||0).toLocaleString()}원</span>`; }
+                    else { settleCell = '<span style="color:#b45309; font-weight:600;">정산 대기중</span>'; }
+                }
+                buf += `<tr ${rowAttrs}>${chkCell}<td style="white-space:nowrap;">${h.date}</td><td><b style="color:var(--text-main);">${typeLabel}</b></td><td>${detailHtml}</td><td>${partner || '시스템 본부'}</td><td style="font-weight:bold; font-size:14px; ${color}">${sign}${(Number(h.amount)||0).toLocaleString()}원</td><td style="font-size:13px;">${settleCell}</td><td><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">${refundCell}${receiptBtn}</div></td></tr>`;
             });
             tbody.innerHTML = buf;
             const ca = document.getElementById('hist-check-all'); if(ca) ca.checked = false;
