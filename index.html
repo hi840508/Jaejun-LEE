@@ -454,7 +454,7 @@
         .toast.show { opacity: 1; bottom: 40px; }
 
         /* 💬 플로팅 메신저 서랍장 (깔끔한 UI 교정) */
-        .floating-messenger-btn { position: fixed; bottom: 26px; right: 26px; width: 62px; height: 62px; background: var(--primary); border-radius: 20px 20px 20px 6px; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28); z-index: 4000; transition: 0.2s; border: none; }
+        .floating-messenger-btn { position: fixed; bottom: 26px; right: 26px; width: 62px; height: 62px; background: #d6006e; border-radius: 20px 20px 20px 6px; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; box-shadow: 0 6px 20px rgba(214,0,110,0.4); z-index: 4000; transition: 0.2s; border: none; }
         .floating-messenger-btn:hover { transform: scale(1.06); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.36); }
         .floating-messenger-btn:active { transform: scale(0.97); }
         .floating-messenger-btn .fab-dots { display:flex; gap:5px; align-items:center; }
@@ -1665,7 +1665,7 @@
                         </svg>
                     </button>
                     <!-- (채팅 상단 '구매 완료' 버튼 제거: 상품 주문 카드에서 구매확정 처리 — 사용자 요청) -->
-                    <button id="chat-exit-btn" style="padding:7px 12px; font-size:12px; border:none; border-radius:20px; background:#334155; color:#fff; font-weight:700; cursor:pointer; flex-shrink:0;" onclick="backToDrawerList()" title="대화방 목록으로">◀ 뒤로</button>
+                    <!-- (나가기 버튼 제거: 좌측 ◀ 버튼으로 목록 이동) -->
                 </div>
                 <!-- 📌 주문 상태 고정 슬롯 — 채팅 스크롤 영역 밖(항상 보임) -->
                 <div id="chat-order-pin-slot" style="flex:none; background:#abc1d1;"></div>
@@ -7853,7 +7853,7 @@ pdfjsScript,
             const drawer = document.getElementById('messenger-drawer'); if(!drawer.classList.contains('open')) drawer.classList.add('open');
             activeChatFriend = friendName;
             // 🏪 [Task1] 주문 대화방이면 헤더에 상점명(+상품명) 표시. DM은 상대방 이름 그대로.
-            let __chatTitle = `${friendName === '이재준' ? 'Root Admin (고객센터)' : friendName}`;
+            let __chatTitle = `${friendName === '이재준' ? '🤖 AI 상담원' : friendName}`;
             try {
                 const __meta = (window.__orderRoomStore && roomIdOverride) ? window.__orderRoomStore[roomIdOverride] : null;
                 if(__meta && __meta.storeName) __chatTitle = __meta.storeName + (__meta.productName ? ` · ${__meta.productName}` : '');
@@ -8053,7 +8053,7 @@ pdfjsScript,
         async function loadFriendList() {
             if(!currentUser) return; const res = await fetch(`${API_URL}/api/friends/${currentUser.name}`); const friends = await res.json() || [];
             const container = document.getElementById('friend-list-container'); container.innerHTML = '';
-            if(currentUser.name !== '이재준') { container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('이재준')"><div class="profile-pic" style="background:var(--danger); color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px;">CS</div><div style="flex:1;"><b>Root Admin (통합 고객센터)</b></div></div>`; }
+            if(currentUser.name !== '이재준') { container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('이재준')"><div class="profile-pic" style="background:#d6006e; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px;">🤖</div><div style="flex:1;"><b>AI 상담원</b><div style="font-size:11px; color:var(--text-sub);">사용법·불편사항 자동응답</div></div></div>`; }
             friends.forEach(f => { const pic = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`; container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${f.name}')">${pic}<div style="flex:1;"><b>${f.name}</b></div></div>`; });
             updateTabBadge();
         }
@@ -8373,13 +8373,15 @@ pdfjsScript,
                 let rooms = await res.json() || [];
                 // 🔔 미읽음 판정: 방의 마지막 메시지 id가 로컬 '읽음 표시'보다 크고, 내가/시스템이 보낸 게 아니면 미읽음(오프라인 중 수신 포함)
                 try {
-                    rooms.forEach(r => {
-                        if(!r.lastMsgId) return;
-                        const readId = Number(localStorage.getItem('rc_read_' + r.roomId) || 0);
-                        const isMine = (r.lastSender === currentUser.name) || (r.lastSender === '__system__');
-                        if(r.lastMsgId > readId && !isMine) { if(!unreadCounts[r.roomId]) unreadCounts[r.roomId] = 1; }
-                        else if(r.lastMsgId <= readId) { unreadCounts[r.roomId] = 0; }
-                    });
+                    // 🔔 방별 정확한 미읽음 개수(내 읽음 id 기준으로 서버 집계)
+                    const reads = {};
+                    rooms.forEach(r => { reads[r.roomId] = Number(localStorage.getItem('rc_read_' + r.roomId) || 0); });
+                    try {
+                        const ucRes = await fetch(`${API_URL}/api/chat/unread-counts`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ user: currentUser.name, reads }) });
+                        if(ucRes.ok){ const counts = await ucRes.json(); rooms.forEach(r => { unreadCounts[r.roomId] = Number(counts[r.roomId])||0; }); }
+                    } catch(_){}
+                    // 현재 열려있는 방은 읽음 처리
+                    if(currentChatRoomId) unreadCounts[currentChatRoomId] = 0;
                     updateTabBadge();
                 } catch(_){}
                 // 🚀 [v6] 채팅방 메타 가져와서 브랜드명/상품명 표시
@@ -8396,7 +8398,7 @@ pdfjsScript,
                     const meta = roomMetas[r.roomId];
                     const badge = unreadCounts[r.roomId] ? `<div class="unread-badge" style="display:block;">${unreadCounts[r.roomId]}</div>` : `<div class="unread-badge"></div>`;
                     let picHtml = r.partnerPic ? `<img class="profile-pic" src="${r.partnerPic}">` : `<div class="profile-pic"></div>`;
-                    if(r.partnerName === '이재준') picHtml = `<div class="profile-pic" style="background:var(--danger); color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px;">CS</div>`;
+                    if(r.partnerName === '이재준') picHtml = `<div class="profile-pic" style="background:#d6006e; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px;">🤖</div>`;
 
                     // 🚀 [v6] 주문 채팅방이면 "브랜드명 / 상품명" 표시 — 같은 상대와의 여러 주문방을 구분하려면 상품명 라벨 필수
                     const isOrderRoom = r.isOrder || (meta && meta.type === 'order');
@@ -8404,7 +8406,7 @@ pdfjsScript,
                     if(isOrderRoom) {
                         const sName = r.storeName || (meta && meta.storeName) || '';
                         const pName = r.productName || (meta && meta.lastProductName) || '';
-                        const partnerDisplay = r.partnerName === '이재준' ? 'Root Admin' : r.partnerName;
+                        const partnerDisplay = r.partnerName === '이재준' ? '🤖 AI 상담원' :r.partnerName;
                         // 🏪 [Task1] 주문 대화방 제목 = 상점명(대화 상대 id 대신). 상품명은 부제로.
                         window.__orderRoomStore = window.__orderRoomStore || {};
                         window.__orderRoomStore[r.roomId] = { storeName: sName, productName: pName, partnerName: r.partnerName };
@@ -8442,7 +8444,24 @@ pdfjsScript,
             const input = document.getElementById('main-chat-input'); const msg = input.value.trim(); if(!msg || !activeChatFriend) return;
             const pic = document.getElementById('my-profile-pic').src; socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
             appendMainMessage(currentUser.name, msg, pic); input.value = '';
+            // 🤖 AI 상담원 자동응답 (관리자 계정과의 대화방)
+            if(activeChatFriend === '이재준' && window.aiBotReply) { setTimeout(()=>{ appendMainMessage('이재준', window.aiBotReply(msg), ''); }, 500); }
         }
+        // 🤖 AI 상담원 규칙기반 자동응답 — 사용법/불편사항 안내
+        window.aiBotReply = function(q){
+            const t = (q||'').toLowerCase();
+            const has = (...ks)=>ks.some(k=>t.indexOf(k)>=0);
+            if(has('안녕','hi','hello','ㅎㅇ','반가')) return '안녕하세요! AI 상담원입니다 🤖 충전·출금·주문·결제·환불·배송 등 무엇이든 물어보세요.';
+            if(has('충전','입금')) return '💳 충전: 상단 지갑의 "충전" 버튼을 눌러 금액을 입력하면 잔액에 반영됩니다.';
+            if(has('출금','정산')) return '🏦 출금/정산: 지갑의 "출금"에서 신청하면 신청 후 3일 이내 가입 시 입력하신 계좌로 입금됩니다. (가용 잔액 1만원 초과분을 1만원 단위로 출금)';
+            if(has('환불')) return '↩️ 환불: 구매 내역 또는 채팅 상단 주문카드의 "환불 요청"을 누르면 판매자 승인 후 환불됩니다. 환불이 완료되면 대화방은 자동 종료됩니다.';
+            if(has('배송','송장','택배','조회')) return '🚚 배송: 판매자가 택배사·송장번호를 입력하면 대화방 상단 주문카드에 "배송조회" 링크가 나타납니다.';
+            if(has('리메이크','리페어','재제작','수리')) return '🔁 리메이크/리페어: 기공소 상품의 배송/배송완료 단계에서 요청할 수 있습니다(기공소 카테고리 전용). 판매자가 금액을 확정·승인하면 결제 후 진행됩니다.';
+            if(has('주문','의뢰서','결제','구매')) return '🧾 주문/결제: 상점에서 상품 카드를 누르면 상세·결제 화면이 열립니다. 결제하면 판매자와 대화방이 생성되고 상단에 주문 상태(주문 상세 보기)가 고정됩니다.';
+            if(has('상점','상품','등록','판매','대문')) return '🏪 상점/상품: "내 상점"에서 브랜드를 만들고 상품을 등록하세요. 등록 시 상품 카드 미리보기, 대문 이미지 편집(확대·회전)을 제공합니다.';
+            if(has('상담원','사람','전화','연결','문의')) return '👩‍💼 상담원 연결이 필요하시면 이 창에 문의 내용을 남겨주세요. 담당자가 확인 후 답변드립니다.';
+            return '무엇을 도와드릴까요? 🤖 예: "충전 방법", "출금", "주문/결제", "환불", "배송조회", "상품 등록" 등으로 물어봐 주세요.';
+        };
 
         async function sendTransferInChat() {
             if(!activeChatFriend) return; const amount = parseInt(document.getElementById('chat-transfer-amount').value, 10); if(isNaN(amount) || amount <= 0) return showToast("금액 산정 오류");
@@ -9030,7 +9049,7 @@ pdfjsScript,
                     ? `<div class="kt-avatar-spacer"></div>`
                     : (avaSrc ? `<img class="kt-avatar" src="${avaSrc}">` : `<div class="kt-avatar" style="display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:13px; background:linear-gradient(135deg,#94a3b8,#64748b);">${(sender||'?').substring(0,1)}</div>`);
                 if(showName) {
-                    chatBody.insertAdjacentHTML('beforeend', `<div class="kt-sender-name">${sender === '이재준' ? 'Root Admin (고객센터)' : sender}</div>`);
+                    chatBody.insertAdjacentHTML('beforeend', `<div class="kt-sender-name">${sender === '이재준' ? '🤖 AI 상담원' : sender}</div>`);
                 }
                 const bubbleClass = sameAsLast ? 'kt-bubble other same-sender' : 'kt-bubble other';
                 chatBody.insertAdjacentHTML('beforeend', `<div class="kt-msg-line other${sameAsLast?' same-sender':''}" data-sender="${sender}"${idAttr}>${avatar}<div class="kt-bubble-col"><div class="${bubbleClass}">${displayHtml}</div></div><div class="kt-time">${time}</div></div>`);

@@ -773,6 +773,22 @@ app.get('/api/friends/:userName', (req, res) => {
     db.all(`SELECT u.name, u.profilePic FROM friends f JOIN users u ON f.friendName = u.name WHERE f.userName = ?`, [req.params.userName], (err, rows) => res.json(rows || []));
 });
 
+// 🔔 방별 정확한 미읽음 개수 — 클라이언트가 보유한 방별 읽음 id(reads)를 받아, 그 이후 상대/시스템 외 메시지 수를 반환
+app.post('/api/chat/unread-counts', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const reads = (req.body && req.body.reads) || {};
+    const roomIds = Object.keys(reads);
+    if (!roomIds.length) return res.json({});
+    const out = {}; let pending = roomIds.length;
+    roomIds.forEach(rid => {
+        const readId = Number(reads[rid]) || 0;
+        db.get(`SELECT COUNT(*) AS c FROM chats WHERE roomId = ? AND id > ? AND sender != ? AND sender != '__system__'`, [rid, readId, me], (e, row) => {
+            out[rid] = (row && row.c) || 0;
+            if (--pending === 0) res.json(out);
+        });
+    });
+});
+
 app.get('/api/chat/active-rooms/:name', (req, res) => {
     if (!requireSelfOrAdmin(req, res, req.params.name)) return;   // 🔐 본인 활성 대화방만
     const name = req.params.name;
@@ -1412,7 +1428,7 @@ app.post('/api/order/status', (req, res) => {
             const _refundMsg = hold > 0
                 ? (isCard ? `↩️ [환불 완료] 카드 결제(${hold.toLocaleString()}원)가 취소되어 카드사로 환불됩니다.` : `↩️ [환불 완료] 결제금액(${hold.toLocaleString()}원)이 구매자에게 환불되었습니다.`)
                 : '↩️ [환불 처리] 주문이 환불 처리되었습니다.';
-            const _finish = () => db.run(`UPDATE product_orders SET status = 'refunded', escrow_held = 0 WHERE id = ?`, [orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'refunded', _refundMsg); res.json({ success: true, refundedToBuyer: (hold > 0 && !isCard) ? hold : 0, refundedToCard: (hold > 0 && isCard) ? hold : 0 }); });
+            const _finish = () => db.run(`UPDATE product_orders SET status = 'refunded', escrow_held = 0 WHERE id = ?`, [orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'refunded', _refundMsg + ' 이 대화방은 종료됩니다.'); _closeOrderRoom(orderId, ord.buyer, ord.seller); res.json({ success: true, refundedToBuyer: (hold > 0 && !isCard) ? hold : 0, refundedToCard: (hold > 0 && isCard) ? hold : 0 }); });
             const _markTx = () => {
                 if (ord.txId) {
                     db.get(`SELECT * FROM transactions WHERE id = ?`, [ord.txId], (e3, otx) => {
