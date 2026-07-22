@@ -1187,7 +1187,7 @@ app.post('/api/order/approve', (req, res) => {
                     db.run(`UPDATE product_orders SET status='awaiting_payment' WHERE id=? AND status='pending'`, [orderId], function(fe){
                         if (fe) return res.status(500).json({ error: fe.message });
                         if (this.changes === 0) return res.status(400).json({ error: '이미 처리된 주문입니다.' });
-                        _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'awaiting_payment', `✅ [승인] 기공소가 금액(${amount.toLocaleString()}원)을 확정·승인했습니다. 구매자님이 결제하면 제작이 진행됩니다.`);
+                        _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'awaiting_payment', `✅ [승인] 판매자가 금액(${amount.toLocaleString()}원)을 확정·승인했습니다. 결제하시면 진행됩니다.`);
                         return res.json({ success: true, awaitingPayment: true, amount });
                     });
                     return;
@@ -1281,7 +1281,7 @@ app.post('/api/order/pay', (req, res) => {
                                 if (ie) { db.run('ROLLBACK'); return res.status(500).json({ error: ie.message }); }
                                 const txId = this.lastID;
                                 db.run(`UPDATE product_orders SET txId=?, escrow_held=? WHERE id=?`, [txId, amount, orderId]);
-                                db.run('COMMIT', () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', `💳 [결제 완료] 결제(${amount.toLocaleString()}원)가 완료되어 에스크로 보관되었습니다. 기공소가 제작을 시작합니다.`); _autoFavIfLab(ord.buyer, ord.productId); res.json({ success: true, txId, amount, escrow: true, payMethod }); });
+                                db.run('COMMIT', () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', `💳 [결제 완료] 결제(${amount.toLocaleString()}원)가 완료되었습니다. 판매자가 상품을 준비합니다.`); _autoFavIfLab(ord.buyer, ord.productId); res.json({ success: true, txId, amount, escrow: true, payMethod }); });
                             });
                     };
                     if (isCard) {
@@ -1316,7 +1316,7 @@ app.post('/api/order/reject', (req, res) => {
             const roomId = _orderRoomId(orderId);
             _setOrderRoom(roomId, ord.buyer, ord.seller);
             const date = new Date().toLocaleString('ko-KR');
-            const msg = '❌ [주문 거절] 기공소가 의뢰를 거절했습니다.' + (reason ? (' 사유: ' + reason) : '') + '\n※ 새로운 대화가 없으면 24시간 후 이 대화방은 자동으로 사라집니다.';
+            const msg = '❌ [주문 거절] 판매자가 주문을 거절했습니다.' + (reason ? (' 사유: ' + reason) : '') + '\n※ 새로운 대화가 없으면 24시간 후 이 대화방은 자동으로 사라집니다.';
             db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, '__system__', NULL, ?, ?)`, [roomId, msg, date], function() {
                 const mid = this.lastID;
                 try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: mid, date }); } catch (_) {}
@@ -1498,7 +1498,7 @@ app.post('/api/order/remake', (req, res) => {
                     if (ie) return res.status(500).json({ error: ie.message });
                     const newId = this.lastID;
                     db.get(`SELECT p.name AS pname, s.id AS sid, s.name AS sname FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e2, row) => {
-                        _notifyOrderStatus(ord.buyer, ord.seller, newId, 'pending', `🔁 [${label} 요청] 구매자가 ${label}를 요청했습니다. 기공소가 금액을 확정·승인하면 구매자 결제 후 진행됩니다.`);
+                        _notifyOrderStatus(ord.buyer, ord.seller, newId, 'pending', `🔁 [${label} 요청] 구매자가 ${label}를 요청했습니다. 판매자가 금액을 확정·승인하면 결제 후 진행됩니다.`);
                         res.json({ success: true, orderId: newId, label, seller: ord.seller, storeId: (row && row.sid) || '', storeName: (row && row.sname) || '', productName: (row && row.pname) || label });
                     });
                 });

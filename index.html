@@ -1667,6 +1667,8 @@
                     <!-- (채팅 상단 '구매 완료' 버튼 제거: 상품 주문 카드에서 구매확정 처리 — 사용자 요청) -->
                     <button id="chat-exit-btn" style="padding:7px 12px; font-size:12px; border:none; border-radius:20px; background:#334155; color:#fff; font-weight:700; cursor:pointer; flex-shrink:0;" onclick="backToDrawerList()" title="대화방 목록으로">◀ 뒤로</button>
                 </div>
+                <!-- 📌 주문 상태 고정 슬롯 — 채팅 스크롤 영역 밖(항상 보임) -->
+                <div id="chat-order-pin-slot" style="flex:none;"></div>
                 <div class="chat-body" id="main-chat-body"></div>
 
                 <!-- 🚀 첨부 대기 파일 프리뷰 -->
@@ -7842,7 +7844,7 @@ pdfjsScript,
             if(tabName === 'friends') document.getElementById('view-friend-list').classList.add('active');
             if(tabName === 'chats') { document.getElementById('view-chat-list').classList.add('active'); loadChatList(); }
         }
-        function backToDrawerList() { document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-list').classList.add('active'); switchDrawerTab('chats'); activeChatFriend = null; currentChatRoomId = null; loadFriendList(); loadChatList(); }
+        function backToDrawerList() { document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-list').classList.add('active'); switchDrawerTab('chats'); activeChatFriend = null; currentChatRoomId = null; const _ps=document.getElementById('chat-order-pin-slot'); if(_ps) _ps.innerHTML=''; loadFriendList(); loadChatList(); }
 
         // 🚀 [v7p3] 판매자가 방에 진입한 주문을 추적 — 알림 억제
         window.__seenOrderRooms = new Set();
@@ -7880,6 +7882,7 @@ pdfjsScript,
             ]).then(([msgs]) => {
                 const body = document.getElementById('main-chat-body'); if(!body) return;
                 body.innerHTML = '';
+                { const _ps=document.getElementById('chat-order-pin-slot'); if(_ps) _ps.innerHTML=''; }
                 window.__chatBulkLoading = true;   // 벌크 렌더: 메시지마다 스크롤 강제 안 함(리플로우 절감)
                 try {
                     let _maxId = 0;
@@ -10723,9 +10726,9 @@ pdfjsScript,
             window.rxStatusBadge = function(s){
                 const m = {
                     pending:{t:'승인 대기',bg:'#fef3c7',fg:'#92400e',i:'⏳'},
-                    awaiting_payment:{t:'결제 대기 (금액 확정)',bg:'#ffedd5',fg:'#9a3412',i:'💳'},
-                    approved:{t:'결제완료·제작 준비',bg:'#dcfce7',fg:'#166534',i:'✅'},
-                    shipping:{t:'제작완료·배송중',bg:'#dbeafe',fg:'#1e40af',i:'🚚'},
+                    awaiting_payment:{t:'결제 대기',bg:'#ffedd5',fg:'#9a3412',i:'💳'},
+                    approved:{t:'상품 준비중',bg:'#dcfce7',fg:'#166534',i:'✅'},
+                    shipping:{t:'배송중',bg:'#dbeafe',fg:'#1e40af',i:'🚚'},
                     delivered:{t:'배송 완료',bg:'#e0e7ff',fg:'#3730a3',i:'📦'},
                     confirmed:{t:'구매 확정',bg:'#e2e8f0',fg:'#334155',i:'✔️'},
                     refund_requested:{t:'환불 요청됨',bg:'#fef2f2',fg:'#b91c1c',i:'↩️'},
@@ -10779,7 +10782,7 @@ pdfjsScript,
                     // 구매자(치과)
                     if(status==='pending') return '<button onclick="cancelPendingOrder(\''+oid+'\')" style="width:100%;background:#fff;color:var(--text-sub);border:1px solid var(--border-color);padding:7px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;">주문 취소</button>';
                     if(status==='awaiting_payment') return '<button onclick="payOrder(\''+oid+'\','+amount+')" style="width:100%;background:var(--gradient-btn);color:#fff;border:0;padding:9px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">💳 결제하기 · '+(amount.toLocaleString())+'원</button>';
-                    if(status==='approved') return '<div style="text-align:center;font-size:11px;color:#166534;font-weight:700;">✅ 결제 완료 · 기공소가 제작/배송을 준비합니다…</div>';
+                    if(status==='approved') return '';
                     if(status==='shipping' || status==='delivered'){
                         return trkLine
                             + '<button onclick="buyerConfirm(\''+oid+'\')" style="width:100%;background:var(--success);color:#fff;border:0;padding:9px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;margin-bottom:6px;">🎉 구매 확정</button>'
@@ -10803,19 +10806,19 @@ pdfjsScript,
             };
             // 🦷 의뢰서 주문 카드를 채팅 상단에 고정(sticky) — 3줄 컴팩트.
             window.renderOrderPin = function(d){
-                const body = document.getElementById('main-chat-body'); if(!body) return;
+                // 📌 채팅 스크롤 영역이 아닌 별도 고정 슬롯에 표시 → 채팅이 늘어도 항상 보임
+                const slot = document.getElementById('chat-order-pin-slot') || document.getElementById('main-chat-body'); if(!slot) return;
                 window.__orderPinCtx[d.orderId] = d;
                 let pin = document.getElementById('chat-order-pin');
                 if(!pin){ pin = document.createElement('div'); pin.id = 'chat-order-pin'; }
-                if(body.firstChild !== pin) body.insertBefore(pin, body.firstChild);
-                const escL = (d.label||'의뢰서').replace(/</g,'&lt;');
+                if(pin.parentNode !== slot) slot.appendChild(pin);
                 const amtTxt = d.amount>0 ? (Number(d.amount).toLocaleString()+'원') : '금액 미정';
                 pin.setAttribute('data-rxdoc-order', d.orderId);
-                pin.style.cssText = 'position:sticky; top:0; z-index:30; margin:0 auto 10px; width:100%; max-width:300px; background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,.14);';
+                pin.style.cssText = 'margin:8px auto; width:calc(100% - 20px); max-width:320px; background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,.14);';
                 pin.innerHTML =
                     '<button onclick="openRxPreview(\''+d.orderId+'\')" style="width:100%;border:0;border-bottom:1px solid #eef2f7;background:#fff;padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;text-align:left;">'
                     +   '<span style="font-size:16px;flex:none;">📄</span>'
-                    +   '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">주문서 보기 · '+escL+'</span>'
+                    +   '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">주문 상세 보기</span>'
                     +   '<span class="rxdoc-amt" data-order="'+d.orderId+'" style="font-size:13px;font-weight:800;color:#f59e0b;white-space:nowrap;flex:none;">'+amtTxt+'</span>'
                     + '</button>'
                     + '<div class="rxdoc-status" data-order="'+d.orderId+'" style="padding:6px 12px;font-size:12px;font-weight:800;text-align:center;letter-spacing:.2px;background:#f1f5f9;color:#475569;">• 상태 확인 중…</div>'
@@ -10827,7 +10830,7 @@ pdfjsScript,
                 const inp = document.getElementById('rqp-'+orderId);
                 const amt = Math.floor(Number(inp && inp.value)||0);
                 if(!(amt>0)) return showToast('확정 금액을 1원 이상 입력하세요.');
-                if(!confirm('의뢰 금액을 '+amt.toLocaleString()+'원으로 확정하고 승인합니다.\n구매자가 결제하면 제작이 진행됩니다.\n계속할까요?')) return;
+                if(!confirm('금액을 '+amt.toLocaleString()+'원으로 확정하고 승인합니다.\n구매자가 결제하면 진행됩니다.\n계속할까요?')) return;
                 try {
                     let r = await fetch(`${API_URL}/api/order/requote`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, seller: currentUser.name, amount: amt }) });
                     let dj = await r.json().catch(()=>({}));
@@ -10846,7 +10849,7 @@ pdfjsScript,
                     const r = await fetch(`${API_URL}/api/order/pay`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, buyer: currentUser.name, payMethod: pay.method, cardPw: pay.cardPw }) });
                     const dj = await r.json().catch(()=>({}));
                     if(!r.ok) return showToast(dj.error || '결제 실패');
-                    showToast('결제 완료 · 제작이 진행됩니다.');
+                    showToast('결제 완료 · 주문이 진행됩니다.');
                     if(window.updateUserBalance) updateUserBalance();
                     refreshRxDocStatus(orderId);
                 } catch(_){ /* pgPay 취소 */ }
