@@ -4470,21 +4470,72 @@
             } catch(e){}
         }
 
-        // 🚀 기존 상점에 배경 / 소개 추가 업데이트
+        // 🚀 기존 상점에 배경(대문) — 편집기(확대/축소·이동·회전 + 미리보기)로 등록
         async function uploadStoreBackground(storeId) {
             const fileInput = document.createElement('input');
             fileInput.type = 'file'; fileInput.accept = 'image/*';
-            fileInput.onchange = async (e) => {
+            fileInput.onchange = (e) => {
                 const file = e.target.files[0]; if(!file) return;
                 const reader = new FileReader();
-                reader.onload = async (ev) => {
-                    await fetch(`${API_URL}/api/store/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: storeId, owner: currentUser.name, background: ev.target.result }) });
-                    showToast("배경 이미지가 등록되었습니다."); loadMyBrandStores();
-                };
+                reader.onload = (ev) => { window.openBackgroundEditor(storeId, ev.target.result); };
                 reader.readAsDataURL(file);
             };
             fileInput.click();
         }
+        // 🖼 대문 이미지 편집기 — 프레임(3:1)에 맞춰 확대/축소·좌우상하 이동·회전 후 캔버스로 구워 저장
+        window.openBackgroundEditor = function(storeId, dataUrl){
+            const OW = 1200, OH = 400;
+            let m = document.getElementById('bg-editor-modal'); if(!m){ m = document.createElement('div'); m.id='bg-editor-modal'; document.body.appendChild(m); }
+            m.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:14px;';
+            m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:680px;width:100%;padding:18px;box-shadow:0 24px 60px rgba(0,0,0,.4);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="margin:0;font-size:17px;font-weight:900;color:var(--primary);">🖼 대문 이미지 편집</h3><span onclick="var e=document.getElementById('bg-editor-modal');if(e)e.remove();" style="cursor:pointer;font-size:24px;color:#94a3b8;line-height:1;">&times;</span></div>
+                <div id="bg-ed-frame" style="position:relative;width:100%;aspect-ratio:3/1;overflow:hidden;border-radius:12px;border:1px solid #e2e8f0;background:#0f172a;">
+                    <img id="bg-ed-img" src="${dataUrl}" style="position:absolute;left:50%;top:50%;transform-origin:center;user-select:none;pointer-events:none;max-width:none;">
+                </div>
+                <div style="font-size:11px;color:#94a3b8;margin-top:6px;">프레임(가로 배너) 안에 보이는 영역이 대문으로 저장됩니다.</div>
+                <div style="display:grid;grid-template-columns:auto 1fr;gap:9px 12px;align-items:center;margin-top:12px;font-size:12px;color:#475569;">
+                    <span>확대/축소</span><input id="bg-ed-scale" type="range" min="0.3" max="4" step="0.01" value="1" oninput="bgEdApply()">
+                    <span>좌우 이동</span><input id="bg-ed-x" type="range" min="-100" max="100" step="1" value="0" oninput="bgEdApply()">
+                    <span>상하 이동</span><input id="bg-ed-y" type="range" min="-100" max="100" step="1" value="0" oninput="bgEdApply()">
+                    <span>회전</span><input id="bg-ed-rot" type="range" min="-180" max="180" step="1" value="0" oninput="bgEdApply()">
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+                    <button onclick="var e=document.getElementById('bg-editor-modal');if(e)e.remove();" style="padding:10px 18px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;cursor:pointer;">취소</button>
+                    <button onclick="bgEdSave('${storeId}')" style="padding:10px 22px;border:0;background:var(--gradient-btn,#6366f1);color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">적용</button>
+                </div>
+            </div>`;
+            window.__bgEd = { storeId, dataUrl, OW, OH };
+            const img = document.getElementById('bg-ed-img');
+            const onl = function(){ window.__bgEd.iw = img.naturalWidth||1; window.__bgEd.ih = img.naturalHeight||1; bgEdApply(); };
+            img.onload = onl; if(img.complete && img.naturalWidth) onl();
+        };
+        window.bgEdApply = function(){
+            const img=document.getElementById('bg-ed-img'), fr=document.getElementById('bg-ed-frame'); if(!img||!fr||!window.__bgEd) return;
+            const s=Number(document.getElementById('bg-ed-scale').value)||1, rot=Number(document.getElementById('bg-ed-rot').value)||0;
+            const px=Number(document.getElementById('bg-ed-x').value)||0, py=Number(document.getElementById('bg-ed-y').value)||0;
+            const fw=fr.clientWidth, fh=fr.clientHeight, iw=window.__bgEd.iw||1, ih=window.__bgEd.ih||1;
+            const cover=Math.max(fw/iw, fh/ih), w=iw*cover, h=ih*cover;
+            img.style.width=w+'px'; img.style.height=h+'px';
+            img.style.transform=`translate(-50%,-50%) translate(${(px/100)*fw}px,${(py/100)*fh}px) scale(${s}) rotate(${rot}deg)`;
+            window.__bgEd.state={s,rot,px,py,fw,fh,w,h};
+        };
+        window.bgEdSave = async function(storeId){
+            const st=window.__bgEd; if(!st||!st.state){ showToast('이미지 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
+            const {OW,OH}=st, s=st.state, sf=OW/(s.fw||OW);
+            const cv=document.createElement('canvas'); cv.width=OW; cv.height=OH; const ctx=cv.getContext('2d');
+            ctx.fillStyle='#0f172a'; ctx.fillRect(0,0,OW,OH);
+            const img=new Image();
+            img.onload=async function(){
+                ctx.save();
+                ctx.translate(OW/2 + (s.px/100)*OW, OH/2 + (s.py/100)*OH);
+                ctx.rotate(s.rot*Math.PI/180); ctx.scale(s.s, s.s);
+                const dw=s.w*sf, dh=s.h*sf; ctx.drawImage(img, -dw/2, -dh/2, dw, dh);
+                ctx.restore();
+                let out; try { out=cv.toDataURL('image/jpeg', 0.9); } catch(_){ out=st.dataUrl; }
+                try { await fetch(`${API_URL}/api/store/update`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:storeId, owner:currentUser.name, background:out})}); showToast('대문 이미지가 적용되었습니다.'); const e=document.getElementById('bg-editor-modal'); if(e) e.remove(); if(window.loadMyBrandStores) loadMyBrandStores(); } catch(err){ showToast('적용 실패: '+(err.message||err)); }
+            };
+            img.src=st.dataUrl;
+        };
         async function editStoreDescription(storeId, currentDesc) {
             const newDesc = prompt("상점 소개 문구를 입력하세요.", currentDesc || '');
             if(newDesc === null) return;
