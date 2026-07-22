@@ -1668,7 +1668,7 @@
                     <button id="chat-exit-btn" style="padding:7px 12px; font-size:12px; border:none; border-radius:20px; background:#334155; color:#fff; font-weight:700; cursor:pointer; flex-shrink:0;" onclick="backToDrawerList()" title="대화방 목록으로">◀ 뒤로</button>
                 </div>
                 <!-- 📌 주문 상태 고정 슬롯 — 채팅 스크롤 영역 밖(항상 보임) -->
-                <div id="chat-order-pin-slot" style="flex:none;"></div>
+                <div id="chat-order-pin-slot" style="flex:none; background:#abc1d1;"></div>
                 <div class="chat-body" id="main-chat-body"></div>
 
                 <!-- 🚀 첨부 대기 파일 프리뷰 -->
@@ -10784,10 +10784,14 @@ pdfjsScript,
                     if(status==='awaiting_payment') return '<button onclick="payOrder(\''+oid+'\','+amount+')" style="width:100%;background:var(--gradient-btn);color:#fff;border:0;padding:9px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">💳 결제하기 · '+(amount.toLocaleString())+'원</button>';
                     if(status==='approved') return '';
                     if(status==='shipping' || status==='delivered'){
+                        // 🦷 리메이크/리페어는 기공소(dental_lab) 주문만 노출
+                        var remakeBtns = (o.storeCategory === 'dental_lab')
+                            ? '<div style="display:flex;gap:6px;"><button onclick="requestRemake(\''+oid+'\',\'remake\')" style="flex:1;background:#fff;color:#b45309;border:1px solid #f59e0b;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">🔁 리메이크</button>'
+                              + '<button onclick="requestRemake(\''+oid+'\',\'repair\')" style="flex:1;background:#fff;color:#b45309;border:1px solid #f59e0b;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">🔧 리페어</button></div>'
+                            : '';
                         return trkLine
-                            + '<button onclick="buyerConfirm(\''+oid+'\')" style="width:100%;background:var(--success);color:#fff;border:0;padding:9px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;margin-bottom:6px;">🎉 구매 확정</button>'
-                            + '<div style="display:flex;gap:6px;"><button onclick="requestRemake(\''+oid+'\',\'remake\')" style="flex:1;background:#fff;color:#b45309;border:1px solid #f59e0b;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">🔁 리메이크</button>'
-                            + '<button onclick="requestRemake(\''+oid+'\',\'repair\')" style="flex:1;background:#fff;color:#b45309;border:1px solid #f59e0b;padding:7px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">🔧 리페어</button></div>';
+                            + '<button onclick="buyerConfirm(\''+oid+'\')" style="width:100%;background:var(--success);color:#fff;border:0;padding:9px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;'+(remakeBtns?'margin-bottom:6px;':'')+'">🎉 구매 확정</button>'
+                            + remakeBtns;
                     }
                     return '';
                 }

@@ -1542,7 +1542,11 @@ app.get('/api/order/:orderId', (req, res) => {
     db.get(`SELECT * FROM product_orders WHERE id = ?`, [req.params.orderId], (err, row) => {
         if(err || !row) return res.status(404).json({ error: '주문 없음' });
         if (me !== row.buyer && me !== row.seller && !isAdminName(me)) return res.status(403).json({ error: '본인 주문만 조회할 수 있습니다.' });   // 🔐 당사자/관리자만
-        res.json(row);
+        // 🦷 리메이크/리페어 노출 판단용 상점 카테고리 포함
+        db.get(`SELECT s.category AS cat FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [row.productId], (e2, sr) => {
+            row.storeCategory = (sr && sr.cat) || null;
+            res.json(row);
+        });
     });
 });
 
