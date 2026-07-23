@@ -251,6 +251,7 @@ function initTables() {
         db.run(`ALTER TABLE transactions ADD COLUMN make_kind TEXT`, () => {});         // 🦷 기공: 신규제작/리메이크/리페어 구분
         db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_at INTEGER`, () => {});        // ⏱ 거절 후 자동 삭제 예정 시각(epoch ms)
         db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_after_id INTEGER`, () => {});  // 이 chat id 이후 새 대화 없으면 삭제
+        db.run(`CREATE TABLE IF NOT EXISTS chat_hidden (user TEXT, roomId TEXT, hidden_at TEXT)`, () => {});   // 🗑 사용자가 삭제(퇴장)한 대화방(본인 목록에서 숨김)
         db.run(`ALTER TABLE users ADD COLUMN card_pw TEXT`, () => {});   // (선택) 회원가입 시 카드 비밀번호 4자리 — 실 PG 대비 저장만, 현재 미검증
 
         // 🚀 [v8+] 전역 설정 (Admin 권한 비밀번호 등) — 초기값 'mars'
@@ -819,8 +820,28 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
             }));
             Promise.all(tasks).then(result => {
                 result.sort((a, b) => (new Date(b.lastDate || 0).getTime() || 0) - (new Date(a.lastDate || 0).getTime() || 0));
-                res.json(result);
+                // 🗑 내가 삭제(퇴장)한 대화방은 목록에서 제외
+                db.all(`SELECT roomId FROM chat_hidden WHERE user = ?`, [name], (eh, hrows) => {
+                    const hidden = new Set((hrows || []).map(r => r.roomId));
+                    res.json(result.filter(r => !hidden.has(r.roomId)));
+                });
             }).catch(() => res.json(out));
+        });
+    });
+});
+
+// 🗑 대화방 삭제(퇴장) — 주문 대화방이 아닌 일반 대화방만. 본인 목록에서 숨기고 상대에게 퇴장 안내.
+app.post('/api/chat/leave-room', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const roomId = String((req.body && req.body.roomId) || '');
+    if (!roomId) return res.status(400).json({ error: 'roomId가 필요합니다.' });
+    if (roomId.startsWith('room_ord_')) return res.status(400).json({ error: '주문(구매) 대화방은 삭제할 수 없습니다.' });
+    db.run(`INSERT INTO chat_hidden (user, roomId, hidden_at) VALUES (?, ?, ?)`, [me, roomId, new Date().toISOString()], () => {
+        const date = new Date().toLocaleString('ko-KR');
+        const msg = '🚪 상대방이 대화방을 퇴장하셨습니다.';
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, '__system__', NULL, ?, ?)`, [roomId, msg, date], function() {
+            try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: this.lastID, date }); } catch (_) {}
+            res.json({ success: true });
         });
     });
 });

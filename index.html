@@ -4771,7 +4771,7 @@
             const list = orders.filter(o=>{
                 const stKey = (o.settled && (o.status==='confirmed'||o.status==='settled')) ? 'settled' : o.status;
                 if(stf && stKey !== stf) return false;
-                if(q){ const hay = ((o.productName||'')+' '+(o.buyer||'')).toLowerCase(); if(hay.indexOf(q)<0) return false; }
+                if(q){ let pat=''; try{ const bi=o.buyer_info?JSON.parse(o.buyer_info):{}; pat=bi.patientName||''; }catch(_){} const hay = ((o.productName||'')+' '+(o.buyer||'')+' '+pat+' '+(o.memo||'')).toLowerCase(); if(hay.indexOf(q)<0) return false; }
                 return true;
             });
             if(!list.length){ wrap.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-sub); font-size:13px; background:#fff; border-radius:10px;">조건에 맞는 주문이 없습니다.</div>'; return; }
@@ -4782,6 +4782,19 @@
                     const stat = statusLabels[stKey] || { txt: o.status, bg: '#fff', color: '#64748b', icon: '·' };
                     const dt = (o.created_at || '').replace('T', ' ').substring(0, 16);
                     const isPending = o.status === 'pending';
+                    // 🔎 상품/의뢰 정보 — 상품명 + 환자명 + 의뢰 품목 요약(어떤 주문인지 식별)
+                    let _title = o.productName || '주문', _summary = '';
+                    try {
+                        const bi = o.buyer_info ? JSON.parse(o.buyer_info) : {};
+                        const fd = o.form_data ? JSON.parse(o.form_data) : {};
+                        if(bi.patientName) _title += ' · 환자 ' + bi.patientName;
+                        const items = (fd.items || []);
+                        const names = items.map(it => (it.name || ((it.selected||[]).map(s=>s.name).filter(Boolean).join(', ')))).filter(Boolean);
+                        if(names.length) _summary = names.join(' / ');
+                    } catch(_){}
+                    if(!_summary && o.memo) _summary = String(o.memo).replace(/\n/g,' ').slice(0,60);
+                    const _titleE = _title.replace(/</g,'&lt;');
+                    const _summaryE = _summary ? ('<div style="font-size:11px; color:#475569; margin-top:2px; word-break:break-all;">📝 '+_summary.replace(/</g,'&lt;')+'</div>') : '';
                     let acts = '';
                     if(o.status === 'pending') {
                         // 🚀 판매 관리에서도 승인/거절 가능(대화방 밖) — 금액 0(간편 의뢰서)은 재견적 먼저
@@ -4801,7 +4814,8 @@
                             <span>${stat.icon}</span><span>${stat.txt}</span>
                         </div>
                         <div style="flex:1; min-width:120px;">
-                            <div style="font-size:14px; font-weight:600; color:var(--text-main); word-break:break-all;">${(o.productName || '상품').replace(/</g,'&lt;')}</div>
+                            <div style="font-size:14px; font-weight:600; color:var(--text-main); word-break:break-all;">${_titleE}</div>
+                            ${_summaryE}
                             <div style="font-size:11px; color:var(--text-sub); margin-top:2px;">구매자 ${(o.buyer||'').replace(/</g,'&lt;')} · ${dt}${o.tracking?(' · 송장 '+String(o.tracking).replace(/</g,'&lt;')):''}</div>
                         </div>
                         ${acts?`<div style="display:flex; gap:5px; flex-wrap:wrap;">${acts}</div>`:''}
@@ -6687,17 +6701,17 @@ pdfjsScript,
                     const bOri = history.find(hi => hi.buyer === currentUser.name && hi.productId === p.id && hi.purchaseType === 'original' && !hi.refunded);
                     const price = Number(p.price_original) || Number(p.price_stream) || 0;
 
-                    // 🚀 버튼 제거 — 카드 전체 클릭으로 동작(아래 onProductCardClick). 여기선 안내 문구만.
+                    // 🚀 버튼 제거 — 카드 전체 클릭으로 동작(아래 onProductCardClick). 안내 문구는 표시하지 않음.
                     let actions = '';
                     if(isMine) {
                         actions = `<div style="font-size:12px;color:var(--text-sub);font-weight:600;">내 상품 · 눌러서 미리보기</div>`;
                     } else if(Number(p.rx_form) === 1) {
-                        actions = `<div style="font-size:12px;color:#5b21b6;font-weight:700;">🦷 눌러서 의뢰서 작성</div>`;
+                        actions = '';
                     } else if(labStore) {
-                        actions = `<div style="font-size:11px;color:#64748b;">수가 <b style="color:var(--text-main);">${Number(price).toLocaleString()}원</b> · 금액은 의뢰서 확인 후 기공소가 확정</div><div style="font-size:12px;color:#5b21b6;font-weight:700;margin-top:4px;">🦷 눌러서 의뢰서 작성</div>`;
+                        actions = `<div style="font-size:11px;color:#64748b;">수가 <b style="color:var(--text-main);">${Number(price).toLocaleString()}원</b> · 금액은 의뢰서 확인 후 기공소가 확정</div>`;
                     } else {
                         const ownedBadge = bOri ? `<div style="font-size:10px; color:var(--success); font-weight:600; margin-bottom:4px;">이미 구매함 · "내 구매"에서 열람 가능</div>` : '';
-                        actions = ownedBadge + `<div style="font-size:12px;color:var(--primary);font-weight:700;">눌러서 상세보기 · 결제</div>`;
+                        actions = ownedBadge;
                     }
 
                     // 🚀 [v8+] NEW 태그: 등록 7일 이내만 (id에 포함된 타임스탬프 파싱)
@@ -7922,6 +7936,18 @@ pdfjsScript,
             if(tabName === 'chats') { document.getElementById('view-chat-list').classList.add('active'); loadChatList(); }
         }
         function backToDrawerList() { document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-list').classList.add('active'); switchDrawerTab('chats'); activeChatFriend = null; currentChatRoomId = null; const _ps=document.getElementById('chat-order-pin-slot'); if(_ps) _ps.innerHTML=''; loadFriendList(); loadChatList(); }
+        // 🗑 대화방 삭제(퇴장) — 일반(주문 이력 없는) 대화방만. 목록에서 사라지고 상대에게 퇴장 안내.
+        window.leaveChatRoom = async function(roomId){
+            if(!confirm('이 대화방을 삭제할까요?\n삭제하면 내 목록에서 사라지고, 상대방에게는 "퇴장" 안내가 표시됩니다.')) return;
+            try {
+                const r = await fetch(`${API_URL}/api/chat/leave-room`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roomId }) });
+                const d = await r.json().catch(()=>({}));
+                if(!r.ok) return showToast(d.error || '삭제 실패');
+                showToast('대화방을 삭제했습니다.');
+                if(currentChatRoomId === roomId && typeof backToDrawerList==='function') backToDrawerList();
+                else if(window.loadChatList) loadChatList();
+            } catch(e){ showToast('삭제 실패: ' + (e.message||e)); }
+        };
 
         // 🚀 [v7p3] 판매자가 방에 진입한 주문을 추적 — 알림 억제
         window.__seenOrderRooms = new Set();
@@ -8506,7 +8532,9 @@ pdfjsScript,
                         : r.lastMsg.includes('[META_QR]')?'🎫 [상품권 도착]'
                         : r.lastMsg;
 
-                    container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${r.partnerName.replace(/'/g, "\\'")}', '${(r.roomId||'').replace(/'/g, "\\'")}')">${picHtml}<div style="flex:1; min-width:0;"><div style="display:flex; justify-content:space-between;">${titleHtml}<span style="font-size:10px; color:var(--text-sub);">${r.lastDate}</span></div><div style="font-size:12px; color:var(--text-sub); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-top:4px;">${lastMsgPreview}</div></div>${badge}</div>`;
+                    // 🗑 주문(구매) 이력이 없는 일반 대화방은 삭제(퇴장) 가능
+                    const delBtn = isOrderRoom ? '' : `<button onclick="event.stopPropagation(); leaveChatRoom('${(r.roomId||'').replace(/'/g, "\\'")}')" title="대화방 삭제" style="flex:none; margin-left:6px; width:26px; height:26px; border:none; background:transparent; color:#94a3b8; cursor:pointer; font-size:14px; border-radius:6px;">🗑</button>`;
+                    container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${r.partnerName.replace(/'/g, "\\'")}', '${(r.roomId||'').replace(/'/g, "\\'")}')">${picHtml}<div style="flex:1; min-width:0;"><div style="display:flex; justify-content:space-between;">${titleHtml}<span style="font-size:10px; color:var(--text-sub);">${r.lastDate}</span></div><div style="font-size:12px; color:var(--text-sub); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-top:4px;">${lastMsgPreview}</div></div>${badge}${delBtn}</div>`;
                 });
             } catch(e){
                 if(window.__earthDiag) window.__earthDiag('loadChatList error: '+(e.message||e), true);
@@ -8547,7 +8575,7 @@ pdfjsScript,
             { k:['주문관리','판매관리','판매','접수','의뢰목록','주문목록','필터','검색','월정산','리포트'], a:'📦 주문 관리(판매자): "내 페이지 > 주문 관리"에서 접수된 주문/의뢰를 상태별(승인 대기·결제 대기·상품 준비중·배송중·배송 완료·구매확정)로 관리하고, 카드를 누르면 대화방으로 이동합니다. 상품명·구매자·환자명 검색과 상태 필터, 월 정산 리포트(매출·정산완료·정산대기), 아래 매출·정산 내역까지 한 화면에 있어요. ※ 상점을 개설해야 보입니다.' },
             { k:['거래내역','매출','정산금액','장부','영수증','정산내역'], a:'📊 매출·정산: "주문 관리" 페이지 하단에서 구매/판매/리메이크/리페어가 종류로 구분되고, 매출과 정산 금액(정산 대기중/정산완료), 수입·지출·정산 합계를 볼 수 있어요.' },
             { k:['구매목록','구매내역','내구매','산것','구매한','지출','지출내역'], a:'🛒 구매 목록: "내 페이지 > 구매 목록"에서 내가 결제한 상품을 다시 열람하고, 주문서 미리보기·판매자 채팅·구매확정·환불을 할 수 있어요. 아래에는 지출 내역(구매·송금·환불·출금)도 표시됩니다.' },
-            { k:['채팅','알림','미읽음','메세지','메시지','안읽','읽지'], a:'💬 채팅/알림: 우하단 자홍색 채팅 버튼에 총 미읽음 개수가 표시되고, 각 대화방 목록에도 방별 미읽음 개수가 보입니다. 대화방은 좌측 ◀ 버튼으로 목록으로 돌아가요.' },
+            { k:['채팅','알림','미읽음','메세지','메시지','안읽','읽지','대화방삭제','방삭제','퇴장'], a:'💬 채팅/알림: 우하단 자홍색 채팅 버튼에 총 미읽음 개수가 표시되고, 각 대화방 목록에도 방별 미읽음 개수가 보입니다. 대화방은 좌측 ◀ 버튼으로 목록으로 돌아가고, 주문 이력이 없는 일반 대화방은 목록의 🗑 버튼으로 삭제할 수 있어요(상대에게는 퇴장 안내가 표시됩니다).' },
             { k:['세금','계산서','세금계산서','정산완료'], a:'🧾 세금계산서/정산: 관리자(Admin)가 구매확정된 거래를 월별로 정산하고 전자세금계산서를 발행합니다. 가입 시 입력한 사업자 정보가 자동으로 반영돼요.' },
             { k:['새기능','업데이트','변경','바뀐','최근','신규'], a:'🆕 최근 반영된 기능:\n• 주문 상태 카드 상단 고정(채팅 늘어도 항상 표시)\n• 상품 카드 전체 클릭 → 상세·결제, 상품 카드 미리보기\n• 대문 이미지 편집(확대·회전), 배송조회 링크\n• 리메이크/리페어(기공소 전용), 거래내역 매출/정산 열\n• 채팅 알림 강화(방별 미읽음), AI 상담원 도입\n바뀌는 기능도 여기서 계속 안내해 드릴게요!' },
             { k:['상담원','사람','전화','연결','문의','도와'], a:'👩‍💼 담당자 연결이 필요하시면 이 창에 문의 내용을 자세히 남겨주세요. 확인 후 답변드리겠습니다. 그 사이 제가 도울 수 있는 건 무엇이든 물어봐 주세요! 😊' },
