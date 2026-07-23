@@ -6788,7 +6788,7 @@ pdfjsScript,
         // 🖱 상품 카드 전체 클릭 라우터 — 버튼 제거 대체. 본인=미리보기 / 기공소=의뢰서 / 그 외=상세·결제
         window.onProductCardClick = function(pid){
             const p = (window.__marketProds||[]).find(x=>String(x.id)===String(pid)); if(!p) return;
-            if(p.seller === currentUser.name){ if(window.openUniversalViewer) openUniversalViewer(p.id, true); return; }
+            // 🦷 기공소/의뢰서 상품 → 의뢰서 작성 / 그 외 → 상품 상세 페이지(미리보기 아님)
             const lab = !!(window.currentMarketFilterStore && window.currentMarketFilterStore.category === 'dental_lab');
             if(lab || Number(p.rx_form) === 1){ if(window.startProductRx) window.startProductRx(p.id); return; }
             window.openProductPurchase(p.id);
@@ -6813,7 +6813,7 @@ pdfjsScript,
                 <div style="padding:16px 18px;overflow:auto;flex:1;">${imgHtml}${p.description?`<div style="font-size:13px;color:#475569;white-space:pre-wrap;margin-top:10px;line-height:1.6;">${esc(p.description)}</div>`:''}</div>
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-top:1px solid #e2e8f0;gap:12px;">
                     <div style="font-size:20px;font-weight:900;color:var(--primary);">${price.toLocaleString()}원</div>
-                    <button style="padding:12px 28px;background:var(--gradient-btn,#6366f1);color:#fff;border:0;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;" onclick="payProductOrder('${p.id}')">💳 결제하기</button>
+                    ${p.seller===currentUser.name ? '<span style="font-size:13px;color:var(--text-sub);font-weight:700;">내 상품</span>' : `<button style="padding:12px 28px;background:var(--gradient-btn,#6366f1);color:#fff;border:0;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;" onclick="payProductOrder('${p.id}')">💳 결제하기</button>`}
                 </div>
             </div>`;
         };
@@ -7971,7 +7971,7 @@ pdfjsScript,
             const drawer = document.getElementById('messenger-drawer'); if(!drawer.classList.contains('open')) drawer.classList.add('open');
             activeChatFriend = friendName;
             // 🏪 [Task1] 주문 대화방이면 헤더에 상점명(+상품명) 표시. DM은 상대방 이름 그대로.
-            let __chatTitle = `${friendName === '이재준' ? '🤖 AI 상담원' : friendName}`;
+            let __chatTitle = `${friendName === '이재준' ? '🤖 고객센터' : friendName}`;
             try {
                 const __meta = (window.__orderRoomStore && roomIdOverride) ? window.__orderRoomStore[roomIdOverride] : null;
                 if(__meta && __meta.storeName) __chatTitle = __meta.storeName + (__meta.productName ? ` · ${__meta.productName}` : '');
@@ -8173,7 +8173,7 @@ pdfjsScript,
         async function loadFriendList() {
             if(!currentUser) return; const res = await fetch(`${API_URL}/api/friends/${currentUser.name}`); const friends = await res.json() || [];
             const container = document.getElementById('friend-list-container'); container.innerHTML = '';
-            if(currentUser.name !== '이재준') { container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('이재준')"><div class="profile-pic" style="background:#d6006e; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px;">🤖</div><div style="flex:1;"><b>AI 상담원</b><div style="font-size:11px; color:var(--text-sub);">사용법·불편사항 자동응답</div></div></div>`; }
+            if(currentUser.name !== '이재준') { container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('이재준')"><div class="profile-pic" style="background:#d6006e; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px;">🤖</div><div style="flex:1;"><b>고객센터</b><div style="font-size:11px; color:var(--text-sub);">사용법·불편사항 자동응답</div></div></div>`; }
             friends.forEach(f => { const pic = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`; container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${f.name}')">${pic}<div style="flex:1;"><b>${f.name}</b></div></div>`; });
             updateTabBadge();
         }
@@ -8526,7 +8526,7 @@ pdfjsScript,
                     if(isOrderRoom) {
                         const sName = r.storeName || (meta && meta.storeName) || '';
                         const pName = r.productName || (meta && meta.lastProductName) || '';
-                        const partnerDisplay = r.partnerName === '이재준' ? '🤖 AI 상담원' :r.partnerName;
+                        const partnerDisplay = r.partnerName === '이재준' ? '🤖 고객센터' :r.partnerName;
                         // 🏪 [Task1] 주문 대화방 제목 = 상점명(대화 상대 id 대신). 상품명은 부제로.
                         window.__orderRoomStore = window.__orderRoomStore || {};
                         window.__orderRoomStore[r.roomId] = { storeName: sName, productName: pName, partnerName: r.partnerName };
@@ -8547,8 +8547,8 @@ pdfjsScript,
                         : r.lastMsg.includes('[META_QR]')?'🎫 [상품권 도착]'
                         : r.lastMsg;
 
-                    // 🗑 주문(구매) 이력이 없는 일반 대화방은 삭제(퇴장) 가능
-                    const delBtn = isOrderRoom ? '' : `<button onclick="event.stopPropagation(); leaveChatRoom('${(r.roomId||'').replace(/'/g, "\\'")}')" title="대화방 삭제" style="flex:none; margin-left:6px; width:26px; height:26px; border:none; background:transparent; color:#94a3b8; cursor:pointer; font-size:14px; border-radius:6px;">🗑</button>`;
+                    // 🗑 주문(구매) 이력이 없는 일반 대화방은 삭제(퇴장) 가능. 단, 고객센터(이재준) 방은 삭제 불가.
+                    const delBtn = (isOrderRoom || r.partnerName === '이재준') ? '' : `<button onclick="event.stopPropagation(); leaveChatRoom('${(r.roomId||'').replace(/'/g, "\\'")}')" title="대화방 삭제" style="flex:none; margin-left:6px; width:26px; height:26px; border:none; background:transparent; color:#94a3b8; cursor:pointer; font-size:14px; border-radius:6px;">🗑</button>`;
                     container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${r.partnerName.replace(/'/g, "\\'")}', '${(r.roomId||'').replace(/'/g, "\\'")}')">${picHtml}<div style="flex:1; min-width:0;"><div style="display:flex; justify-content:space-between;">${titleHtml}<span style="font-size:10px; color:var(--text-sub);">${r.lastDate}</span></div><div style="font-size:12px; color:var(--text-sub); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-top:4px;">${lastMsgPreview}</div></div>${badge}${delBtn}</div>`;
                 });
             } catch(e){
@@ -9188,7 +9188,7 @@ pdfjsScript,
                     ? `<div class="kt-avatar-spacer"></div>`
                     : (avaSrc ? `<img class="kt-avatar" src="${avaSrc}">` : `<div class="kt-avatar" style="display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:13px; background:linear-gradient(135deg,#94a3b8,#64748b);">${(sender||'?').substring(0,1)}</div>`);
                 if(showName) {
-                    chatBody.insertAdjacentHTML('beforeend', `<div class="kt-sender-name">${sender === '이재준' ? '🤖 AI 상담원' : sender}</div>`);
+                    chatBody.insertAdjacentHTML('beforeend', `<div class="kt-sender-name">${sender === '이재준' ? '🤖 고객센터' : sender}</div>`);
                 }
                 const bubbleClass = sameAsLast ? 'kt-bubble other same-sender' : 'kt-bubble other';
                 chatBody.insertAdjacentHTML('beforeend', `<div class="kt-msg-line other${sameAsLast?' same-sender':''}" data-sender="${sender}"${idAttr}>${avatar}<div class="kt-bubble-col"><div class="${bubbleClass}">${displayHtml}</div></div><div class="kt-time">${time}</div></div>`);

@@ -252,6 +252,7 @@ function initTables() {
         db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_at INTEGER`, () => {});        // ⏱ 거절 후 자동 삭제 예정 시각(epoch ms)
         db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_after_id INTEGER`, () => {});  // 이 chat id 이후 새 대화 없으면 삭제
         db.run(`CREATE TABLE IF NOT EXISTS chat_hidden (user TEXT, roomId TEXT, hidden_at TEXT)`, () => {});   // 🗑 사용자가 삭제(퇴장)한 대화방(본인 목록에서 숨김)
+        db.run(`ALTER TABLE chats ADD COLUMN created_at TEXT`, () => {});   // ⏱ ISO 타임스탬프(고객센터 24h 자동삭제 기준)
         db.run(`ALTER TABLE users ADD COLUMN card_pw TEXT`, () => {});   // (선택) 회원가입 시 카드 비밀번호 4자리 — 실 PG 대비 저장만, 현재 미검증
 
         // 🚀 [v8+] 전역 설정 (Admin 권한 비밀번호 등) — 초기값 'mars'
@@ -836,10 +837,11 @@ app.post('/api/chat/leave-room', (req, res) => {
     const roomId = String((req.body && req.body.roomId) || '');
     if (!roomId) return res.status(400).json({ error: 'roomId가 필요합니다.' });
     if (roomId.startsWith('room_ord_')) return res.status(400).json({ error: '주문(구매) 대화방은 삭제할 수 없습니다.' });
+    if (roomId.indexOf('이재준') >= 0) return res.status(400).json({ error: '고객센터 대화방은 삭제할 수 없습니다.' });
     db.run(`INSERT INTO chat_hidden (user, roomId, hidden_at) VALUES (?, ?, ?)`, [me, roomId, new Date().toISOString()], () => {
         const date = new Date().toLocaleString('ko-KR');
         const msg = '🚪 상대방이 대화방을 퇴장하셨습니다.';
-        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, '__system__', NULL, ?, ?)`, [roomId, msg, date], function() {
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [roomId, msg, date, new Date().toISOString()], function() {
             try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: this.lastID, date }); } catch (_) {}
             res.json({ success: true });
         });
@@ -1161,7 +1163,7 @@ function _notifyOrderStatus(buyer, seller, orderId, status, msg) {
         _setOrderRoom(roomId, buyer, seller);   // 참가자 캐시 보강(소켓 전송용)
         if (msg) {
             const date = new Date().toLocaleString('ko-KR');
-            db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, '__system__', NULL, ?, ?)`, [roomId, msg, date], function() {
+            db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [roomId, msg, date, new Date().toISOString()], function() {
                 try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: this.lastID, date }); } catch (_) {}
             });
         }
@@ -1354,7 +1356,7 @@ app.post('/api/order/reject', (req, res) => {
             _setOrderRoom(roomId, ord.buyer, ord.seller);
             const date = new Date().toLocaleString('ko-KR');
             const msg = '❌ [주문 거절] 판매자가 주문을 거절했습니다.' + (reason ? (' 사유: ' + reason) : '') + '\n※ 새로운 대화가 없으면 24시간 후 이 대화방은 자동으로 사라집니다.';
-            db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, '__system__', NULL, ?, ?)`, [roomId, msg, date], function() {
+            db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [roomId, msg, date, new Date().toISOString()], function() {
                 const mid = this.lastID;
                 try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: mid, date }); } catch (_) {}
                 try { _emitToRoomUsers(roomId, 'order_status', { orderId, status: 'rejected', buyer: ord.buyer, seller: ord.seller }); } catch (_) {}
@@ -1389,6 +1391,18 @@ function _rejectRoomSweep() {
 }
 setTimeout(_rejectRoomSweep, 40 * 1000);
 setInterval(_rejectRoomSweep, 30 * 60 * 1000);
+
+// ⏱ 고객센터(이재준) 대화방의 24시간 지난 대화 자동 삭제
+function _customerCenterSweep() {
+    try {
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        db.run(`DELETE FROM chats WHERE roomId LIKE 'room_msg_%' AND roomId LIKE '%이재준%' AND created_at IS NOT NULL AND created_at < ?`, [cutoff], function() {
+            if (this && this.changes) console.log('[고객센터] 24시간 경과 대화 ' + this.changes + '건 자동삭제');
+        });
+    } catch (_) {}
+}
+setTimeout(_customerCenterSweep, 50 * 1000);
+setInterval(_customerCenterSweep, 60 * 60 * 1000);
 
 // 🚀 [v6] 구매자가 자신의 pending 주문 취소
 app.post('/api/order/cancel', (req, res) => {
@@ -2700,7 +2714,7 @@ io.on('connection', (socket) => {
             db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[1], users[0]]);
         }
         // senderPic(base64)은 DB 미저장(히스토리 경량화). 실시간엔 실어 보냄. 아래는 참가자 개인 룸에만 전송.
-        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date) VALUES (?, ?, ?, ?, ?)`, [data.roomId, sender, null, data.message, new Date().toLocaleString('ko-KR')], function() {
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [data.roomId, sender, null, data.message, new Date().toLocaleString('ko-KR'), new Date().toISOString()], function() {
             _emitToRoomUsers(data.roomId, 'receive_message', Object.assign({}, data, { sender, id: this.lastID }));
         });
     });
