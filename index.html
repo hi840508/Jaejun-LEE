@@ -1299,6 +1299,16 @@
                         <div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">구매 내역 로딩 중...</div>
                     </div>
                 </div>
+                <!-- 💸 지출 내역 (구매·결제·충전·출금 등) -->
+                <div class="panel" style="padding:0; overflow:hidden; margin-top:12px;">
+                    <div style="padding:12px 14px; background:#f8fafc; border-bottom:1px solid var(--border-color); font-size:14px; font-weight:700; color:var(--text-main);">💸 지출 내역</div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                            <thead><tr style="background:#f8fafc; color:var(--text-sub);"><th style="padding:8px 10px; text-align:left;">일시</th><th style="padding:8px 10px; text-align:left;">종류</th><th style="padding:8px 10px; text-align:left;">대상</th><th style="padding:8px 10px; text-align:right;">금액</th></tr></thead>
+                            <tbody id="purchase-expenses-body"><tr><td colspan="4" style="text-align:center; padding:18px; color:var(--text-sub);">불러오는 중...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <!-- (판매 관리는 '주문 관리'(tab-history)로 통합됨) -->
@@ -1362,7 +1372,29 @@
                         <button class="btn btn-outline" style="padding:8px 14px; font-size:12px;" onclick="loadMySalesOrders()">새로고침</button>
                     </div>
                 </div>
+                <!-- 📈 월 정산 리포트 -->
+                <div class="panel" style="padding:12px 14px; margin-bottom:12px;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                        <b style="font-size:13px; color:var(--text-main);">📈 월 정산 리포트</b>
+                        <input type="month" id="sales-report-month" onchange="renderSalesReport()" style="padding:5px 8px; border:1px solid var(--border-color); border-radius:8px; font-size:12px;">
+                    </div>
+                    <div id="sales-report" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+                </div>
                 <div class="panel" style="padding:14px; margin-bottom:12px;">
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+                        <input id="sales-search" oninput="renderSalesOrders()" placeholder="검색 (상품명·구매자·환자명)" style="flex:1; min-width:160px; padding:8px 12px; border:1px solid var(--border-color); border-radius:8px; font-size:13px;">
+                        <select id="sales-status" onchange="renderSalesOrders()" style="padding:8px 10px; border:1px solid var(--border-color); border-radius:8px; font-size:13px;">
+                            <option value="">전체 상태</option>
+                            <option value="pending">승인 대기</option>
+                            <option value="awaiting_payment">결제 대기</option>
+                            <option value="approved">상품 준비중</option>
+                            <option value="shipping">배송중</option>
+                            <option value="delivered">배송 완료</option>
+                            <option value="confirmed">구매확정·정산대기</option>
+                            <option value="settled">정산완료</option>
+                            <option value="refund_requested">환불요청</option>
+                        </select>
+                    </div>
                     <div id="my-sales-orders-list" style="display:flex; flex-direction:column; gap:8px;"></div>
                 </div>
                 <!-- 환불 승인 대기 요청 (판매자 알림) -->
@@ -3809,7 +3841,7 @@
             if(id === 'sales-mgmt') { loadMySalesOrders(); }
             if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
             if(id === 'admin-orders') { if(typeof loadAdminOrders==='function') loadAdminOrders(); }
-            if(id === 'my-purchases') { loadMyPurchases(); }
+            if(id === 'my-purchases') { loadMyPurchases(); if(window.loadPurchaseExpenses) loadPurchaseExpenses(); }
             if(id === 'history') {
                 // 📦 주문 관리 = 상점 개설자 전용. 미개설 시 접근 차단 → 구매 목록으로.
                 if(!(window.myBrandStores && window.myBrandStores.length)){ showToast('상점을 개설하면 주문 관리를 사용할 수 있어요.'); return switchTab('my-purchases'); }
@@ -4688,28 +4720,63 @@
             try {
                 const res = await fetch(`${API_URL}/api/orders/seller/${encodeURIComponent(currentUser.name)}`);
                 if(!res.ok) throw new Error('HTTP ' + res.status);
-                const orders = await res.json() || [];
-                if(orders.length === 0) {
-                    wrap.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-sub); font-size:13px; background:#fff; border-radius:10px;">접수된 주문이 없습니다.</div>';
-                    return;
-                }
-                const statusLabels = {
-                    'pending':   { txt: '승인 대기',  bg: '#fef3c7', color: '#92400e', icon: '⏳' },
-                    'awaiting_payment': { txt: '결제 대기', bg: '#ffedd5', color: '#9a3412', icon: '💳' },
-                    'approved':  { txt: '상품 준비중', bg: '#d1fae5', color: '#065f46', icon: '✅' },
-                    'shipping':  { txt: '배송중',     bg: '#dbeafe', color: '#1e40af', icon: '🚚' },
-                    'delivered': { txt: '배송 완료',   bg: '#e0e7ff', color: '#3730a3', icon: '📦' },
-                    'confirmed': { txt: '구매확정·정산대기', bg: '#dcfce7', color: '#166534', icon: '🔒' },
-                    'settled':   { txt: '정산완료',   bg: '#dcfce7', color: '#166534', icon: '💰' },
-                    'refund_requested': { txt: '환불요청', bg: '#ffedd5', color: '#9a3412', icon: '⚠' },
-                    'refunded':  { txt: '환불완료',   bg: '#fee2e2', color: '#991b1b', icon: '↩' },
-                    'rejected':  { txt: '거절됨',     bg: '#fee2e2', color: '#991b1b', icon: '✕' },
-                    'cancelled': { txt: '구매자 취소', bg: '#e5e7eb', color: '#475569', icon: '○' },
-                    'dismissed': { txt: '알림 해제됨', bg: '#e5e7eb', color: '#475569', icon: '·' }
-                };
-                const _obtn = (label,color,fn)=>`<button onclick="event.stopPropagation(); ${fn}" style="padding:5px 9px; font-size:11px; font-weight:700; border:1px solid ${color}; color:${color}; background:#fff; border-radius:6px; cursor:pointer; white-space:nowrap;">${label}</button>`;
-                let h = '';
-                orders.forEach(o => {
+                window.__salesOrders = await res.json() || [];
+                if(window.renderSalesReport) renderSalesReport();
+                renderSalesOrders();
+            } catch(e) {
+                if(wrap) wrap.innerHTML = `<div style="color:var(--danger); font-size:12px; padding:10px;">로드 실패: ${(e.message||e)}</div>`;
+            }
+        };
+        window.SALES_STATUS_LABELS = {
+            'pending':   { txt: '승인 대기',  bg: '#fef3c7', color: '#92400e', icon: '⏳' },
+            'awaiting_payment': { txt: '결제 대기', bg: '#ffedd5', color: '#9a3412', icon: '💳' },
+            'approved':  { txt: '상품 준비중', bg: '#d1fae5', color: '#065f46', icon: '✅' },
+            'shipping':  { txt: '배송중',     bg: '#dbeafe', color: '#1e40af', icon: '🚚' },
+            'delivered': { txt: '배송 완료',   bg: '#e0e7ff', color: '#3730a3', icon: '📦' },
+            'confirmed': { txt: '구매확정·정산대기', bg: '#dcfce7', color: '#166534', icon: '🔒' },
+            'settled':   { txt: '정산완료',   bg: '#dcfce7', color: '#166534', icon: '💰' },
+            'refund_requested': { txt: '환불요청', bg: '#ffedd5', color: '#9a3412', icon: '⚠' },
+            'refunded':  { txt: '환불완료',   bg: '#fee2e2', color: '#991b1b', icon: '↩' },
+            'rejected':  { txt: '거절됨',     bg: '#fee2e2', color: '#991b1b', icon: '✕' },
+            'cancelled': { txt: '구매자 취소', bg: '#e5e7eb', color: '#475569', icon: '○' },
+            'dismissed': { txt: '알림 해제됨', bg: '#e5e7eb', color: '#475569', icon: '·' }
+        };
+        // 📈 월 정산 리포트 — 선택 월의 매출/정산완료/정산대기 합계
+        window.renderSalesReport = function(){
+            const el = document.getElementById('sales-report'); if(!el) return;
+            const orders = window.__salesOrders || [];
+            const mIn = document.getElementById('sales-report-month');
+            let month = mIn && mIn.value;
+            if(!month){ const d = new Date(); month = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); if(mIn) mIn.value = month; }
+            let sales=0, settled=0, waiting=0, cnt=0;
+            orders.forEach(o=>{
+                if(['cancelled','rejected','refunded','pending','awaiting_payment'].includes(o.status)) return;
+                const m = (o.settle_month || (o.created_at||'').substring(0,7));
+                if(m !== month) return;
+                const amt = Number(o.amount)||0; sales += amt; cnt++;
+                if(o.settled) settled += amt; else waiting += amt;
+            });
+            const card=(label,val,color)=>`<div style="flex:1;min-width:110px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:#64748b;">${label}</div><div style="font-size:16px;font-weight:900;color:${color};">${val.toLocaleString()}원</div></div>`;
+            el.innerHTML = card('매출 ('+cnt+'건)', sales, '#1e293b') + card('정산완료', settled, '#166534') + card('정산 대기', waiting, '#b45309');
+        };
+        // 주문 목록 렌더(검색·상태 필터 적용)
+        window.renderSalesOrders = function(){
+            const wrap = document.getElementById('my-sales-orders-list'); if(!wrap) return;
+            const orders = window.__salesOrders || [];
+            if(!orders.length){ wrap.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-sub); font-size:13px; background:#fff; border-radius:10px;">접수된 주문이 없습니다.</div>'; return; }
+            const q = ((document.getElementById('sales-search')||{}).value||'').toLowerCase().trim();
+            const stf = (document.getElementById('sales-status')||{}).value||'';
+            const statusLabels = window.SALES_STATUS_LABELS;
+            const _obtn = (label,color,fn)=>`<button onclick="event.stopPropagation(); ${fn}" style="padding:5px 9px; font-size:11px; font-weight:700; border:1px solid ${color}; color:${color}; background:#fff; border-radius:6px; cursor:pointer; white-space:nowrap;">${label}</button>`;
+            const list = orders.filter(o=>{
+                const stKey = (o.settled && (o.status==='confirmed'||o.status==='settled')) ? 'settled' : o.status;
+                if(stf && stKey !== stf) return false;
+                if(q){ const hay = ((o.productName||'')+' '+(o.buyer||'')).toLowerCase(); if(hay.indexOf(q)<0) return false; }
+                return true;
+            });
+            if(!list.length){ wrap.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-sub); font-size:13px; background:#fff; border-radius:10px;">조건에 맞는 주문이 없습니다.</div>'; return; }
+            let h = '';
+                list.forEach(o => {
                     // 💰 정산완료(settled=1)면 상태를 '정산완료'로 표기(구매확정·정산대기 → 정산완료)
                     const stKey = (o.settled && (o.status === 'confirmed' || o.status === 'settled')) ? 'settled' : o.status;
                     const stat = statusLabels[stKey] || { txt: o.status, bg: '#fff', color: '#64748b', icon: '·' };
@@ -4744,10 +4811,23 @@
                         </div>
                     </div>`;
                 });
-                wrap.innerHTML = h;
-            } catch(e) {
-                wrap.innerHTML = `<div style="color:var(--danger); font-size:12px; padding:10px;">로드 실패: ${(e.message||e)}</div>`;
-            }
+            wrap.innerHTML = h;
+        };
+
+        // 💸 구매 목록 하단 '지출 내역' — 구매/송금(출금)/환불(지급)/출금
+        window.loadPurchaseExpenses = async function(){
+            const body = document.getElementById('purchase-expenses-body'); if(!body || !currentUser) return;
+            try {
+                const list = await fetch(`${API_URL}/api/transactions/${encodeURIComponent(currentUser.name)}`).then(r=>r.json());
+                const me = currentUser.name;
+                const exp = (list||[]).filter(h => (h.buyer===me && (h.type==='자산 구매' || h.makeKind)) || h.type==='송금 (출금)' || h.type==='환불 지급' || h.type==='출금' || h.purchaseType==='withdraw');
+                if(!exp.length){ body.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:18px; color:var(--text-sub);">지출 내역이 없습니다.</td></tr>'; return; }
+                const label=(h)=>{ if(h.makeKind==='리메이크')return '리메이크'; if(h.makeKind==='리페어')return '리페어'; if(h.type==='자산 구매')return '구매'; if(h.type==='송금 (출금)')return '송금'; if(h.type==='환불 지급')return '환불'; if(h.type==='출금'||h.purchaseType==='withdraw')return '출금'; return h.type||'지출'; };
+                body.innerHTML = exp.map(h=>{
+                    const tgt = h.storeName || h.seller || h.receiver || '-';
+                    return `<tr style="border-top:1px solid #f1f5f9;"><td style="padding:8px 10px; white-space:nowrap;">${(h.date||'')}</td><td style="padding:8px 10px;">${label(h)}</td><td style="padding:8px 10px;">${String(tgt).replace(/</g,'&lt;')}</td><td style="padding:8px 10px; text-align:right; color:#dc2626; font-weight:700;">-${(Number(h.amount)||0).toLocaleString()}원</td></tr>`;
+                }).join('');
+            } catch(e){ body.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:18px; color:var(--danger);">불러오기 실패</td></tr>'; }
         };
 
         // 🚚 택배사 목록 + 배송조회 URL
@@ -8464,9 +8544,9 @@ pdfjsScript,
             { k:['환불','취소','반품'], a:'↩️ 환불: 구매 내역 또는 상단 주문 카드의 "환불 요청"을 누르면 판매자 승인 후 환불됩니다. 환불이 완료되면 대화방은 자동으로 종료돼요. (구매확정·정산 후에는 환불이 불가합니다)' },
             { k:['의뢰서','기공','기공소','수가','치식','간편','상세','pdf주문서','주문서'], a:'🦷 기공소 의뢰서: 기공소 상품 카드를 누르면 의뢰서를 작성합니다. 간편/상세 의뢰서 또는 등록된 PDF 주문서로 진행되며, 금액 미정으로 보내면 기공소가 금액을 확정·승인한 뒤 구매자가 결제합니다. 수가/품목은 "보철 품목·수가 관리"에서만 수정돼요.' },
             { k:['리메이크','리페어','재제작','수리','다시'], a:'🔁 리메이크/리페어: 기공소 상품의 배송/배송완료 단계에서만 요청할 수 있어요. 요청하면 같은 의뢰서에 항목이 추가되고, 판매자가 금액을 확정·승인하면 결제 후 다시 진행됩니다.' },
-            { k:['주문관리','판매관리','판매','접수','의뢰목록','주문목록'], a:'📦 주문 관리(판매자): "내 페이지 > 주문 관리"에서 접수된 주문/의뢰를 상태별(승인 대기·결제 대기·상품 준비중·배송중·배송 완료·구매확정)로 관리하고, 카드를 누르면 대화방으로 이동합니다. 아래에는 매출·정산 내역(정산 대기중/정산완료)도 함께 있어요. ※ 상점을 개설해야 보입니다.' },
+            { k:['주문관리','판매관리','판매','접수','의뢰목록','주문목록','필터','검색','월정산','리포트'], a:'📦 주문 관리(판매자): "내 페이지 > 주문 관리"에서 접수된 주문/의뢰를 상태별(승인 대기·결제 대기·상품 준비중·배송중·배송 완료·구매확정)로 관리하고, 카드를 누르면 대화방으로 이동합니다. 상품명·구매자·환자명 검색과 상태 필터, 월 정산 리포트(매출·정산완료·정산대기), 아래 매출·정산 내역까지 한 화면에 있어요. ※ 상점을 개설해야 보입니다.' },
             { k:['거래내역','매출','정산금액','장부','영수증','정산내역'], a:'📊 매출·정산: "주문 관리" 페이지 하단에서 구매/판매/리메이크/리페어가 종류로 구분되고, 매출과 정산 금액(정산 대기중/정산완료), 수입·지출·정산 합계를 볼 수 있어요.' },
-            { k:['구매목록','구매내역','내구매','산것','구매한'], a:'🛒 구매 목록: "내 페이지 > 구매 목록"에서 내가 결제한 상품을 다시 열람하고, 주문서 미리보기·판매자 채팅·구매확정·환불을 할 수 있어요.' },
+            { k:['구매목록','구매내역','내구매','산것','구매한','지출','지출내역'], a:'🛒 구매 목록: "내 페이지 > 구매 목록"에서 내가 결제한 상품을 다시 열람하고, 주문서 미리보기·판매자 채팅·구매확정·환불을 할 수 있어요. 아래에는 지출 내역(구매·송금·환불·출금)도 표시됩니다.' },
             { k:['채팅','알림','미읽음','메세지','메시지','안읽','읽지'], a:'💬 채팅/알림: 우하단 자홍색 채팅 버튼에 총 미읽음 개수가 표시되고, 각 대화방 목록에도 방별 미읽음 개수가 보입니다. 대화방은 좌측 ◀ 버튼으로 목록으로 돌아가요.' },
             { k:['세금','계산서','세금계산서','정산완료'], a:'🧾 세금계산서/정산: 관리자(Admin)가 구매확정된 거래를 월별로 정산하고 전자세금계산서를 발행합니다. 가입 시 입력한 사업자 정보가 자동으로 반영돼요.' },
             { k:['새기능','업데이트','변경','바뀐','최근','신규'], a:'🆕 최근 반영된 기능:\n• 주문 상태 카드 상단 고정(채팅 늘어도 항상 표시)\n• 상품 카드 전체 클릭 → 상세·결제, 상품 카드 미리보기\n• 대문 이미지 편집(확대·회전), 배송조회 링크\n• 리메이크/리페어(기공소 전용), 거래내역 매출/정산 열\n• 채팅 알림 강화(방별 미읽음), AI 상담원 도입\n바뀌는 기능도 여기서 계속 안내해 드릴게요!' },
@@ -9673,14 +9753,20 @@ pdfjsScript,
 
         function getFilteredHistory() {
             const [start, end] = getPeriodRange(window.historyPeriodMode);
-            if(!start && !end) return window.historyAll.slice();
-            return window.historyAll.filter(h => {
+            const me = (currentUser && currentUser.name) || '';
+            let list = window.historyAll.slice();
+            // 📦 주문 관리(매출·정산 내역)는 판매 관련 + 정산입금만 표시(구매/충전/출금 제외)
+            list = list.filter(h => h.settle
+                || (h.isSeller && (h.type === '자산 판매' || h.makeKind))
+                || (h.escrowHeld > 0 && h.seller && h.seller !== me && h.isSeller));
+            if(start || end) list = list.filter(h => {
                 const ts = new Date(h.rawDate || h.date).getTime();
-                if(isNaN(ts)) return true; // 파싱 실패 시 보존 (누락 방지)
+                if(isNaN(ts)) return true;
                 if(start && ts < start.getTime()) return false;
                 if(end && ts > end.getTime()) return false;
                 return true;
             });
+            return list;
         }
 
         function renderHistory() {
