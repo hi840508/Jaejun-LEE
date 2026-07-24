@@ -1698,6 +1698,7 @@
                             <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
                         </svg>
                     </button>
+                    <button id="remote-ctrl-btn" style="width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#334155; color:#fff; border:none; cursor:pointer; flex-shrink:0;" onclick="requestRemoteControl()" title="원격제어 요청" aria-label="원격제어 요청">🖥</button>
                     <!-- (채팅 상단 '구매 완료' 버튼 제거: 상품 주문 카드에서 구매확정 처리 — 사용자 요청) -->
                     <!-- (나가기 버튼 제거: 좌측 ◀ 버튼으로 목록 이동) -->
                 </div>
@@ -5673,6 +5674,22 @@
             showToast("화상 회의에 참여합니다.");
         };
 
+        // 🖥 원격제어 요청/수락 — 수락 측(부모 RAYCloud)에서 원격제어(TeamViewer) 실행
+        window.requestRemoteControl = function(){
+            if(!activeChatFriend || !currentChatRoomId) return showToast("먼저 대화방을 여세요.");
+            const pic = document.getElementById('my-profile-pic').src;
+            if(socket && socket.connected) socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: '[REMOTE_REQUEST]' });
+            appendMainMessage(currentUser.name, '[REMOTE_REQUEST]', pic);
+            showToast("원격제어 요청을 보냈습니다. 상대가 수락하면 시작됩니다.");
+        };
+        window.acceptRemoteControl = function(){
+            if(window.parent && window.parent !== window){ try { window.parent.postMessage({ type:'earth_remote_control' }, '*'); } catch(_){} }
+            const pic = document.getElementById('my-profile-pic').src;
+            if(socket && socket.connected) socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: '[REMOTE_ACCEPT]' });
+            appendMainMessage(currentUser.name, '[REMOTE_ACCEPT]', pic);
+            showToast("원격 지원을 수락했습니다. 원격제어 프로그램을 실행합니다.");
+        };
+
 
         // 🚀 [v8+] 통합 첨부 번들 HTML 생성기
         //   - 3D 파일(ply/stl/obj) 포함 시: Earth 스타일 멀티 모델 뷰어
@@ -8970,7 +8987,7 @@ pdfjsScript,
             }
             let displayHtml = text;
             // 일반 텍스트 메시지인지 (특수 카드가 아닌 경우만 수정/삭제 허용)
-            const isPlainText = !/^\[(TRANSFER|VIDEO_INVITE|FILE_ATTACH|PRIVATE_ASSET|ORDER_|RX_DOC|ITEM_SALE|SETTLE)/.test(text);
+            const isPlainText = !/^\[(TRANSFER|VIDEO_INVITE|FILE_ATTACH|PRIVATE_ASSET|ORDER_|RX_DOC|REMOTE_|ITEM_SALE|SETTLE)/.test(text);
             // 🔐 XSS 차단: 일반 텍스트는 insertAdjacentHTML 전에 HTML 이스케이프(특수 카드는 아래 분기에서 자체 처리)
             if(isPlainText) displayHtml = _escChatText(text);
 
@@ -8990,6 +9007,15 @@ pdfjsScript,
                         <button onclick="joinVideoChatFromInvite('${safeUrl}')" style="width:100%; background:var(--success); color:#fff; border:none; padding:10px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">회의 참여하기</button>
                     </div>
                 </div>`;
+            } else if(text.startsWith('[REMOTE_REQUEST]')) {
+                displayHtml = isMe
+                    ? `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;"><div style="font-size:12px;color:var(--text-sub);font-weight:600;">🖥 원격제어 요청을 보냈습니다.</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;">상대가 수락하면 원격 지원이 시작됩니다.</div></div>`
+                    : `<div class="kt-card-msg" style="max-width:280px;">
+                        <div style="background:#334155;color:#fff;padding:12px 14px;"><b>🖥 원격제어 요청</b><div style="font-size:11px;opacity:.9;margin-top:2px;">상대가 원격 지원을 요청했습니다.</div></div>
+                        <div style="padding:10px 12px;"><button onclick="acceptRemoteControl()" style="width:100%;background:var(--gradient-btn);color:#fff;border:0;padding:9px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;">수락하고 원격 지원 시작</button></div>
+                    </div>`;
+            } else if(text.startsWith('[REMOTE_ACCEPT]')) {
+                displayHtml = `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;"><div style="font-size:12px;color:#166534;font-weight:700;">🖥 원격 지원 수락됨</div><div style="font-size:11px;color:#64748b;margin-top:4px;">원격제어 프로그램(TeamViewer)이 실행됩니다.</div></div>`;
             } else if(text.startsWith('[FILE_ATTACH]')) {
                 // [FILE_ATTACH]name|sizeKB|mime|dataUrl
                 // 🚀 [v7] split(|, 4)로 안전하게 분리 — base64에 |는 없지만 limit으로 명시
