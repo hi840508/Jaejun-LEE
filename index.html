@@ -2868,8 +2868,8 @@
             }
             
             updateUserBalance(); switchTab('market'); loadFriendList(); loadChatList();
-            // 📦 상점 개설자는 진입 시 첫 화면을 '주문 관리'로. (메뉴 노출도 함께 갱신)
-            try { if(typeof loadMyBrandStores==='function') loadMyBrandStores().then(()=>{ if(window.myBrandStores && window.myBrandStores.length) switchTab('history'); }).catch(()=>{}); } catch(_){}
+            // 📦 주문 관리 메뉴 노출용으로 상점 목록만 로드(첫 화면은 항상 홈 유지)
+            try { if(typeof loadMyBrandStores==='function') loadMyBrandStores(); } catch(_){}
             // 🚀 [v7] 사이드바 초기 렌더
             try { renderSidebarCategories(); renderMobileChips(); } catch(e){}
             // 🚀 [v7p+] 승인 대기 주문 5초마다 폴링 시작
@@ -5619,6 +5619,10 @@
         // 📹 화상 회의를 채팅창 왼쪽(흐려진 영역)에 큰 화면으로 표시 → 오른쪽 채팅은 그대로 이어짐. 화면 공유 가능.
         window._openVideoInRoom = function(meetUrl){
             window.__videoMeetingActive = true;
+            // 🖥 RAYCloud 등 부모 앱에 임베드된 경우 → 부모 메인(좌측) 영역에 큰 화상 표시 요청(채팅은 이 패널에서 계속)
+            if(window.parent && window.parent !== window){
+                try { window.parent.postMessage({ type:'earth_video_start', url: String(meetUrl).replace(/%27/g,"'").replace(/%22/g,'"') }, '*'); return; } catch(_){}
+            }
             const decoded = String(meetUrl).replace(/%27/g, "'").replace(/%22/g, '"').replace(/"/g, '&quot;');
             let stage = document.getElementById('video-stage');
             if(!stage){ stage = document.createElement('div'); stage.id = 'video-stage'; document.body.appendChild(stage); }
@@ -5651,6 +5655,7 @@
         };
 
         window.stopVideoChat = function() {
+            if(window.parent && window.parent !== window){ try { window.parent.postMessage({ type:'earth_video_stop' }, '*'); } catch(_){} }
             const stage = document.getElementById('video-stage'); if(stage) stage.remove();
             const slot = document.getElementById('chat-video-slot'); if(slot){ slot.innerHTML = ''; slot.style.display = 'none'; }
             if(window.__videoMeetingWindow && !window.__videoMeetingWindow.closed) { try { window.__videoMeetingWindow.close(); } catch(e){} }
