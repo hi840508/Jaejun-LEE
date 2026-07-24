@@ -5723,12 +5723,12 @@
             if(socket && socket.connected && r.peer && !silent){
                 socket.emit('rc_signal', { to: r.peer, roomId: r.room, kind:'ctrl', act:'end' });
             }
-            try {
-                if(_rcEmbedded()){
-                    if(r.role === 'host') window.parent.postMessage({ type:'earth_rc_host_stop' }, '*');
-                    else window.parent.postMessage({ type:'earth_rc_view_stop' }, '*');
-                }
-            } catch(_){}
+            if(r.role === 'host'){
+                try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_host_stop' }, '*'); } catch(_){}
+            } else if(r.role === 'controller'){
+                _rcCloseViewer();
+                try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_collapse' }, '*'); } catch(_){}
+            }
             window._rc = { active:false, role:null, peer:null, room:null };
         };
 
@@ -5737,19 +5737,16 @@
             if(!d || !d.kind) return;
             if(d.kind === 'ctrl'){
                 if(d.act === 'host_ready'){
-                    // 내가 제어측(A) — 상대가 수락함 → 큰 화면 뷰어 시작
-                    if(!_rcEmbedded()){ showToast("원격제어 화면은 RAYCloud 앱 안에서만 볼 수 있습니다."); return; }
+                    // 내가 제어측(A) — 상대가 수락함 → 이 창(이프레임) 안에서 큰 화면 뷰어 시작(부모 불필요)
                     window._rc = { active:true, role:'controller', peer:(d.from||window._rc.peer), room:(d.roomId||window._rc.room) };
-                    try { window.parent.postMessage({ type:'earth_rc_view_start', peer:window._rc.peer }, '*'); } catch(_){}
+                    _rcOpenViewer(window._rc.peer);
                     showToast(window._rc.peer + " 님의 화면 제어를 시작합니다.");
                 } else if(d.act === 'end'){
                     if(window._rc.active){ showToast("원격제어가 종료되었습니다."); window.stopRemoteControl(true); }
                 }
             } else if(d.kind === 'frame'){
-                // 내가 제어측(A) — 상대 화면 프레임 수신 → 부모에서 렌더
-                if(window._rc.role === 'controller' && _rcEmbedded()){
-                    try { window.parent.postMessage({ type:'earth_rc_view_frame', frame:d.frame }, '*'); } catch(_){}
-                }
+                // 내가 제어측(A) — 상대 화면 프레임 수신 → 뷰어에 렌더
+                if(window._rc.role === 'controller') _rcViewFrame(d.frame);
             } else if(d.kind === 'input'){
                 // 내가 피제어측(B) — 입력 이벤트 수신 → 부모→로컬서버 주입
                 if(window._rc.role === 'host' && _rcEmbedded()){
@@ -5757,6 +5754,59 @@
                 }
             }
         };
+
+        // ── 제어측 뷰어(이프레임 내부에서 직접 렌더/입력 캡처 — 부모 RAYCloud가 없어도 동작) ──
+        window._rcOpenViewer = function(peer){
+            let ov = document.getElementById('rc-view-overlay');
+            if(!ov){ ov = document.createElement('div'); ov.id='rc-view-overlay'; document.body.appendChild(ov); }
+            ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:#0b0b0f;display:flex;flex-direction:column;';
+            ov.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
+              + '<span>🖥 원격제어 중 · ' + String(peer||'').replace(/</g,'&lt;') + ' 님의 화면</span>'
+              + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">원격제어 종료</button></div>'
+              + '<div id="rc-view-stage" tabindex="0" style="flex:1;position:relative;overflow:hidden;background:#000;outline:none;cursor:crosshair;display:flex;align-items:center;justify-content:center;">'
+              + '<img id="rc-view-img" draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;" />'
+              + '<div id="rc-view-wait" style="position:absolute;color:#9ca3af;font-size:13px;">상대 화면을 불러오는 중…</div></div>';
+            _rcBindViewerInput();
+            try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}   // 임베드 시 채팅 패널을 넓혀 큰 화면 확보
+            try { document.getElementById('rc-view-stage').focus(); } catch(_){}
+        };
+        window._rcViewFrame = function(frame){
+            const img = document.getElementById('rc-view-img'); if(!img || !frame) return;
+            img.src = 'data:image/jpeg;base64,' + frame.jpeg;
+            const w = document.getElementById('rc-view-wait'); if(w) w.style.display='none';
+        };
+        function _rcCloseViewer(){ const ov = document.getElementById('rc-view-overlay'); if(ov) ov.remove(); }
+        function _rcFrac(e){
+            const img = document.getElementById('rc-view-img'); if(!img || !img.naturalWidth) return null;
+            const rct = img.getBoundingClientRect();
+            const fx = (e.clientX - rct.left) / rct.width, fy = (e.clientY - rct.top) / rct.height;
+            if(fx < 0 || fx > 1 || fy < 0 || fy > 1) return null;
+            return { fx:fx, fy:fy };
+        }
+        function _rcSendInput(evt){ if(socket && socket.connected && window._rc.peer) socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'input', evt:evt }); }
+        function _rcBindViewerInput(){
+            const stage = document.getElementById('rc-view-stage'); if(!stage) return;
+            let last = 0;
+            stage.addEventListener('mousemove', function(e){ const now=(window.performance&&performance.now)?performance.now():0; if(now&&now-last<45)return; last=now; const p=_rcFrac(e); if(p) _rcSendInput({t:'m',fx:p.fx,fy:p.fy}); });
+            stage.addEventListener('mousedown', function(e){ e.preventDefault(); });
+            stage.addEventListener('click', function(e){ const p=_rcFrac(e); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:0}); });
+            stage.addEventListener('dblclick', function(e){ const p=_rcFrac(e); if(p) _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); });
+            stage.addEventListener('contextmenu', function(e){ e.preventDefault(); const p=_rcFrac(e); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); });
+            stage.addEventListener('wheel', function(e){ e.preventDefault(); _rcSendInput({t:'w',d:(e.deltaY<0?120:-120)}); }, {passive:false});
+            stage.addEventListener('keydown', function(e){ const tok=_rcKeyToken(e); if(!tok)return; e.preventDefault(); _rcSendInput({t:'k',s:tok}); });
+        }
+        function _rcKeyToken(e){
+            const map = {'Enter':'{ENTER}','Backspace':'{BS}','Tab':'{TAB}','Escape':'{ESC}','Delete':'{DEL}','Home':'{HOME}','End':'{END}','PageUp':'{PGUP}','PageDown':'{PGDN}','ArrowUp':'{UP}','ArrowDown':'{DOWN}','ArrowLeft':'{LEFT}','ArrowRight':'{RIGHT}',' ':' '};
+            const esc = function(s){ return s.replace(/[{}()\[\]+^%~]/g, function(c){ return '{'+c+'}'; }); };
+            let base;
+            if(map[e.key] !== undefined) base = map[e.key];
+            else if(e.key && e.key.length === 1) base = esc(e.key);
+            else return null;
+            let pre = '';
+            if(e.ctrlKey) pre += '^'; if(e.altKey) pre += '%'; if(e.shiftKey && e.key.length !== 1) pre += '+';
+            return pre + base;
+        }
 
         // 부모(RAYCloud)에서 오는 메시지: 프레임 릴레이(B) / 입력 릴레이(A) / 종료
         window.addEventListener('message', function(ev){
