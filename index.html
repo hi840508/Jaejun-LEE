@@ -1701,6 +1701,8 @@
                     <!-- (채팅 상단 '구매 완료' 버튼 제거: 상품 주문 카드에서 구매확정 처리 — 사용자 요청) -->
                     <!-- (나가기 버튼 제거: 좌측 ◀ 버튼으로 목록 이동) -->
                 </div>
+                <!-- 📹 화상 회의 임베드 슬롯 — 대화방 안에서 표시(채팅 그대로 이어짐) -->
+                <div id="chat-video-slot" style="display:none; flex:none;"></div>
                 <!-- 📌 주문 상태 고정 슬롯 — 채팅 스크롤 영역 밖(항상 보임) -->
                 <div id="chat-order-pin-slot" style="flex:none; background:#abc1d1;"></div>
                 <div class="chat-body" id="main-chat-body"></div>
@@ -5614,93 +5616,48 @@
         window.__videoMeetingActive = false;
         window.__videoMeetingWindow = null;
 
+        // 📹 화상 회의를 대화방 안에 임베드 → 기존 채팅이 그대로 이어짐
+        window._openVideoInRoom = function(meetUrl){
+            const slot = document.getElementById('chat-video-slot');
+            if(!slot){ window.open(meetUrl, '_blank'); return; }
+            window.__videoMeetingActive = true;
+            const decoded = String(meetUrl).replace(/%27/g, "'").replace(/%22/g, '"').replace(/"/g, '&quot;');
+            slot.style.display = 'block';
+            slot.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#111;color:#fff;font-size:12px;font-weight:700;">'
+                + '<span>📹 화상 회의</span>'
+                + '<button onclick="stopVideoChat()" style="background:#ef4444;color:#fff;border:0;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;">종료</button>'
+                + '</div>'
+                + '<iframe id="chat-video-frame" src="' + decoded + '" allow="camera; microphone; fullscreen; display-capture; autoplay; speaker-selection" style="width:100%;height:260px;border:0;display:block;background:#000;"></iframe>';
+            const _cb = document.getElementById('main-chat-body'); if(_cb) _cb.scrollTop = _cb.scrollHeight;
+        };
+
         window.startVideoChat = function() {
             if(!activeChatFriend || !currentChatRoomId) return showToast("먼저 대화방을 여세요.");
-
-            // 방 이름은 채팅방 ID 기반 (양측 동일하게 매칭)
-            const safeRoom = (currentChatRoomId || ('room_' + Date.now()))
-                .replace(/[^a-zA-Z0-9_-]/g, '_');
+            if(window.__videoMeetingActive && document.getElementById('chat-video-frame')) { showToast("이미 화상 회의 중입니다."); return; }
+            const safeRoom = (currentChatRoomId || ('room_' + Date.now())).replace(/[^a-zA-Z0-9_-]/g, '_');
             const displayName = encodeURIComponent(currentUser && currentUser.name ? currentUser.name : 'Guest');
             const meetUrl = `https://meet.jit.si/Oreum_${safeRoom}#config.prejoinPageEnabled=false&userInfo.displayName=%22${displayName}%22`;
-
-            // 기존 창이 열려 있으면 포커스만
-            if(window.__videoMeetingWindow && !window.__videoMeetingWindow.closed) {
-                window.__videoMeetingWindow.focus();
-                showToast("이미 화상 회의가 열려 있습니다.");
-                return;
-            }
-
-            // 별도 팝업 창으로 열기 (1000x700)
-            const w = Math.min(1100, window.screen.availWidth - 100);
-            const h = Math.min(720, window.screen.availHeight - 100);
-            const left = Math.max(0, (window.screen.availWidth - w) / 2);
-            const top = Math.max(0, (window.screen.availHeight - h) / 2);
-            const popup = window.open(
-                meetUrl,
-                'oreum_video_' + safeRoom,
-                `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no,location=no,resizable=yes,scrollbars=no,status=no`
-            );
-
-            if(!popup) {
-                showToast("팝업이 차단되었습니다. 브라우저 팝업 허용 설정을 확인해 주세요.");
-                return;
-            }
-            window.__videoMeetingWindow = popup;
-            window.__videoMeetingActive = true;
-
-            // 상대방에게 초대 링크 채팅 메시지로 전송
+            window._openVideoInRoom(meetUrl);
+            // 상대방에게 초대 링크 채팅 메시지로 전송(같은 대화방)
             const inviteMsg = `[VIDEO_INVITE]${meetUrl}`;
             const pic = document.getElementById('my-profile-pic').src;
-            if(socket && socket.connected) {
-                socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: inviteMsg });
-            }
+            if(socket && socket.connected) { socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: inviteMsg }); }
             appendMainMessage(currentUser.name, inviteMsg, pic);
-            showToast("화상 회의 창이 열렸습니다. 상대방에게 초대 링크를 보냈습니다.");
-
-            // 팝업 닫힘 감지 (5초마다)
-            const ck = setInterval(() => {
-                if(!window.__videoMeetingWindow || window.__videoMeetingWindow.closed) {
-                    window.__videoMeetingActive = false;
-                    window.__videoMeetingWindow = null;
-                    clearInterval(ck);
-                }
-            }, 5000);
+            showToast("화상 회의를 시작했습니다. 상대방에게 초대를 보냈습니다.");
         };
 
         window.stopVideoChat = function() {
-            if(window.__videoMeetingWindow && !window.__videoMeetingWindow.closed) {
-                try { window.__videoMeetingWindow.close(); } catch(e){}
-            }
-            window.__videoMeetingActive = false;
-            window.__videoMeetingWindow = null;
+            const slot = document.getElementById('chat-video-slot'); if(slot){ slot.innerHTML = ''; slot.style.display = 'none'; }
+            if(window.__videoMeetingWindow && !window.__videoMeetingWindow.closed) { try { window.__videoMeetingWindow.close(); } catch(e){} }
+            window.__videoMeetingActive = false; window.__videoMeetingWindow = null;
             showToast("화상 회의가 종료되었습니다.");
         };
 
-        // 화상 초대 링크 수신 시 → 팝업으로 참여
+        // 화상 초대 링크 수신 시 → 같은 대화방 안에서 참여(채팅 유지)
         window.joinVideoChatFromInvite = function(url) {
             if(!url) return;
-            // 동일하게 팝업 창 열기
-            if(window.__videoMeetingWindow && !window.__videoMeetingWindow.closed) {
-                window.__videoMeetingWindow.focus();
-                return;
-            }
-            const w = Math.min(1100, window.screen.availWidth - 100);
-            const h = Math.min(720, window.screen.availHeight - 100);
-            const left = Math.max(0, (window.screen.availWidth - w) / 2);
-            const top = Math.max(0, (window.screen.availHeight - h) / 2);
-            // URL은 encodeURIComponent로 인코딩됐으므로 디코드
-            const decodedUrl = url.replace(/%27/g, "'").replace(/%22/g, '"');
-            const popup = window.open(
-                decodedUrl,
-                'oreum_video_join',
-                `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no,location=no,resizable=yes`
-            );
-            if(!popup) {
-                showToast("팝업이 차단되었습니다. 브라우저 팝업 허용 설정을 확인해 주세요.");
-                return;
-            }
-            window.__videoMeetingWindow = popup;
-            window.__videoMeetingActive = true;
+            window._openVideoInRoom(url);
             showToast("화상 회의에 참여합니다.");
         };
 
@@ -7950,7 +7907,7 @@ pdfjsScript,
             if(tabName === 'friends') document.getElementById('view-friend-list').classList.add('active');
             if(tabName === 'chats') { document.getElementById('view-chat-list').classList.add('active'); loadChatList(); }
         }
-        function backToDrawerList() { document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-list').classList.add('active'); switchDrawerTab('chats'); activeChatFriend = null; currentChatRoomId = null; const _ps=document.getElementById('chat-order-pin-slot'); if(_ps) _ps.innerHTML=''; loadFriendList(); loadChatList(); }
+        function backToDrawerList() { document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-list').classList.add('active'); switchDrawerTab('chats'); activeChatFriend = null; currentChatRoomId = null; const _ps=document.getElementById('chat-order-pin-slot'); if(_ps) _ps.innerHTML=''; const _vs=document.getElementById('chat-video-slot'); if(_vs){ _vs.innerHTML=''; _vs.style.display='none'; window.__videoMeetingActive=false; } loadFriendList(); loadChatList(); }
         // 🗑 대화방 삭제(퇴장) — 일반(주문 이력 없는) 대화방만. 목록에서 사라지고 상대에게 퇴장 안내.
         window.leaveChatRoom = async function(roomId){
             if(!confirm('이 대화방을 삭제할까요?\n삭제하면 내 목록에서 사라지고, 상대방에게는 "퇴장" 안내가 표시됩니다.')) return;
@@ -8001,6 +7958,7 @@ pdfjsScript,
                 const body = document.getElementById('main-chat-body'); if(!body) return;
                 body.innerHTML = '';
                 { const _ps=document.getElementById('chat-order-pin-slot'); if(_ps) _ps.innerHTML=''; }
+                { const _vs=document.getElementById('chat-video-slot'); if(_vs){ _vs.innerHTML=''; _vs.style.display='none'; window.__videoMeetingActive=false; } }
                 window.__chatBulkLoading = true;   // 벌크 렌더: 메시지마다 스크롤 강제 안 함(리플로우 절감)
                 try {
                     let _maxId = 0;
