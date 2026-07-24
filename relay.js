@@ -2702,6 +2702,12 @@ io.on('connection', (socket) => {
         if (socket.data.user) socket.join('user:' + socket.data.user);
     } catch (_) { socket.data.user = null; }
     socket.on('join_room', (roomId) => { socket.join(roomId); });
+    // 🖥 원격제어 신호 중계 — 화면 프레임/입력 이벤트를 상대(수신자 개인 룸)에게만 전달.
+    //    d = { to:'상대이름', roomId, kind:'frame'|'input'|'ctrl', ... }. 발신자는 토큰 신원으로 강제.
+    socket.on('rc_signal', (d) => {
+        if (!d || !d.to || !socket.data.user) return;
+        io.to('user:' + String(d.to)).emit('rc_signal', Object.assign({}, d, { from: socket.data.user }));
+    });
     socket.on('send_message', (data) => {
         if (!data || !data.roomId) return;
         if (!socket.data.user) return;   // 🔐 미인증 소켓 거부(발신자 위조 차단 — 본문 sender로 폴백하지 않음)
