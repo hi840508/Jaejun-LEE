@@ -69,6 +69,47 @@ function _escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
+// ===================== 🖥 원격 도우미(무설치 exe) 배포 =====================
+// agent/ 는 git 미추적 폴더 → git reset --hard 에도 보존(exe·버전 파일 유지). 빌드한 exe를 여기에 두면 배포됨.
+const RC_AGENT_DIR = path.join(__dirname, 'agent');
+try { fs.mkdirSync(RC_AGENT_DIR, { recursive: true }); } catch (_) {}
+app.get('/download/RAY_RemoteAgent.exe', (req, res) => {
+    const f = path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe');
+    if (!fs.existsSync(f)) return res.status(404).send('agent not published yet');
+    res.download(f, 'RAY_RemoteAgent.exe');
+});
+app.get('/api/rc/version', (req, res) => {
+    let v = '0'; try { v = fs.readFileSync(path.join(RC_AGENT_DIR, 'version.txt'), 'utf8').trim(); } catch (_) {}
+    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')) });
+});
+// 개인화 원클릭 설치 배치 — 로그인 필요. exe 자동 다운로드 + 페어링(장기 기기 토큰) + 자동시작.
+app.post('/api/rc/installer', (req, res) => {
+    const t = req.headers['x-auth-token'] || (req.body && req.body._token);
+    const s = t && SESSIONS.get(String(t));
+    if (!s) return res.status(401).json({ error: '로그인이 필요합니다.' });
+    const name = s.name;
+    const agentToken = issueToken(name);   // 브라우저 로그아웃과 무관한 장기 기기 토큰
+    const base = _shareBaseUrl(req);
+    const safeName = String(name).replace(/["\r\n]/g, '');
+    const L = [
+        '@echo off',
+        'chcp 65001 >nul',
+        'set "DIR=%LOCALAPPDATA%\\RAYRemoteAgent"',
+        'if not exist "%DIR%" mkdir "%DIR%"',
+        'echo RAY 원격 도우미를 내려받는 중...',
+        'powershell -NoProfile -Command "try{ Invoke-WebRequest -Uri \'' + base + '/download/RAY_RemoteAgent.exe\' -OutFile \'%DIR%\\RAY_RemoteAgent.exe\' -UseBasicParsing }catch{ exit 1 }"',
+        'if errorlevel 1 ( echo [실패] 다운로드 오류. 인터넷 연결 확인 후 다시 실행하세요. & pause & exit /b 1 )',
+        'echo 계정에 연결(페어링) 중...',
+        '"%DIR%\\RAY_RemoteAgent.exe" pair ' + agentToken + ' "' + safeName + '"',
+        'echo 원격 대기 시작(자동시작 등록됨)...',
+        'start "" "%DIR%\\RAY_RemoteAgent.exe"',
+        'echo.',
+        'echo [완료] 이제 채팅에서 원격 지원을 수락하면 이 PC를 제어할 수 있습니다.',
+        'timeout /t 4 >nul'
+    ];
+    res.json({ ok: true, filename: 'RAY원격도우미_설치.bat', bat: L.join('\r\n') });
+});
+
 // 링크 생성: 토큰 발급 + payload 저장 + 14일 만료. 실제 접속 가능한 URL 반환
 app.post('/api/share/create', (req, res) => {
     const payload = req.body || {};

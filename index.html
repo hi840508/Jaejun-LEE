@@ -2659,6 +2659,7 @@
                     } else {
                         setEarthToken(data.token);   // 🔐 세션 토큰 저장
                         loginSuccess(data);
+                        setTimeout(function(){ try{ window._rcOfferSetupOnce(true); }catch(_){} }, 1200);
                     }
                 } else {
                     showToast(data.error);
@@ -5742,10 +5743,40 @@
         function _rcHostBannerNeedAgent(){
             let b = document.getElementById('rc-host-banner');
             if(!b){ _rcShowHostBanner(); b = document.getElementById('rc-host-banner'); }
-            b.innerHTML = '<span id="rc-host-banner-txt">⚠ 원격 도우미(로컬 서버)가 꺼져 있어요.</span> '
+            b.innerHTML = '<span id="rc-host-banner-txt">⚠ 원격 도우미가 꺼져 있어요.</span> '
               + '<button onclick="_rcLaunchAgent()" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">도우미 실행</button> '
+              + '<button onclick="downloadRemoteAgentInstaller()" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">도우미 설치</button> '
               + '<button onclick="stopRemoteControl(false)" style="background:transparent;color:#fff;border:1px solid #fff;border-radius:8px;padding:5px 12px;font-weight:700;cursor:pointer;">취소</button>';
         }
+        // 무설치 원격 도우미 설치기(개인화 배치) 다운로드 — 이 PC에 RAYCloud가 없어도 원격 지원 가능하게.
+        window.downloadRemoteAgentInstaller = async function(){
+            try{
+                const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
+                const r = await fetch(API_URL + '/api/rc/installer', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-auth-token': tk } });
+                const j = await r.json();
+                if(!j || !j.ok){ return showToast((j&&j.error) || '설치 파일 생성 실패'); }
+                const blob = new Blob([j.bat], { type:'application/octet-stream' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = j.filename || 'RAY원격도우미_설치.bat';
+                document.body.appendChild(a); a.click();
+                setTimeout(function(){ try{ a.remove(); URL.revokeObjectURL(a.href); }catch(_){} }, 1500);
+                showToast('설치 파일을 받았습니다. 그 PC에서 실행하면 원격 도우미가 자동 설치·연결됩니다.');
+            }catch(e){ showToast('설치 파일을 받지 못했습니다.'); }
+        };
+        // 회원가입/최초 로그인 시 1회 — 원격 지원 준비 안내(임베드는 자동 완료, 단독 접속은 도우미 설치 제안)
+        window._rcOfferSetupOnce = function(isSignup){
+            try{
+                if(localStorage.getItem('rc_setup_offered') === '1') return;
+                const embedded = (window.parent && window.parent !== window);
+                if(embedded){
+                    localStorage.setItem('rc_setup_offered','1');
+                    showToast('이 PC는 원격 지원 준비가 자동으로 완료됩니다. 🖥');
+                    return;
+                }
+                const ok = confirm('이 PC에서도 원격 지원(도우미)을 받을 수 있도록 설정할까요?\n확인을 누르면 초경량 도우미 설치 파일을 내려받습니다. (1회만 실행하면 됩니다)');
+                localStorage.setItem('rc_setup_offered','1');
+                if(ok) window.downloadRemoteAgentInstaller();
+            }catch(_){}
+        };
 
         // 원격제어 종료 (양측 공용)
         window.stopRemoteControl = function(silent){
@@ -9196,7 +9227,7 @@ pdfjsScript,
                         <div style="padding:10px 12px;"><button onclick="acceptRemoteControl()" style="width:100%;background:var(--gradient-btn);color:#fff;border:0;padding:9px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;">수락하고 원격 지원 시작</button></div>
                     </div>`;
             } else if(text.startsWith('[REMOTE_ACCEPT]')) {
-                displayHtml = `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;"><div style="font-size:12px;color:#166534;font-weight:700;">🖥 원격 지원 수락됨</div><div style="font-size:11px;color:#64748b;margin-top:4px;">원격제어 프로그램(TeamViewer)이 실행됩니다.</div></div>`;
+                displayHtml = `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;"><div style="font-size:12px;color:#166534;font-weight:700;">🖥 원격 지원 수락됨</div><div style="font-size:11px;color:#64748b;margin-top:4px;">원격 지원이 시작되었습니다. 상대가 이 화면을 제어합니다.</div></div>`;
             } else if(text.startsWith('[FILE_ATTACH]')) {
                 // [FILE_ATTACH]name|sizeKB|mime|dataUrl
                 // 🚀 [v7] split(|, 4)로 안전하게 분리 — base64에 |는 없지만 limit으로 명시
