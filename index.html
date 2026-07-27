@@ -5718,19 +5718,40 @@
             appendMainMessage(currentUser.name, '[REMOTE_ACCEPT]', pic);
             _rcShowHostBanner("🖥 원격 지원 준비 중… 상대가 곧 내 화면을 제어합니다");
             showToast("원격 지원을 수락했습니다. 상대가 곧 내 화면을 제어합니다.");
-            // 로컬 도우미(서버) 생존 확인 — 4초 안에 응답(rc_hostack) 없으면 안내
+            // 1.5초 내 도우미(로컬 서버) 응답 없으면 raycloud:// 프로토콜로 서버 자동 기동 시도
             if(window._rcAgentTimer) clearTimeout(window._rcAgentTimer);
             window._rcAgentTimer = setTimeout(function(){
                 if(window._rc.active && window._rc.role==='host' && !window._rc.agentAlive){
-                    _rcUpdateHostBanner("⚠ 이 PC에 RAYCloud 로컬 서버(원격 도우미)가 실행 중이어야 제어가 시작됩니다.");
+                    _rcUpdateHostBanner("🖥 원격 도우미(서버)를 실행하는 중…");
+                    _rcLaunchAgent();
                 }
-            }, 4000);
+            }, 1500);
+            // 6초까지도 응답 없으면 수동 실행 버튼 안내
+            if(window._rcAgentTimer2) clearTimeout(window._rcAgentTimer2);
+            window._rcAgentTimer2 = setTimeout(function(){
+                if(window._rc.active && window._rc.role==='host' && !window._rc.agentAlive){ _rcHostBannerNeedAgent(); }
+            }, 6000);
         };
+        // raycloud:// 프로토콜로 이 PC의 로컬 서버(원격 도우미)를 조용히 기동 (숨은 iframe 트릭)
+        function _rcLaunchAgent(){
+            try {
+                const f = document.createElement('iframe'); f.style.display='none'; f.src = 'raycloud://rc-start';
+                document.body.appendChild(f); setTimeout(function(){ try { f.remove(); } catch(_){} }, 3000);
+            } catch(_){ try { window.location.href = 'raycloud://rc-start'; } catch(__){} }
+        }
+        function _rcHostBannerNeedAgent(){
+            let b = document.getElementById('rc-host-banner');
+            if(!b){ _rcShowHostBanner(); b = document.getElementById('rc-host-banner'); }
+            b.innerHTML = '<span id="rc-host-banner-txt">⚠ 원격 도우미(로컬 서버)가 꺼져 있어요.</span> '
+              + '<button onclick="_rcLaunchAgent()" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">도우미 실행</button> '
+              + '<button onclick="stopRemoteControl(false)" style="background:transparent;color:#fff;border:1px solid #fff;border-radius:8px;padding:5px 12px;font-weight:700;cursor:pointer;">취소</button>';
+        }
 
         // 원격제어 종료 (양측 공용)
         window.stopRemoteControl = function(silent){
             const r = window._rc || {};
             if(window._rcAgentTimer){ clearTimeout(window._rcAgentTimer); window._rcAgentTimer = null; }
+            if(window._rcAgentTimer2){ clearTimeout(window._rcAgentTimer2); window._rcAgentTimer2 = null; }
             if(socket && socket.connected){
                 if(!silent && r.peer) socket.emit('rc_signal', { to: r.peer, roomId: r.room, kind:'ctrl', act:'end' });
                 if(r.role === 'host') socket.emit('rc_signal', { to: currentUser.name, kind:'rc_host', act:'stop' });
