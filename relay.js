@@ -84,11 +84,15 @@ app.get('/manifest.webmanifest', (req, res) => {
         name: 'Earth', short_name: 'Earth', start_url: '/', scope: '/',
         display: 'standalone', background_color: '#0b0b0f', theme_color: '#111111',
         icons: [
-            { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
-            { src: '/icon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'maskable' }
+            { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+            { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
         ]
     }));
 });
+app.get('/icon-192.png', (req, res) => { const f = path.join(__dirname, 'icon-192.png'); if (fs.existsSync(f)) res.type('image/png').send(fs.readFileSync(f)); else res.status(404).end(); });
+app.get('/icon-512.png', (req, res) => { const f = path.join(__dirname, 'icon-512.png'); if (fs.existsSync(f)) res.type('image/png').send(fs.readFileSync(f)); else res.status(404).end(); });
 app.get('/sw.js', (req, res) => {
     res.type('application/javascript').send(
         "self.addEventListener('install',e=>self.skipWaiting());\n" +
