@@ -2758,6 +2758,8 @@
         function loginSuccess(data) {
             currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
             _postAuthToParent(data);   // ★Earth 일원화★ 부모 앱에 로그인 상태 통지(세션복원 포함 — 모든 로그인이 여기로 수렴)
+            // 🖥 RAY 데스크톱 앱에서 실행 중이면 앱(메인)을 Earth에 연결 → 원격제어 '입력 주입' 활성화(설치형 앱 = 제어까지 가능)
+            try { if(window.rayApp && window.rayApp.link){ window.rayApp.link(data.token || window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', data.name); } } catch(_){}
             document.getElementById('display-name').innerText = data.name; if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
             
             // 🚀 [v8] 로고 초기화 (localStorage 우선 → 기본 오름앤파트너스)
@@ -5757,7 +5759,7 @@
             window._rcAgentTimer = setTimeout(function(){
                 if(window._rc.active && window._rc.role==='host'){
                     if(window._rc.agentAlive) _rcUpdateHostBanner("🖥 상대방이 내 화면을 원격제어 중입니다");
-                    else _rcUpdateHostBanner("🖥 화면 공유 중 · 보기 전용 (마우스 제어는 이 PC에 RAYCloud 로컬 서버가 켜져 있어야 합니다)");
+                    else _rcHostBannerInstall();
                 }
             }, 2500);
         };
@@ -5790,6 +5792,18 @@
             };
             video.onloadedmetadata = function(){ const p = video.play(); if(p&&p.then) p.then(startLoop).catch(startLoop); else startLoop(); };
             if(video.readyState >= 1){ const p = video.play(); if(p&&p.then) p.then(startLoop).catch(startLoop); else startLoop(); }
+        }
+        // 🖥 서버 내장 설치형 PC 앱 다운로드 (설치 후 로그인하면 원격제어 '제어'까지 자동 활성화)
+        window.downloadDesktopApp = function(){
+            try { window.open(API_URL + '/download/RAY_App_Setup.exe', '_blank'); } catch(_){ location.href = API_URL + '/download/RAY_App_Setup.exe'; }
+            showToast('PC 앱 설치 파일을 받습니다. 설치 후 로그인하면 제어까지 자동 준비됩니다.');
+        };
+        // 보기 전용 배너 + (앱 미설치 시) 앱 설치 버튼
+        function _rcHostBannerInstall(){
+            let b = document.getElementById('rc-host-banner'); if(!b){ _rcShowHostBanner(); b = document.getElementById('rc-host-banner'); }
+            b.innerHTML = '<span id="rc-host-banner-txt">🖥 화면 공유 중 · 보기 전용</span> '
+              + (window.rayApp ? '' : '<button onclick="downloadDesktopApp()" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">PC 앱 설치(제어까지)</button> ')
+              + '<button onclick="stopRemoteControl(false)" style="background:transparent;color:#fff;border:1px solid #fff;border-radius:8px;padding:5px 12px;font-weight:700;cursor:pointer;">종료</button>';
         }
         // raycloud:// 프로토콜로 이 PC의 로컬 서버(원격 도우미)를 조용히 기동 (숨은 iframe 트릭)
         function _rcLaunchAgent(){
@@ -5824,15 +5838,17 @@
         window._rcOfferSetupOnce = function(isSignup){
             try{
                 if(localStorage.getItem('rc_setup_offered') === '1') return;
-                const embedded = (window.parent && window.parent !== window);
-                if(embedded){
+                // 이미 RAY 앱(또는 RAYCloud 임베드)에서 실행 중이면 제어까지 자동 준비됨 → 안내만
+                if(window.rayApp || (window.parent && window.parent !== window)){
                     localStorage.setItem('rc_setup_offered','1');
-                    showToast('이 PC는 원격 지원 준비가 자동으로 완료됩니다. 🖥');
+                    showToast('원격 지원 준비 완료 — 화상통화·화면공유·원격제어를 쓸 수 있어요. 🖥');
                     return;
                 }
-                const ok = confirm('이 PC에서도 원격 지원(도우미)을 받을 수 있도록 설정할까요?\n확인을 누르면 초경량 도우미 설치 파일을 내려받습니다. (1회만 실행하면 됩니다)');
+                const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+                if(isMobile){ localStorage.setItem('rc_setup_offered','1'); return; }   // 모바일: 보기/제어측·화상은 웹으로 OK
+                const ok = confirm('내 화면을 상대가 원격제어까지 할 수 있게 하려면 PC 앱 설치가 필요합니다.\n(채팅·화상통화·화면 보여주기는 웹에서도 됩니다)\n\n지금 PC 앱 설치 파일을 받으시겠어요?');
                 localStorage.setItem('rc_setup_offered','1');
-                if(ok) window.downloadRemoteAgentInstaller();
+                if(ok) window.downloadDesktopApp();
             }catch(_){}
         };
 
