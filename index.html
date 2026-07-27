@@ -5700,31 +5700,43 @@
         };
 
         // 수락자(B) = 피제어측: 내 화면을 공유하고 상대의 입력을 받는다.
+        //   ★Earth 직결 방식★ — 부모(RAYCloud 앱)가 아니라 '내 로컬 서버(내 개인룸의 직결 서버)'에게
+        //   호스팅을 지시한다. 따라서 RAYCloud 앱 창이 없어도(단독 채팅에서도) 로컬 서버만 떠 있으면 제어된다.
         window.acceptRemoteControl = function(){
-            if(!_rcEmbedded()) return showToast("원격 지원은 RAYCloud 앱 안에서만 가능합니다.");
             if(window._rc.active) return showToast("이미 원격제어가 진행 중입니다.");
             const peer = activeChatFriend, room = currentChatRoomId;
             if(!peer) return showToast("대화방을 먼저 여세요.");
-            window._rc = { active:true, role:'host', peer:peer, room:room };
+            window._rc = { active:true, role:'host', peer:peer, room:room, agentAlive:false };
             const pic = document.getElementById('my-profile-pic').src;
-            // 부모(RAYCloud)에게 화면 캡처 시작 지시
-            try { window.parent.postMessage({ type:'earth_rc_host_start' }, '*'); } catch(_){}
             if(socket && socket.connected){
+                // 내 로컬 서버(내 개인룸)에 호스팅 시작 지시
+                socket.emit('rc_signal', { to: currentUser.name, kind:'rc_host', act:'start', peer:peer, room:room });
+                // 제어측(상대)에게 수락 통지
                 socket.emit('rc_signal', { to: peer, roomId: room, kind:'ctrl', act:'host_ready' });
                 socket.emit('send_message', { roomId: room, sender: currentUser.name, senderPic: pic, message: '[REMOTE_ACCEPT]' });
             }
             appendMainMessage(currentUser.name, '[REMOTE_ACCEPT]', pic);
-            showToast("원격 지원을 수락했습니다. 내 화면 제어를 허용합니다. (종료하려면 상단 배너의 종료 버튼)");
+            _rcShowHostBanner("🖥 원격 지원 준비 중… 상대가 곧 내 화면을 제어합니다");
+            showToast("원격 지원을 수락했습니다. 상대가 곧 내 화면을 제어합니다.");
+            // 로컬 도우미(서버) 생존 확인 — 4초 안에 응답(rc_hostack) 없으면 안내
+            if(window._rcAgentTimer) clearTimeout(window._rcAgentTimer);
+            window._rcAgentTimer = setTimeout(function(){
+                if(window._rc.active && window._rc.role==='host' && !window._rc.agentAlive){
+                    _rcUpdateHostBanner("⚠ 이 PC에 RAYCloud 로컬 서버(원격 도우미)가 실행 중이어야 제어가 시작됩니다.");
+                }
+            }, 4000);
         };
 
         // 원격제어 종료 (양측 공용)
         window.stopRemoteControl = function(silent){
             const r = window._rc || {};
-            if(socket && socket.connected && r.peer && !silent){
-                socket.emit('rc_signal', { to: r.peer, roomId: r.room, kind:'ctrl', act:'end' });
+            if(window._rcAgentTimer){ clearTimeout(window._rcAgentTimer); window._rcAgentTimer = null; }
+            if(socket && socket.connected){
+                if(!silent && r.peer) socket.emit('rc_signal', { to: r.peer, roomId: r.room, kind:'ctrl', act:'end' });
+                if(r.role === 'host') socket.emit('rc_signal', { to: currentUser.name, kind:'rc_host', act:'stop' });
             }
             if(r.role === 'host'){
-                try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_host_stop' }, '*'); } catch(_){}
+                _rcHideHostBanner();
             } else if(r.role === 'controller'){
                 _rcCloseViewer();
                 try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_collapse' }, '*'); } catch(_){}
@@ -5747,13 +5759,22 @@
             } else if(d.kind === 'frame'){
                 // 내가 제어측(A) — 상대 화면 프레임 수신 → 뷰어에 렌더
                 if(window._rc.role === 'controller') _rcViewFrame(d.frame);
-            } else if(d.kind === 'input'){
-                // 내가 피제어측(B) — 입력 이벤트 수신 → 부모→로컬서버 주입
-                if(window._rc.role === 'host' && _rcEmbedded()){
-                    try { window.parent.postMessage({ type:'earth_rc_input', evt:d.evt }, '*'); } catch(_){}
-                }
+            } else if(d.kind === 'rc_hostack'){
+                // 내 로컬 서버가 호스팅을 시작했다는 응답 — 도우미 생존 확인
+                if(window._rc.role === 'host'){ window._rc.agentAlive = true; _rcUpdateHostBanner("🖥 상대방이 내 화면을 원격제어 중입니다"); }
             }
+            // kind:'input'은 브라우저가 아니라 내 로컬 서버(직결)가 직접 받아 주입하므로 여기서 처리하지 않음.
         };
+
+        // 피제어측 상단 배너(채팅 화면 자체 — 단독 접속에서도 표시)
+        function _rcShowHostBanner(txt){
+            let b = document.getElementById('rc-host-banner');
+            if(!b){ b = document.createElement('div'); b.id='rc-host-banner'; document.body.appendChild(b); }
+            b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99991;background:#b91c1c;color:#fff;display:flex;align-items:center;justify-content:center;gap:14px;padding:8px 14px;font-weight:800;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.3);';
+            b.innerHTML = '<span id="rc-host-banner-txt">'+ (txt||'🖥 상대방이 내 화면을 원격제어 중입니다') +'</span> <button onclick="stopRemoteControl(false)" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">원격제어 종료</button>';
+        }
+        function _rcUpdateHostBanner(txt){ const t=document.getElementById('rc-host-banner-txt'); if(t) t.textContent = txt; }
+        function _rcHideHostBanner(){ const b=document.getElementById('rc-host-banner'); if(b) b.remove(); }
 
         // ── 제어측 뷰어(이프레임 내부에서 직접 렌더/입력 캡처 — 부모 RAYCloud가 없어도 동작) ──
         window._rcOpenViewer = function(peer){
