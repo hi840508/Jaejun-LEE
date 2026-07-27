@@ -79,14 +79,14 @@ app.get('/download/RAY_RemoteAgent.exe', (req, res) => {
     res.download(f, 'RAY_RemoteAgent.exe');
 });
 // 🖥 서버 내장 설치형 PC 앱(Electron) 인스톨러 — agent/ 폴더에 두면 배포됨(git 미추적, reset 보존)
-app.get('/download/RAY_App_Setup.exe', (req, res) => {
-    const f = path.join(RC_AGENT_DIR, 'RAY_App_Setup.exe');
+app.get('/download/APP_Setup.exe', (req, res) => {
+    const f = path.join(RC_AGENT_DIR, 'APP_Setup.exe');
     if (!fs.existsSync(f)) return res.status(404).send('app not published yet');
-    res.download(f, 'RAY_App_Setup.exe');
+    res.download(f, 'APP_Setup.exe');
 });
 app.get('/api/rc/version', (req, res) => {
     let v = '0'; try { v = fs.readFileSync(path.join(RC_AGENT_DIR, 'version.txt'), 'utf8').trim(); } catch (_) {}
-    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_App_Setup.exe')), appUrl: '/download/RAY_App_Setup.exe' });
+    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe' });
 });
 // 개인화 원클릭 설치 배치 — 로그인 필요. exe 자동 다운로드 + 페어링(장기 기기 토큰) + 자동시작.
 app.post('/api/rc/installer', (req, res) => {
