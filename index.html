@@ -5745,16 +5745,25 @@
             window._rc = { active:true, role:'host', peer:peer, room:room, agentAlive:false };
             window._rcHostStream = stream;
             const pic = document.getElementById('my-profile-pic').src;
-            _rcStartBrowserCapture(stream, peer, room);
+            // 🌐 WebRTC P2P로 화면 송출 (릴레이 대역폭·비용 없음). 입력만 릴레이(초경량)로 받음.
+            const pc = new RTCPeerConnection(VC_ICE); window._rcp = { pc: pc };
+            stream.getVideoTracks().forEach(function(t){ pc.addTrack(t, stream); });
+            pc.onicecandidate = function(e){ if(e.candidate && socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtcsc', sub:'ice', cand:e.candidate }); };
+            const track0 = stream.getVideoTracks()[0];
+            if(track0) track0.addEventListener('ended', function(){ stopRemoteControl(false); });  // 브라우저 '공유 중지' → 종료
             if(socket && socket.connected){
                 socket.emit('rc_signal', { to: peer, roomId: room, kind:'ctrl', act:'host_ready' });     // 상대(제어측)에게 시작 통지
-                socket.emit('rc_signal', { to: currentUser.name, kind:'rc_host', act:'start', peer:peer, room:room }); // 로컬 서버 있으면 입력 주입 활성화
+                socket.emit('rc_signal', { to: currentUser.name, kind:'rc_host', act:'start', peer:peer, room:room }); // 로컬 서버/앱 있으면 입력 주입 활성화
                 socket.emit('send_message', { roomId: room, sender: currentUser.name, senderPic: pic, message: '[REMOTE_ACCEPT]' });
             }
+            try {
+                const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+                if(socket && socket.connected) socket.emit('rc_signal', { to: peer, room: room, kind:'rtcsc', sub:'offer', sdp: offer });
+            } catch(e){ showToast("연결 준비 실패"); }
             appendMainMessage(currentUser.name, '[REMOTE_ACCEPT]', pic);
             _rcShowHostBanner("🖥 내 화면을 공유 중입니다 (상대가 봅니다)");
             showToast("화면 공유를 시작했습니다.");
-            // 2.5초 뒤: 로컬 서버가 응답(rc_hostack)하면 '제어까지 가능', 없으면 '보기 전용' 안내
+            // 2.5초 뒤: 로컬 서버/앱이 응답(rc_hostack)하면 '제어까지 가능', 없으면 '보기 전용' 안내
             if(window._rcAgentTimer) clearTimeout(window._rcAgentTimer);
             window._rcAgentTimer = setTimeout(function(){
                 if(window._rc.active && window._rc.role==='host'){
@@ -5763,36 +5772,29 @@
                 }
             }, 2500);
         };
-        // 브라우저 화면공유 스트림 → 주기적 JPEG 프레임을 Earth로 전송 (설치 불필요·Jitsi 미사용·시간제한 없음)
-        function _rcStartBrowserCapture(stream, peer, room){
-            const video = document.createElement('video');
-            video.srcObject = stream; video.muted = true; video.playsInline = true;
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            window._rcHostVideo = video; window._rcHostCanvas = canvas;
-            const track = stream.getVideoTracks()[0];
-            if(track) track.addEventListener('ended', function(){ stopRemoteControl(false); });  // 브라우저 '공유 중지' 누르면 종료
-            const startLoop = function(){
-                if(window._rcHostTimer) clearInterval(window._rcHostTimer);
-                window._rcHostTimer = setInterval(function(){
-                    try {
-                        const vw = video.videoWidth, vh = video.videoHeight;
-                        if(!vw || !vh) return;
-                        const tw = Math.min(1440, vw), th = Math.round(vh * tw / vw);
-                        if(canvas.width !== tw) canvas.width = tw;
-                        if(canvas.height !== th) canvas.height = th;
-                        ctx.drawImage(video, 0, 0, tw, th);
-                        const durl = canvas.toDataURL('image/jpeg', 0.5);
-                        const jpeg = durl.slice(durl.indexOf(',') + 1);
-                        if(socket && socket.connected && window._rc.active){
-                            socket.emit('rc_signal', { to: peer, room: room, kind:'frame', frame: { ox:0, oy:0, sw:vw, sh:vh, fw:tw, fh:th, jpeg:jpeg } });
-                        }
-                    } catch(e){}
-                }, 130);  // ~7.5 fps
-            };
-            video.onloadedmetadata = function(){ const p = video.play(); if(p&&p.then) p.then(startLoop).catch(startLoop); else startLoop(); };
-            if(video.readyState >= 1){ const p = video.play(); if(p&&p.then) p.then(startLoop).catch(startLoop); else startLoop(); }
-        }
+        // 제어측: 화면 송출(WebRTC) 시그널 처리 — offer 받으면 뷰어 열고 answer, ontrack 으로 화면 표시
+        window._rcpOnSignal = async function(d){
+            const peer = d.from || window._rc.peer, room = d.room || window._rc.room;
+            try {
+                if(d.sub === 'offer'){
+                    window._rc = { active:true, role:'controller', peer:peer, room:room };
+                    _rcOpenViewer(peer);
+                    const pc = new RTCPeerConnection(VC_ICE); window._rcp = { pc: pc };
+                    pc.onicecandidate = function(e){ if(e.candidate && socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtcsc', sub:'ice', cand:e.candidate }); };
+                    pc.ontrack = function(e){ const v=document.getElementById('rc-view-vid'); if(v && e.streams && e.streams[0]){ v.srcObject = e.streams[0]; const w=document.getElementById('rc-view-wait'); if(w) w.style.display='none'; } };
+                    await pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
+                    const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
+                    if(socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtcsc', sub:'answer', sdp:ans });
+                    showToast(peer + " 님의 화면을 불러옵니다…");
+                } else if(d.sub === 'answer'){
+                    if(window._rcp && window._rcp.pc) await window._rcp.pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
+                } else if(d.sub === 'ice'){
+                    if(window._rcp && window._rcp.pc && d.cand){ try { await window._rcp.pc.addIceCandidate(new RTCIceCandidate(d.cand)); } catch(_){} }
+                } else if(d.sub === 'bye'){
+                    if(window._rc.active) stopRemoteControl(true);
+                }
+            } catch(e){ console.warn('rcp signal err', e); }
+        };
         // 🖥 서버 내장 설치형 PC 앱 다운로드 (설치 후 로그인하면 원격제어 '제어'까지 자동 활성화)
         window.downloadDesktopApp = function(){
             try { window.open(API_URL + '/download/RAY_App_Setup.exe', '_blank'); } catch(_){ location.href = API_URL + '/download/RAY_App_Setup.exe'; }
@@ -5859,12 +5861,15 @@
             if(window._rcAgentTimer2){ clearTimeout(window._rcAgentTimer2); window._rcAgentTimer2 = null; }
             if(socket && socket.connected){
                 if(!silent && r.peer) socket.emit('rc_signal', { to: r.peer, roomId: r.room, kind:'ctrl', act:'end' });
+                if(!silent && r.peer) socket.emit('rc_signal', { to: r.peer, room: r.room, kind:'rtcsc', sub:'bye' });
                 if(r.role === 'host') socket.emit('rc_signal', { to: currentUser.name, kind:'rc_host', act:'stop' });
             }
+            // WebRTC 화면 연결 정리(양측)
+            try { if(window._rcp && window._rcp.pc){ window._rcp.pc.close(); } } catch(_){}
+            window._rcp = { pc:null };
             if(r.role === 'host'){
-                if(window._rcHostTimer){ clearInterval(window._rcHostTimer); window._rcHostTimer = null; }
                 try { if(window._rcHostStream){ window._rcHostStream.getTracks().forEach(function(t){ t.stop(); }); } } catch(_){}
-                window._rcHostStream = null; window._rcHostVideo = null; window._rcHostCanvas = null;
+                window._rcHostStream = null;
                 _rcHideHostBanner();
             } else if(r.role === 'controller'){
                 _rcCloseViewer();
@@ -5876,19 +5881,18 @@
         // Earth 릴레이로 들어온 원격제어 신호 처리
         window._rcOnSignal = function(d){
             if(!d || !d.kind) return;
-            if(d.kind === 'rtc'){ if(window._vcOnSignal) window._vcOnSignal(d); return; }   // 화상 통화(WebRTC) 시그널
+            if(d.kind === 'rtc'){ if(window._vcOnSignal) window._vcOnSignal(d); return; }     // 화상 통화(WebRTC) 시그널
+            if(d.kind === 'rtcsc'){ if(window._rcpOnSignal) window._rcpOnSignal(d); return; } // 원격제어 화면 송출(WebRTC) 시그널
             if(d.kind === 'ctrl'){
                 if(d.act === 'host_ready'){
-                    // 내가 제어측(A) — 상대가 수락함 → 이 창(이프레임) 안에서 큰 화면 뷰어 시작(부모 불필요)
-                    window._rc = { active:true, role:'controller', peer:(d.from||window._rc.peer), room:(d.roomId||window._rc.room) };
-                    _rcOpenViewer(window._rc.peer);
-                    showToast(window._rc.peer + " 님의 화면 제어를 시작합니다.");
+                    // 내가 제어측(A) — 상대가 수락함. 실제 화면 뷰어는 rtcsc offer 수신 시 열림(경합 방지).
+                    if(!(window._rc && window._rc.role === 'controller' && window._rc.active)){
+                        window._rc = { active:true, role:'controller', peer:(d.from||window._rc.peer), room:(d.roomId||window._rc.room) };
+                    }
+                    showToast((d.from||window._rc.peer) + " 님이 수락했습니다. 화면 연결 중…");
                 } else if(d.act === 'end'){
                     if(window._rc.active){ showToast("원격제어가 종료되었습니다."); window.stopRemoteControl(true); }
                 }
-            } else if(d.kind === 'frame'){
-                // 내가 제어측(A) — 상대 화면 프레임 수신 → 뷰어에 렌더
-                if(window._rc.role === 'controller') _rcViewFrame(d.frame);
             } else if(d.kind === 'rc_hostack'){
                 // 내 로컬 서버가 호스팅을 시작했다는 응답 — 도우미 생존 확인
                 if(window._rc.role === 'host'){ window._rc.agentAlive = true; _rcUpdateHostBanner("🖥 상대방이 내 화면을 원격제어 중입니다"); }
@@ -5916,21 +5920,16 @@
               + '<span>🖥 원격제어 중 · ' + String(peer||'').replace(/</g,'&lt;') + ' 님의 화면</span>'
               + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">원격제어 종료</button></div>'
               + '<div id="rc-view-stage" tabindex="0" style="flex:1;position:relative;overflow:hidden;background:#000;outline:none;cursor:crosshair;display:flex;align-items:center;justify-content:center;">'
-              + '<img id="rc-view-img" draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;" />'
+              + '<video id="rc-view-vid" autoplay playsinline muted draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;"></video>'
               + '<div id="rc-view-wait" style="position:absolute;color:#9ca3af;font-size:13px;">상대 화면을 불러오는 중…</div></div>';
             _rcBindViewerInput();
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}   // 임베드 시 채팅 패널을 넓혀 큰 화면 확보
             try { document.getElementById('rc-view-stage').focus(); } catch(_){}
         };
-        window._rcViewFrame = function(frame){
-            const img = document.getElementById('rc-view-img'); if(!img || !frame) return;
-            img.src = 'data:image/jpeg;base64,' + frame.jpeg;
-            const w = document.getElementById('rc-view-wait'); if(w) w.style.display='none';
-        };
         function _rcCloseViewer(){ const ov = document.getElementById('rc-view-overlay'); if(ov) ov.remove(); }
         function _rcFrac(e){
-            const img = document.getElementById('rc-view-img'); if(!img || !img.naturalWidth) return null;
-            const rct = img.getBoundingClientRect();
+            const v = document.getElementById('rc-view-vid'); if(!v || !v.videoWidth) return null;
+            const rct = v.getBoundingClientRect();
             const fx = (e.clientX - rct.left) / rct.width, fy = (e.clientY - rct.top) / rct.height;
             if(fx < 0 || fx > 1 || fy < 0 || fy > 1) return null;
             return { fx:fx, fy:fy };
