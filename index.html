@@ -5619,62 +5619,90 @@
         window.__videoMeetingActive = false;
         window.__videoMeetingWindow = null;
 
-        // 📹 화상 회의를 채팅창 왼쪽(흐려진 영역)에 큰 화면으로 표시 → 오른쪽 채팅은 그대로 이어짐. 화면 공유 가능.
-        window._openVideoInRoom = function(meetUrl){
-            window.__videoMeetingActive = true;
-            // 🖥 RAYCloud 등 부모 앱에 임베드된 경우 → 부모 메인(좌측) 영역에 큰 화상 표시 요청(채팅은 이 패널에서 계속)
-            if(window.parent && window.parent !== window){
-                try { window.parent.postMessage({ type:'earth_video_start', url: String(meetUrl).replace(/%27/g,"'").replace(/%22/g,'"') }, '*'); return; } catch(_){}
-            }
-            const decoded = String(meetUrl).replace(/%27/g, "'").replace(/%22/g, '"').replace(/"/g, '&quot;');
-            let stage = document.getElementById('video-stage');
-            if(!stage){ stage = document.createElement('div'); stage.id = 'video-stage'; document.body.appendChild(stage); }
-            const isMobile = window.innerWidth <= 768;
-            stage.style.cssText = 'position:fixed; top:0; bottom:0; left:0; right:' + (isMobile ? '0' : '380px') + '; z-index:4002; background:#0b0b0f; display:flex; flex-direction:column;';
-            stage.innerHTML =
-                '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#111;color:#fff;font-size:14px;font-weight:700;flex:none;">'
-                + '<span>📹 화상 회의 · 화면 공유 가능</span>'
-                + '<button onclick="stopVideoChat()" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;">통화 종료</button>'
-                + '</div>'
-                + '<iframe id="chat-video-frame" src="' + decoded + '" allow="camera; microphone; fullscreen; display-capture; autoplay; speaker-selection; clipboard-write" allowfullscreen style="flex:1;width:100%;border:0;display:block;background:#000;"></iframe>';
-            // 채팅 드로어는 열어둔 채(오른쪽), 왼쪽 딤은 화상 화면으로 대체
-            const dr = document.getElementById('messenger-drawer'); if(dr && !dr.classList.contains('open')) dr.classList.add('open');
-            const bd = document.getElementById('messenger-backdrop'); if(bd) bd.style.display = 'none';
-        };
-
-        window.startVideoChat = function() {
+        // ============ 화상 통화 (자체 WebRTC — Jitsi 미사용, 5분 제한 없음) ============
+        //  Earth 릴레이(rc_signal kind:'rtc')로 offer/answer/ICE 교환, 미디어는 P2P. STUN만 사용(대부분 통과).
+        window._vc = { active:false, pc:null, local:null, peer:null, room:null, caller:false };
+        const VC_ICE = { iceServers: [ { urls:'stun:stun.l.google.com:19302' }, { urls:'stun:stun1.l.google.com:19302' } ] };
+        function _vcUI(){
+            let ov = document.getElementById('vc-overlay');
+            if(!ov){ ov = document.createElement('div'); ov.id='vc-overlay'; document.body.appendChild(ov); }
+            ov.style.cssText = 'position:fixed;inset:0;z-index:99992;background:#0b0b0f;display:flex;flex-direction:column;';
+            ov.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
+              + '<span>📹 화상 통화</span>'
+              + '<button onclick="stopVideoChat()" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 16px;font-weight:700;cursor:pointer;">통화 종료</button></div>'
+              + '<div style="flex:1;position:relative;background:#000;overflow:hidden;">'
+              + '<video id="vc-remote" autoplay playsinline style="width:100%;height:100%;object-fit:contain;background:#000;"></video>'
+              + '<video id="vc-local" autoplay playsinline muted style="position:absolute;right:12px;bottom:12px;width:160px;max-width:34vw;border-radius:10px;border:2px solid #fff;background:#111;object-fit:cover;box-shadow:0 4px 16px rgba(0,0,0,.4);"></video>'
+              + '</div>';
+            try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}
+        }
+        function _vcNewPc(peer, room){
+            const pc = new RTCPeerConnection(VC_ICE);
+            pc.onicecandidate = function(e){ if(e.candidate && socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtc', sub:'ice', cand:e.candidate }); };
+            pc.ontrack = function(e){ const rv = document.getElementById('vc-remote'); if(rv && e.streams && e.streams[0]) rv.srcObject = e.streams[0]; };
+            return pc;
+        }
+        window.startVideoChat = async function(){
             if(!activeChatFriend || !currentChatRoomId) return showToast("먼저 대화방을 여세요.");
-            if(window.__videoMeetingActive && document.getElementById('chat-video-frame')) { showToast("이미 화상 회의 중입니다."); return; }
-            const safeRoom = (currentChatRoomId || ('room_' + Date.now())).replace(/[^a-zA-Z0-9_-]/g, '_');
-            const displayName = encodeURIComponent(currentUser && currentUser.name ? currentUser.name : 'Guest');
-            const meetUrl = `https://meet.jit.si/Oreum_${safeRoom}#config.prejoinPageEnabled=false&userInfo.displayName=%22${displayName}%22`;
-            window._openVideoInRoom(meetUrl);
-            // 상대방에게 초대 링크 채팅 메시지로 전송(같은 대화방)
-            const inviteMsg = `[VIDEO_INVITE]${meetUrl}`;
-            const pic = document.getElementById('my-profile-pic').src;
-            if(socket && socket.connected) { socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: inviteMsg }); }
-            appendMainMessage(currentUser.name, inviteMsg, pic);
-            showToast("화상 회의를 시작했습니다. 상대방에게 초대를 보냈습니다.");
+            if(window._vc.active) return showToast("이미 통화 중입니다.");
+            const peer = activeChatFriend, room = currentChatRoomId;
+            let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
+            catch(e){ return showToast("카메라/마이크 권한이 필요합니다."); }
+            window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:true };
+            _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
+            const pc = _vcNewPc(peer, room); window._vc.pc = pc;
+            local.getTracks().forEach(function(t){ pc.addTrack(t, local); });
+            const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+            if(socket && socket.connected){
+                socket.emit('rc_signal', { to:peer, room:room, kind:'rtc', sub:'offer', sdp:offer });
+                const pic = document.getElementById('my-profile-pic').src;
+                socket.emit('send_message', { roomId:room, sender:currentUser.name, senderPic:pic, message:'[VIDEO_INVITE]' });
+                appendMainMessage(currentUser.name, '[VIDEO_INVITE]', pic);
+            }
+            showToast("화상 통화를 걸었습니다…");
         };
-
-        window.stopVideoChat = function() {
-            if(window.parent && window.parent !== window){ try { window.parent.postMessage({ type:'earth_video_stop' }, '*'); } catch(_){} }
-            const stage = document.getElementById('video-stage'); if(stage) stage.remove();
-            const slot = document.getElementById('chat-video-slot'); if(slot){ slot.innerHTML = ''; slot.style.display = 'none'; }
-            if(window.__videoMeetingWindow && !window.__videoMeetingWindow.closed) { try { window.__videoMeetingWindow.close(); } catch(e){} }
-            window.__videoMeetingActive = false; window.__videoMeetingWindow = null;
-            // 드로어가 열려 있으면 딤 복원
-            const dr = document.getElementById('messenger-drawer'); const bd = document.getElementById('messenger-backdrop');
-            if(bd) bd.style.display = (dr && dr.classList.contains('open')) ? 'block' : 'none';
-            showToast("화상 회의가 종료되었습니다.");
+        window._vcOnSignal = async function(d){
+            if(!d || d.kind!=='rtc') return;
+            const peer = d.from || window._vc.peer, room = d.room || window._vc.room;
+            try {
+                if(d.sub==='offer'){
+                    if(window._vc.active && window._vc.pc) return;   // 이미 통화 중이면 무시(글레어 방지)
+                    let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
+                    catch(e){ showToast("카메라/마이크 권한이 필요합니다."); return; }
+                    window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:false };
+                    _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
+                    const pc = _vcNewPc(peer, room); window._vc.pc = pc;
+                    local.getTracks().forEach(function(t){ pc.addTrack(t, local); });
+                    await pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
+                    const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
+                    if(socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtc', sub:'answer', sdp:ans });
+                    showToast(peer + " 님과 화상 통화 연결 중…");
+                } else if(d.sub==='answer'){
+                    if(window._vc.pc) await window._vc.pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
+                } else if(d.sub==='ice'){
+                    if(window._vc.pc && d.cand){ try { await window._vc.pc.addIceCandidate(new RTCIceCandidate(d.cand)); } catch(_){} }
+                } else if(d.sub==='bye'){
+                    _vcTeardown(true); showToast("상대가 통화를 종료했습니다.");
+                }
+            } catch(e){ console.warn('vc signal err', e); }
         };
-
-        // 화상 초대 링크 수신 시 → 같은 대화방 안에서 참여(채팅 유지)
-        window.joinVideoChatFromInvite = function(url) {
-            if(!url) return;
-            window._openVideoInRoom(url);
-            showToast("화상 회의에 참여합니다.");
+        window.stopVideoChat = function(){
+            const v = window._vc || {};
+            if(socket && socket.connected && v.peer && v.active) socket.emit('rc_signal', { to:v.peer, room:v.room, kind:'rtc', sub:'bye' });
+            _vcTeardown(false);
         };
+        function _vcTeardown(silent){
+            const v = window._vc || {};
+            try { if(v.pc) v.pc.close(); } catch(_){}
+            try { if(v.local) v.local.getTracks().forEach(function(t){ t.stop(); }); } catch(_){}
+            const ov = document.getElementById('vc-overlay'); if(ov) ov.remove();
+            try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_collapse' }, '*'); } catch(_){}
+            window._vc = { active:false, pc:null, local:null, peer:null, room:null, caller:false };
+            if(!silent) showToast("통화를 종료했습니다.");
+        }
+        window.joinVideoChatFromInvite = function(){ showToast("상대가 통화를 걸면 자동으로 연결됩니다."); };
+        window._openVideoInRoom = function(){ /* (구 Jitsi 경로 — 미사용) */ };
 
         // ============================================================================
         // 🖥 자체 원격제어 (TeamViewer 대체)
@@ -5832,6 +5860,7 @@
         // Earth 릴레이로 들어온 원격제어 신호 처리
         window._rcOnSignal = function(d){
             if(!d || !d.kind) return;
+            if(d.kind === 'rtc'){ if(window._vcOnSignal) window._vcOnSignal(d); return; }   // 화상 통화(WebRTC) 시그널
             if(d.kind === 'ctrl'){
                 if(d.act === 'host_ready'){
                     // 내가 제어측(A) — 상대가 수락함 → 이 창(이프레임) 안에서 큰 화면 뷰어 시작(부모 불필요)
@@ -9239,18 +9268,10 @@ pdfjsScript,
             if(text.startsWith('[TRANSFER]')) {
                 displayHtml = `<div style="padding:4px;"><div style="font-size:11px; opacity:0.7;">자산 이체</div><div style="font-size:18px; font-weight:900; margin-top:2px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</div></div>`;
             } else if(text.startsWith('[VIDEO_INVITE]')) {
-                // 🚀 [v8+] 화상 회의 초대 카드
-                const url = text.replace('[VIDEO_INVITE]', '');
-                const safeUrl = url.replace(/'/g, '%27').replace(/"/g, '%22');
-                displayHtml = `<div class="kt-card-msg" style="max-width:280px;">
-                    <div style="background:var(--gradient-btn); color:#fff; padding:14px;">
-                        <div style="font-size:11px; opacity:0.95;">화상 회의 초대</div>
-                        <div style="font-size:14px; font-weight:700; margin-top:4px;">실시간 영상 통화</div>
-                    </div>
-                    <div style="padding:12px 14px;">
-                        <div style="font-size:11px; color:var(--text-sub); margin-bottom:8px;">${isMe ? '내가 회의를 시작했습니다.' : '회의에 참여해 보세요.'}</div>
-                        <button onclick="joinVideoChatFromInvite('${safeUrl}')" style="width:100%; background:var(--success); color:#fff; border:none; padding:10px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">회의 참여하기</button>
-                    </div>
+                // 📹 화상 통화 알림 카드 (실제 연결은 WebRTC로 자동 — 상대가 걸면 자동 수신)
+                displayHtml = `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;">
+                    <div style="font-size:12px;color:var(--text-sub);font-weight:700;">📹 화상 통화</div>
+                    <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${isMe ? '통화를 걸었습니다.' : '상대가 화상 통화를 걸었습니다. 카메라 권한을 허용하면 자동으로 연결됩니다.'}</div>
                 </div>`;
             } else if(text.startsWith('[REMOTE_REQUEST]')) {
                 displayHtml = isMe
