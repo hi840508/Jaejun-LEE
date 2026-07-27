@@ -97,7 +97,25 @@ app.get('/sw.js', (req, res) => {
     res.type('application/javascript').send(
         "self.addEventListener('install',e=>self.skipWaiting());\n" +
         "self.addEventListener('activate',e=>self.clients.claim());\n" +
-        "self.addEventListener('fetch',function(e){ /* 네트워크 우선(패스스루) — 설치 가능 조건 충족용 */ });\n"
+        "self.addEventListener('fetch',function(e){ /* 네트워크 패스스루 — 설치 가능 조건 충족용 */ });\n" +
+        "self.addEventListener('push',function(e){\n" +
+        "  var d={}; try{ d=e.data.json(); }catch(_){ try{ d={title:'Earth',body:e.data&&e.data.text()}; }catch(__){ d={title:'Earth'}; } }\n" +
+        "  var title=d.title||'Earth', body=d.body||'';\n" +
+        "  var opts={ body:body, icon:'/icon-192.png', badge:'/icon-192.png', data:d.data||{}, tag:(d.data&&d.data.roomId)||'earth', renotify:true, vibrate:[80,40,80] };\n" +
+        "  e.waitUntil((async function(){\n" +
+        "    await self.registration.showNotification(title, opts);\n" +
+        "    if(typeof d.badge==='number'){ try{ if(self.navigator&&self.navigator.setAppBadge) await self.navigator.setAppBadge(d.badge); }catch(_){} }\n" +
+        "  })());\n" +
+        "});\n" +
+        "self.addEventListener('notificationclick',function(e){\n" +
+        "  e.notification.close();\n" +
+        "  var rid=e.notification.data&&e.notification.data.roomId;\n" +
+        "  e.waitUntil((async function(){\n" +
+        "    var all=await self.clients.matchAll({type:'window',includeUncontrolled:true});\n" +
+        "    for(var i=0;i<all.length;i++){ var c=all[i]; try{ c.postMessage({type:'earth_open_room',roomId:rid}); }catch(_){} if('focus' in c) return c.focus(); }\n" +
+        "    if(self.clients.openWindow) return self.clients.openWindow('/?openroom='+encodeURIComponent(rid||''));\n" +
+        "  })());\n" +
+        "});\n"
     );
 });
 app.get('/icon.svg', (req, res) => {
@@ -129,6 +147,66 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
     if (!fs.existsSync(f)) return res.status(404).json([]);
     res.type('application/json').send(fs.readFileSync(f, 'utf8'));
 });
+
+// ===================== 🔔 웹 푸시 알림(카톡식) =====================
+let webpush = null, VAPID_PUB = '';
+const pushBadge = new Map();   // userName -> 미확인 알림 수(앱 아이콘 뱃지)
+try {
+    webpush = require('web-push');
+    const vp = path.join(RC_AGENT_DIR, 'vapid.json');
+    let keys;
+    if (fs.existsSync(vp)) keys = JSON.parse(fs.readFileSync(vp, 'utf8'));
+    else { keys = webpush.generateVAPIDKeys(); fs.writeFileSync(vp, JSON.stringify(keys)); }
+    VAPID_PUB = keys.publicKey;
+    webpush.setVapidDetails('mailto:admin@rayaox.com', keys.publicKey, keys.privateKey);
+    console.log('🔔 web-push 준비 완료');
+} catch (e) { console.warn('⚠️ web-push 비활성:', e && e.message); }
+
+app.get('/api/push/vapid', (req, res) => res.json({ publicKey: VAPID_PUB }));
+app.post('/api/push/subscribe', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const sub = req.body && req.body.sub;
+    if (!sub || !sub.endpoint) return res.status(400).json({ error: 'no sub' });
+    db.run(`INSERT OR REPLACE INTO push_subs (endpoint, userName, sub, created) VALUES (?, ?, ?, ?)`,
+        [sub.endpoint, me, JSON.stringify(sub), new Date().toISOString()], () => res.json({ ok: true }));
+});
+app.post('/api/push/unsubscribe', (req, res) => {
+    const ep = req.body && req.body.endpoint; if (!ep) return res.json({ ok: true });
+    db.run(`DELETE FROM push_subs WHERE endpoint = ?`, [ep], () => res.json({ ok: true }));
+});
+app.post('/api/push/clear-badge', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    pushBadge.set(me, 0); res.json({ ok: true });
+});
+// 특정 사용자에게 푸시(오프라인일 때만 호출). title/body/data 전달 + 뱃지 증가.
+function sendPushToUser(name, payload) {
+    if (!webpush || !name) return;
+    const badge = (pushBadge.get(name) || 0) + 1; pushBadge.set(name, badge);
+    const body = JSON.stringify(Object.assign({ badge: badge }, payload));
+    db.all(`SELECT endpoint, sub FROM push_subs WHERE userName = ?`, [name], (e, rows) => {
+        (rows || []).forEach(r => {
+            let sub; try { sub = JSON.parse(r.sub); } catch (_) { return; }
+            webpush.sendNotification(sub, body).catch(err => {
+                if (err && (err.statusCode === 404 || err.statusCode === 410)) db.run(`DELETE FROM push_subs WHERE endpoint = ?`, [r.endpoint]);
+            });
+        });
+    });
+}
+// 사용자가 현재 접속(온라인) 중인지 — 개인 룸에 소켓이 있으면 온라인
+function _isUserOnline(name) {
+    try { const room = io.sockets.adapter.rooms.get('user:' + name); return !!(room && room.size > 0); } catch (_) { return false; }
+}
+// 푸시 미리보기 문구(내부 마커는 알림 제외). 반환 ''면 푸시 안 보냄.
+function _pushPreview(msg) {
+    if (!msg) return '';
+    if (/^\[(PRESENCE|HS|STATE|REQSTATE|REMOTE_ACCEPT|RX_DOC)/.test(msg)) return '';   // 내부/시스템 마커
+    if (msg.indexOf('[FILE_ATTACH]') === 0) return '📎 파일을 보냈습니다';
+    if (msg.indexOf('[VIDEO_INVITE]') === 0) return '📹 화상 통화 요청';
+    if (msg.indexOf('[REMOTE_REQUEST]') === 0) return '🖥 원격제어 요청';
+    if (msg.indexOf('[TRANSFER]') === 0) return '💸 송금 알림';
+    if (msg.indexOf('[ORDER_') === 0 || msg.indexOf('[ITEM_SALE]') === 0 || msg.indexOf('[SETTLE]') === 0) return '🛒 주문 알림';
+    return msg.length > 80 ? msg.slice(0, 80) + '…' : msg;
+}
 app.get('/api/rc/version', (req, res) => {
     let v = '0'; try { v = fs.readFileSync(path.join(RC_AGENT_DIR, 'version.txt'), 'utf8').trim(); } catch (_) {}
     res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe', apk: fs.existsSync(path.join(RC_AGENT_DIR, 'Earth.apk')), apkUrl: '/download/Earth.apk' });
@@ -380,6 +458,8 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, name TEXT, created INTEGER)`, () => {
             db.all(`SELECT token, name, created FROM sessions`, [], (e, rows) => { (rows || []).forEach(r => SESSIONS.set(r.token, { name: r.name, created: r.created })); });
         });
+        // 🔔 웹 푸시 구독 저장(카톡식 알림) — endpoint 당 1행, 사용자별 다기기 허용
+        db.run(`CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, userName TEXT, sub TEXT, created TEXT)`);
     });
 }
 initTables();
@@ -2815,6 +2895,13 @@ io.on('connection', (socket) => {
         // senderPic(base64)은 DB 미저장(히스토리 경량화). 실시간엔 실어 보냄. 아래는 참가자 개인 룸에만 전송.
         db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [data.roomId, sender, null, data.message, new Date().toLocaleString('ko-KR'), new Date().toISOString()], function() {
             _emitToRoomUsers(data.roomId, 'receive_message', Object.assign({}, data, { sender, id: this.lastID }));
+            // 🔔 오프라인(앱 미실행) 상대에게 카톡식 푸시
+            try {
+                const preview = _pushPreview(String(data.message || ''));
+                if (preview && sender !== '__system__') {
+                    users.forEach(u => { if (u && u !== sender && !_isUserOnline(u)) sendPushToUser(u, { title: sender, body: preview, data: { roomId: data.roomId } }); });
+                }
+            } catch (_) {}
         });
     });
     // 메시지 수정 (작성자만 — 인증 소켓이면 토큰 신원으로 판정)

@@ -2773,6 +2773,8 @@
             try { if(window.rayApp && window.rayApp.link){ window.rayApp.link(data.token || window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', data.name); } } catch(_){}
             // 앱에서 실행 중이면 'PC 앱 다운로드' 메뉴 숨김(이미 앱)
             try { if(window.rayApp){ const _ad=document.getElementById('sb-app-download'); if(_ad) _ad.style.display='none'; } } catch(_){}
+            // 🔔 푸시 알림 구독(카톡식) + 뱃지 초기화
+            try { setTimeout(function(){ if(window._earthSetupPush) window._earthSetupPush(); if(window._earthClearBadge) window._earthClearBadge(); }, 1500); } catch(_){}
             document.getElementById('display-name').innerText = data.name; if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
             
             // 🚀 [v8] 로고 초기화 (localStorage 우선 → 기본 오름앤파트너스)
@@ -5663,7 +5665,7 @@
             if(window._vc.active) return showToast("이미 통화 중입니다.");
             const peer = activeChatFriend, room = currentChatRoomId;
             let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
-            catch(e){ return showToast("카메라/마이크 권한이 필요합니다."); }
+            catch(e){ try { if(window.rayApp && window.rayApp.openMediaSettings){ window.rayApp.openMediaSettings(); } } catch(_){}; return showToast("카메라/마이크 권한이 필요합니다. Windows 설정에서 허용 후 다시 시도해 주세요."); }
             window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:true };
             _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
             const pc = _vcNewPc(peer, room); window._vc.pc = pc;
@@ -5684,7 +5686,7 @@
                 if(d.sub==='offer'){
                     if(window._vc.active && window._vc.pc) return;   // 이미 통화 중이면 무시(글레어 방지)
                     let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
-                    catch(e){ showToast("카메라/마이크 권한이 필요합니다."); return; }
+                    catch(e){ try { if(window.rayApp && window.rayApp.openMediaSettings){ window.rayApp.openMediaSettings(); } } catch(_){}; showToast("카메라/마이크 권한이 필요합니다. 설정에서 허용 후 다시 시도해 주세요."); return; }
                     window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:false };
                     _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
                     const pc = _vcNewPc(peer, room); window._vc.pc = pc;
@@ -5837,10 +5839,43 @@
             if(window._deferredPWA){ try { window._deferredPWA.prompt(); window._deferredPWA.userChoice.finally(function(){ window._deferredPWA = null; }); } catch(_){} return; }
             alert('Earth 앱(APK)이 아직 준비 중입니다.\n\n지금은 브라우저 메뉴(⋮) 또는 공유 버튼 → "홈 화면에 추가"로 Earth를 앱처럼 설치해 사용하실 수 있습니다.\n(APK가 올라오면 이 버튼에서 바로 내려받게 됩니다)');
         };
-        // PWA: 서비스워커 등록 + 설치 프롬프트(Android) 캡처 + OS별 메뉴 라벨/숨김
+        // 🔔 푸시 알림 구독(카톡식) — 로그인 후 호출. 알림 권한 요청 + 구독 등록.
+        function _urlB64ToU8(base64){
+            const pad='='.repeat((4 - base64.length % 4) % 4);
+            const b64=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');
+            const raw=atob(b64); const arr=new Uint8Array(raw.length);
+            for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+            return arr;
+        }
+        window._earthSetupPush = async function(){
+            try {
+                if(!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+                const reg = await navigator.serviceWorker.ready;
+                if(Notification.permission === 'denied') return;
+                if(Notification.permission !== 'granted'){ const p = await Notification.requestPermission(); if(p !== 'granted') return; }
+                const vr = await fetch(API_URL + '/api/push/vapid'); const vj = await vr.json();
+                if(!vj || !vj.publicKey) return;
+                let sub = await reg.pushManager.getSubscription();
+                if(!sub){ sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:_urlB64ToU8(vj.publicKey) }); }
+                const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
+                await fetch(API_URL + '/api/push/subscribe', { method:'POST', headers:{'Content-Type':'application/json','x-auth-token':tk}, body: JSON.stringify({ sub: sub }) });
+            } catch(e){ /* 조용히 무시 */ }
+        };
+        // 앱이 앞으로 나오면 뱃지/미확인 초기화
+        window._earthClearBadge = function(){
+            try { if(navigator.clearAppBadge) navigator.clearAppBadge(); } catch(_){}
+            try { const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || ''; if(tk) fetch(API_URL + '/api/push/clear-badge', { method:'POST', headers:{'x-auth-token':tk} }).catch(function(){}); } catch(_){}
+        };
+        // PWA: 서비스워커 등록 + 설치 프롬프트(Android) 캡처 + OS별 메뉴 라벨/숨김 + 알림 클릭 처리
         (function(){
             try { if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(function(){}); } } catch(_){}
             window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); window._deferredPWA = e; });
+            // 알림 탭 → 해당 대화방 열기 (서비스워커 메시지)
+            try { navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', function(ev){
+                const d=ev.data||{}; if(d.type==='earth_open_room' && d.roomId){ try{ if(typeof openMessengerRoomById==='function') openMessengerRoomById(d.roomId); else if(typeof loadChatList==='function') loadChatList(); }catch(_){} window._earthClearBadge(); }
+            }); } catch(_){}
+            // 앱 전면 복귀 시 뱃지 초기화
+            document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') window._earthClearBadge(); });
             function _setAppLabel(){
                 const el = document.getElementById('sb-app-label');
                 const ua = navigator.userAgent || '';
@@ -5967,36 +6002,78 @@
             if(!ov){ ov = document.createElement('div'); ov.id='rc-view-overlay'; document.body.appendChild(ov); }
             ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:#0b0b0f;display:flex;flex-direction:column;';
             ov.innerHTML =
-                '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
-              + '<span>🖥 원격제어 중 · ' + String(peer||'').replace(/</g,'&lt;') + ' 님의 화면</span>'
-              + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">원격제어 종료</button></div>'
-              + '<div id="rc-view-stage" tabindex="0" style="flex:1;position:relative;overflow:hidden;background:#000;outline:none;cursor:crosshair;display:flex;align-items:center;justify-content:center;">'
-              + '<video id="rc-view-vid" autoplay playsinline muted draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;"></video>'
+                '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
+              + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🖥 ' + String(peer||'').replace(/</g,'&lt;') + ' 님의 화면 제어 중</span>'
+              + '<span style="display:flex;gap:6px;flex:none;">'
+              + '<button onclick="_rcToggleKbd()" title="키보드" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">⌨</button>'
+              + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">종료</button></span></div>'
+              + '<div id="rc-view-stage" tabindex="0" style="flex:1;position:relative;overflow:hidden;background:#000;outline:none;cursor:crosshair;display:flex;align-items:center;justify-content:center;touch-action:none;">'
+              + '<video id="rc-view-vid" autoplay playsinline muted draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;pointer-events:none;"></video>'
+              + '<input id="rc-view-kbd" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="position:absolute;opacity:0;width:1px;height:1px;border:0;padding:0;left:-100px;" />'
               + '<div id="rc-view-wait" style="position:absolute;color:#9ca3af;font-size:13px;">상대 화면을 불러오는 중…</div></div>';
             _rcBindViewerInput();
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}   // 임베드 시 채팅 패널을 넓혀 큰 화면 확보
             try { document.getElementById('rc-view-stage').focus(); } catch(_){}
         };
         function _rcCloseViewer(){ const ov = document.getElementById('rc-view-overlay'); if(ov) ov.remove(); }
-        function _rcFrac(e){
+        function _rcFracXY(cx, cy){
             const v = document.getElementById('rc-view-vid'); if(!v || !v.videoWidth) return null;
             const rct = v.getBoundingClientRect();
-            const fx = (e.clientX - rct.left) / rct.width, fy = (e.clientY - rct.top) / rct.height;
+            const fx = (cx - rct.left) / rct.width, fy = (cy - rct.top) / rct.height;
             if(fx < 0 || fx > 1 || fy < 0 || fy > 1) return null;
             return { fx:fx, fy:fy };
         }
+        function _rcFrac(e){ return _rcFracXY(e.clientX, e.clientY); }
         function _rcSendInput(evt){ if(socket && socket.connected && window._rc.peer) socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'input', evt:evt }); }
+        window._rcToggleKbd = function(){ const k=document.getElementById('rc-view-kbd'); if(k){ try{ k.focus(); }catch(_){} } };
         function _rcBindViewerInput(){
             const stage = document.getElementById('rc-view-stage'); if(!stage) return;
             let last = 0;
+            // ── 데스크톱(마우스) ──
             stage.addEventListener('mousemove', function(e){ const now=(window.performance&&performance.now)?performance.now():0; if(now&&now-last<45)return; last=now; const p=_rcFrac(e); if(p) _rcSendInput({t:'m',fx:p.fx,fy:p.fy}); });
             stage.addEventListener('mousedown', function(e){ e.preventDefault(); });
             stage.addEventListener('click', function(e){ const p=_rcFrac(e); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:0}); });
             stage.addEventListener('dblclick', function(e){ const p=_rcFrac(e); if(p) _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); });
             stage.addEventListener('contextmenu', function(e){ e.preventDefault(); const p=_rcFrac(e); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); });
             stage.addEventListener('wheel', function(e){ e.preventDefault(); _rcSendInput({t:'w',d:(e.deltaY<0?120:-120)}); }, {passive:false});
+            // ── 모바일(터치): 탭=클릭, 드래그=커서 이동, 롱프레스=우클릭, 더블탭=더블클릭 ──
+            let ts=0, tx=0, ty=0, tmoved=false, lpTimer=null, lastTap=0, tlast=0;
+            stage.addEventListener('touchstart', function(e){
+                if(!e.touches.length) return; const t=e.touches[0]; ts=Date.now(); tx=t.clientX; ty=t.clientY; tmoved=false;
+                if(lpTimer) clearTimeout(lpTimer);
+                lpTimer = setTimeout(function(){ const p=_rcFracXY(tx,ty); if(p){ tmoved=true; _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); if(navigator.vibrate) try{navigator.vibrate(20);}catch(_){}}}, 500); // 롱프레스=우클릭
+            }, {passive:false});
+            stage.addEventListener('touchmove', function(e){
+                if(!e.touches.length) return; e.preventDefault(); const t=e.touches[0];
+                if(Math.abs(t.clientX-tx)>6 || Math.abs(t.clientY-ty)>6){ tmoved=true; if(lpTimer){clearTimeout(lpTimer);lpTimer=null;} }
+                const now=Date.now(); if(now-tlast<45) return; tlast=now;
+                const p=_rcFracXY(t.clientX,t.clientY); if(p) _rcSendInput({t:'m',fx:p.fx,fy:p.fy});
+            }, {passive:false});
+            stage.addEventListener('touchend', function(e){
+                if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; }
+                const dt=Date.now()-ts;
+                if(!tmoved && dt<500){ const p=_rcFracXY(tx,ty); if(p){ const now=Date.now();
+                    if(now-lastTap<300){ _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); lastTap=0; } // 더블탭=더블클릭
+                    else { _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:0}); lastTap=now; } } }
+            }, {passive:false});
+            // ── 키보드(하드웨어 + 모바일 소프트키보드) ──
+            const kbd = document.getElementById('rc-view-kbd');
             stage.addEventListener('keydown', function(e){ const tok=_rcKeyToken(e); if(!tok)return; e.preventDefault(); _rcSendInput({t:'k',s:tok}); });
+            if(kbd){
+                kbd.addEventListener('keydown', function(e){
+                    // 특수키만 여기서(문자는 input 이벤트로) — Enter/Backspace/방향키 등
+                    if(e.key && e.key.length===1) return;
+                    const tok=_rcKeyToken(e); if(!tok) return; e.preventDefault(); _rcSendInput({t:'k',s:tok});
+                });
+                kbd.addEventListener('input', function(e){
+                    if(e.inputType==='insertText' && e.data){ _rcSendInput({t:'k', s: _rcEscKeys(e.data)}); }
+                    else if(e.inputType==='deleteContentBackward'){ _rcSendInput({t:'k', s:'{BS}'}); }
+                    else if(e.inputType==='insertLineBreak'){ _rcSendInput({t:'k', s:'{ENTER}'}); }
+                    kbd.value=''; // 값 비워 계속 입력받기
+                });
+            }
         }
+        function _rcEscKeys(s){ return String(s).replace(/[{}()\[\]+^%~]/g, function(c){ return '{'+c+'}'; }); }
         function _rcKeyToken(e){
             const map = {'Enter':'{ENTER}','Backspace':'{BS}','Tab':'{TAB}','Escape':'{ESC}','Delete':'{DEL}','Home':'{HOME}','End':'{END}','PageUp':'{PGUP}','PageDown':'{PGDN}','ArrowUp':'{UP}','ArrowDown':'{DOWN}','ArrowLeft':'{LEFT}','ArrowRight':'{RIGHT}',' ':' '};
             const esc = function(s){ return s.replace(/[{}()\[\]+^%~]/g, function(c){ return '{'+c+'}'; }); };
