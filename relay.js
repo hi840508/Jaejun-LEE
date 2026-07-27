@@ -78,6 +78,34 @@ app.get('/download/RAY_RemoteAgent.exe', (req, res) => {
     if (!fs.existsSync(f)) return res.status(404).send('agent not published yet');
     res.download(f, 'RAY_RemoteAgent.exe');
 });
+// 📱 PWA(모바일 홈 화면 앱 설치) — manifest / service worker / 아이콘
+app.get('/manifest.webmanifest', (req, res) => {
+    res.type('application/manifest+json').send(JSON.stringify({
+        name: 'Earth', short_name: 'Earth', start_url: '/', scope: '/',
+        display: 'standalone', background_color: '#0b0b0f', theme_color: '#111111',
+        icons: [
+            { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+            { src: '/icon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'maskable' }
+        ]
+    }));
+});
+app.get('/sw.js', (req, res) => {
+    res.type('application/javascript').send(
+        "self.addEventListener('install',e=>self.skipWaiting());\n" +
+        "self.addEventListener('activate',e=>self.clients.claim());\n" +
+        "self.addEventListener('fetch',function(e){ /* 네트워크 우선(패스스루) — 설치 가능 조건 충족용 */ });\n"
+    );
+});
+app.get('/icon.svg', (req, res) => {
+    res.type('image/svg+xml').send(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
+        '<rect width="512" height="512" rx="104" fill="#111111"/>' +
+        '<circle cx="256" cy="256" r="150" fill="none" stroke="#ffffff" stroke-width="18"/>' +
+        '<path d="M106 256 h300 M256 106 v300" stroke="#ffffff" stroke-width="12" opacity="0.55"/>' +
+        '<path d="M256 106 C150 190 150 322 256 406 C362 322 362 190 256 106 Z" fill="none" stroke="#ffffff" stroke-width="12" opacity="0.85"/>' +
+        '</svg>'
+    );
+});
 // 🖥 서버 내장 설치형 PC 앱(Electron) 인스톨러 — agent/ 폴더에 두면 배포됨(git 미추적, reset 보존)
 app.get('/download/APP_Setup.exe', (req, res) => {
     const f = path.join(RC_AGENT_DIR, 'APP_Setup.exe');

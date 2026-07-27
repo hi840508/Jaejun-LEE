@@ -6,6 +6,14 @@
     <meta name="color-scheme" content="light only">
     <meta name="supported-color-schemes" content="light">
     <title>Earth Commerce Platform</title>
+    <!-- 📱 PWA(모바일 홈 화면 앱 설치) -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#111111">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Earth">
+    <link rel="apple-touch-icon" href="/icon.svg">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
@@ -1012,7 +1020,7 @@
                         <button class="yt-sb-item" id="sb-order-mgmt" style="display:none" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span><span>주문 관리</span></button>
                         <button class="yt-sb-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg></span><span>구매 목록</span></button>
                         <!-- 🖥 PC 앱 다운로드: 앱(설치형)에서 실행 중이면 숨김. 설치하면 화상·화면공유·원격제어 모두 사용 가능 -->
-                        <button class="yt-sb-item" id="sb-app-download" onclick="downloadDesktopApp()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path><path d="M7 11l5 5 5-5"></path><path d="M12 4v12"></path></svg></span><span>PC 앱 다운로드</span></button>
+                        <button class="yt-sb-item" id="sb-app-download" onclick="installAppForOS()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path><path d="M7 11l5 5 5-5"></path><path d="M12 4v12"></path></svg></span><span id="sb-app-label">앱 설치</span></button>
                     </div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
@@ -5802,8 +5810,38 @@
         // 🖥 서버 내장 설치형 PC 앱 다운로드 (설치 후 로그인하면 원격제어 '제어'까지 자동 활성화)
         window.downloadDesktopApp = function(){
             try { window.open(API_URL + '/download/APP_Setup.exe', '_blank'); } catch(_){ location.href = API_URL + '/download/APP_Setup.exe'; }
-            showToast('PC 앱 설치 파일을 받습니다. 설치 후 로그인하면 제어까지 자동 준비됩니다.');
+            showToast('PC 앱(Earth) 설치 파일을 받습니다. 설치 후 로그인하면 제어까지 자동 준비됩니다.');
         };
+        // 📱/🖥 OS에 맞는 앱 설치 — PC=설치파일, Android=PWA 설치, iOS=홈 화면에 추가
+        window.installAppForOS = function(){
+            if(window.rayApp){ showToast('이미 Earth 앱에서 실행 중입니다.'); return; }
+            const ua = navigator.userAgent || '';
+            const isAndroid = /Android/i.test(ua), isIOS = /iPhone|iPad|iPod/i.test(ua) || (/(Macintosh)/i.test(ua) && 'ontouchend' in document);
+            if(isAndroid){
+                if(window._deferredPWA){ try { window._deferredPWA.prompt(); window._deferredPWA.userChoice.finally(function(){ window._deferredPWA = null; }); } catch(_){} }
+                else showToast('브라우저 메뉴(⋮) → "앱 설치" 또는 "홈 화면에 추가"를 누르면 Earth 앱이 설치됩니다.');
+                return;
+            }
+            if(isIOS){
+                alert('iPhone/iPad에서 Earth 앱 설치:\n\n1) 하단(또는 상단) 공유 버튼(□↑) 탭\n2) "홈 화면에 추가" 선택\n3) 추가 → 홈 화면의 Earth 아이콘으로 실행\n\n(카메라·화면 기능은 홈 화면 앱에서 정상 동작합니다)');
+                return;
+            }
+            window.downloadDesktopApp();
+        };
+        // PWA: 서비스워커 등록 + 설치 프롬프트(Android) 캡처 + OS별 메뉴 라벨/숨김
+        (function(){
+            try { if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(function(){}); } } catch(_){}
+            window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); window._deferredPWA = e; });
+            function _setAppLabel(){
+                const el = document.getElementById('sb-app-label');
+                const ua = navigator.userAgent || '';
+                const isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
+                if(el) el.textContent = isMobile ? '홈 화면에 앱 설치' : 'PC 앱 다운로드';
+                const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone;
+                if(window.rayApp || standalone){ const b=document.getElementById('sb-app-download'); if(b) b.style.display='none'; }
+            }
+            if(document.readyState !== 'loading') _setAppLabel(); else document.addEventListener('DOMContentLoaded', _setAppLabel);
+        })();
         // 보기 전용 배너 + (앱 미설치 시) 앱 설치 버튼
         function _rcHostBannerInstall(){
             let b = document.getElementById('rc-host-banner'); if(!b){ _rcShowHostBanner(); b = document.getElementById('rc-host-banner'); }
