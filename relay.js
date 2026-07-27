@@ -115,6 +115,17 @@ app.get('/sw.js', (req, res) => {
         "    for(var i=0;i<all.length;i++){ var c=all[i]; try{ c.postMessage({type:'earth_open_room',roomId:rid}); }catch(_){} if('focus' in c) return c.focus(); }\n" +
         "    if(self.clients.openWindow) return self.clients.openWindow('/?openroom='+encodeURIComponent(rid||''));\n" +
         "  })());\n" +
+        "});\n" +
+        "self.addEventListener('pushsubscriptionchange',function(e){\n" +
+        "  e.waitUntil((async function(){\n" +
+        "    try{\n" +
+        "      var old=e.oldSubscription?e.oldSubscription.endpoint:null;\n" +
+        "      var vr=await fetch('/api/push/vapid'); var vj=await vr.json(); var key=vj.publicKey;\n" +
+        "      function u8(b){ var p='='.repeat((4-b.length%4)%4); var s=(b+p).replace(/-/g,'+').replace(/_/g,'/'); var r=atob(s); var a=new Uint8Array(r.length); for(var i=0;i<r.length;i++)a[i]=r.charCodeAt(i); return a; }\n" +
+        "      var sub=await self.registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:u8(key)});\n" +
+        "      await fetch('/api/push/resubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({oldEndpoint:old,sub:sub})});\n" +
+        "    }catch(_){}\n" +
+        "  })());\n" +
         "});\n"
     );
 });
@@ -173,6 +184,18 @@ app.post('/api/push/subscribe', (req, res) => {
 app.post('/api/push/unsubscribe', (req, res) => {
     const ep = req.body && req.body.endpoint; if (!ep) return res.json({ ok: true });
     db.run(`DELETE FROM push_subs WHERE endpoint = ?`, [ep], () => res.json({ ok: true }));
+});
+// 구독 회전(pushsubscriptionchange) 시 SW가 인증 없이 호출 — 옛 endpoint로 사용자 매핑해 교체
+app.post('/api/push/resubscribe', (req, res) => {
+    const oldEp = req.body && req.body.oldEndpoint;
+    const sub = req.body && req.body.sub;
+    if (!sub || !sub.endpoint || !oldEp) return res.json({ ok: false });
+    db.get(`SELECT userName FROM push_subs WHERE endpoint = ?`, [oldEp], (e, r) => {
+        if (!r || !r.userName) return res.json({ ok: false });
+        db.run(`INSERT OR REPLACE INTO push_subs (endpoint, userName, sub, created) VALUES (?, ?, ?, ?)`,
+            [sub.endpoint, r.userName, JSON.stringify(sub), new Date().toISOString()],
+            () => db.run(`DELETE FROM push_subs WHERE endpoint = ?`, [oldEp], () => res.json({ ok: true })));
+    });
 });
 app.post('/api/push/clear-badge', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
