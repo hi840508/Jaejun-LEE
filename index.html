@@ -5692,18 +5692,58 @@
         function _vcUI(){
             let ov = document.getElementById('vc-overlay');
             if(!ov){ ov = document.createElement('div'); ov.id='vc-overlay'; document.body.appendChild(ov); }
-            ov.style.cssText = 'position:fixed;inset:0;z-index:99992;background:#0b0b0f;display:flex;flex-direction:column;';
+            if(!document.getElementById('vc-style')){
+                const s=document.createElement('style'); s.id='vc-style';
+                s.textContent = '#vc-overlay{position:fixed;inset:0;z-index:99992;background:#0b0b0f;display:flex;flex-direction:column;}'
+                    + '#vc-overlay.vc-mini{inset:auto;right:12px;bottom:96px;width:210px;height:300px;max-width:62vw;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.5);border:2px solid #1f2937;}'
+                    + '#vc-overlay.vc-mini #vc-local{width:66px;} #vc-overlay.vc-mini .vc-ctrls button{width:36px;height:36px;font-size:15px;} #vc-overlay.vc-mini .vc-title{font-size:11px;}';
+                document.head.appendChild(s);
+            }
+            ov.className = '';
             ov.innerHTML =
-                '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
-              + '<span>📹 화상 통화</span>'
-              + '<button onclick="stopVideoChat()" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 16px;font-weight:700;cursor:pointer;">통화 종료</button></div>'
+                '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
+              + '<span class="vc-title">📹 화상 통화</span>'
+              + '<div style="display:flex;gap:6px;"><button onclick="toggleVcMini()" title="작게/크게" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;">🗕</button>'
+              + '<button onclick="stopVideoChat()" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;">종료</button></div></div>'
               + '<div style="flex:1;position:relative;background:#000;overflow:hidden;">'
               + '<div id="vc-connecting" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:14px;z-index:1;text-align:center;padding:20px;">상대 영상 연결 중…</div>'
               + '<video id="vc-remote" autoplay playsinline style="width:100%;height:100%;object-fit:contain;background:#000;position:relative;z-index:2;"></video>'
-              + '<video id="vc-local" autoplay playsinline muted style="position:absolute;right:12px;bottom:12px;width:160px;max-width:34vw;border-radius:10px;border:2px solid #fff;background:#111;object-fit:cover;box-shadow:0 4px 16px rgba(0,0,0,.4);"></video>'
+              + '<video id="vc-local" autoplay playsinline muted style="position:absolute;right:10px;bottom:10px;width:118px;max-width:30vw;border-radius:10px;border:2px solid #fff;background:#111;object-fit:cover;z-index:3;box-shadow:0 4px 16px rgba(0,0,0,.4);"></video>'
+              + '<div id="vc-audio-unlock" style="display:none;position:absolute;left:50%;bottom:76px;transform:translateX(-50%);z-index:4;background:#2563eb;color:#fff;border-radius:20px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;" onclick="_vcUnlockAudio()">🔊 탭하여 소리 켜기</div>'
+              + '</div>'
+              + '<div class="vc-ctrls" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:10px;background:#111;flex:none;">'
+              +   '<button id="vc-mic" onclick="toggleVcMic()" title="마이크" style="width:46px;height:46px;border-radius:50%;border:0;background:#334155;color:#fff;font-size:18px;cursor:pointer;">🎤</button>'
+              +   '<button id="vc-cam" onclick="toggleVcCam()" title="카메라" style="width:46px;height:46px;border-radius:50%;border:0;background:#334155;color:#fff;font-size:18px;cursor:pointer;">📷</button>'
+              +   '<button id="vc-screen" onclick="shareScreenInCall()" title="내 화면 공유" style="width:46px;height:46px;border-radius:50%;border:0;background:#334155;color:#fff;font-size:18px;cursor:pointer;">🖥</button>'
+              +   '<button onclick="stopVideoChat()" title="종료" style="width:46px;height:46px;border-radius:50%;border:0;background:#ef4444;color:#fff;font-size:18px;cursor:pointer;">📞</button>'
               + '</div>';
+            // 원격 오디오 자동재생(막히면 '소리 켜기' 버튼 노출)
+            setTimeout(function(){ const rv=document.getElementById('vc-remote'); if(rv){ rv.muted=false; const p=rv.play&&rv.play(); if(p&&p.catch) p.catch(function(){ const u=document.getElementById('vc-audio-unlock'); if(u) u.style.display='block'; }); } }, 400);
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}
         }
+        window.toggleVcMini = function(){ const ov=document.getElementById('vc-overlay'); if(ov) ov.classList.toggle('vc-mini'); };
+        window.toggleVcMic = function(){ const t=window._vc.local&&window._vc.local.getAudioTracks()[0]; if(!t) return; t.enabled=!t.enabled; const b=document.getElementById('vc-mic'); if(b){ b.style.background=t.enabled?'#334155':'#ef4444'; b.textContent=t.enabled?'🎤':'🔇'; } };
+        window.toggleVcCam = function(){ const t=window._vc.local&&window._vc.local.getVideoTracks()[0]; if(!t) return; t.enabled=!t.enabled; const b=document.getElementById('vc-cam'); if(b){ b.style.background=t.enabled?'#334155':'#ef4444'; b.textContent=t.enabled?'📷':'🚫'; } };
+        window._vcUnlockAudio = function(){ const rv=document.getElementById('vc-remote'); if(rv){ rv.muted=false; try{ const p=rv.play(); if(p&&p.catch)p.catch(function(){}); }catch(_){} } const u=document.getElementById('vc-audio-unlock'); if(u) u.style.display='none'; };
+        window.shareScreenInCall = async function(){
+            if(!window._vc.active || !window._vc.pc) return showToast('통화 중에만 화면 공유가 가능합니다.');
+            if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return showToast('이 기기(모바일)는 브라우저 화면 공유를 지원하지 않습니다. PC에서 이용해 주세요.');
+            let ds; try { ds = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:false }); }
+            catch(e){ return showToast('화면 공유가 취소되었습니다.'); }
+            const screenTrack = ds.getVideoTracks()[0];
+            const sender = window._vc.pc.getSenders().find(function(s){ return s.track && s.track.kind==='video'; });
+            if(sender && screenTrack){ try { await sender.replaceTrack(screenTrack); } catch(_){} }
+            const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = ds;
+            window._vc.screen = ds;
+            const sb=document.getElementById('vc-screen'); if(sb) sb.style.background='#16a34a';
+            screenTrack.onended = function(){
+                const camTrack = window._vc.local && window._vc.local.getVideoTracks()[0];
+                if(sender && camTrack){ try { sender.replaceTrack(camTrack); } catch(_){} }
+                if(lv) lv.srcObject = window._vc.local;
+                window._vc.screen = null; const sb2=document.getElementById('vc-screen'); if(sb2) sb2.style.background='#334155';
+            };
+            showToast('내 화면을 공유 중입니다. (중지: 브라우저 공유 표시줄의 "중지")');
+        };
         function _vcNewPc(peer, room){
             const pc = new RTCPeerConnection(VC_ICE);
             pc.onicecandidate = function(e){ if(e.candidate && socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtc', sub:'ice', cand:e.candidate }); };
@@ -5824,6 +5864,7 @@
             const v = window._vc || {};
             try { if(v.pc) v.pc.close(); } catch(_){}
             try { if(v.local) v.local.getTracks().forEach(function(t){ t.stop(); }); } catch(_){}
+            try { if(v.screen) v.screen.getTracks().forEach(function(t){ t.stop(); }); } catch(_){}
             const ov = document.getElementById('vc-overlay'); if(ov) ov.remove();
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_collapse' }, '*'); } catch(_){}
             window._vc = { active:false, pc:null, local:null, peer:null, room:null, caller:false };
@@ -5864,10 +5905,14 @@
             const peer = activeChatFriend, room = currentChatRoomId;
             if(!peer) return showToast("대화방을 먼저 여세요.");
             // 🖥 브라우저 화면 공유(설치·exe 불필요, 시간제한 없음). 사용자가 공유할 화면을 고른다.
+            // 📱 모바일 브라우저는 화면 공유(getDisplayMedia)를 지원하지 않음 → 피제어(내 화면 공유) 불가
+            if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+                return showToast("모바일 브라우저는 '내 화면 공유(피제어)'를 지원하지 않습니다.\nPC에서 수락하거나, 반대로 모바일이 상대 PC를 제어하세요.");
+            }
             let stream;
             try {
                 stream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate: 10 }, audio:false });
-            } catch(e){ return showToast("화면 공유가 취소되었거나 지원되지 않습니다."); }
+            } catch(e){ return showToast(e && e.name==='NotAllowedError' ? "화면 공유를 취소했습니다." : "화면 공유를 시작할 수 없습니다."); }
             window._rc = { active:true, role:'host', peer:peer, room:room, agentAlive:false };
             window._rcHostStream = stream;
             const pic = document.getElementById('my-profile-pic').src;
