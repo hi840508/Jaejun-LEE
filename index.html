@@ -1038,6 +1038,8 @@
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
                         <button class="yt-sb-item" onclick="openSettingsPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span>설정</span></button>
+                        <!-- 🔔 알림 설정 -->
+                        <button class="yt-sb-item" onclick="_earthNotifyOnboard(true)"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span><span>알림 설정</span></button>
                         <!-- 📥 앱 설치/다운로드 (설정 아래) — 앱/홈화면앱으로 실행 중이면 숨김 -->
                         <button class="yt-sb-item" id="sb-app-download" onclick="installAppForOS()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path><path d="M7 11l5 5 5-5"></path><path d="M12 4v12"></path></svg></span><span id="sb-app-label">앱 설치</span></button>
                     </div>
@@ -2773,8 +2775,16 @@
             try { if(window.rayApp && window.rayApp.link){ window.rayApp.link(data.token || window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', data.name); } } catch(_){}
             // 앱에서 실행 중이면 'PC 앱 다운로드' 메뉴 숨김(이미 앱)
             try { if(window.rayApp){ const _ad=document.getElementById('sb-app-download'); if(_ad) _ad.style.display='none'; } } catch(_){}
-            // 🔔 푸시 알림 구독(카톡식) + 뱃지 초기화
-            try { setTimeout(function(){ if(window._earthSetupPush) window._earthSetupPush(); if(window._earthClearBadge) window._earthClearBadge(); }, 1500); } catch(_){}
+            // 🔔 푸시 알림: 권한 있으면 자동 구독, 없으면 첫 로그인에 온보딩 모달로 안내(개인별 설명 불필요)
+            try { setTimeout(function(){
+                try {
+                    if('Notification' in window){
+                        if(Notification.permission === 'granted'){ if(window._earthSetupPush) window._earthSetupPush(); }
+                        else if(Notification.permission === 'default'){ if(window._earthNotifyOnboard) window._earthNotifyOnboard(false); }
+                    }
+                } catch(_){}
+                if(window._earthClearBadge) window._earthClearBadge();
+            }, 1500); } catch(_){}
             // 🔔 알림을 탭해 앱이 새로 열린 경우(?openroom=) → 로그인 후 해당 대화방 열기
             try { const _op = new URLSearchParams(location.search).get('openroom'); if(_op){ setTimeout(function(){ try{ window.openEarthRoom(_op); }catch(_){} }, 2000); } } catch(_){}
             document.getElementById('display-name').innerText = data.name; if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
@@ -5877,6 +5887,46 @@
                 if(partner && typeof openMessengerChat==='function'){ openMessengerChat(partner, roomId); return; }
                 // 상대 미확인(주문방 메타 미로드) → 목록 로드 후 재시도
                 if(typeof loadChatList==='function'){ loadChatList(); setTimeout(function(){ try{ const m=window.__orderRoomStore&&window.__orderRoomStore[roomId]; if(m&&m.partnerName && typeof openMessengerChat==='function') openMessengerChat(m.partnerName, roomId); }catch(_){} }, 900); }
+            } catch(_){}
+        };
+        // 🔔 알림 온보딩 모달 — 첫 로그인 시 자동 표시. 원터치로 권한 허용 + 구독 + 소리 설정 안내.
+        window._earthNotifyOnboard = function(force){
+            try {
+                if(!('Notification' in window)) return;
+                if(!force && localStorage.getItem('notify_onboarded') === '1') return;
+                if(!force && Notification.permission === 'denied') { localStorage.setItem('notify_onboarded','1'); return; }
+                const perm = Notification.permission;
+                let m = document.getElementById('notify-onboard');
+                if(!m){ m = document.createElement('div'); m.id='notify-onboard'; document.body.appendChild(m); }
+                m.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+                const soundTip = '<div style="font-size:12px;color:#555;margin-top:14px;background:#f4f4f5;border-radius:10px;padding:12px;line-height:1.7;text-align:left;">'
+                    + '<b>🔊 소리·진동이 안 나면(안드로이드)</b><br>'
+                    + '① 받은 <b>Earth 알림을 길게 누르기</b><br>'
+                    + '② 뜨는 <b>⚙ 설정</b> 탭<br>'
+                    + '③ 중요도 <b>"긴급"</b> + <b>소리·진동 켜기</b><br>'
+                    + '<span style="color:#888;">(휴대폰이 무음/방해금지 모드가 아닌지도 확인)</span></div>';
+                const denied = (perm === 'denied');
+                m.innerHTML = '<div style="background:#fff;border-radius:16px;max-width:340px;width:100%;padding:22px;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,.35);">'
+                    + '<div style="font-size:42px;">🔔</div>'
+                    + '<div style="font-weight:800;font-size:17px;margin-top:8px;">대화 알림 켜기</div>'
+                    + '<div style="font-size:13px;color:#555;margin-top:8px;line-height:1.6;">앱을 닫아도 새 메시지를 <b>소리·진동·뱃지</b>로 알려드려요. (카카오톡처럼)</div>'
+                    + (denied ? '<div style="font-size:12px;color:#b91c1c;margin-top:12px;">알림이 차단돼 있어요. 설정 → 앱 → Earth → 알림에서 켜 주세요.</div>' : '')
+                    + (perm === 'granted' ? soundTip : '')
+                    + '<button id="notify-onboard-btn" style="width:100%;margin-top:16px;background:var(--gradient-btn);color:#fff;border:0;border-radius:10px;padding:13px;font-weight:800;font-size:14px;cursor:pointer;">' + (perm === 'granted' ? '확인' : '알림 켜기') + '</button>'
+                    + '<button id="notify-onboard-skip" style="width:100%;margin-top:8px;background:transparent;color:#888;border:0;padding:6px;font-size:12px;cursor:pointer;">나중에</button>'
+                    + '</div>';
+                const close = function(){ localStorage.setItem('notify_onboarded','1'); try{ m.remove(); }catch(_){} };
+                document.getElementById('notify-onboard-skip').onclick = close;
+                document.getElementById('notify-onboard-btn').onclick = async function(){
+                    if(Notification.permission !== 'granted' && Notification.permission !== 'denied'){ try { await Notification.requestPermission(); } catch(_){} }
+                    if(Notification.permission === 'granted'){
+                        try { if(window._earthSetupPush) await window._earthSetupPush(); } catch(_){}
+                        try { showToast('알림이 켜졌습니다. 🔔'); } catch(_){}
+                        // 권한 허용 직후 소리 설정 안내를 한 번 더 보여줌
+                        if(perm !== 'granted'){ close(); setTimeout(function(){ window._earthNotifyOnboard(true); }, 400); return; }
+                    }
+                    close();
+                };
             } catch(_){}
         };
         // 앱이 앞으로 나오면 뱃지/미확인 초기화
