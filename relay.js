@@ -1000,7 +1000,8 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
           AND INSTR('_' || roomId || '_', '_' || ? || '_') > 0`;
     // B) 💬 주문 대화방(room_ord_): chat_rooms에서 ended=0 인 것만(구매확정 시 ended=1로 목록에서 사라짐) + 마지막 메시지
     const qOrder = `SELECT cr.roomId, cr.buyer, cr.seller, cr.storeName, cr.lastProductName,
-                           c.id AS lastMsgId, c.sender AS lastSender, c.message AS lastMsg, c.date AS lastDate
+                           c.id AS lastMsgId, c.sender AS lastSender, c.message AS lastMsg, c.date AS lastDate,
+                           (SELECT status FROM product_orders WHERE ('room_ord_' || id) = cr.roomId) AS orderStatus
                     FROM chat_rooms cr
                     LEFT JOIN chats c ON c.id = (SELECT MAX(id) FROM chats WHERE roomId = cr.roomId)
                     WHERE cr.roomId LIKE 'room_ord_%' AND cr.ended = 0 AND (cr.buyer = ? OR cr.seller = ?)`;
@@ -1014,7 +1015,7 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
             });
             (ordRows || []).forEach(r => {
                 const partnerName = (r.buyer === name) ? r.seller : r.buyer;
-                out.push({ roomId: r.roomId, partnerName: partnerName || '', lastMsg: r.lastMsg || ('[' + (r.lastProductName || '주문') + '] 대화'), lastDate: r.lastDate || '', lastMsgId: r.lastMsgId || 0, lastSender: r.lastSender || '', isOrder: true, storeName: r.storeName || '', productName: r.lastProductName || '' });
+                out.push({ roomId: r.roomId, partnerName: partnerName || '', lastMsg: r.lastMsg || ('[' + (r.lastProductName || '주문') + '] 대화'), lastDate: r.lastDate || '', lastMsgId: r.lastMsgId || 0, lastSender: r.lastSender || '', isOrder: true, storeName: r.storeName || '', productName: r.lastProductName || '', orderStatus: r.orderStatus || '' });
             });
             const tasks = out.map(o => new Promise(resolve => {
                 db.get(`SELECT profilePic FROM users WHERE name = ?`, [o.partnerName], (e, u) => { o.partnerPic = u ? u.profilePic : null; resolve(o); });
@@ -1036,16 +1037,31 @@ app.post('/api/chat/leave-room', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     const roomId = String((req.body && req.body.roomId) || '');
     if (!roomId) return res.status(400).json({ error: 'roomId가 필요합니다.' });
-    if (roomId.startsWith('room_ord_')) return res.status(400).json({ error: '주문(구매) 대화방은 삭제할 수 없습니다.' });
     if (roomId.indexOf('이재준') >= 0) return res.status(400).json({ error: '고객센터 대화방은 삭제할 수 없습니다.' });
-    db.run(`INSERT INTO chat_hidden (user, roomId, hidden_at) VALUES (?, ?, ?)`, [me, roomId, new Date().toISOString()], () => {
-        const date = new Date().toLocaleString('ko-KR');
-        const msg = '🚪 상대방이 대화방을 퇴장하셨습니다.';
-        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [roomId, msg, date, new Date().toISOString()], function() {
-            try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: this.lastID, date }); } catch (_) {}
-            res.json({ success: true });
+    // 내 목록에서만 조용히 제거(종료된 주문방) / 상대에게 퇴장 안내(일반 방)
+    const _doHide = (silent) => {
+        db.run(`INSERT INTO chat_hidden (user, roomId, hidden_at) VALUES (?, ?, ?)`, [me, roomId, new Date().toISOString()], () => {
+            if (silent) return res.json({ success: true });
+            const date = new Date().toLocaleString('ko-KR');
+            const msg = '🚪 상대방이 대화방을 퇴장하셨습니다.';
+            db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [roomId, msg, date, new Date().toISOString()], function() {
+                try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: this.lastID, date }); } catch (_) {}
+                res.json({ success: true });
+            });
         });
-    });
+    };
+    if (roomId.startsWith('room_ord_')) {
+        // 주문 대화방: 환불/구매확정 등 '종료된 거래'만 나갈 수 있음(진행 중 거래는 보호)
+        const orderId = roomId.replace('room_ord_', '');
+        db.get(`SELECT status, ended FROM product_orders po LEFT JOIN chat_rooms cr ON cr.roomId = ? WHERE po.id = ?`, [roomId, orderId], (e, ord) => {
+            const terminal = ord && (ord.status === 'refunded' || ord.status === 'confirmed');
+            const closed = ord && ord.ended === 1;
+            if (terminal || closed || !ord) return _doHide(true);
+            return res.status(400).json({ error: '진행 중인 주문 대화방은 나갈 수 없습니다. (환불·구매확정 후 가능)' });
+        });
+        return;
+    }
+    _doHide(false);
 });
 
 app.post('/api/deposit/request', (req, res) => { const me = requireUser(req, res); if (!me) return; const rawDate = new Date().toISOString(); db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date, rawDate) VALUES (?, ?, ?, '대기', ?, ?)`, [me, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR'), rawDate], () => { res.json({ success: true }); }); });
