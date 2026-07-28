@@ -2775,6 +2775,8 @@
             try { if(window.rayApp){ const _ad=document.getElementById('sb-app-download'); if(_ad) _ad.style.display='none'; } } catch(_){}
             // 🔔 푸시 알림 구독(카톡식) + 뱃지 초기화
             try { setTimeout(function(){ if(window._earthSetupPush) window._earthSetupPush(); if(window._earthClearBadge) window._earthClearBadge(); }, 1500); } catch(_){}
+            // 🔔 알림을 탭해 앱이 새로 열린 경우(?openroom=) → 로그인 후 해당 대화방 열기
+            try { const _op = new URLSearchParams(location.search).get('openroom'); if(_op){ setTimeout(function(){ try{ window.openEarthRoom(_op); }catch(_){} }, 2000); } } catch(_){}
             document.getElementById('display-name').innerText = data.name; if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
             
             // 🚀 [v8] 로고 초기화 (localStorage 우선 → 기본 오름앤파트너스)
@@ -5861,6 +5863,22 @@
                 await fetch(API_URL + '/api/push/subscribe', { method:'POST', headers:{'Content-Type':'application/json','x-auth-token':tk}, body: JSON.stringify({ sub: sub }) });
             } catch(e){ /* 조용히 무시 */ }
         };
+        // 🔔 알림 탭 → 해당 대화방 직접 열기 (roomId로 상대 유추)
+        window.openEarthRoom = function(roomId){
+            try {
+                if(!roomId) return;
+                let partner = null;
+                if(window.__orderRoomStore && window.__orderRoomStore[roomId] && window.__orderRoomStore[roomId].partnerName){
+                    partner = window.__orderRoomStore[roomId].partnerName;
+                } else if(roomId.indexOf('room_msg_')===0){
+                    const me = (currentUser && currentUser.name) || '';
+                    partner = roomId.replace('room_msg_','').split('_').filter(function(n){ return n && n!==me; })[0];
+                }
+                if(partner && typeof openMessengerChat==='function'){ openMessengerChat(partner, roomId); return; }
+                // 상대 미확인(주문방 메타 미로드) → 목록 로드 후 재시도
+                if(typeof loadChatList==='function'){ loadChatList(); setTimeout(function(){ try{ const m=window.__orderRoomStore&&window.__orderRoomStore[roomId]; if(m&&m.partnerName && typeof openMessengerChat==='function') openMessengerChat(m.partnerName, roomId); }catch(_){} }, 900); }
+            } catch(_){}
+        };
         // 앱이 앞으로 나오면 뱃지/미확인 초기화
         window._earthClearBadge = function(){
             try { if(navigator.clearAppBadge) navigator.clearAppBadge(); } catch(_){}
@@ -5872,7 +5890,7 @@
             window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); window._deferredPWA = e; });
             // 알림 탭 → 해당 대화방 열기 (서비스워커 메시지)
             try { navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', function(ev){
-                const d=ev.data||{}; if(d.type==='earth_open_room' && d.roomId){ try{ if(typeof openMessengerRoomById==='function') openMessengerRoomById(d.roomId); else if(typeof loadChatList==='function') loadChatList(); }catch(_){} window._earthClearBadge(); }
+                const d=ev.data||{}; if(d.type==='earth_open_room'){ try{ window.openEarthRoom(d.roomId); }catch(_){} window._earthClearBadge(); }
             }); } catch(_){}
             // 앱 전면 복귀 시 뱃지 초기화
             document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') window._earthClearBadge(); });
