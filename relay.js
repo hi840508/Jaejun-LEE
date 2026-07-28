@@ -103,6 +103,9 @@ app.get('/sw.js', (req, res) => {
         "  var title=d.title||'Earth', body=d.body||'';\n" +
         "  var opts={ body:body, icon:'/icon-192.png', badge:'/icon-192.png', data:d.data||{}, tag:(d.data&&d.data.roomId)||'earth', renotify:true, requireInteraction:true, silent:false, vibrate:[300,120,300,120,300] };\n" +
         "  e.waitUntil((async function(){\n" +
+        "    var cs=await self.clients.matchAll({type:'window',includeUncontrolled:true});\n" +
+        "    var focused=cs.some(function(c){ return c.focused || c.visibilityState==='visible'; });\n" +
+        "    if(focused){ for(var i=0;i<cs.length;i++){ try{ cs[i].postMessage({type:'earth_incoming',data:d.data||{}}); }catch(_){} } return; }\n" +   // 앱이 켜져있으면 시스템 알림 생략(앱 내부에서 처리)
         "    await self.registration.showNotification(title, opts);\n" +
         "    if(typeof d.badge==='number'){ try{ if(self.navigator&&self.navigator.setAppBadge) await self.navigator.setAppBadge(d.badge); }catch(_){} }\n" +
         "  })());\n" +
@@ -2919,11 +2922,12 @@ io.on('connection', (socket) => {
         // senderPic(base64)은 DB 미저장(히스토리 경량화). 실시간엔 실어 보냄. 아래는 참가자 개인 룸에만 전송.
         db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [data.roomId, sender, null, data.message, new Date().toLocaleString('ko-KR'), new Date().toISOString()], function() {
             _emitToRoomUsers(data.roomId, 'receive_message', Object.assign({}, data, { sender, id: this.lastID }));
-            // 🔔 오프라인(앱 미실행) 상대에게 카톡식 푸시
+            // 🔔 카톡식 푸시 — 항상 상대에게 전송. 앱이 '화면에 켜진(포커스)' 상태면 서비스워커가 알아서 표시를 생략함.
+            //    (백그라운드로 내려도 소켓은 잠시 연결 유지되므로 '온라인' 판정으론 놓침 → 항상 보내고 SW가 판단)
             try {
                 const preview = _pushPreview(String(data.message || ''));
                 if (preview && sender !== '__system__') {
-                    users.forEach(u => { if (u && u !== sender && !_isUserOnline(u)) sendPushToUser(u, { title: sender, body: preview, data: { roomId: data.roomId } }); });
+                    users.forEach(u => { if (u && u !== sender) sendPushToUser(u, { title: sender, body: preview, data: { roomId: data.roomId } }); });
                 }
             } catch (_) {}
         });
