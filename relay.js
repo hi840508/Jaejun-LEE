@@ -19,6 +19,26 @@ app.use(express.urlencoded({ extended: true, limit: '1000mb' }));
 const CHAT_UPLOAD_DIR = path.join(__dirname, 'chat_uploads');
 try { fs.mkdirSync(CHAT_UPLOAD_DIR, { recursive: true }); } catch (e) { console.warn('chat_uploads 생성 실패', e && e.message); }
 app.use('/chat-files', express.static(CHAT_UPLOAD_DIR, { maxAge: '365d', immutable: true }));
+
+// ☁️ Cloudflare R2 첨부 오프로드 — r2.config.json(비공개, git 제외) 또는 환경변수 있으면 R2에 저장(무료 egress). 없으면 로컬 디스크.
+let _r2 = null;
+(function _initR2() {
+    try {
+        let cfg = null;
+        const p = path.join(__dirname, 'r2.config.json');
+        if (fs.existsSync(p)) cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+        else if (process.env.R2_ACCESS_KEY_ID) cfg = { accountId: process.env.R2_ACCOUNT_ID, endpoint: process.env.R2_ENDPOINT, accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY, bucket: process.env.R2_BUCKET, publicBase: process.env.R2_PUBLIC_BASE };
+        if (!cfg || !cfg.accessKeyId || !cfg.bucket || !cfg.publicBase) return;
+        const { S3Client } = require('@aws-sdk/client-s3');
+        const client = new S3Client({ region: 'auto', endpoint: cfg.endpoint || ('https://' + cfg.accountId + '.r2.cloudflarestorage.com'), credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey } });
+        _r2 = { client, bucket: cfg.bucket, publicBase: String(cfg.publicBase).replace(/\/+$/, '') };
+        console.log('☁️ R2 첨부 오프로드 활성화:', _r2.publicBase, '(bucket:', _r2.bucket + ')');
+    } catch (e) { console.warn('R2 초기화 실패 → 로컬 디스크 사용:', e && e.message); _r2 = null; }
+})();
+function _mimeFromExt(ext) {
+    const m = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp', '.pdf': 'application/pdf', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.txt': 'text/plain', '.md': 'text/plain', '.html': 'text/html', '.json': 'application/json', '.csv': 'text/csv', '.zip': 'application/zip' };
+    return m[String(ext || '').toLowerCase()] || 'application/octet-stream';
+}
 // 💬 첨부 보존기간 최대 14일 — 초과분 자동 삭제(디스크 무한 누적 방지). 부팅 시 1회 + 6시간마다.
 const CHAT_ATTACH_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 function cleanupOldChatAttachments() {
@@ -2309,6 +2329,19 @@ app.post('/api/chat/attach', (req, res) => {
         let ext = path.extname(String(filename || '')).slice(0, 12).replace(/[^.\w]/g, '');
         if (!ext) ext = '.bin';
         const safe = 'att_' + Date.now() + '_' + crypto.randomBytes(8).toString('hex') + ext;
+        // ☁️ R2 설정 시 R2로 업로드(무료 egress). 실패하면 로컬 디스크로 폴백.
+        if (_r2) {
+            const { PutObjectCommand } = require('@aws-sdk/client-s3');
+            const ct = (req.body && req.body.mime) || _mimeFromExt(ext);
+            _r2.client.send(new PutObjectCommand({ Bucket: _r2.bucket, Key: safe, Body: buf, ContentType: ct }))
+                .then(() => res.json({ success: true, url: _r2.publicBase + '/' + safe, size: buf.length, store: 'r2' }))
+                .catch((err) => {
+                    console.warn('R2 업로드 실패 → 로컬 폴백:', err && err.message);
+                    try { fs.writeFileSync(path.join(CHAT_UPLOAD_DIR, safe), buf); res.json({ success: true, url: _shareBaseUrl(req) + '/chat-files/' + safe, size: buf.length, store: 'local-fallback' }); }
+                    catch (e2) { res.status(500).json({ error: (err && err.message) || 'R2 업로드 실패' }); }
+                });
+            return;
+        }
         fs.writeFileSync(path.join(CHAT_UPLOAD_DIR, safe), buf);
         const url = _shareBaseUrl(req) + '/chat-files/' + safe;
         res.json({ success: true, url, size: buf.length });
