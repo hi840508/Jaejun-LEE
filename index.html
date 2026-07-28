@@ -5726,24 +5726,62 @@
             try {
                 if(d.sub==='offer'){
                     if(window._vc.active && window._vc.pc) return;   // 이미 통화 중이면 무시(글레어 방지)
-                    let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
-                    catch(e){ window._showCamPermHelp(e); return; }
-                    window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:false };
-                    _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
-                    const pc = _vcNewPc(peer, room); window._vc.pc = pc;
-                    local.getTracks().forEach(function(t){ pc.addTrack(t, local); });
-                    await pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
-                    const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
-                    if(socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtc', sub:'answer', sdp:ans });
-                    showToast(peer + " 님과 화상 통화 연결 중…");
+                    // 📱 모바일: getUserMedia는 사용자 탭(제스처) 후에만 동작 → 자동 연결 대신 '수락하기' UI 표시
+                    window._vcPendingOffer = { d: d, peer: peer, room: room };
+                    window._vcPendingIce = [];
+                    _showIncomingCall(peer);
                 } else if(d.sub==='answer'){
                     if(window._vc.pc) await window._vc.pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
                 } else if(d.sub==='ice'){
-                    if(window._vc.pc && d.cand){ try { await window._vc.pc.addIceCandidate(new RTCIceCandidate(d.cand)); } catch(_){} }
+                    if(d.cand){
+                        if(window._vc.pc){ try { await window._vc.pc.addIceCandidate(new RTCIceCandidate(d.cand)); } catch(_){} }
+                        else if(window._vcPendingOffer){ (window._vcPendingIce = window._vcPendingIce || []).push(d.cand); }   // 수락 전 도착분 버퍼
+                    }
                 } else if(d.sub==='bye'){
+                    if(window._vcPendingOffer){ window._vcPendingOffer = null; const _ic=document.getElementById('vc-incoming'); if(_ic) _ic.remove(); showToast("상대가 통화를 취소했습니다."); return; }
                     _vcTeardown(true); showToast("상대가 통화를 종료했습니다.");
                 }
             } catch(e){ console.warn('vc signal err', e); }
+        };
+        // 📞 수신 화상통화 — 수락/거절 UI (모바일 제스처 확보용)
+        window._showIncomingCall = function(peer){
+            let el = document.getElementById('vc-incoming');
+            if(!el){ el = document.createElement('div'); el.id = 'vc-incoming'; document.body.appendChild(el); }
+            el.style.cssText = 'position:fixed;inset:0;z-index:100050;background:rgba(15,23,42,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center;padding:24px;';
+            const nm = (peer||'상대').replace(/</g,'&lt;');
+            el.innerHTML = '<div style="font-size:56px;margin-bottom:12px;animation:vcpulse 1.2s infinite;">📹</div>'
+                + '<div style="font-size:19px;font-weight:800;margin-bottom:4px;">'+nm+' 님의 화상 통화</div>'
+                + '<div style="font-size:13px;color:#cbd5e1;margin-bottom:30px;">수락하면 카메라·마이크 권한 요청 후 연결됩니다.</div>'
+                + '<div style="display:flex;gap:48px;align-items:center;">'
+                +   '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;"><button onclick="rejectVideoCall()" style="width:66px;height:66px;border-radius:50%;border:0;background:#dc2626;color:#fff;font-size:26px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.4);">✕</button><span style="font-size:12px;color:#cbd5e1;">거절</span></div>'
+                +   '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;"><button onclick="acceptVideoCall()" style="width:66px;height:66px;border-radius:50%;border:0;background:#16a34a;color:#fff;font-size:28px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.4);">📞</button><span style="font-size:12px;color:#cbd5e1;">수락하기</span></div>'
+                + '</div>';
+            if(!document.getElementById('vcpulse-style')){ const s=document.createElement('style'); s.id='vcpulse-style'; s.textContent='@keyframes vcpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}'; document.head.appendChild(s); }
+        };
+        window.acceptVideoCall = async function(){
+            const p = window._vcPendingOffer; if(!p) return;
+            const el = document.getElementById('vc-incoming'); if(el) el.remove();
+            const peer = p.peer, room = p.room, d = p.d;
+            let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
+            catch(e){ window._vcPendingOffer = null; window._showCamPermHelp(e); return; }
+            window._vcPendingOffer = null;
+            window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:false };
+            _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
+            const pc = _vcNewPc(peer, room); window._vc.pc = pc;
+            local.getTracks().forEach(function(t){ pc.addTrack(t, local); });
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
+                const buffered = window._vcPendingIce || []; window._vcPendingIce = [];
+                for(const c of buffered){ try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch(_){} }
+                const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
+                if(socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtc', sub:'answer', sdp:ans });
+                showToast(peer + " 님과 화상 통화 연결 중…");
+            } catch(e){ console.warn('accept err', e); showToast('연결 실패'); }
+        };
+        window.rejectVideoCall = function(){
+            const p = window._vcPendingOffer; window._vcPendingOffer = null; window._vcPendingIce = [];
+            const el = document.getElementById('vc-incoming'); if(el) el.remove();
+            try { if(p && socket && socket.connected) socket.emit('rc_signal', { to:p.peer, room:p.room, kind:'rtc', sub:'bye' }); } catch(_){}
         };
         window.stopVideoChat = function(){
             const v = window._vc || {};
@@ -8461,7 +8499,9 @@ pdfjsScript,
                 const r = await fetch(`${API_URL}/api/chat/leave-room`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roomId }) });
                 const d = await r.json().catch(()=>({}));
                 if(!r.ok) return showToast(d.error || '나가기 실패');
-                showToast('대화방에서 나갔습니다.');
+                showToast(d.deleted ? '대화방이 완전히 삭제되었습니다.' : '대화방에서 나갔습니다.');
+                try { delete unreadCounts[roomId]; localStorage.removeItem('rc_read_' + roomId); } catch(_){}
+                if(typeof updateTabBadge==='function') updateTabBadge();
                 if(currentChatRoomId === roomId && typeof backToDrawerList==='function') backToDrawerList();
                 else if(window.loadChatList) loadChatList();
             } catch(e){ showToast('삭제 실패: ' + (e.message||e)); }
@@ -8707,19 +8747,19 @@ pdfjsScript,
             } catch(_){}
             
             const warnText = isOrderRoom
-                ? `🚪 이 대화방은 상품 구매로 자동 생성된 대화방입니다.\n\n나가시면 ${activeChatFriend}님의 화면에서도 이 대화방이 함께 사라집니다.\n\n계속하시겠습니까?`
-                : `🚪 ${activeChatFriend}님과의 대화방에서 나가시겠습니까?\n\n(상대방 화면에는 그대로 남습니다)`;
+                ? `🚪 이 대화방에서 나가시겠습니까?\n\n나가면 내 목록에서 사라지고 더 이상 글을 보내거나 받을 수 없습니다.\n(양쪽 모두 나가면 대화 내용이 완전히 삭제됩니다)`
+                : `🚪 ${activeChatFriend}님과의 대화방에서 나가시겠습니까?\n\n나가면 내 목록에서 사라지고 더 이상 글을 보내거나 받을 수 없습니다.\n다시 대화하려면 새로 대화방을 열어야 합니다.\n(양쪽 모두 나가면 대화 내용이 완전히 삭제됩니다)`;
             if(!confirm(warnText)) return;
 
+            const _leftRoom = currentChatRoomId;
             try {
-                const res = await fetch(`${API_URL}/api/chat-room/leave`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roomId: currentChatRoomId, user: currentUser.name }) });
-                const data = await res.json();
+                const res = await fetch(`${API_URL}/api/chat/leave-room`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roomId: _leftRoom }) });
+                const data = await res.json().catch(()=>({}));
                 if(!res.ok) return showToast(data.error || '나가기 실패');
-                if(data.endedBothSides) {
-                    showToast(`✅ 양측 대화방 종료됨`);
-                } else {
-                    showToast(`✅ 대화방에서 나갔습니다`);
-                }
+                showToast(data.deleted ? '✅ 대화방이 완전히 삭제되었습니다' : '✅ 대화방에서 나갔습니다');
+                // 🗑 유령 배지 방지: 나간 방 미읽음/읽음 즉시 제거
+                try { delete unreadCounts[_leftRoom]; localStorage.removeItem('rc_read_' + _leftRoom); } catch(_){}
+                updateTabBadge();
                 backToDrawerList();
                 loadFriendList(); loadChatList();
             } catch(e) { showToast('나가기 실패: ' + (e.message || e)); }

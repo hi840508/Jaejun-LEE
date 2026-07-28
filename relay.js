@@ -992,12 +992,17 @@ app.post('/api/chat/unread-counts', (req, res) => {
     const reads = (req.body && req.body.reads) || {};
     const roomIds = Object.keys(reads);
     if (!roomIds.length) return res.json({});
-    const out = {}; let pending = roomIds.length;
-    roomIds.forEach(rid => {
-        const readId = Number(reads[rid]) || 0;
-        db.get(`SELECT COUNT(*) AS c FROM chats WHERE roomId = ? AND id > ? AND sender != ? AND sender != '__system__'`, [rid, readId, me], (e, row) => {
-            out[rid] = (row && row.c) || 0;
-            if (--pending === 0) res.json(out);
+    // 🗑 내가 퇴장(숨김)한 방은 미읽음 0 (유령 배지 방지)
+    db.all(`SELECT roomId FROM chat_hidden WHERE user = ?`, [me], (eh, hrows) => {
+        const hidden = new Set((hrows || []).map(r => r.roomId));
+        const out = {}; let pending = roomIds.length;
+        roomIds.forEach(rid => {
+            if (hidden.has(rid)) { out[rid] = 0; if (--pending === 0) res.json(out); return; }
+            const readId = Number(reads[rid]) || 0;
+            db.get(`SELECT COUNT(*) AS c FROM chats WHERE roomId = ? AND id > ? AND sender != ? AND sender != '__system__'`, [rid, readId, me], (e, row) => {
+                out[rid] = (row && row.c) || 0;
+                if (--pending === 0) res.json(out);
+            });
         });
     });
 });
@@ -1052,12 +1057,26 @@ app.post('/api/chat/leave-room', (req, res) => {
     // 내 목록에서만 조용히 제거(종료된 주문방) / 상대에게 퇴장 안내(일반 방)
     const _doHide = (silent) => {
         db.run(`INSERT INTO chat_hidden (user, roomId, hidden_at) VALUES (?, ?, ?)`, [me, roomId, new Date().toISOString()], () => {
-            if (silent) return res.json({ success: true });
-            const date = new Date().toLocaleString('ko-KR');
-            const msg = '🚪 상대방이 대화방을 퇴장하셨습니다.';
-            db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [roomId, msg, date, new Date().toISOString()], function() {
-                try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: this.lastID, date }); } catch (_) {}
-                res.json({ success: true });
+            // 🗑 양쪽 참가자가 모두 퇴장하면 DB에서 완전 삭제(대화·방·숨김기록)
+            const parts = _roomParticipants(roomId);
+            db.all(`SELECT DISTINCT user FROM chat_hidden WHERE roomId = ?`, [roomId], (e2, hrows) => {
+                const left = new Set((hrows || []).map(r => r.user));
+                const bothLeft = parts.length >= 2 && parts.every(p => left.has(p));
+                if (bothLeft) {
+                    db.run(`DELETE FROM chats WHERE roomId = ?`, [roomId]);
+                    db.run(`DELETE FROM chat_rooms WHERE roomId = ?`, [roomId]);
+                    db.run(`DELETE FROM chat_hidden WHERE roomId = ?`, [roomId], () => {});
+                    try { _emitToRoomUsers(roomId, 'room_closed', { roomId }); } catch (_) {}
+                    return res.json({ success: true, bothLeft: true, deleted: true });
+                }
+                if (silent) return res.json({ success: true });
+                // 상대에게만 퇴장 안내(상대는 계속 방을 볼 수 있음)
+                const date = new Date().toLocaleString('ko-KR');
+                const msg = '🚪 상대방이 대화방을 퇴장하셨습니다.';
+                db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [roomId, msg, date, new Date().toISOString()], function() {
+                    try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: this.lastID, date }); } catch (_) {}
+                    res.json({ success: true });
+                });
             });
         });
     };
@@ -2942,21 +2961,24 @@ io.on('connection', (socket) => {
         const isSystem = data.sender === '__system__';
         const sender = isSystem ? '__system__' : socket.data.user;
         const users = _roomParticipants(data.roomId);
-        if (users.length === 2) {
-            db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[0], users[1]]);
-            db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[1], users[0]]);
-        }
-        // senderPic(base64)은 DB 미저장(히스토리 경량화). 실시간엔 실어 보냄. 아래는 참가자 개인 룸에만 전송.
+        // senderPic(base64)은 DB 미저장(히스토리 경량화). 실시간엔 실어 보냄. 참가자 개인 룸에만 전송.
         db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [data.roomId, sender, null, data.message, new Date().toLocaleString('ko-KR'), new Date().toISOString()], function() {
-            _emitToRoomUsers(data.roomId, 'receive_message', Object.assign({}, data, { sender, id: this.lastID }));
-            // 🔔 카톡식 푸시 — 항상 상대에게 전송. 앱이 '화면에 켜진(포커스)' 상태면 서비스워커가 알아서 표시를 생략함.
-            //    (백그라운드로 내려도 소켓은 잠시 연결 유지되므로 '온라인' 판정으론 놓침 → 항상 보내고 SW가 판단)
-            try {
-                const preview = _pushPreview(String(data.message || ''));
-                if (preview && sender !== '__system__') {
-                    users.forEach(u => { if (u && u !== sender) sendPushToUser(u, { title: sender, body: preview, data: { roomId: data.roomId } }); });
+            const msgId = this.lastID;
+            // 🗑 퇴장(숨김)한 참가자에겐 전달·푸시·친구재등록 안 함 → '나간 방은 완전히 끊김'(유령 미읽음 방지)
+            db.all(`SELECT user FROM chat_hidden WHERE roomId = ?`, [data.roomId], (eh, hrows) => {
+                const hidden = new Set((hrows || []).map(r => r.user));
+                if (users.length === 2 && !hidden.has(users[0]) && !hidden.has(users[1])) {
+                    db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[0], users[1]]);
+                    db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [users[1], users[0]]);
                 }
-            } catch (_) {}
+                const payload = Object.assign({}, data, { sender, id: msgId });
+                if (users.length) users.forEach(u => { if (u && !(u !== sender && hidden.has(u))) { try { io.to('user:' + u).emit('receive_message', payload); } catch (_) {} } });
+                else { try { io.to(data.roomId).emit('receive_message', payload); } catch (_) {} }
+                try {
+                    const preview = _pushPreview(String(data.message || ''));
+                    if (preview && sender !== '__system__') users.forEach(u => { if (u && u !== sender && !hidden.has(u)) sendPushToUser(u, { title: sender, body: preview, data: { roomId: data.roomId } }); });
+                } catch (_) {}
+            });
         });
     });
     // 메시지 수정 (작성자만 — 인증 소켓이면 토큰 신원으로 판정)
