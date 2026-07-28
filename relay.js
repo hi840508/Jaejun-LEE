@@ -101,7 +101,7 @@ app.get('/sw.js', (req, res) => {
         "self.addEventListener('push',function(e){\n" +
         "  var d={}; try{ d=e.data.json(); }catch(_){ try{ d={title:'Earth',body:e.data&&e.data.text()}; }catch(__){ d={title:'Earth'}; } }\n" +
         "  var title=d.title||'Earth', body=d.body||'';\n" +
-        "  var opts={ body:body, icon:'/icon-192.png', badge:'/icon-192.png', data:d.data||{}, tag:(d.data&&d.data.roomId)||'earth', renotify:true, vibrate:[80,40,80] };\n" +
+        "  var opts={ body:body, icon:'/icon-192.png', badge:'/icon-192.png', data:d.data||{}, tag:(d.data&&d.data.roomId)||'earth', renotify:true, requireInteraction:true, silent:false, vibrate:[300,120,300,120,300] };\n" +
         "  e.waitUntil((async function(){\n" +
         "    await self.registration.showNotification(title, opts);\n" +
         "    if(typeof d.badge==='number'){ try{ if(self.navigator&&self.navigator.setAppBadge) await self.navigator.setAppBadge(d.badge); }catch(_){} }\n" +
