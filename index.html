@@ -2851,18 +2851,33 @@
                 if(window.__connIndTimer){ clearTimeout(window.__connIndTimer); window.__connIndTimer = null; }
                 const ind = document.getElementById('chat-conn-indicator'); if(ind) ind.remove();
             });
-            socket.on('disconnect', () => {
-                // 6초 이상 끊겼을 때만 표시(앱 전환/짧은 재연결엔 아무 표시 안 함 → 불편 제거)
+            window._scheduleConnInd = function(delay){
                 if(window.__connIndTimer) clearTimeout(window.__connIndTimer);
                 window.__connIndTimer = setTimeout(function(){
                     if(socket && socket.connected) return;
+                    if(document.visibilityState !== 'visible') return;   // 백그라운드면 표시 안 함
                     if(document.getElementById('chat-conn-indicator')) return;
                     const ind = document.createElement('div');
                     ind.id = 'chat-conn-indicator';
                     ind.textContent = '⚠ 연결 끊김 — 재연결 시도 중…';
                     ind.style.cssText = 'position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:#dc2626; color:#fff; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:700; z-index:99998; box-shadow:0 4px 12px rgba(0,0,0,.25);';
                     document.body.appendChild(ind);
-                }, 6000);
+                }, delay);
+            };
+            socket.on('disconnect', () => {
+                // 📱 백그라운드(앱 전환/화면 잠금)로 인한 끊김은 표시 안 함 → 앱 진입 때마다 뜨던 문제 제거.
+                //    포그라운드에서 실제로 오래(8초+) 끊겼을 때만 표시.
+                if(document.visibilityState !== 'visible'){ if(window.__connIndTimer){ clearTimeout(window.__connIndTimer); window.__connIndTimer=null; } return; }
+                window._scheduleConnInd(8000);
+            });
+            document.addEventListener('visibilitychange', function(){
+                if(document.visibilityState === 'hidden'){
+                    if(window.__connIndTimer){ clearTimeout(window.__connIndTimer); window.__connIndTimer=null; }
+                    const ind = document.getElementById('chat-conn-indicator'); if(ind) ind.remove();   // 백그라운드로 가면 즉시 숨김
+                } else {
+                    // 포그라운드 복귀: 곧 재연결되면 connect가 지움. 그래도 계속 끊겨있으면 8초 뒤 표시.
+                    if(!(socket && socket.connected)) window._scheduleConnInd(8000);
+                }
             });
             // 🚀 실시간 친구 추가 알림 (별도 새로고침 없이 친구목록/대화방 즉시 갱신)
             socket.on('friend_added', handleFriendAdded);
@@ -5666,7 +5681,14 @@
         // ============ 화상 통화 (자체 WebRTC — Jitsi 미사용, 5분 제한 없음) ============
         //  Earth 릴레이(rc_signal kind:'rtc')로 offer/answer/ICE 교환, 미디어는 P2P. STUN만 사용(대부분 통과).
         window._vc = { active:false, pc:null, local:null, peer:null, room:null, caller:false };
-        const VC_ICE = { iceServers: [ { urls:'stun:stun.l.google.com:19302' }, { urls:'stun:stun1.l.google.com:19302' } ] };
+        // STUN(직접연결) + TURN(서로 다른 네트워크·셀룰러 등에서 미디어 중계) — TURN 없으면 원격영상이 안 붙는 경우가 많음
+        const VC_ICE = { iceServers: [
+            { urls:'stun:stun.l.google.com:19302' },
+            { urls:'stun:stun1.l.google.com:19302' },
+            { urls:'turn:openrelay.metered.ca:80', username:'openrelayproject', credential:'openrelayproject' },
+            { urls:'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject' },
+            { urls:'turn:openrelay.metered.ca:443?transport=tcp', username:'openrelayproject', credential:'openrelayproject' }
+        ], iceCandidatePoolSize: 4 };
         function _vcUI(){
             let ov = document.getElementById('vc-overlay');
             if(!ov){ ov = document.createElement('div'); ov.id='vc-overlay'; document.body.appendChild(ov); }
@@ -5676,7 +5698,8 @@
               + '<span>📹 화상 통화</span>'
               + '<button onclick="stopVideoChat()" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 16px;font-weight:700;cursor:pointer;">통화 종료</button></div>'
               + '<div style="flex:1;position:relative;background:#000;overflow:hidden;">'
-              + '<video id="vc-remote" autoplay playsinline style="width:100%;height:100%;object-fit:contain;background:#000;"></video>'
+              + '<div id="vc-connecting" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:14px;z-index:1;text-align:center;padding:20px;">상대 영상 연결 중…</div>'
+              + '<video id="vc-remote" autoplay playsinline style="width:100%;height:100%;object-fit:contain;background:#000;position:relative;z-index:2;"></video>'
               + '<video id="vc-local" autoplay playsinline muted style="position:absolute;right:12px;bottom:12px;width:160px;max-width:34vw;border-radius:10px;border:2px solid #fff;background:#111;object-fit:cover;box-shadow:0 4px 16px rgba(0,0,0,.4);"></video>'
               + '</div>';
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}
@@ -5684,7 +5707,16 @@
         function _vcNewPc(peer, room){
             const pc = new RTCPeerConnection(VC_ICE);
             pc.onicecandidate = function(e){ if(e.candidate && socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtc', sub:'ice', cand:e.candidate }); };
-            pc.ontrack = function(e){ const rv = document.getElementById('vc-remote'); if(rv && e.streams && e.streams[0]) rv.srcObject = e.streams[0]; };
+            pc.ontrack = function(e){
+                const rv = document.getElementById('vc-remote');
+                if(rv && e.streams && e.streams[0]){ rv.srcObject = e.streams[0]; const ph=document.getElementById('vc-connecting'); if(ph) ph.style.display='none'; try{ const p=rv.play&&rv.play(); if(p&&p.catch) p.catch(function(){}); }catch(_){} }
+            };
+            pc.oniceconnectionstatechange = function(){
+                const s = pc.iceConnectionState;
+                const ph = document.getElementById('vc-connecting');
+                if((s==='connected'||s==='completed') && ph) ph.style.display='none';
+                if(s==='failed'){ if(ph) ph.textContent='연결 실패 — 네트워크/방화벽 문제일 수 있어요.'; }
+            };
             return pc;
         }
         // 📷 화상통화 권한 안내 — earth는 웹/PWA라 Windows '앱 카메라 설정'엔 안 나옴 → 브라우저 권한으로 안내
@@ -5901,7 +5933,16 @@
             const isAndroid = /Android/i.test(ua), isIOS = /iPhone|iPad|iPod/i.test(ua) || (/(Macintosh)/i.test(ua) && 'ontouchend' in document);
             if(isAndroid){ _installAndroidApk(); return; }
             if(isIOS){
-                alert('iPhone/iPad에서 Earth 앱 설치:\n\n1) 하단(또는 상단) 공유 버튼(□↑) 탭\n2) "홈 화면에 추가" 선택\n3) 추가 → 홈 화면의 Earth 아이콘으로 실행\n\n(카메라·화면 기능은 홈 화면 앱에서 정상 동작합니다)');
+                const standalone = window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+                if(standalone){ showToast('이미 홈 화면 앱으로 실행 중입니다.'); return; }
+                // ⚠️ iOS는 Safari에서만 '홈 화면에 추가' 가능. 크롬/인앱 브라우저면 공유버튼에 그 메뉴가 없음.
+                const notSafari = /CriOS|FxiOS|EdgiOS|OPiOS|Whale|NAVER|KAKAOTALK|Instagram|Line|FBAN|FBAV|DaumApps/i.test(ua);
+                if(notSafari){
+                    try { if(navigator.clipboard) navigator.clipboard.writeText('https://earth.rayaox.com'); } catch(_){}
+                    alert('아이폰은 Safari 브라우저에서만 홈 화면에 추가할 수 있어요.\n\n지금 브라우저는 Safari가 아니라 "홈 화면에 추가" 메뉴가 없습니다.\n\n1) Safari 앱을 여세요.\n2) 주소창에  earth.rayaox.com  입력 (주소는 복사해 두었어요)\n3) 하단 가운데 공유 버튼(네모+위화살표 ⬆️) → "홈 화면에 추가"');
+                    return;
+                }
+                alert('iPhone/iPad(Safari)에서 Earth 앱 설치:\n\n1) 화면 하단 가운데 공유 버튼(네모+위화살표 ⬆️)을 탭\n   ※ 안 보이면 화면을 살짝 아래로 스크롤하면 하단 툴바가 나타납니다.\n2) 목록을 내려 "홈 화면에 추가" 선택\n3) 오른쪽 위 "추가" → 홈 화면의 Earth 아이콘으로 실행\n\n(카메라·알림은 홈 화면 앱에서 정상 동작합니다)');
                 return;
             }
             window.downloadDesktopApp();
