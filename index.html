@@ -5886,6 +5886,7 @@
         window.requestRemoteControl = function(){
             if(!activeChatFriend || !currentChatRoomId) return showToast("먼저 대화방을 여세요.");
             if(window._rc.active) return showToast("이미 원격제어가 진행 중입니다.");
+            if(window.__peerCanHost !== true) return showToast("상대가 화면 공유가 가능한 PC 환경일 때만 원격제어할 수 있습니다.\n(모바일은 화면 공유(피제어)를 지원하지 않습니다)");
             const pic = document.getElementById('my-profile-pic').src;
             // 제어측 후보로 상대/방 저장. 상대가 수락(host_ready)하면 실제 시작.
             window._rc.peer = activeChatFriend; window._rc.room = currentChatRoomId; window._rc.role = 'controller';
@@ -6187,11 +6188,29 @@
             window._rc = { active:false, role:null, peer:null, room:null };
         };
 
+        // 🖥 내 기기가 '피제어(내 화면 공유)' 가능한가 = 브라우저 화면공유(getDisplayMedia) 지원(=PC 브라우저). 모바일=false.
+        window._canHost = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+        // 원격제어 버튼 활성/비활성 — 상대가 화면공유 가능한 PC일 때만 활성(모바일→PC/PC→PC 가능, PC→모바일/모바일→모바일 불가)
+        window._updateRemoteBtn = function(){
+            const b = document.getElementById('remote-ctrl-btn'); if(!b) return;
+            const ok = window.__peerCanHost === true;
+            b.disabled = !ok; b.style.opacity = ok ? '1' : '0.4'; b.style.cursor = ok ? 'pointer' : 'not-allowed';
+            b.title = ok ? '원격제어 요청' : '상대가 화면 공유 가능한 PC일 때만 원격제어할 수 있어요';
+        };
+        window._queryPeerCapability = function(peer){
+            window.__peerCanHost = undefined; if(window._updateRemoteBtn) window._updateRemoteBtn();   // 응답 전엔 비활성
+            if(peer && socket && socket.connected) socket.emit('rc_signal', { to:peer, kind:'cap', act:'query' });
+        };
         // Earth 릴레이로 들어온 원격제어 신호 처리
         window._rcOnSignal = function(d){
             if(!d || !d.kind) return;
             if(d.kind === 'rtc'){ if(window._vcOnSignal) window._vcOnSignal(d); return; }     // 화상 통화(WebRTC) 시그널
             if(d.kind === 'rtcsc'){ if(window._rcpOnSignal) window._rcpOnSignal(d); return; } // 원격제어 화면 송출(WebRTC) 시그널
+            if(d.kind === 'cap'){ // 🖥 원격제어 가능여부(상대가 화면공유 가능한 PC인지) 교환
+                if(d.act === 'query'){ if(socket && socket.connected && d.from) socket.emit('rc_signal', { to:d.from, kind:'cap', act:'reply', canHost: !!window._canHost }); }
+                else if(d.act === 'reply'){ window.__peerCanHost = !!d.canHost; if(window._updateRemoteBtn) window._updateRemoteBtn(); }
+                return;
+            }
             if(d.kind === 'ctrl'){
                 if(d.act === 'host_ready'){
                     // 내가 제어측(A) — 상대가 수락함. 실제 화면 뷰어는 rtcsc offer 수신 시 열림(경합 방지).
@@ -8599,6 +8618,8 @@ pdfjsScript,
         function openMessengerChat(friendName, roomIdOverride) {
             const drawer = document.getElementById('messenger-drawer'); if(!drawer.classList.contains('open')) drawer.classList.add('open');
             activeChatFriend = friendName;
+            // 🖥 상대가 화면공유 가능한 PC인지 조회 → 원격제어 버튼 활성/비활성(응답 전엔 비활성)
+            try { if(window._queryPeerCapability) window._queryPeerCapability(friendName); } catch(_){}
             // 🏪 [Task1] 주문 대화방이면 헤더에 상점명(+상품명) 표시. DM은 상대방 이름 그대로.
             let __chatTitle = `${friendName === '이재준' ? '🤖 고객센터' : friendName}`;
             try {
