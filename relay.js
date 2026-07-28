@@ -975,6 +975,17 @@ app.get('/api/friends/:userName', (req, res) => {
     db.all(`SELECT u.name, u.profilePic FROM friends f JOIN users u ON f.friendName = u.name WHERE f.userName = ?`, [req.params.userName], (err, rows) => res.json(rows || []));
 });
 
+// 🧑‍🤝‍🧑 친구 삭제(양방향). 대화(chats)는 유지 → 재등록 시 이어짐.
+app.post('/api/friend/remove', (req, res) => {
+    const userName = requireUser(req, res); if (!userName) return;   // 🔐 신원=토큰
+    const { friendName } = req.body;
+    if (!friendName) return res.status(400).json({ error: '삭제 대상이 없습니다.' });
+    db.run(`DELETE FROM friends WHERE (userName=? AND friendName=?) OR (userName=? AND friendName=?)`, [userName, friendName, friendName, userName], function(e) {
+        if (e) return res.status(500).json({ error: e.message });
+        res.json({ success: true });
+    });
+});
+
 // 🔔 방별 정확한 미읽음 개수 — 클라이언트가 보유한 방별 읽음 id(reads)를 받아, 그 이후 상대/시스템 외 메시지 수를 반환
 app.post('/api/chat/unread-counts', (req, res) => {
     const me = requireUser(req, res); if (!me) return;

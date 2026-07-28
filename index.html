@@ -2845,15 +2845,14 @@
                         if(roomOpen && activeChatFriend && typeof openMessengerChat === 'function') openMessengerChat(activeChatFriend, currentChatRoomId);
                     } catch(_){}
                     try { if(window.__flushPendingChatAttach) window.__flushPendingChatAttach(); } catch(_){}
-                    // 재연결 안내는 '실제로 오래 끊겼을 때'(표시가 떠 있던 경우)만 — 짧은 깜빡임엔 스팸 안 함
-                    if(document.getElementById('chat-conn-indicator')){ try { showToast('네트워크에 다시 연결되었습니다.'); } catch(_){} }
+                    // 재연결 성공 토스트는 표시하지 않음(앱 연결마다 뜨는 불편 제거) — 끊김 표시만 조용히 제거
                 }
                 window.__socketWasConnected = true;
                 if(window.__connIndTimer){ clearTimeout(window.__connIndTimer); window.__connIndTimer = null; }
                 const ind = document.getElementById('chat-conn-indicator'); if(ind) ind.remove();
             });
             socket.on('disconnect', () => {
-                // 2.5초 이상 끊겼을 때만 표시(모바일에서 앱을 잠깐 벗어나면 소켓이 끊겼다 붙는 건 정상 → 깜빡임 방지)
+                // 6초 이상 끊겼을 때만 표시(앱 전환/짧은 재연결엔 아무 표시 안 함 → 불편 제거)
                 if(window.__connIndTimer) clearTimeout(window.__connIndTimer);
                 window.__connIndTimer = setTimeout(function(){
                     if(socket && socket.connected) return;
@@ -2863,7 +2862,7 @@
                     ind.textContent = '⚠ 연결 끊김 — 재연결 시도 중…';
                     ind.style.cssText = 'position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:#dc2626; color:#fff; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:700; z-index:99998; box-shadow:0 4px 12px rgba(0,0,0,.25);';
                     document.body.appendChild(ind);
-                }, 2500);
+                }, 6000);
             });
             // 🚀 실시간 친구 추가 알림 (별도 새로고침 없이 친구목록/대화방 즉시 갱신)
             socket.on('friend_added', handleFriendAdded);
@@ -5688,12 +5687,26 @@
             pc.ontrack = function(e){ const rv = document.getElementById('vc-remote'); if(rv && e.streams && e.streams[0]) rv.srcObject = e.streams[0]; };
             return pc;
         }
+        // 📷 화상통화 권한 안내 — earth는 웹/PWA라 Windows '앱 카메라 설정'엔 안 나옴 → 브라우저 권한으로 안내
+        window._showCamPermHelp = function(e){
+            var noDev = e && (e.name==='NotFoundError' || e.name==='DevicesNotFoundError' || e.name==='OverconstrainedError');
+            var body = noDev
+                ? '<p style="margin:0;">카메라/마이크 장치를 찾을 수 없습니다. 기기 연결을 확인한 뒤 다시 시도해 주세요.</p>'
+                : '<p style="margin:0 0 10px;">화상 통화를 하려면 <b>브라우저 카메라·마이크 권한</b>이 필요합니다.</p>'
+                  + '<ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.9;color:#334155;">'
+                  + '<li>주소창 오른쪽의 <b>🎥 카메라 아이콘</b>(또는 자물쇠 🔒)을 클릭</li>'
+                  + '<li><b>카메라·마이크: 허용</b> 선택</li>'
+                  + '<li>페이지 <b>새로고침(F5)</b> 후 다시 통화</li></ol>'
+                  + '<p style="font-size:12px;color:#94a3b8;margin-top:10px;">※ earth는 웹앱이라 Windows "앱 카메라 설정" 목록엔 나타나지 않습니다. 브라우저(Chrome/Edge)의 카메라 권한만 허용하면 됩니다.</p>';
+            try { overlay('cam-perm-help', '<div style="padding:20px 22px;"><h3 style="margin:0 0 12px;font-size:17px;font-weight:900;color:var(--primary);">📷 카메라 권한 안내</h3>'+body+'<div style="text-align:right;margin-top:14px;"><button class="btn" type="button" style="padding:8px 18px;background:var(--gradient-btn);color:#fff;" onclick="rxCloseOverlay(\'cam-perm-help\')">확인</button></div></div>', 460); }
+            catch(_){ showToast('카메라·마이크 권한이 필요합니다. 브라우저 주소창의 카메라 아이콘에서 허용해 주세요.'); }
+        };
         window.startVideoChat = async function(){
             if(!activeChatFriend || !currentChatRoomId) return showToast("먼저 대화방을 여세요.");
             if(window._vc.active) return showToast("이미 통화 중입니다.");
             const peer = activeChatFriend, room = currentChatRoomId;
             let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
-            catch(e){ try { if(window.rayApp && window.rayApp.openMediaSettings){ window.rayApp.openMediaSettings(); } } catch(_){}; return showToast("카메라/마이크 권한이 필요합니다. Windows 설정에서 허용 후 다시 시도해 주세요."); }
+            catch(e){ window._showCamPermHelp(e); return; }
             window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:true };
             _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
             const pc = _vcNewPc(peer, room); window._vc.pc = pc;
@@ -5714,7 +5727,7 @@
                 if(d.sub==='offer'){
                     if(window._vc.active && window._vc.pc) return;   // 이미 통화 중이면 무시(글레어 방지)
                     let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
-                    catch(e){ try { if(window.rayApp && window.rayApp.openMediaSettings){ window.rayApp.openMediaSettings(); } } catch(_){}; showToast("카메라/마이크 권한이 필요합니다. 설정에서 허용 후 다시 시도해 주세요."); return; }
+                    catch(e){ window._showCamPermHelp(e); return; }
                     window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:false };
                     _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
                     const pc = _vcNewPc(peer, room); window._vc.pc = pc;
@@ -8665,9 +8678,21 @@ pdfjsScript,
             if(!currentUser) return; const res = await fetch(`${API_URL}/api/friends/${currentUser.name}`); const friends = await res.json() || [];
             const container = document.getElementById('friend-list-container'); container.innerHTML = '';
             if(currentUser.name !== '이재준') { container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('이재준')"><div class="profile-pic" style="background:#d6006e; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px;">🤖</div><div style="flex:1;"><b>고객센터</b><div style="font-size:11px; color:var(--text-sub);">사용법·불편사항 자동응답</div></div></div>`; }
-            friends.forEach(f => { const pic = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`; container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${f.name}')">${pic}<div style="flex:1;"><b>${f.name}</b></div></div>`; });
+            friends.forEach(f => { const pic = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`; const safe=(f.name||'').replace(/'/g,"\\'"); container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${safe}')">${pic}<div style="flex:1;"><b>${f.name}</b></div><button onclick="event.stopPropagation(); removeFriend('${safe}')" title="친구 삭제" aria-label="친구 삭제" style="border:none;background:none;color:#cbd5e1;font-size:16px;cursor:pointer;padding:4px 8px;line-height:1;">✕</button></div>`; });
             updateTabBadge();
         }
+        // 🧑‍🤝‍🧑 친구 삭제(재등록 가능) — 양방향 삭제. 대화 내용은 서버에 유지.
+        window.removeFriend = async function(name){
+            if(!name) return;
+            if(!confirm(name + ' 님을 친구 목록에서 삭제할까요?\n(대화 내용은 유지되며, 언제든 다시 추가할 수 있습니다)')) return;
+            try {
+                const r = await fetch(`${API_URL}/api/friend/remove`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: name }) });
+                const d = await r.json().catch(()=>({}));
+                if(!r.ok) return showToast(d.error || '친구 삭제 실패');
+                showToast(name + ' 님을 친구에서 삭제했습니다.');
+                loadFriendList(); loadChatList();
+            } catch(e){ showToast('친구 삭제 실패: ' + (e.message||e)); }
+        };
 
         // 🚀 [v6] 대화방 나가기 — 주문 대화방은 양측 동시 종료
         window.leaveCurrentChatRoom = async function() {
