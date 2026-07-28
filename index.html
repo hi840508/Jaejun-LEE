@@ -2836,18 +2836,25 @@
                         if(roomOpen && activeChatFriend && typeof openMessengerChat === 'function') openMessengerChat(activeChatFriend, currentChatRoomId);
                     } catch(_){}
                     try { if(window.__flushPendingChatAttach) window.__flushPendingChatAttach(); } catch(_){}
-                    try { showToast('네트워크에 다시 연결되었습니다.'); } catch(_){}
+                    // 재연결 안내는 '실제로 오래 끊겼을 때'(표시가 떠 있던 경우)만 — 짧은 깜빡임엔 스팸 안 함
+                    if(document.getElementById('chat-conn-indicator')){ try { showToast('네트워크에 다시 연결되었습니다.'); } catch(_){} }
                 }
                 window.__socketWasConnected = true;
+                if(window.__connIndTimer){ clearTimeout(window.__connIndTimer); window.__connIndTimer = null; }
                 const ind = document.getElementById('chat-conn-indicator'); if(ind) ind.remove();
             });
             socket.on('disconnect', () => {
-                if(document.getElementById('chat-conn-indicator')) return;
-                const ind = document.createElement('div');
-                ind.id = 'chat-conn-indicator';
-                ind.textContent = '⚠ 연결 끊김 — 재연결 시도 중…';
-                ind.style.cssText = 'position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:#dc2626; color:#fff; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:700; z-index:99998; box-shadow:0 4px 12px rgba(0,0,0,.25);';
-                document.body.appendChild(ind);
+                // 2.5초 이상 끊겼을 때만 표시(모바일에서 앱을 잠깐 벗어나면 소켓이 끊겼다 붙는 건 정상 → 깜빡임 방지)
+                if(window.__connIndTimer) clearTimeout(window.__connIndTimer);
+                window.__connIndTimer = setTimeout(function(){
+                    if(socket && socket.connected) return;
+                    if(document.getElementById('chat-conn-indicator')) return;
+                    const ind = document.createElement('div');
+                    ind.id = 'chat-conn-indicator';
+                    ind.textContent = '⚠ 연결 끊김 — 재연결 시도 중…';
+                    ind.style.cssText = 'position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:#dc2626; color:#fff; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:700; z-index:99998; box-shadow:0 4px 12px rgba(0,0,0,.25);';
+                    document.body.appendChild(ind);
+                }, 2500);
             });
             // 🚀 실시간 친구 추가 알림 (별도 새로고침 없이 친구목록/대화방 즉시 갱신)
             socket.on('friend_added', handleFriendAdded);

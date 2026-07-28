@@ -209,7 +209,8 @@ function sendPushToUser(name, payload) {
     db.all(`SELECT endpoint, sub FROM push_subs WHERE userName = ?`, [name], (e, rows) => {
         (rows || []).forEach(r => {
             let sub; try { sub = JSON.parse(r.sub); } catch (_) { return; }
-            webpush.sendNotification(sub, body).catch(err => {
+            // urgency:high + TTL → 절전(Doze) 상태에서도 즉시 깨워 전달(카톡식). 미전달 시 하루까지 재시도.
+            webpush.sendNotification(sub, body, { urgency: 'high', TTL: 86400 }).catch(err => {
                 if (err && (err.statusCode === 404 || err.statusCode === 410)) db.run(`DELETE FROM push_subs WHERE endpoint = ?`, [r.endpoint]);
             });
         });
