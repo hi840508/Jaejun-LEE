@@ -2918,6 +2918,14 @@
             }
 
             async function fileExists(name){ try{ if(!(await _ensurePerm(true))) return false; const h=await _loadHandle(); const safe=String(name||'').replace(/[\\/:*?"<>|]/g,'_'); await h.getFileHandle(safe,{create:false}); return true; }catch(_){ return false; } }
+            async function getFileByName(name){ try{ if(!(await _ensurePerm(true))) return null; const h=await _loadHandle(); const safe=String(name||'').replace(/[\\/:*?"<>|]/g,'_'); const fh=await h.getFileHandle(safe,{create:false}); return await fh.getFile(); }catch(_){ return null; } }
+            // 📁 2D: 스트리밍 기록기(대용량을 메모리에 안 올리고 청크로 폴더에 바로 씀)
+            async function createWriter(name){
+                if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음');
+                const h=await _loadHandle(); const safe=String(name||'file').replace(/[\\/:*?"<>|]/g,'_');
+                const fh=await h.getFileHandle(safe,{create:true}); const w=await fh.createWritable();
+                return { write:(chunk)=>w.write(chunk), close: async()=>{ await w.close(); _scheduleSync(); return safe; }, abort: async()=>{ try{ await w.abort(); }catch(_){} } };
+            }
             async function register(){
                 try{
                     const connected = await isConnected();
@@ -2982,7 +2990,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, pick, disconnect, writeFile, fileExists, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
@@ -3030,6 +3038,127 @@
             }
         }
 
+        // ============ 📁 2D: 기기 간 파일 P2P 자기동기화 (WebRTC DataChannel, 신호=rc_signal kind:'fsync') ============
+        //  같은 계정의 다른 기기가 온라인이면, 반투명 썸네일 더블클릭/롱프레스 → 그 기기에서 이 기기로 파일 직접 전송(클라우드 미경유).
+        window.RCSync = (function(){
+            const me = ()=> (currentUser && currentUser.name) || '';
+            const myDev = ()=> window.RCFolder.deviceId();
+            let cur = null;   // 진행 중 전송 { role:'recv'|'send', pc, ch, peerDev, hash, fname, gotHave, _timeout, _pending }
+            function _send(sub, extra, toDevice){ try{ if(!socket || !socket.connected) return; socket.emit('rc_signal', Object.assign({ to: me(), kind:'fsync', sub:sub, fromDevice: myDev(), toDevice: toDevice||'' }, extra||{})); }catch(_){} }
+            function _pc(peerDev){
+                const pc = new RTCPeerConnection(VC_ICE);
+                pc.onicecandidate = (e)=>{ if(e.candidate) _send('ice', { cand:e.candidate }, peerDev); };
+                pc.onconnectionstatechange = ()=>{ if(cur && /failed|closed/.test(pc.connectionState) && cur.role==='recv') _fail('연결이 끊겼습니다.'); };
+                return pc;
+            }
+            async function _flushIce(){ if(cur && cur.pc && cur._pending){ for(const c of cur._pending){ try{ await cur.pc.addIceCandidate(c); }catch(_){} } cur._pending=[]; } }
+
+            // ── 진행률 UI ──
+            function _el(){ let e=document.getElementById('rc-sync-prog'); if(!e){ e=document.createElement('div'); e.id='rc-sync-prog'; e.style.cssText='position:fixed;right:18px;bottom:18px;z-index:99991;background:#0f172a;color:#fff;border-radius:12px;padding:12px 14px;min-width:250px;max-width:80vw;box-shadow:0 10px 30px rgba(0,0,0,.35);font-size:13px;'; document.body.appendChild(e); } return e; }
+            function _progress(label,pct){ const e=_el(); e.innerHTML='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span>🔄</span><b style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(label||'동기화')+'</b><span id="rc-sp-pct">'+(pct||0)+'%</span></div><div style="height:8px;background:#334155;border-radius:6px;overflow:hidden;"><div id="rc-sp-bar" style="height:100%;width:'+(pct||0)+'%;background:linear-gradient(90deg,#3b82f6,#22d3ee);transition:width .2s;"></div></div>'; }
+            function _set(pct){ const b=document.getElementById('rc-sp-bar'), p=document.getElementById('rc-sp-pct'); if(b) b.style.width=pct+'%'; if(p) p.textContent=pct+'%'; }
+            function _done(msg){ const e=_el(); e.innerHTML='<div style="display:flex;align-items:center;gap:8px;"><span>✅</span><b>'+(msg||'동기화 완료')+'</b></div>'; setTimeout(()=>{ try{ e.remove(); }catch(_){} }, 3500); }
+            function _fail(msg){ try{ showToast('⚠️ '+msg); }catch(_){} const e=document.getElementById('rc-sync-prog'); if(e){ e.innerHTML='<div style="display:flex;align-items:center;gap:8px;"><span>⚠️</span><b>'+msg+'</b></div>'; setTimeout(()=>{ try{ e.remove(); }catch(_){} }, 3500); } _cleanup(); }
+            function _cleanup(){ try{ if(cur && cur.pc) cur.pc.close(); }catch(_){} cur=null; }
+            function _refreshPanel(){ try{ if(window.__sfOv && document.body.contains(window.__sfOv)){ window.__sfOv.remove(); window.__sfOv=null; openSharedFolderPanel(); } }catch(_){} }
+
+            // ── 수신 채널 배선(요청자 측) ──
+            function _wireRecv(ch){
+                ch.binaryType='arraybuffer';
+                let writer=null, total=0, recv=0, chain=Promise.resolve();
+                ch.onmessage=(e)=>{
+                    if(typeof e.data==='string'){
+                        let m; try{ m=JSON.parse(e.data); }catch(_){ return; }
+                        if(m.t==='hdr'){ total=m.size||0; recv=0; _progress('동기화: '+(m.name||(cur&&cur.fname)),0); chain=chain.then(async()=>{ writer=await window.RCFolder.createWriter(m.name||(cur&&cur.fname)); }); }
+                        else if(m.t==='end'){ chain=chain.then(async()=>{ try{ if(writer) await writer.close(); }catch(_){} _done('공유폴더에 동기화 완료'); try{ window.RCFolder.syncIndex(); }catch(_){} _refreshPanel(); _cleanup(); }); }
+                    } else {
+                        const buf=e.data; recv += (buf.byteLength||0);
+                        if(total) _set(Math.min(100, Math.round(recv/total*100)));
+                        chain=chain.then(()=> writer ? writer.write(new Uint8Array(buf)) : null );
+                    }
+                };
+            }
+            // ── 파일 전송(소스 측) ──
+            async function _sendFile(ch, file){
+                try{
+                    const CH=16*1024; ch.bufferedAmountLowThreshold=1*1024*1024;
+                    ch.send(JSON.stringify({ t:'hdr', name:(cur&&cur.fname), size:file.size, mime:file.type||'' }));
+                    let off=0;
+                    while(off<file.size){
+                        if(!cur || ch.readyState!=='open') return;
+                        if(ch.bufferedAmount>8*1024*1024){ await new Promise(r=>{ ch.onbufferedamountlow=()=>{ ch.onbufferedamountlow=null; r(); }; }); }
+                        const buf=await file.slice(off, off+CH).arrayBuffer();
+                        ch.send(buf); off+=buf.byteLength;
+                        if(file.size) _set(Math.min(100, Math.round(off/file.size*100)));
+                    }
+                    ch.send(JSON.stringify({ t:'end' }));
+                    _done('전송 완료');
+                    setTimeout(_cleanup, 1500);
+                }catch(e){ _fail('전송 실패'); }
+            }
+
+            // ── 요청자: 동기화 시작 ──
+            async function request(hash, fname){
+                if(cur){ try{ showToast('다른 동기화가 진행 중입니다.'); }catch(_){} return; }
+                if(!window.RCFolder || !window.RCFolder.supported){ try{ showToast('이 기기는 폴더 동기화를 지원하지 않습니다(모바일/Safari).'); }catch(_){} return; }
+                const ok = await window.RCFolder.requireFolder(); if(!ok || !(await window.RCFolder.isConnected())) return;
+                cur = { role:'recv', hash:hash, fname:fname, peerDev:null, gotHave:false, _pending:[] };
+                _progress('동기화 요청 중… ('+fname+')', 0);
+                _send('req', { hash:hash, fname:fname }, '');   // 브로드캐스트(내 모든 기기)
+                cur._timeout = setTimeout(()=>{ if(cur && cur.role==='recv' && !cur.gotHave) _fail('소스 기기가 오프라인입니다. 켜져 있을 때 다시 시도하세요.'); }, 6000);
+            }
+
+            async function onSignal(d){
+                try{
+                    if(!d || d.kind!=='fsync') return;
+                    if(d.fromDevice===myDev()) return;              // 내가 보낸 에코 무시
+                    if(d.toDevice && d.toDevice!==myDev()) return;  // 나에게 온 게 아님
+                    const sub=d.sub;
+                    if(sub==='req'){
+                        if(cur){ _send('busy', {}, d.fromDevice); return; }
+                        const f=await window.RCFolder.getFileByName(d.fname);
+                        if(f) _send('have', { hash:d.hash, fname:d.fname }, d.fromDevice);   // 내가 가지고 있으면 응답
+                        return;
+                    }
+                    if(sub==='have'){
+                        if(!cur || cur.role!=='recv' || cur.gotHave) return;
+                        cur.gotHave=true; if(cur._timeout) clearTimeout(cur._timeout); cur.peerDev=d.fromDevice;
+                        const pc=_pc(d.fromDevice); cur.pc=pc;
+                        const ch=pc.createDataChannel('fsync'); cur.ch=ch; _wireRecv(ch);
+                        const offer=await pc.createOffer(); await pc.setLocalDescription(offer);
+                        _send('offer', { sdp:offer, hash:cur.hash, fname:cur.fname }, d.fromDevice);
+                        _progress('연결 중… ('+cur.fname+')', 0);
+                        return;
+                    }
+                    if(sub==='offer'){
+                        if(cur){ _send('busy', {}, d.fromDevice); return; }
+                        const f=await window.RCFolder.getFileByName(d.fname);
+                        if(!f) return;   // 파일이 사라짐
+                        cur={ role:'send', hash:d.hash, fname:d.fname, peerDev:d.fromDevice, _pending:[] };
+                        const pc=_pc(d.fromDevice); cur.pc=pc;
+                        pc.ondatachannel=(ev)=>{ const ch=ev.channel; ch.binaryType='arraybuffer'; cur.ch=ch; const go=()=>_sendFile(ch,f); if(ch.readyState==='open') go(); else ch.onopen=go; };
+                        await pc.setRemoteDescription(d.sdp); await _flushIce();
+                        const ans=await pc.createAnswer(); await pc.setLocalDescription(ans);
+                        _send('answer', { sdp:ans }, d.fromDevice);
+                        _progress('전송 중… ('+cur.fname+')', 0);
+                        return;
+                    }
+                    if(sub==='answer'){
+                        if(!cur || cur.role!=='recv' || !cur.pc) return;
+                        try{ await cur.pc.setRemoteDescription(d.sdp); await _flushIce(); }catch(_){}
+                        return;
+                    }
+                    if(sub==='ice'){
+                        if(cur && cur.pc && d.cand){ if(cur.pc.remoteDescription && cur.pc.remoteDescription.type){ try{ await cur.pc.addIceCandidate(d.cand); }catch(_){} } else { (cur._pending=cur._pending||[]).push(d.cand); } }
+                        return;
+                    }
+                    if(sub==='busy'){ if(cur && cur.role==='recv' && !cur.gotHave) _fail('소스 기기가 사용 중입니다.'); return; }
+                }catch(e){ _fail('동기화 오류'); }
+            }
+
+            return { request, onSignal };
+        })();
+
         // 공유폴더 설정 패널(사이드바 "공유폴더" 버튼 → 여기)
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
@@ -3060,7 +3189,7 @@
                             const others=(f.devices||[]).filter(d=>d!==myId).map(d=>fd.deviceNames[d]||'다른 기기');
                             const thumb=f.thumb?('<img src="'+f.thumb+'" style="width:100%;height:100%;object-fit:cover;">'):('<div style="font-size:26px;">'+iconFor(f.mime,f.fname)+'</div>');
                             const tip=here?'이 기기에 있음':('이 기기엔 없음 — '+(others.join(', ')||'다른 기기')+'에 있음 · 더블클릭/길게눌러 동기화');
-                            return '<div class="rc-gf" data-hash="'+esc(f.hash)+'" data-here="'+(here?1:0)+'" title="'+esc(tip)+'" style="position:relative;border:1px solid #eef2f7;border-radius:10px;overflow:hidden;aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#f8fafc;cursor:'+(here?'default':'pointer')+';opacity:'+(here?1:0.42)+';">'+
+                            return '<div class="rc-gf" data-hash="'+esc(f.hash)+'" data-fname="'+esc(f.fname)+'" data-here="'+(here?1:0)+'" title="'+esc(tip)+'" style="position:relative;border:1px solid #eef2f7;border-radius:10px;overflow:hidden;aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#f8fafc;cursor:'+(here?'default':'pointer')+';opacity:'+(here?1:0.42)+';">'+
                                 thumb+
                                 (here?'':'<span style="position:absolute;top:4px;left:4px;background:#0f172a;color:#fff;font-size:9px;padding:1px 5px;border-radius:6px;">없음</span>')+
                                 '<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.65));color:#fff;font-size:9px;padding:8px 4px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(f.fname)+'</span>'+
@@ -3088,7 +3217,8 @@
                 '<div style="margin-top:16px;font-weight:800;font-size:14px;color:#334155;">내 기기 목록</div>'+rows+gridHtml+
                 '</div>';
             document.body.appendChild(ov);
-            const close=()=>{ try{ ov.remove(); }catch(_){} };
+            window.__sfOv = ov;   // 2D 동기화 완료 시 라이브 새로고침용 핸들
+            const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; };
             ov.querySelector('#_sf-x').onclick=close;
             ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); });
             const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ close(); openSharedFolderPanel(); } };
@@ -3096,7 +3226,8 @@
             // 📁 반투명(이 기기에 없음) 항목: 더블클릭(PC)/길게누르기(모바일) → 동기화 (실제 P2P 전송은 2D)
             ov.querySelectorAll('.rc-gf[data-here="0"]').forEach(el=>{
                 const hash=el.getAttribute('data-hash');
-                const ask=()=>{ if(window.rcRequestSync) window.rcRequestSync(hash); };
+                const fnm=el.getAttribute('data-fname');
+                const ask=()=>{ if(window.rcRequestSync) window.rcRequestSync(hash, fnm); };
                 el.addEventListener('dblclick', ask);
                 let lp=null;
                 el.addEventListener('touchstart', ()=>{ lp=setTimeout(ask,600); }, {passive:true});
@@ -3104,10 +3235,10 @@
                 el.addEventListener('touchmove', ()=>{ if(lp) clearTimeout(lp); });
             });
         }
-        // 📁 2D 예정: 반투명 썸네일 동기화 요청(현재는 확인 팝업 + 안내). 다음 단계에서 WebRTC P2P 전송 연결.
-        window.rcRequestSync = function(hash){
-            if(confirm('이 파일을 이 기기로 동기화하시겠습니까?\n(다음 단계 2D에서 기기 간 P2P 직접 전송으로 연결됩니다)')){
-                showToast('🔄 동기화는 2D 단계에서 활성화됩니다.');
+        // 📁 2D: 반투명 썸네일 → 이 기기로 P2P 자기동기화 요청. 다른 기기가 온라인이면 직접 전송(클라우드 미경유).
+        window.rcRequestSync = function(hash, fname){
+            if(confirm('이 파일을 이 기기로 동기화하시겠습니까?\n(내 다른 기기가 온라인이면 기기 간 P2P로 직접 전송됩니다)')){
+                if(window.RCSync) window.RCSync.request(hash, fname);
             }
         };
         window.openSharedFolderPanel = openSharedFolderPanel;
@@ -6578,6 +6709,7 @@
             if(!d || !d.kind) return;
             if(d.kind === 'rtc'){ if(window._vcOnSignal) window._vcOnSignal(d); return; }     // 화상 통화(WebRTC) 시그널
             if(d.kind === 'rtcsc'){ if(window._rcpOnSignal) window._rcpOnSignal(d); return; } // 원격제어 화면 송출(WebRTC) 시그널
+            if(d.kind === 'fsync'){ if(window.RCSync) window.RCSync.onSignal(d); return; }    // 📁 2D: 기기 간 파일 P2P 자기동기화
             if(d.kind === 'cap'){ // 🖥 원격제어 가능여부(상대가 화면공유 가능한 PC인지) 교환
                 if(d.act === 'query'){ if(socket && socket.connected && d.from) socket.emit('rc_signal', { to:d.from, kind:'cap', act:'reply', canHost: !!window._canHost }); }
                 else if(d.act === 'reply'){ window.__peerCanHost = !!d.canHost; if(window._updateRemoteBtn) window._updateRemoteBtn(); }
