@@ -190,6 +190,35 @@ app.post('/api/bigfile/abort', (req, res) => {
     const { AbortMultipartUploadCommand } = require('@aws-sdk/client-s3');
     _r2.client.send(new AbortMultipartUploadCommand({ Bucket: _r2.bucket, Key: key, UploadId: uploadId })).then(() => res.json({ success: true })).catch(() => res.json({ success: true }));
 });
+// ============ 📁 2A: 기기 등록 / 목록 (다중기기 + 공유폴더 상태) ============
+app.post('/api/devices/register', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const { deviceId, name, platform, hasFolder, folderName } = req.body || {};
+    if (!deviceId) return res.status(400).json({ error: 'deviceId 필요' });
+    const now = Date.now();
+    db.run(`INSERT INTO devices (deviceId, userName, name, platform, hasFolder, folderName, lastSeen, created)
+            VALUES (?,?,?,?,?,?,?,?)
+            ON CONFLICT(deviceId) DO UPDATE SET userName=excluded.userName, name=excluded.name, platform=excluded.platform,
+              hasFolder=excluded.hasFolder, folderName=excluded.folderName, lastSeen=excluded.lastSeen`,
+        [deviceId, me, name || '내 기기', platform || '', hasFolder ? 1 : 0, folderName || '', now, now],
+        function (e) {
+            if (e) return res.status(500).json({ error: e.message });
+            db.all(`SELECT deviceId, name, platform, hasFolder, folderName, lastSeen FROM devices WHERE userName=? ORDER BY lastSeen DESC`, [me],
+                (e2, rows) => res.json({ success: true, devices: rows || [] }));
+        });
+});
+app.get('/api/devices', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.all(`SELECT deviceId, name, platform, hasFolder, folderName, lastSeen FROM devices WHERE userName=? ORDER BY lastSeen DESC`, [me],
+        (e, rows) => e ? res.status(500).json({ error: e.message }) : res.json({ devices: rows || [] }));
+});
+app.post('/api/devices/rename', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const { deviceId, name } = req.body || {};
+    if (!deviceId || !name) return res.status(400).json({ error: '값 필요' });
+    db.run(`UPDATE devices SET name=? WHERE deviceId=? AND userName=?`, [name, deviceId, me],
+        (e) => e ? res.status(500).json({ error: e.message }) : res.json({ success: true }));
+});
 app.get('/download/RAY_RemoteAgent.exe', (req, res) => {
     const f = path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe');
     if (!fs.existsSync(f)) return res.status(404).send('agent not published yet');
@@ -570,6 +599,10 @@ function initTables() {
         db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_at INTEGER`, () => {});        // ⏱ 거절 후 자동 삭제 예정 시각(epoch ms)
         db.run(`ALTER TABLE chat_rooms ADD COLUMN expire_after_id INTEGER`, () => {});  // 이 chat id 이후 새 대화 없으면 삭제
         db.run(`CREATE TABLE IF NOT EXISTS chat_hidden (user TEXT, roomId TEXT, hidden_at TEXT)`, () => {});   // 🗑 사용자가 삭제(퇴장)한 대화방(본인 목록에서 숨김)
+        // 📁 2A: 다중기기 공유폴더 — 한 계정의 여러 기기와 각 기기의 공유폴더 지정 상태를 추적
+        db.run(`CREATE TABLE IF NOT EXISTS devices (deviceId TEXT PRIMARY KEY, userName TEXT, name TEXT, platform TEXT, hasFolder INTEGER DEFAULT 0, folderName TEXT, lastSeen INTEGER, created INTEGER)`, () => {});
+        // 📁 2B(기반): 기기별 공유폴더 파일 인덱스 — 반투명 썸네일(합집합 표시)용. 해시로 중복 제거.
+        db.run(`CREATE TABLE IF NOT EXISTS device_files (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, deviceId TEXT, fname TEXT, size INTEGER, hash TEXT, thumb TEXT, mime TEXT, updated INTEGER, UNIQUE(deviceId, hash))`, () => {});
         db.run(`ALTER TABLE chats ADD COLUMN created_at TEXT`, () => {});   // ⏱ ISO 타임스탬프(고객센터 24h 자동삭제 기준)
         db.run(`ALTER TABLE users ADD COLUMN card_pw TEXT`, () => {});   // (선택) 회원가입 시 카드 비밀번호 4자리 — 실 PG 대비 저장만, 현재 미검증
 

@@ -1029,6 +1029,8 @@
                         <!-- 📦 주문 관리: 상점 개설자 전용(개설 안 하면 숨김) -->
                         <button class="yt-sb-item" id="sb-order-mgmt" style="display:none" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span><span>주문 관리</span></button>
                         <button class="yt-sb-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg></span><span>구매 목록</span></button>
+                        <!-- 📁 공유폴더: 받은 파일 자동저장 폴더 지정 + 내 기기 목록 -->
+                        <button class="yt-sb-item" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>공유폴더</span></button>
                     </div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
@@ -2752,8 +2754,24 @@
 
         // ★공유 카드 다운로드★: 부모(Earth 앱) iframe 안이면 앱에 위임 → 로컬 서버 있으면 Data탭에 반영, 없으면 단일 HTML 저장.
         //  독립 실행(부모 없음)이면 새 탭으로 통합뷰어 열기.
-        window.rcDownloadShare = function(url, name){
+        window.rcDownloadShare = async function(url, name){
+            // RAYCloud 네이티브 앱에 임베드된 경우: 앱이 로컬 저장/등록 처리
             try { if (window.parent && window.parent !== window) { window.parent.postMessage({ type:'rc_dl_share', url:url, name:name }, '*'); return; } } catch(e){}
+            // 📁 2A: 데스크톱 웹 = 공유폴더로 자동 저장(미지정 시 지정 게이트). 미지원/거부/실패 시 일반 다운로드 폴백.
+            try {
+                if (window.RCFolder && window.RCFolder.supported) {
+                    const ok = await window.RCFolder.requireFolder();
+                    if (ok && await window.RCFolder.isConnected()) {
+                        try {
+                            showToast('⬇️ 공유폴더로 저장 중…');
+                            const resp = await fetch(url); const blob = await resp.blob();
+                            const saved = await window.RCFolder.writeFile(name, blob);
+                            showToast('✅ 공유폴더에 저장됨: ' + saved);
+                            return;
+                        } catch(e){ showToast('폴더 저장 실패 — 일반 다운로드로 전환합니다'); }
+                    } else if (!ok) { return; }   // 게이트에서 '나중에' 선택 → 중단
+                }
+            } catch(_){}
             try { window.open(url, '_blank'); } catch(e){ try{ location.href = url; }catch(_){} }
         };
 
@@ -2777,8 +2795,174 @@
             setTimeout(function(){ window.__sessionExpiredHandling = false; }, 4000);
         };
 
+        // ============ 📁 2A: 공유폴더(File System Access API) + 다중기기 등록 ============
+        //  - 데이터 본체는 각 기기의 로컬 폴더에 저장(클라우드 저장비 0). R2는 임시 중계만.
+        //  - 데스크톱 Chrome/Edge = 실제 폴더 지정/자동수신. 모바일/비지원 = 클라우드 폴백.
+        window.RCFolder = (function(){
+            const DB_NAME='rc_fs', STORE='handles', KEY='shared';
+            function _idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB_NAME,1); r.onupgradeneeded=()=>{ try{ r.result.createObjectStore(STORE); }catch(_){} }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+            async function _get(k){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readonly').objectStore(STORE).get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
+            async function _put(k,v){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).put(v,k); q.onsuccess=()=>res(); q.onerror=()=>rej(q.error); }); }
+            async function _rm(k){ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).delete(k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }
+
+            const supported = (typeof window.showDirectoryPicker === 'function');
+            let _handle=null;
+
+            function deviceId(){ let id=localStorage.getItem('rc_device_id'); if(!id){ id='dev_'+Math.random().toString(36).slice(2,10)+Date.now().toString(36); localStorage.setItem('rc_device_id',id); } return id; }
+            function deviceName(){
+                const saved=localStorage.getItem('rc_device_name'); if(saved) return saved;
+                const ua=navigator.userAgent||'';
+                if(/Windows/.test(ua)) return 'Windows PC';
+                if(/Macintosh|Mac OS/.test(ua)) return 'Mac';
+                if(/Android/.test(ua)) return 'Android 폰';
+                if(/iPhone|iPad|iPod/.test(ua)) return 'iPhone/iPad';
+                if(/Linux/.test(ua)) return 'Linux PC';
+                return '내 기기';
+            }
+            function setDeviceName(n){ if(n){ localStorage.setItem('rc_device_name', String(n).slice(0,40)); } }
+
+            async function _loadHandle(){ if(_handle) return _handle; if(!supported) return null; try{ _handle=(await _get(KEY))||null; }catch(_){ _handle=null; } return _handle; }
+            async function _ensurePerm(rw){ const h=await _loadHandle(); if(!h) return false; const opts={mode: rw?'readwrite':'read'}; try{ let p=await h.queryPermission(opts); if(p==='granted') return true; p=await h.requestPermission(opts); return p==='granted'; }catch(_){ return false; } }
+            async function folderName(){ const h=await _loadHandle(); return h? h.name : ''; }
+            async function isConnected(){ if(!supported) return false; const h=await _loadHandle(); if(!h) return false; try{ return (await h.queryPermission({mode:'readwrite'}))==='granted'; }catch(_){ return false; } }
+
+            async function pick(){
+                if(!supported){ showToast('이 브라우저는 폴더 지정을 지원하지 않습니다. 데스크톱 Chrome/Edge를 사용하세요.'); return false; }
+                let h; try{ h=await window.showDirectoryPicker({ id:'rc-shared', mode:'readwrite', startIn:'documents' }); }catch(e){ return false; }
+                try{ const p=await h.requestPermission({mode:'readwrite'}); if(p!=='granted'){ showToast('폴더 쓰기 권한이 필요합니다.'); return false; } }catch(_){ return false; }
+                _handle=h; try{ await _put(KEY,h); }catch(_){}
+                await register();
+                showToast('✅ 공유폴더 연결됨: '+h.name);
+                return true;
+            }
+            async function disconnect(){ _handle=null; try{ await _rm(KEY); }catch(_){} await register(); }
+
+            async function writeFile(name, blob){
+                if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음');
+                const h=await _loadHandle();
+                const safe=String(name||'file').replace(/[\\/:*?"<>|]/g,'_');
+                const fh=await h.getFileHandle(safe, {create:true});
+                const w=await fh.createWritable();
+                await w.write(blob); await w.close();
+                return safe;
+            }
+            async function listFiles(){
+                if(!(await _ensurePerm(true))) return [];
+                const h=await _loadHandle(); const out=[];
+                try{ for await (const [nm, ent] of h.entries()){ if(ent.kind==='file'){ try{ const f=await ent.getFile(); out.push({ fname:nm, size:f.size, mime:f.type||'', updated:f.lastModified }); }catch(_){} } } }catch(_){}
+                return out;
+            }
+
+            async function register(){
+                try{
+                    const connected = await isConnected();
+                    const body={ deviceId:deviceId(), name:deviceName(), platform:(navigator.platform||''), hasFolder:connected?1:0, folderName: connected? await folderName() : '' };
+                    const r=await fetch(API_URL+'/api/devices/register',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+                    return await r.json().catch(()=>({}));
+                }catch(_){ return {}; }
+            }
+            async function list(){ try{ const r=await fetch(API_URL+'/api/devices'); const j=await r.json(); return (j&&j.devices)||[]; }catch(_){ return []; } }
+
+            // 수신/다운로드 게이트: 폴더 미지정이면 지정 유도. 지원 안 하면 true(클라우드 폴백 허용).
+            async function requireFolder(){
+                if(!supported) return true;
+                if(await isConnected()) return true;
+                return await new Promise((resolve)=>{ _gate(resolve); });
+            }
+            function _overlay(html){
+                const ov=document.createElement('div');
+                ov.style.cssText='position:fixed;inset:0;z-index:99997;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+                ov.innerHTML='<div style="background:#fff;color:#0f172a;max-width:420px;width:100%;border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);">'+html+'</div>';
+                document.body.appendChild(ov); return ov;
+            }
+            function _gate(resolve){
+                const ov=_overlay(
+                    '<div style="font-size:34px;text-align:center;margin-bottom:6px;">📁</div>'+
+                    '<div style="font-weight:800;font-size:17px;text-align:center;margin-bottom:8px;">공유폴더를 먼저 지정하세요</div>'+
+                    '<div style="font-size:13px;line-height:1.6;color:#475569;text-align:center;margin-bottom:16px;">전송받은 파일을 저장할 <b>내 로컬 폴더</b>를 한 번만 지정하면, 이후 받은 파일이 이 폴더에 자동으로 저장·등록됩니다. (데이터는 내 디스크에 보관 — 클라우드 저장비 0)</div>'+
+                    '<div style="display:flex;gap:8px;">'+
+                    '<button id="_gate-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">나중에</button>'+
+                    '<button id="_gate-pick" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">📂 공유폴더 지정</button>'+
+                    '</div>'
+                );
+                const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); };
+                ov.querySelector('#_gate-cancel').onclick=()=>done(false);
+                ov.querySelector('#_gate-pick').onclick=async()=>{ const ok=await pick(); if(ok) done(true); };
+                ov.addEventListener('click',(e)=>{ if(e.target===ov) done(false); });
+            }
+
+            // 로그인 후: 핸들 복원 + 기기 등록 + (데스크톱 미연결 시) 1회 배너
+            async function onLogin(){
+                try{
+                    await _loadHandle();
+                    await register();
+                    if(supported && !(await isConnected()) && !sessionStorage.getItem('rc_folder_banner')){
+                        sessionStorage.setItem('rc_folder_banner','1');
+                        setTimeout(()=>{ try{ _banner(); }catch(_){} }, 2500);
+                    }
+                }catch(_){}
+            }
+            function _banner(){
+                if(document.getElementById('rc-folder-banner')) return;
+                const b=document.createElement('div');
+                b.id='rc-folder-banner';
+                b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:99990;background:#0f172a;color:#fff;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:92vw;';
+                b.innerHTML='<span style="font-size:20px;">📁</span><span style="font-size:13px;line-height:1.4;">받은 파일을 자동 저장할 <b>공유폴더</b>를 연결하세요.</span>'+
+                    '<button id="rc-bn-pick" style="padding:7px 12px;border:none;background:#2563eb;color:#fff;border-radius:8px;font-weight:800;cursor:pointer;white-space:nowrap;">연결</button>'+
+                    '<button id="rc-bn-x" style="padding:7px 10px;border:none;background:transparent;color:#94a3b8;border-radius:8px;cursor:pointer;">✕</button>';
+                document.body.appendChild(b);
+                b.querySelector('#rc-bn-pick').onclick=async()=>{ await pick(); b.remove(); };
+                b.querySelector('#rc-bn-x').onclick=()=>b.remove();
+                setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
+            }
+
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, pick, disconnect, writeFile, listFiles, register, list, requireFolder, onLogin };
+        })();
+
+        // 공유폴더 설정 패널(사이드바 "공유폴더" 버튼 → 여기)
+        async function openSharedFolderPanel(){
+            const R=window.RCFolder;
+            const connected = await R.isConnected();
+            const fname = connected ? await R.folderName() : '';
+            const devices = await R.list();
+            const myId = R.deviceId();
+            const fmtSeen=(t)=>{ if(!t) return ''; const d=Math.floor((Date.now()-t)/60000); if(d<1) return '방금'; if(d<60) return d+'분 전'; if(d<1440) return Math.floor(d/60)+'시간 전'; return Math.floor(d/1440)+'일 전'; };
+            const rows = devices.map(d=>{
+                const me = d.deviceId===myId;
+                return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #f1f5f9;">'+
+                    '<span style="font-size:20px;">'+(/PC|Mac|Linux/.test(d.platform||d.name)?'🖥️':'📱')+'</span>'+
+                    '<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:14px;">'+(d.name||'기기')+(me?' <span style="color:#2563eb;font-size:11px;">(이 기기)</span>':'')+'</div>'+
+                    '<div style="font-size:12px;color:#64748b;">'+(d.hasFolder?('📁 '+(d.folderName||'연결됨')):'⚠️ 공유폴더 미지정')+' · '+fmtSeen(d.lastSeen)+'</div></div></div>';
+            }).join('') || '<div style="padding:12px 0;color:#94a3b8;font-size:13px;">등록된 기기가 없습니다.</div>';
+
+            const notSupported = !R.supported;
+            const ov=document.createElement('div');
+            ov.style.cssText='position:fixed;inset:0;z-index:99996;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;max-width:460px;width:100%;border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:86vh;overflow:auto;">'+
+                '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-weight:800;font-size:18px;">📁 공유폴더 · 내 기기</div><button id="_sf-x" style="border:none;background:transparent;font-size:20px;color:#94a3b8;cursor:pointer;">✕</button></div>'+
+                '<div style="font-size:12.5px;color:#64748b;line-height:1.6;margin-bottom:14px;">받은 파일이 자동 저장되는 <b>이 기기의 로컬 폴더</b>입니다. 데이터는 내 디스크에 보관되고, 클라우드는 잠깐 거쳐가는 통로로만 쓰여 저장비가 들지 않습니다.</div>'+
+                (notSupported
+                    ? '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:12px;font-size:13px;color:#92400e;line-height:1.6;">이 브라우저/기기는 로컬 폴더 지정을 지원하지 않습니다(모바일·Safari 등). 이 기기에서는 받은 파일을 <b>클라우드로 수신</b>하며, PC(Chrome/Edge)에서 공유폴더를 지정하면 자동 저장됩니다.</div>'
+                    : '<div style="background:'+(connected?'#ecfdf5':'#fef2f2')+';border:1px solid '+(connected?'#a7f3d0':'#fecaca')+';border-radius:12px;padding:14px;margin-bottom:8px;">'+
+                        '<div style="font-weight:700;font-size:14px;margin-bottom:8px;">'+(connected?('✅ 연결됨: '+fname):'⚠️ 이 기기에 공유폴더가 지정되지 않았습니다')+'</div>'+
+                        '<div style="display:flex;gap:8px;">'+
+                        '<button id="_sf-pick" style="flex:1;padding:10px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">'+(connected?'📂 폴더 변경':'📂 공유폴더 지정')+'</button>'+
+                        (connected?'<button id="_sf-disc" style="padding:10px 14px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">연결 해제</button>':'')+
+                        '</div></div>')+
+                '<div style="margin-top:16px;font-weight:800;font-size:14px;color:#334155;">내 기기 목록</div>'+rows+
+                '</div>';
+            document.body.appendChild(ov);
+            const close=()=>{ try{ ov.remove(); }catch(_){} };
+            ov.querySelector('#_sf-x').onclick=close;
+            ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); });
+            const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ close(); openSharedFolderPanel(); } };
+            const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요? (폴더의 파일은 삭제되지 않습니다)')){ await R.disconnect(); close(); openSharedFolderPanel(); } };
+        }
+        window.openSharedFolderPanel = openSharedFolderPanel;
+
         function loginSuccess(data) {
             currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
+            try { if(window.RCFolder) window.RCFolder.onLogin(); } catch(_){}
             _postAuthToParent(data);   // ★Earth 일원화★ 부모 앱에 로그인 상태 통지(세션복원 포함 — 모든 로그인이 여기로 수렴)
             // 🖥 RAY 데스크톱 앱에서 실행 중이면 앱(메인)을 Earth에 연결 → 원격제어 '입력 주입' 활성화(설치형 앱 = 제어까지 가능)
             try { if(window.rayApp && window.rayApp.link){ window.rayApp.link(data.token || window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', data.name); } } catch(_){}
