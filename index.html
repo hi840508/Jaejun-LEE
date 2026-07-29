@@ -2894,16 +2894,30 @@
             }
             // 📁 2B: 이 기기 폴더 파일 인덱스 만들기(이미지 썸네일 포함, 개수/용량 제한)
             function _mimeByExt(n){ const e=(String(n).split('.').pop()||'').toLowerCase(); const m={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',bmp:'image/bmp',pdf:'application/pdf',mp4:'video/mp4',mov:'video/quicktime',stl:'model/stl',ply:'model/ply',obj:'model/obj',dcm:'application/dicom'}; return m[e]||''; }
-            async function _mkThumb(file){ const bmp=await createImageBitmap(file); const max=128; let w=bmp.width,hh=bmp.height; const sc=Math.min(1,max/Math.max(w,hh)); w=Math.max(1,Math.round(w*sc)); hh=Math.max(1,Math.round(hh*sc)); const cv=document.createElement('canvas'); cv.width=w; cv.height=hh; cv.getContext('2d').drawImage(bmp,0,0,w,hh); try{ bmp.close(); }catch(_){} return cv.toDataURL('image/jpeg',0.6); }
+            async function _mkThumb(file){ const bmp=await createImageBitmap(file); const max=160; let w=bmp.width,hh=bmp.height; const sc=Math.min(1,max/Math.max(w,hh)); w=Math.max(1,Math.round(w*sc)); hh=Math.max(1,Math.round(hh*sc)); const cv=document.createElement('canvas'); cv.width=w; cv.height=hh; cv.getContext('2d').drawImage(bmp,0,0,w,hh); try{ bmp.close(); }catch(_){} return cv.toDataURL('image/jpeg',0.62); }
+            // 영상 첫 프레임(중간 지점) 썸네일 — 채팅 카드처럼 실제 미리보기용
+            function _mkVideoThumb(file){ return new Promise((resolve)=>{
+                let done=false; const url=URL.createObjectURL(file); const v=document.createElement('video');
+                const fin=(r)=>{ if(done)return; done=true; try{ URL.revokeObjectURL(url); }catch(_){} resolve(r||''); };
+                v.muted=true; v.preload='metadata'; v.playsInline=true; v.src=url;
+                v.onloadeddata=()=>{ try{ v.currentTime=Math.min(1,(v.duration||2)/2); }catch(_){ } };
+                v.onseeked=()=>{ try{ const max=160; let w=v.videoWidth||160,h=v.videoHeight||90; const sc=Math.min(1,max/Math.max(w,h)); w=Math.max(1,Math.round(w*sc)); h=Math.max(1,Math.round(h*sc)); const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(v,0,0,w,h); fin(cv.toDataURL('image/jpeg',0.6)); }catch(e){ fin(''); } };
+                v.onerror=()=>fin('');
+                setTimeout(()=>fin(''), 6000);
+            }); }
+            const _thumbCache=new Map();   // hash → dataURL (세션 캐시: 재인덱싱마다 재디코딩 방지)
             async function buildIndex(){
                 if(!(await isConnected())) return [];
-                const h=await _loadHandle(); const files=[]; let tc=0;
+                const h=await _loadHandle(); const files=[]; let tc=0, tv=0;
                 try{ for await (const [nm, ent] of h.entries()){
                     if(ent.kind!=='file') continue;
                     let f; try{ f=await ent.getFile(); }catch(_){ continue; }
                     const mime=f.type||_mimeByExt(nm);
-                    const entry={ fname:nm, size:f.size, mime, hash:nm+'|'+f.size, thumb:'' };
-                    if(mime.indexOf('image/')===0 && f.size<15*1024*1024 && tc<60){ try{ entry.thumb=await _mkThumb(f); tc++; }catch(_){} }
+                    const key=nm+'|'+f.size;
+                    const entry={ fname:nm, size:f.size, mime, hash:key, thumb:'', mtime: f.lastModified||0 };
+                    if(_thumbCache.has(key)) entry.thumb=_thumbCache.get(key);
+                    else if(mime.indexOf('image/')===0 && f.size<15*1024*1024 && tc<80){ try{ entry.thumb=await _mkThumb(f); tc++; if(entry.thumb) _thumbCache.set(key,entry.thumb); }catch(_){} }
+                    else if(mime.indexOf('video/')===0 && f.size<800*1024*1024 && tv<40){ try{ entry.thumb=await _mkVideoThumb(f); tv++; if(entry.thumb) _thumbCache.set(key,entry.thumb); }catch(_){} }
                     files.push(entry);
                     if(files.length>=2000) break;
                 } }catch(_){}
@@ -3172,6 +3186,8 @@
         // 📁 공유폴더 = RAYCloud식 전체화면 갤러리(썸네일·다중선택·미리보기·친구/채팅 골라 보내기)
         const _sfEsc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         const _sfIcon=(mime,fn)=>{ mime=mime||''; fn=fn||''; if(mime.indexOf('image/')===0) return '🖼️'; if(mime.indexOf('video/')===0) return '🎬'; if(mime==='application/pdf') return '📄'; if(mime==='application/dicom'||/\.dcm$/i.test(fn)) return '🩻'; if(mime.indexOf('model/')===0||/\.(stl|ply|obj)$/i.test(fn)) return '🧊'; return '📎'; };
+        const _sfType=(mime,fn)=>{ mime=mime||''; fn=(fn||'').toLowerCase(); if(mime.indexOf('image/')===0||/\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(fn)) return 'image'; if(mime.indexOf('video/')===0||/\.(mp4|webm|mov|m4v|avi)$/.test(fn)) return 'video'; if(mime==='application/dicom'||/\.dcm$/.test(fn)) return 'dicom'; if(mime.indexOf('model/')===0||/\.(stl|ply|obj|gltf|glb|fbx)$/.test(fn)) return '3d'; if(mime==='application/pdf'||/\.(pdf|html?|txt|md|csv|docx?|xlsx?|pptx?|zip)$/.test(fn)) return 'doc'; return 'other'; };
+        const _sfTypeLabel={ all:'전체', image:'이미지', video:'영상', doc:'문서', '3d':'3D', dicom:'CT/DICOM', other:'기타' };
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
             const connected = await R.isConnected();
@@ -3191,9 +3207,20 @@
                 +(notSupported?'':'<button id="_sf-pick" style="'+BTN+'background:#2563eb;color:#fff;border:none;">'+(connected?'📂 폴더 변경':'📂 폴더 지정')+'</button>')
                 +'<button id="_sf-x" style="'+BTN+'font-size:16px;">✕</button>'
                 +'</div>';
+            // 🔎 검색·필터 바(파일명 검색 + 유형 칩 + 기간 칩)
+            const CHIP='padding:5px 11px;border:1px solid #e5e7eb;background:#fff;border-radius:999px;font-size:12px;cursor:pointer;color:#475569;';
+            const CHIPON='background:#2563eb;color:#fff;border-color:#2563eb;';
+            const typeChips=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(t==='all'?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
+            const periodChips=[['all','전체'],['today','오늘'],['7','7일'],['30','30일']].map(p=>'<button class="_sf-pchip" data-period="'+p[0]+'" style="'+CHIP+(p[0]==='all'?CHIPON:'')+'">'+p[1]+'</button>').join('');
+            const filterBar='<div style="flex:none;background:#fff;border-bottom:1px solid #eef2f7;padding:10px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+                +'<input id="_sf-q" placeholder="🔎 파일명 검색" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid #e5e7eb;border-radius:9px;font-size:13px;outline:none;">'
+                +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span style="font-size:12px;color:#94a3b8;">종류</span>'+typeChips+'</div>'
+                +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span style="font-size:12px;color:#94a3b8;">기간</span>'+periodChips+'</div>'
+                +'</div>';
             const toolbar='<div style="flex:none;background:#fff;border-bottom:1px solid #eef2f7;padding:8px 18px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
                 +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;"><input type="checkbox" id="_sf-all" style="width:18px;height:18px;"> 전체선택</label>'
                 +'<span id="_sf-cnt" style="font-size:12px;color:#64748b;">선택 0</span>'
+                +'<span id="_sf-vis" style="font-size:12px;color:#94a3b8;"></span>'
                 +'<div style="flex:1;"></div>'
                 +'<button class="_sf-act" data-act="preview" style="'+BTN+'">👁 미리보기</button>'
                 +'<button class="_sf-act" data-act="share" style="'+BTN+'background:#2563eb;color:#fff;border:none;">📤 공유</button>'
@@ -3201,8 +3228,8 @@
                 +'</div>';
             const tiles = files.length ? files.map(f=>{
                 const here=(f.devices||[]).indexOf(myId)>=0;
-                const thumb=f.thumb?('<img src="'+f.thumb+'" style="width:100%;height:100%;object-fit:cover;">'):('<div style="font-size:36px;">'+_sfIcon(f.mime,f.fname)+'</div>');
-                return '<div class="rc-gf" data-hash="'+_sfEsc(f.hash)+'" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-here="'+(here?1:0)+'" '
+                const thumb=f.thumb?('<img src="'+f.thumb+'" loading="lazy" style="width:100%;height:100%;object-fit:cover;">'+(_sfType(f.mime,f.fname)==='video'?'<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;">▶</span>':'')):('<div style="font-size:36px;">'+_sfIcon(f.mime,f.fname)+'</div>');
+                return '<div class="rc-gf" data-hash="'+_sfEsc(f.hash)+'" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.updated)||0)+'" data-here="'+(here?1:0)+'" '
                     +'style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;opacity:'+(here?1:0.5)+';display:flex;align-items:center;justify-content:center;">'
                     +thumb
                     +'<input type="checkbox" class="rc-gf-chk" title="선택" style="position:absolute;top:6px;left:6px;width:20px;height:20px;z-index:4;cursor:pointer;">'
@@ -3214,7 +3241,7 @@
 
             const ov=document.createElement('div'); ov.id='rc-folder-page';
             ov.style.cssText='position:fixed;inset:0;z-index:4100;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
-            ov.innerHTML=head+toolbar+grid;
+            ov.innerHTML=head+filterBar+toolbar+grid;
             document.body.appendChild(ov); window.__sfOv=ov;
 
             const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; };
@@ -3235,6 +3262,28 @@
                 if(act==='share'){ if(!names.length) return showToast('공유할 파일을 선택하세요.'); openShareRecipientPicker(names); return; }
                 if(act==='sync'){ const toSync=[]; ov.querySelectorAll('.rc-gf').forEach(el=>{ const fnm=el.getAttribute('data-fname'); if(selected.has(fnm) && el.getAttribute('data-here')==='0') toSync.push({hash:el.getAttribute('data-hash'),fnm}); }); if(!toSync.length) return showToast('이 기기에 없는(흐린) 파일을 선택하세요.'); toSync.forEach(t=>{ if(window.RCSync) window.RCSync.request(t.hash, t.fnm); }); }
             }));
+            // 🔎 검색·필터 적용
+            let fq='', ftype='all', fperiod='all';
+            const applyFilter=()=>{
+                const now=Date.now(); let cut=0;
+                if(fperiod==='today'){ const d=new Date(); d.setHours(0,0,0,0); cut=d.getTime(); }
+                else if(fperiod==='7'){ cut=now-7*86400000; } else if(fperiod==='30'){ cut=now-30*86400000; }
+                let vis=0;
+                ov.querySelectorAll('.rc-gf').forEach(el=>{
+                    const fn=(el.getAttribute('data-fname')||'').toLowerCase();
+                    const tp=el.getAttribute('data-type'); const mt=Number(el.getAttribute('data-mtime'))||0;
+                    let ok=true;
+                    if(fq && fn.indexOf(fq)<0) ok=false;
+                    if(ok && ftype!=='all' && tp!==ftype) ok=false;
+                    if(ok && cut && mt && mt<cut) ok=false;
+                    el.style.display = ok?'':'none'; if(ok) vis++;
+                });
+                const ve=ov.querySelector('#_sf-vis'); if(ve) ve.textContent='· 표시 '+vis+'/'+files.length;
+            };
+            const qi=ov.querySelector('#_sf-q'); if(qi) qi.addEventListener('input', ()=>{ fq=(qi.value||'').toLowerCase().trim(); applyFilter(); });
+            ov.querySelectorAll('._sf-tchip').forEach(c=>c.addEventListener('click', ()=>{ ftype=c.getAttribute('data-type'); ov.querySelectorAll('._sf-tchip').forEach(x=>x.style.cssText=CHIP+(x===c?CHIPON:'')); applyFilter(); }));
+            ov.querySelectorAll('._sf-pchip').forEach(c=>c.addEventListener('click', ()=>{ fperiod=c.getAttribute('data-period'); ov.querySelectorAll('._sf-pchip').forEach(x=>x.style.cssText=CHIP+(x===c?CHIPON:'')); applyFilter(); }));
+            applyFilter();
         }
         // 📤 공유 대상(친구) 선택 → 선택 파일들을 각 대상 대화방으로 전송(R2 1회 업로드 후 팬아웃)
         async function openShareRecipientPicker(fileNames){

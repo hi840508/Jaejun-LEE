@@ -232,8 +232,8 @@ app.post('/api/devices/files', (req, res) => {
         for (const f of list) {
             if (!f || !f.fname) continue;
             stmt.run([me, deviceId, String(f.fname).slice(0, 300), Number(f.size) || 0,
-                String(f.hash || f.fname).slice(0, 300), String(f.thumb || '').slice(0, 60000),
-                String(f.mime || '').slice(0, 100), now]);
+                String(f.hash || f.fname).slice(0, 300), String(f.thumb || '').slice(0, 90000),
+                String(f.mime || '').slice(0, 100), Number(f.mtime) || now]);   // updated = 파일 날짜(mtime) → 날짜 필터/정렬용
         }
         stmt.finalize((e) => {
             db.run(`UPDATE devices SET lastSeen=? WHERE deviceId=? AND userName=?`, [now, deviceId, me]);
