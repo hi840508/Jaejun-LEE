@@ -112,24 +112,84 @@ function _syncAppToR2() {
 setTimeout(_syncAppToR2, 8000);
 
 // 🗑 R2 첨부 리텐션 — 90일 지난 채팅 첨부(att_*) 자동 삭제(용량 무한증가 방지). 앱 파일(app/*)은 제외.
-function _r2RetentionSweep() {
+function _r2RetentionSweepPrefix(prefix) {
     if (!_r2) return;
     try {
         const { ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
         const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
         let token, toDel = [];
-        const run = () => _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, Prefix: 'att_', ContinuationToken: token }))
+        const rx = new RegExp('^' + prefix + '(\\d+)_');
+        const run = () => _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, Prefix: prefix, ContinuationToken: token }))
             .then(out => {
-                (out.Contents || []).forEach(o => { const m = /^att_(\d+)_/.exec(o.Key || ''); if (m && Number(m[1]) < cutoff) toDel.push({ Key: o.Key }); });
+                (out.Contents || []).forEach(o => { const m = rx.exec(o.Key || ''); if (m && Number(m[1]) < cutoff) toDel.push({ Key: o.Key }); });
                 if (out.IsTruncated) { token = out.NextContinuationToken; return run(); }
                 for (let i = 0; i < toDel.length; i += 1000) { _r2.client.send(new DeleteObjectsCommand({ Bucket: _r2.bucket, Delete: { Objects: toDel.slice(i, i + 1000) } })).catch(() => {}); }
-                if (toDel.length) console.log('🗑 R2 첨부 90일 리텐션 삭제:', toDel.length);
-            }).catch(e => console.warn('R2 리텐션 스윕:', e && e.message));
+                if (toDel.length) console.log('🗑 R2 90일 리텐션 삭제(' + prefix + '):', toDel.length);
+            }).catch(e => console.warn('R2 리텐션 스윕(' + prefix + '):', e && e.message));
         run();
     } catch (e) {}
 }
+function _r2RetentionSweep() { _r2RetentionSweepPrefix('att_'); _r2RetentionSweepPrefix('big_'); }
 setTimeout(_r2RetentionSweep, 60 * 1000);
 setInterval(_r2RetentionSweep, 24 * 60 * 60 * 1000);
+
+// ☁️ R2 CORS — 브라우저가 프리사인 URL로 직접 PUT/GET 가능하게(멀티파트 대용량 업로드용). ETag 노출 필수.
+function _r2SetCors() {
+    if (!_r2) return;
+    try {
+        const { PutBucketCorsCommand } = require('@aws-sdk/client-s3');
+        _r2.client.send(new PutBucketCorsCommand({ Bucket: _r2.bucket, CORSConfiguration: { CORSRules: [{ AllowedOrigins: ['*'], AllowedMethods: ['GET', 'PUT', 'HEAD'], AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3600 }] } }))
+            .then(() => console.log('☁️ R2 CORS 설정 완료')).catch(e => console.warn('R2 CORS 설정 실패:', e && e.message));
+    } catch (e) {}
+}
+setTimeout(_r2SetCors, 9000);
+
+// ☁️ 대용량 파일 재개가능 전송(멀티파트) — 브라우저가 R2로 직접 업로드(서버 대역폭 0). 끊겨도 이어받기.
+app.post('/api/bigfile/start', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const { filename, mime } = req.body || {};
+    let ext = path.extname(String(filename || '')).slice(0, 12).replace(/[^.\w]/g, ''); if (!ext) ext = '.bin';
+    const key = 'big_' + Date.now() + '_' + crypto.randomBytes(6).toString('hex') + ext;
+    const { CreateMultipartUploadCommand } = require('@aws-sdk/client-s3');
+    _r2.client.send(new CreateMultipartUploadCommand({ Bucket: _r2.bucket, Key: key, ContentType: mime || 'application/octet-stream' }))
+        .then(o => res.json({ success: true, key, uploadId: o.UploadId, partSize: 8 * 1024 * 1024, url: _r2.publicBase + '/' + key }))
+        .catch(e => res.status(500).json({ error: e.message }));
+});
+app.post('/api/bigfile/sign', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const { key, uploadId, partNumber } = req.body || {};
+    const { UploadPartCommand } = require('@aws-sdk/client-s3');
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+    getSignedUrl(_r2.client, new UploadPartCommand({ Bucket: _r2.bucket, Key: key, UploadId: uploadId, PartNumber: Number(partNumber) }), { expiresIn: 3600 })
+        .then(url => res.json({ success: true, url })).catch(e => res.status(500).json({ error: e.message }));
+});
+app.post('/api/bigfile/list', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const { key, uploadId } = req.body || {};
+    const { ListPartsCommand } = require('@aws-sdk/client-s3');
+    _r2.client.send(new ListPartsCommand({ Bucket: _r2.bucket, Key: key, UploadId: uploadId }))
+        .then(o => res.json({ success: true, parts: (o.Parts || []).map(p => ({ PartNumber: p.PartNumber, ETag: p.ETag, Size: p.Size })) }))
+        .catch(e => res.status(500).json({ error: e.message }));
+});
+app.post('/api/bigfile/complete', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const { key, uploadId, parts } = req.body || {};
+    const { CompleteMultipartUploadCommand } = require('@aws-sdk/client-s3');
+    const ordered = (parts || []).slice().sort((a, b) => a.PartNumber - b.PartNumber);
+    _r2.client.send(new CompleteMultipartUploadCommand({ Bucket: _r2.bucket, Key: key, UploadId: uploadId, MultipartUpload: { Parts: ordered } }))
+        .then(() => res.json({ success: true, url: _r2.publicBase + '/' + key })).catch(e => res.status(500).json({ error: e.message }));
+});
+app.post('/api/bigfile/abort', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (!_r2) return res.json({ success: true });
+    const { key, uploadId } = req.body || {};
+    const { AbortMultipartUploadCommand } = require('@aws-sdk/client-s3');
+    _r2.client.send(new AbortMultipartUploadCommand({ Bucket: _r2.bucket, Key: key, UploadId: uploadId })).then(() => res.json({ success: true })).catch(() => res.json({ success: true }));
+});
 app.get('/download/RAY_RemoteAgent.exe', (req, res) => {
     const f = path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe');
     if (!fs.existsSync(f)) return res.status(404).send('agent not published yet');

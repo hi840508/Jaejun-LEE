@@ -6617,6 +6617,69 @@ pdfjsScript,
         };
         window.uploadChatAttachment = function(file) { return window.uploadChatBlob(file, file.name, file.type || ''); };
 
+        // ☁️ 대용량 파일 재개가능 업로드 — 브라우저가 R2로 직접 멀티파트 PUT(서버 대역폭 0). 끊겨도 이어받기.
+        window.uploadBigFileToR2 = async function(file, onProgress){
+            const lsKey = 'bf_' + file.name + '_' + file.size;
+            let sess = null; try { sess = JSON.parse(localStorage.getItem(lsKey) || 'null'); } catch(_){}
+            if(!(sess && sess.key && sess.uploadId)){
+                const r = await fetch(`${API_URL}/api/bigfile/start`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filename:file.name, mime:file.type||'' }) });
+                const j = await r.json(); if(!r.ok || !j.success) throw new Error(j.error || '전송 시작 실패');
+                sess = { key:j.key, uploadId:j.uploadId, partSize:j.partSize, url:j.url };
+                try { localStorage.setItem(lsKey, JSON.stringify(sess)); } catch(_){}
+            }
+            const partSize = sess.partSize || 8*1024*1024;
+            const total = file.size, totalParts = Math.max(1, Math.ceil(total/partSize));
+            const done = {};
+            try {
+                const lr = await fetch(`${API_URL}/api/bigfile/list`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key:sess.key, uploadId:sess.uploadId }) });
+                const lj = await lr.json(); if(lr.ok && lj.success) (lj.parts||[]).forEach(p=>{ done[p.PartNumber]={ PartNumber:p.PartNumber, ETag:p.ETag }; });
+            } catch(_){}
+            const parts = []; let uploaded = 0;
+            for(let pn=1; pn<=totalParts; pn++){ if(done[pn]){ parts.push(done[pn]); uploaded += Math.min(partSize, total-(pn-1)*partSize); } }
+            if(onProgress) onProgress(total? uploaded/total : 1);
+            for(let pn=1; pn<=totalParts; pn++){
+                if(done[pn]) continue;
+                const a=(pn-1)*partSize, b=Math.min(a+partSize, total); const chunk=file.slice(a,b);
+                const sr = await fetch(`${API_URL}/api/bigfile/sign`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key:sess.key, uploadId:sess.uploadId, partNumber:pn }) });
+                const sj = await sr.json(); if(!sr.ok || !sj.url) throw new Error(sj.error || 'sign 실패');
+                let etag=null;
+                for(let att=0; att<3 && !etag; att++){
+                    try { const put = await fetch(sj.url, { method:'PUT', body:chunk }); if(!put.ok) throw new Error('PUT '+put.status); etag = put.headers.get('ETag') || put.headers.get('etag'); }
+                    catch(e){ if(att===2) throw e; await new Promise(r=>setTimeout(r,800)); }
+                }
+                if(!etag) throw new Error('ETag 없음(파트 '+pn+')');
+                parts.push({ PartNumber:pn, ETag:etag }); uploaded += (b-a);
+                if(onProgress) onProgress(total? uploaded/total : 1);
+            }
+            const cr = await fetch(`${API_URL}/api/bigfile/complete`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key:sess.key, uploadId:sess.uploadId, parts }) });
+            const cj = await cr.json(); if(!cr.ok || !cj.url) throw new Error(cj.error || '전송 완료 실패');
+            try { localStorage.removeItem(lsKey); } catch(_){}
+            return cj.url;
+        };
+        // 대용량 파일: 진행률 카드(왼→오 채움 + %) 표시하며 전송 → 완료 시 첨부 메시지로 전환
+        async function _sendBigFile(f, pic){
+            const cardId = 'bf_' + Math.random().toString(36).slice(2,9);
+            const body = document.getElementById('main-chat-body');
+            if(body){ body.insertAdjacentHTML('beforeend', '<div class="kt-msg-line me" id="'+cardId+'"><div class="kt-time"></div><div class="kt-bubble me"><div style="width:232px;">'
+                + '<div style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📄 '+(f.name.replace(/</g,'&lt;'))+'</div>'
+                + '<div style="font-size:10px;color:#eef;margin:2px 0 6px;">'+(f.size/1048576).toFixed(1)+'MB · 전송 중…</div>'
+                + '<div style="height:8px;background:rgba(255,255,255,.28);border-radius:6px;overflow:hidden;"><div class="bf-bar" style="height:100%;width:0%;background:#fff;transition:width .2s;"></div></div>'
+                + '<div class="bf-pct" style="font-size:10px;color:#fff;text-align:right;margin-top:3px;">0%</div></div></div></div>'); body.scrollTop = body.scrollHeight; }
+            const upd = (frac)=>{ const c=document.getElementById(cardId); if(!c) return; const bar=c.querySelector('.bf-bar'), pct=c.querySelector('.bf-pct'); const p=Math.max(0,Math.min(100,Math.round(frac*100))); if(bar) bar.style.width=p+'%'; if(pct) pct.textContent=p+'%'; };
+            try {
+                const url = await window.uploadBigFileToR2(f, upd);
+                const c=document.getElementById(cardId); if(c) c.remove();
+                const mime = f.type || 'application/octet-stream'; const sizeKB=(f.size/1024).toFixed(0);
+                const msg = '[FILE_ATTACH]'+f.name+'|'+sizeKB+'|'+mime+'|'+url;
+                if(socket && socket.connected) socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
+                appendMainMessage(currentUser.name, msg, pic);
+                showToast(f.name+' 전송 완료');
+            } catch(e){
+                const c=document.getElementById(cardId); if(c){ const pct=c.querySelector('.bf-pct'); if(pct){ pct.textContent='전송 실패 — 다시 보내면 이어받기'; pct.style.color='#fecaca'; } }
+                showToast(f.name+' 전송 실패: '+(e.message||e)+' (다시 보내면 이어서 전송)');
+            }
+        }
+
         // 🚀 [v9] 채팅 파일 첨부: 파일마다 로컬 디스크에 1회 업로드하고 메시지엔 URL만 담는다.
         //   → 대화방 로딩 시 원본 바이트를 매번 재다운로드하지 않음(예전 base64 인라인 방식 폐지). 원본은 클릭/미리보기 시 지연 로드 + 브라우저 캐시(1년).
         window.handleChatFileAttach = async function(files) {
@@ -6626,14 +6689,16 @@ pdfjsScript,
 
             const totalSize = arr.reduce((s, f) => s + f.size, 0);
             const totalMB = (totalSize / 1048576).toFixed(1);
-            if(totalSize > 300 * 1024 * 1024) {
-                return showToast(`전체 파일 크기가 ${totalMB}MB입니다. 300MB 이하로 보내 주세요.`);
+            if(totalSize > 2 * 1024 * 1024 * 1024) {
+                return showToast(`전체 파일 크기가 ${totalMB}MB입니다. 2GB 이하로 보내 주세요.`);
             }
-            showToast(arr.length === 1 ? `${arr[0].name} 업로드 중...` : `${arr.length}개 파일 업로드 중...`);
+            showToast(arr.length === 1 ? `${arr[0].name} 전송 중...` : `${arr.length}개 파일 전송 중...`);
 
             const pic = document.getElementById('my-profile-pic').src;
+            const BIG = 20 * 1024 * 1024;   // 20MB 초과 = R2 재개가능 멀티파트 전송(CT 등 대용량)
             let sentCount = 0, queuedCount = 0;
             for(const f of arr) {
+                if(f.size > BIG && window.uploadBigFileToR2){ await _sendBigFile(f, pic); sentCount++; continue; }
                 try {
                     const url = await window.uploadChatAttachment(f);
                     const mime = f.type || 'application/octet-stream';
