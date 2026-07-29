@@ -2917,6 +2917,7 @@
                 return out;
             }
 
+            async function fileExists(name){ try{ if(!(await _ensurePerm(true))) return false; const h=await _loadHandle(); const safe=String(name||'').replace(/[\\/:*?"<>|]/g,'_'); await h.getFileHandle(safe,{create:false}); return true; }catch(_){ return false; } }
             async function register(){
                 try{
                     const connected = await isConnected();
@@ -2981,8 +2982,53 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, pick, disconnect, writeFile, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, pick, disconnect, writeFile, fileExists, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
         })();
+
+        // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
+        window.__rcIngestQueue = [];
+        window.__rcIngesting = false;
+        window.rcAutoIngest = function(name, url, mime, size){
+            try{
+                if(!window.RCFolder || !window.RCFolder.supported) return;
+                if(!/^https?:\/\//i.test(url||'')) return;   // 원격(R2) URL만 자동수신 대상
+                const key = (name||'') + '|' + (size||0);
+                let ledger; try{ ledger = JSON.parse(localStorage.getItem('rc_saved_files')||'[]'); }catch(_){ ledger = []; }
+                if(ledger.indexOf(key) >= 0) return;                              // 이미 저장함
+                if(window.__rcIngestQueue.some(t=>t.key===key)) return;           // 큐 대기 중
+                window.__rcIngestQueue.push({ name, url, mime, size, key });
+                _rcDrainIngest();
+            }catch(_){}
+        };
+        async function _rcDrainIngest(){
+            if(window.__rcIngesting) return;
+            window.__rcIngesting = true;
+            let changed = false;
+            try{
+                const R = window.RCFolder;
+                if(!R || !(await R.isConnected())){ window.__rcIngestQueue = []; return; }
+                while(window.__rcIngestQueue.length){
+                    const t = window.__rcIngestQueue.shift();
+                    let ledger; try{ ledger = JSON.parse(localStorage.getItem('rc_saved_files')||'[]'); }catch(_){ ledger = []; }
+                    if(ledger.indexOf(t.key) >= 0) continue;
+                    try{
+                        if(await R.fileExists(t.name)){ ledger.push(t.key); }        // 이미 폴더에 있음(수동저장 등)
+                        else {
+                            showToast('📥 받은 파일 저장 중: ' + t.name);
+                            const resp = await fetch(t.url); if(!resp.ok) throw new Error('http '+resp.status);
+                            const blob = await resp.blob();
+                            await R.writeFile(t.name, blob);
+                            changed = true;
+                            showToast('✅ 공유폴더에 자동 저장됨: ' + t.name);
+                        }
+                        localStorage.setItem('rc_saved_files', JSON.stringify(ledger.slice(-1000)));
+                    }catch(e){ /* 실패(오프라인/네트워크) → 다음 접속 때 히스토리 재렌더로 재시도. 원본은 R2에 90일 보관 */ }
+                }
+            } finally {
+                window.__rcIngesting = false;
+                if(changed){ try{ window.RCFolder.syncIndex(); }catch(_){} }        // 썸네일 즉시 등록
+            }
+        }
 
         // 공유폴더 설정 패널(사이드바 "공유폴더" 버튼 → 여기)
         async function openSharedFolderPanel(){
@@ -10122,6 +10168,8 @@ pdfjsScript,
                 let _thumb = '';
                 if (dataUrl.startsWith('THUMB::')) { const rest = dataUrl.slice(7); const sp = rest.indexOf('::'); if (sp >= 0) { _thumb = rest.substring(0, sp); dataUrl = rest.substring(sp + 2); } }
                 const _isUrl = /^https?:\/\//i.test(dataUrl);
+                // 📥 2C: 받은 파일(내가 보낸 게 아니고 원격 URL)을 공유폴더에 자동 저장·즉시등록. 오프라인이었으면 재접속 후 히스토리 재렌더 시 자동 이어받기.
+                try { if(!isMe && _isUrl && window.rcAutoIngest) window.rcAutoIngest(fname, dataUrl, mime, (parseFloat(sizeKB)||0)*1024); } catch(_){}
                 const escFname = (fname||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 const fnLower = (fname||'').toLowerCase();
                 const isImage = /^image\//.test(mime) || /\.(png|jpg|jpeg|gif|webp|bmp)$/.test(fnLower);
