@@ -5704,8 +5704,8 @@
             ov.innerHTML =
                 '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
               + '<span class="vc-title">📹 화상 통화</span>'
-              + '<div style="display:flex;gap:6px;"><button onclick="toggleVcMini()" title="작게/크게" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;">🗕</button>'
-              + '<button onclick="stopVideoChat()" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;">종료</button></div></div>'
+              + '<div style="display:flex;gap:6px;"><button id="vc-sizebtn" onclick="toggleVcMini()" title="작게/크게" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;">🗕 작게</button>'
+              + '<button onclick="stopVideoChat()" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;">✕ 종료</button></div></div>'
               + '<div style="flex:1;position:relative;background:#000;overflow:hidden;">'
               + '<div id="vc-connecting" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:14px;z-index:1;text-align:center;padding:20px;">상대 영상 연결 중…</div>'
               + '<video id="vc-remote" autoplay playsinline style="width:100%;height:100%;object-fit:contain;background:#000;position:relative;z-index:2;"></video>'
@@ -5716,14 +5716,14 @@
               +   '<button id="vc-mic" onclick="toggleVcMic()" title="마이크" style="width:46px;height:46px;border-radius:50%;border:0;background:#334155;color:#fff;font-size:18px;cursor:pointer;">🎤</button>'
               +   '<button id="vc-cam" onclick="toggleVcCam()" title="카메라" style="width:46px;height:46px;border-radius:50%;border:0;background:#334155;color:#fff;font-size:18px;cursor:pointer;">📷</button>'
               +   '<button id="vc-screen" onclick="shareScreenInCall()" title="내 화면 공유" style="width:46px;height:46px;border-radius:50%;border:0;background:#334155;color:#fff;font-size:18px;cursor:pointer;">🖥</button>'
-              +   '<button id="vc-chat" onclick="vcShowChat()" title="채팅 보기" style="width:46px;height:46px;border-radius:50%;border:0;background:#2563eb;color:#fff;font-size:18px;cursor:pointer;">💬</button>'
+              +   '<button id="vc-chat" onclick="vcShowChat()" title="채팅 보기" style="width:46px;height:46px;border-radius:16px 16px 16px 5px;border:0;background:#d6006e;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(214,0,110,.4);"><span class="fab-dots"><span></span><span></span><span></span></span></button>'
               +   '<button onclick="stopVideoChat()" title="종료" style="width:46px;height:46px;border-radius:50%;border:0;background:#ef4444;color:#fff;font-size:18px;cursor:pointer;">📞</button>'
               + '</div>';
             // 원격 오디오 자동재생(막히면 '소리 켜기' 버튼 노출)
             setTimeout(function(){ const rv=document.getElementById('vc-remote'); if(rv){ rv.muted=false; const p=rv.play&&rv.play(); if(p&&p.catch) p.catch(function(){ const u=document.getElementById('vc-audio-unlock'); if(u) u.style.display='block'; }); } }, 400);
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}
         }
-        window.toggleVcMini = function(){ const ov=document.getElementById('vc-overlay'); if(ov) ov.classList.toggle('vc-mini'); };
+        window.toggleVcMini = function(){ const ov=document.getElementById('vc-overlay'); if(!ov) return; ov.classList.toggle('vc-mini'); const b=document.getElementById('vc-sizebtn'); if(b) b.textContent = ov.classList.contains('vc-mini') ? '🗖 크게' : '🗕 작게'; };
         // 💬 통화 중 채팅 보기 — 영상을 작은 화면(모서리)으로 줄이고 채팅창을 보이게
         window.vcShowChat = function(){
             const ov=document.getElementById('vc-overlay'); if(ov) ov.classList.add('vc-mini');
@@ -5800,6 +5800,15 @@
             }
             showToast("화상 통화를 걸었습니다…");
         };
+        // 📹 채팅의 '수락' 버튼(늦은 수락) — 실시간 offer 있으면 바로 수락, 없으면 상대에게 재호출 요청
+        window.acceptVideoInvite = function(peer){
+            if(window._vcPendingOffer){ window.acceptVideoCall(); return; }
+            if(peer) activeChatFriend = peer;
+            if(socket && socket.connected && (peer || activeChatFriend)){
+                socket.emit('rc_signal', { to:(peer||activeChatFriend), room:currentChatRoomId, kind:'rtc', sub:'callme' });
+                showToast('상대에게 연결을 요청했습니다. 잠시만 기다려 주세요…');
+            } else { showToast('연결할 수 없습니다. 잠시 후 다시 시도해 주세요.'); }
+        };
         window._vcOnSignal = async function(d){
             if(!d || d.kind!=='rtc') return;
             const peer = d.from || window._vc.peer, room = d.room || window._vc.room;
@@ -5817,6 +5826,12 @@
                         if(window._vc.pc){ try { await window._vc.pc.addIceCandidate(new RTCIceCandidate(d.cand)); } catch(_){} }
                         else if(window._vcPendingOffer){ (window._vcPendingIce = window._vcPendingIce || []).push(d.cand); }   // 수락 전 도착분 버퍼
                     }
+                } else if(d.sub==='callme'){
+                    // 상대가 '늦은 수락'(채팅 카드 버튼) → 발신자였던 내가 다시 걸어 offer 재전송
+                    try { if(window._vc.active) _vcTeardown(true); } catch(_){}
+                    activeChatFriend = d.from || activeChatFriend;
+                    if(d.room) currentChatRoomId = d.room;
+                    setTimeout(function(){ try { window.startVideoChat(); } catch(_){} }, 250);
                 } else if(d.sub==='bye'){
                     if(window._vcPendingOffer){ window._vcPendingOffer = null; const _ic=document.getElementById('vc-incoming'); if(_ic) _ic.remove(); showToast("상대가 통화를 취소했습니다."); return; }
                     _vcTeardown(true); showToast("상대가 통화를 종료했습니다.");
@@ -9682,11 +9697,13 @@ pdfjsScript,
             if(text.startsWith('[TRANSFER]')) {
                 displayHtml = `<div style="padding:4px;"><div style="font-size:11px; opacity:0.7;">자산 이체</div><div style="font-size:18px; font-weight:900; margin-top:2px;">${Number(text.replace('[TRANSFER]', '')).toLocaleString()}원</div></div>`;
             } else if(text.startsWith('[VIDEO_INVITE]')) {
-                // 📹 화상 통화 알림 카드 (실제 연결은 WebRTC로 자동 — 상대가 걸면 자동 수신)
-                displayHtml = `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;">
-                    <div style="font-size:12px;color:var(--text-sub);font-weight:700;">📹 화상 통화</div>
-                    <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${isMe ? '통화를 걸었습니다.' : '상대가 화상 통화를 걸었습니다. 카메라 권한을 허용하면 자동으로 연결됩니다.'}</div>
-                </div>`;
+                // 📹 화상 통화 카드 — 앱이 꺼져있거나 방을 안 보고 있어 실시간 수락창을 놓쳐도, 여기 '수락' 버튼으로 참여 가능
+                displayHtml = isMe
+                    ? `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;"><div style="font-size:12px;color:var(--text-sub);font-weight:700;">📹 화상 통화</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;">통화를 걸었습니다.</div></div>`
+                    : `<div class="kt-card-msg" style="max-width:280px;">
+                        <div style="background:var(--gradient-btn);color:#fff;padding:12px 14px;"><b>📹 화상 통화</b><div style="font-size:11px;opacity:.92;margin-top:2px;">상대가 화상 통화를 걸었습니다.</div></div>
+                        <div style="padding:10px 12px;"><button onclick="acceptVideoInvite('${(sender||'').replace(/'/g,"\\'")}')" style="width:100%;background:#16a34a;color:#fff;border:0;padding:10px;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;">📹 화상통화 수락</button></div>
+                    </div>`;
             } else if(text.startsWith('[REMOTE_REQUEST]')) {
                 displayHtml = isMe
                     ? `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;"><div style="font-size:12px;color:var(--text-sub);font-weight:600;">🖥 원격제어 요청을 보냈습니다.</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;">상대가 수락하면 원격 지원이 시작됩니다.</div></div>`
