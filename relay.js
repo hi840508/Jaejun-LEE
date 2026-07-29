@@ -93,6 +93,43 @@ function _escapeHtml(s) {
 // agent/ 는 git 미추적 폴더 → git reset --hard 에도 보존(exe·버전 파일 유지). 빌드한 exe를 여기에 두면 배포됨.
 const RC_AGENT_DIR = path.join(__dirname, 'agent');
 try { fs.mkdirSync(RC_AGENT_DIR, { recursive: true }); } catch (_) {}
+
+// ☁️ 앱 설치파일(APP_Setup.exe/Earth.apk)을 R2로 동기화 → 다운로드 전송비 무료. 크기 같으면 스킵(변경 시에만 업로드).
+function _syncAppToR2() {
+    if (!_r2) return;
+    try {
+        const { PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+        [{ name: 'APP_Setup.exe', ct: 'application/octet-stream' }, { name: 'Earth.apk', ct: 'application/vnd.android.package-archive' }].forEach(fi => {
+            const fp = path.join(RC_AGENT_DIR, fi.name);
+            if (!fs.existsSync(fp)) return;
+            const size = fs.statSync(fp).size;
+            _r2.client.send(new HeadObjectCommand({ Bucket: _r2.bucket, Key: 'app/' + fi.name }))
+                .then(h => { if (Number(h.ContentLength) !== size) throw new Error('diff'); })
+                .catch(() => { _r2.client.send(new PutObjectCommand({ Bucket: _r2.bucket, Key: 'app/' + fi.name, Body: fs.readFileSync(fp), ContentType: fi.ct })).then(() => console.log('☁️ 앱 파일 R2 업로드:', fi.name, size)).catch(e => console.warn('앱 R2 업로드 실패', fi.name, e && e.message)); });
+        });
+    } catch (e) { console.warn('_syncAppToR2:', e && e.message); }
+}
+setTimeout(_syncAppToR2, 8000);
+
+// 🗑 R2 첨부 리텐션 — 90일 지난 채팅 첨부(att_*) 자동 삭제(용량 무한증가 방지). 앱 파일(app/*)은 제외.
+function _r2RetentionSweep() {
+    if (!_r2) return;
+    try {
+        const { ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
+        const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+        let token, toDel = [];
+        const run = () => _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, Prefix: 'att_', ContinuationToken: token }))
+            .then(out => {
+                (out.Contents || []).forEach(o => { const m = /^att_(\d+)_/.exec(o.Key || ''); if (m && Number(m[1]) < cutoff) toDel.push({ Key: o.Key }); });
+                if (out.IsTruncated) { token = out.NextContinuationToken; return run(); }
+                for (let i = 0; i < toDel.length; i += 1000) { _r2.client.send(new DeleteObjectsCommand({ Bucket: _r2.bucket, Delete: { Objects: toDel.slice(i, i + 1000) } })).catch(() => {}); }
+                if (toDel.length) console.log('🗑 R2 첨부 90일 리텐션 삭제:', toDel.length);
+            }).catch(e => console.warn('R2 리텐션 스윕:', e && e.message));
+        run();
+    } catch (e) {}
+}
+setTimeout(_r2RetentionSweep, 60 * 1000);
+setInterval(_r2RetentionSweep, 24 * 60 * 60 * 1000);
 app.get('/download/RAY_RemoteAgent.exe', (req, res) => {
     const f = path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe');
     if (!fs.existsSync(f)) return res.status(404).send('agent not published yet');
@@ -164,12 +201,15 @@ app.get('/icon.svg', (req, res) => {
 });
 // 🖥 서버 내장 설치형 PC 앱(Electron) 인스톨러 — agent/ 폴더에 두면 배포됨(git 미추적, reset 보존)
 app.get('/download/APP_Setup.exe', (req, res) => {
+    // ☁️ R2 설정 시 R2 공개 URL로 리다이렉트(다운로드 전송비 무료). 없으면 로컬 서빙.
+    if (_r2) return res.redirect(302, _r2.publicBase + '/app/APP_Setup.exe');
     const f = path.join(RC_AGENT_DIR, 'APP_Setup.exe');
     if (!fs.existsSync(f)) return res.status(404).send('app not published yet');
     res.download(f, 'APP_Setup.exe');
 });
 // 📱 Android APK(사이드로드) — agent/Earth.apk 에 두면 배포됨. '알 수 없는 앱 허용' 후 설치.
 app.get('/download/Earth.apk', (req, res) => {
+    if (_r2) return res.redirect(302, _r2.publicBase + '/app/Earth.apk');
     const f = path.join(RC_AGENT_DIR, 'Earth.apk');
     if (!fs.existsSync(f)) return res.status(404).send('apk not published yet');
     res.type('application/vnd.android.package-archive');

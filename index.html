@@ -6585,7 +6585,26 @@ pdfjsScript,
 
 
         // 💬 채팅 첨부(Blob) → 서버 로컬 디스크 업로드 후 접근 URL 반환(메시지엔 URL만 담아 재전송 방지)
+        // 🗜 이미지 업로드 전 자동 축소·압축(저장/전송 절감). 이미지 아닌 파일(PDF·영상·CT 등)은 원본 유지.
+        async function _compressImageBlob(blob, mime){
+            try {
+                mime = mime || (blob && blob.type) || '';
+                if(!/^image\//.test(mime) || /gif|svg/i.test(mime)) return { blob:blob, mime:mime };
+                const bmp = await createImageBitmap(blob).catch(function(){ return null; });
+                if(!bmp) return { blob:blob, mime:mime };
+                const MAX = 1600; let w = bmp.width, h = bmp.height;
+                if(Math.max(w,h) > MAX){ const s = MAX/Math.max(w,h); w = Math.round(w*s); h = Math.round(h*s); }
+                const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+                cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+                const out = await new Promise(function(r){ cv.toBlob(r, 'image/jpeg', 0.82); });
+                if(out && out.size < (blob.size||Infinity)) return { blob:out, mime:'image/jpeg', ext:'.jpg' };
+                return { blob:blob, mime:mime };
+            } catch(_){ return { blob:blob, mime:mime }; }
+        }
         window.uploadChatBlob = async function(blob, filename, mime) {
+            const _c = await _compressImageBlob(blob, mime || (blob&&blob.type) || '');
+            blob = _c.blob; mime = _c.mime || mime;
+            if(_c.ext && filename && !/\.(jpe?g)$/i.test(filename)) filename = filename.replace(/\.[^.]+$/, '') + _c.ext;
             const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = () => rej(new Error('read fail')); r.readAsDataURL(blob); });
             const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;   // 순수 base64(헤더 제거)
             const res = await fetch(`${API_URL}/api/chat/attach`, {
