@@ -219,6 +219,48 @@ app.post('/api/devices/rename', (req, res) => {
     db.run(`UPDATE devices SET name=? WHERE deviceId=? AND userName=?`, [name, deviceId, me],
         (e) => e ? res.status(500).json({ error: e.message }) : res.json({ success: true }));
 });
+// 📁 2B: 이 기기의 공유폴더 파일 인덱스 보고(전체 교체) — 반투명 합집합 표시용
+app.post('/api/devices/files', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const { deviceId, files } = req.body || {};
+    if (!deviceId) return res.status(400).json({ error: 'deviceId 필요' });
+    const list = Array.isArray(files) ? files.slice(0, 2000) : [];
+    db.serialize(() => {
+        db.run(`DELETE FROM device_files WHERE deviceId=? AND userName=?`, [deviceId, me]);
+        const stmt = db.prepare(`INSERT OR IGNORE INTO device_files (userName,deviceId,fname,size,hash,thumb,mime,updated) VALUES (?,?,?,?,?,?,?,?)`);
+        const now = Date.now();
+        for (const f of list) {
+            if (!f || !f.fname) continue;
+            stmt.run([me, deviceId, String(f.fname).slice(0, 300), Number(f.size) || 0,
+                String(f.hash || f.fname).slice(0, 300), String(f.thumb || '').slice(0, 60000),
+                String(f.mime || '').slice(0, 100), now]);
+        }
+        stmt.finalize((e) => {
+            db.run(`UPDATE devices SET lastSeen=? WHERE deviceId=? AND userName=?`, [now, deviceId, me]);
+            e ? res.status(500).json({ error: e.message }) : res.json({ success: true, count: list.length });
+        });
+    });
+});
+// 📁 2B: 내 모든 기기의 파일 합집합(해시로 그룹) — 각 파일이 어느 기기에 있는지
+app.get('/api/devices/files', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.all(`SELECT deviceId,fname,size,hash,thumb,mime,updated FROM device_files WHERE userName=?`, [me], (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        db.all(`SELECT deviceId,name FROM devices WHERE userName=?`, [me], (e2, devs) => {
+            const dname = {}; (devs || []).forEach(d => dname[d.deviceId] = d.name);
+            const g = {};
+            (rows || []).forEach(r => {
+                const k = r.hash || r.fname;
+                if (!g[k]) g[k] = { hash: k, fname: r.fname, size: r.size, mime: r.mime, thumb: r.thumb || '', devices: [], updated: r.updated };
+                if (r.thumb && !g[k].thumb) g[k].thumb = r.thumb;
+                if (g[k].devices.indexOf(r.deviceId) < 0) g[k].devices.push(r.deviceId);
+                if (r.updated > g[k].updated) g[k].updated = r.updated;
+            });
+            const files = Object.keys(g).map(k => g[k]).sort((a, b) => b.updated - a.updated);
+            res.json({ files, deviceNames: dname });
+        });
+    });
+});
 app.get('/download/RAY_RemoteAgent.exe', (req, res) => {
     const f = path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe');
     if (!fs.existsSync(f)) return res.status(404).send('agent not published yet');

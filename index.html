@@ -2832,6 +2832,7 @@
                 try{ const p=await h.requestPermission({mode:'readwrite'}); if(p!=='granted'){ showToast('폴더 쓰기 권한이 필요합니다.'); return false; } }catch(_){ return false; }
                 _handle=h; try{ await _put(KEY,h); }catch(_){}
                 await register();
+                try{ await syncIndex(); }catch(_){}
                 showToast('✅ 공유폴더 연결됨: '+h.name);
                 return true;
             }
@@ -2844,8 +2845,36 @@
                 const fh=await h.getFileHandle(safe, {create:true});
                 const w=await fh.createWritable();
                 await w.write(blob); await w.close();
+                _scheduleSync();
                 return safe;
             }
+            // 📁 2B: 이 기기 폴더 파일 인덱스 만들기(이미지 썸네일 포함, 개수/용량 제한)
+            function _mimeByExt(n){ const e=(String(n).split('.').pop()||'').toLowerCase(); const m={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',bmp:'image/bmp',pdf:'application/pdf',mp4:'video/mp4',mov:'video/quicktime',stl:'model/stl',ply:'model/ply',obj:'model/obj',dcm:'application/dicom'}; return m[e]||''; }
+            async function _mkThumb(file){ const bmp=await createImageBitmap(file); const max=128; let w=bmp.width,hh=bmp.height; const sc=Math.min(1,max/Math.max(w,hh)); w=Math.max(1,Math.round(w*sc)); hh=Math.max(1,Math.round(hh*sc)); const cv=document.createElement('canvas'); cv.width=w; cv.height=hh; cv.getContext('2d').drawImage(bmp,0,0,w,hh); try{ bmp.close(); }catch(_){} return cv.toDataURL('image/jpeg',0.6); }
+            async function buildIndex(){
+                if(!(await isConnected())) return [];
+                const h=await _loadHandle(); const files=[]; let tc=0;
+                try{ for await (const [nm, ent] of h.entries()){
+                    if(ent.kind!=='file') continue;
+                    let f; try{ f=await ent.getFile(); }catch(_){ continue; }
+                    const mime=f.type||_mimeByExt(nm);
+                    const entry={ fname:nm, size:f.size, mime, hash:nm+'|'+f.size, thumb:'' };
+                    if(mime.indexOf('image/')===0 && f.size<15*1024*1024 && tc<60){ try{ entry.thumb=await _mkThumb(f); tc++; }catch(_){} }
+                    files.push(entry);
+                    if(files.length>=2000) break;
+                } }catch(_){}
+                return files;
+            }
+            let _syncTimer=null;
+            function _scheduleSync(){ if(_syncTimer) clearTimeout(_syncTimer); _syncTimer=setTimeout(()=>{ try{ syncIndex(); }catch(_){} }, 1500); }
+            async function syncIndex(){
+                try{
+                    if(!(await isConnected())) return;
+                    const files=await buildIndex();
+                    await fetch(API_URL+'/api/devices/files',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ deviceId:deviceId(), files }) });
+                }catch(_){}
+            }
+            async function allFiles(){ try{ const r=await fetch(API_URL+'/api/devices/files'); return await r.json(); }catch(_){ return { files:[], deviceNames:{} }; } }
             async function listFiles(){
                 if(!(await _ensurePerm(true))) return [];
                 const h=await _loadHandle(); const out=[];
@@ -2896,6 +2925,7 @@
                 try{
                     await _loadHandle();
                     await register();
+                    if(await isConnected()) setTimeout(()=>{ try{ syncIndex(); }catch(_){} }, 3000);
                     if(supported && !(await isConnected()) && !sessionStorage.getItem('rc_folder_banner')){
                         sessionStorage.setItem('rc_folder_banner','1');
                         setTimeout(()=>{ try{ _banner(); }catch(_){} }, 2500);
@@ -2916,7 +2946,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, pick, disconnect, writeFile, listFiles, register, list, requireFolder, onLogin };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, pick, disconnect, writeFile, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
         })();
 
         // 공유폴더 설정 패널(사이드바 "공유폴더" 버튼 → 여기)
@@ -2935,6 +2965,31 @@
                     '<div style="font-size:12px;color:#64748b;">'+(d.hasFolder?('📁 '+(d.folderName||'연결됨')):'⚠️ 공유폴더 미지정')+' · '+fmtSeen(d.lastSeen)+'</div></div></div>';
             }).join('') || '<div style="padding:12px 0;color:#94a3b8;font-size:13px;">등록된 기기가 없습니다.</div>';
 
+            // 📁 2B: 내 모든 기기 파일 합집합 그리드 — 이 기기에 없으면 반투명 + '없음' 배지
+            const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+            const iconFor=(mime,fn)=>{ mime=mime||''; fn=fn||''; if(mime.indexOf('image/')===0) return '🖼️'; if(mime.indexOf('video/')===0) return '🎬'; if(mime==='application/pdf') return '📄'; if(mime==='application/dicom'||/\.dcm$/i.test(fn)) return '🩻'; if(mime.indexOf('model/')===0||/\.(stl|ply|obj)$/i.test(fn)) return '🧊'; return '📎'; };
+            let gridHtml='';
+            try{
+                const fd=await R.allFiles(); const files=(fd.files||[]).slice(0,300);
+                if(files.length){
+                    gridHtml='<div style="margin-top:18px;font-weight:800;font-size:14px;color:#334155;">내 모든 파일 <span style="font-weight:600;color:#94a3b8;font-size:12px;">('+files.length+') · 흐린 항목은 이 기기에 없음</span></div>'+
+                        '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;margin-top:10px;">'+
+                        files.map(f=>{
+                            const here=(f.devices||[]).indexOf(myId)>=0;
+                            const others=(f.devices||[]).filter(d=>d!==myId).map(d=>fd.deviceNames[d]||'다른 기기');
+                            const thumb=f.thumb?('<img src="'+f.thumb+'" style="width:100%;height:100%;object-fit:cover;">'):('<div style="font-size:26px;">'+iconFor(f.mime,f.fname)+'</div>');
+                            const tip=here?'이 기기에 있음':('이 기기엔 없음 — '+(others.join(', ')||'다른 기기')+'에 있음 · 더블클릭/길게눌러 동기화');
+                            return '<div class="rc-gf" data-hash="'+esc(f.hash)+'" data-here="'+(here?1:0)+'" title="'+esc(tip)+'" style="position:relative;border:1px solid #eef2f7;border-radius:10px;overflow:hidden;aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#f8fafc;cursor:'+(here?'default':'pointer')+';opacity:'+(here?1:0.42)+';">'+
+                                thumb+
+                                (here?'':'<span style="position:absolute;top:4px;left:4px;background:#0f172a;color:#fff;font-size:9px;padding:1px 5px;border-radius:6px;">없음</span>')+
+                                '<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.65));color:#fff;font-size:9px;padding:8px 4px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(f.fname)+'</span>'+
+                                '</div>';
+                        }).join('')+'</div>';
+                } else if(connected){
+                    gridHtml='<div style="margin-top:18px;color:#94a3b8;font-size:13px;">폴더에 파일이 없거나 아직 인덱싱 중입니다. (연결 직후 잠시 후 다시 열어보세요)</div>';
+                }
+            }catch(_){}
+
             const notSupported = !R.supported;
             const ov=document.createElement('div');
             ov.style.cssText='position:fixed;inset:0;z-index:99996;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -2949,7 +3004,7 @@
                         '<button id="_sf-pick" style="flex:1;padding:10px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">'+(connected?'📂 폴더 변경':'📂 공유폴더 지정')+'</button>'+
                         (connected?'<button id="_sf-disc" style="padding:10px 14px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">연결 해제</button>':'')+
                         '</div></div>')+
-                '<div style="margin-top:16px;font-weight:800;font-size:14px;color:#334155;">내 기기 목록</div>'+rows+
+                '<div style="margin-top:16px;font-weight:800;font-size:14px;color:#334155;">내 기기 목록</div>'+rows+gridHtml+
                 '</div>';
             document.body.appendChild(ov);
             const close=()=>{ try{ ov.remove(); }catch(_){} };
@@ -2957,7 +3012,23 @@
             ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); });
             const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ close(); openSharedFolderPanel(); } };
             const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요? (폴더의 파일은 삭제되지 않습니다)')){ await R.disconnect(); close(); openSharedFolderPanel(); } };
+            // 📁 반투명(이 기기에 없음) 항목: 더블클릭(PC)/길게누르기(모바일) → 동기화 (실제 P2P 전송은 2D)
+            ov.querySelectorAll('.rc-gf[data-here="0"]').forEach(el=>{
+                const hash=el.getAttribute('data-hash');
+                const ask=()=>{ if(window.rcRequestSync) window.rcRequestSync(hash); };
+                el.addEventListener('dblclick', ask);
+                let lp=null;
+                el.addEventListener('touchstart', ()=>{ lp=setTimeout(ask,600); }, {passive:true});
+                el.addEventListener('touchend', ()=>{ if(lp) clearTimeout(lp); });
+                el.addEventListener('touchmove', ()=>{ if(lp) clearTimeout(lp); });
+            });
         }
+        // 📁 2D 예정: 반투명 썸네일 동기화 요청(현재는 확인 팝업 + 안내). 다음 단계에서 WebRTC P2P 전송 연결.
+        window.rcRequestSync = function(hash){
+            if(confirm('이 파일을 이 기기로 동기화하시겠습니까?\n(다음 단계 2D에서 기기 간 P2P 직접 전송으로 연결됩니다)')){
+                showToast('🔄 동기화는 2D 단계에서 활성화됩니다.');
+            }
+        };
         window.openSharedFolderPanel = openSharedFolderPanel;
 
         function loginSuccess(data) {
