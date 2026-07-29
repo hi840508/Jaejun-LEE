@@ -2214,9 +2214,9 @@
     </div>
 
     <!-- 🚀 [v7] 글로벌 파일 미리보기 모달 (채팅 파일 + 어디서든 호출 가능) -->
-    <div id="chat-file-preview-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:9998; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(8px);">
+    <div id="chat-file-preview-modal" onclick="if(event.target===this)closeChatFilePreview()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:2147483000; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(8px);">
         <div style="position:fixed; top:20px; left:24px; right:80px; color:#fff; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(0,0,0,0.5); padding:8px 16px; border-radius:20px;" id="cfp-title">파일</div>
-        <button onclick="closeChatFilePreview()" style="position:fixed; top:20px; right:20px; background:rgba(255,255,255,0.2); border:none; color:#fff; font-size:22px; cursor:pointer; width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; z-index:9999;">&times;</button>
+        <button onclick="closeChatFilePreview()" title="닫기 (ESC)" style="position:fixed; top:16px; right:16px; background:rgba(220,38,38,0.92); border:2px solid #fff; color:#fff; font-size:26px; line-height:1; cursor:pointer; width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; z-index:2147483001; box-shadow:0 4px 16px rgba(0,0,0,.5);">&times;</button>
         <div id="cfp-content" style="max-width:96vw; max-height:88vh; width:100%; height:100%; display:flex; align-items:center; justify-content:center;"></div>
         <div style="position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; gap:8px;">
             <a id="cfp-download" download="" href="#" style="background:linear-gradient(135deg,#4a4a4e,#232326); color:#fff; padding:10px 22px; border-radius:24px; text-decoration:none; font-size:13px; font-weight:600;">원본 다운로드</a>
@@ -2754,26 +2754,61 @@
 
         // ★공유 카드 다운로드★: 부모(Earth 앱) iframe 안이면 앱에 위임 → 로컬 서버 있으면 Data탭에 반영, 없으면 단일 HTML 저장.
         //  독립 실행(부모 없음)이면 새 탭으로 통합뷰어 열기.
+        // 💾 저장하기: 지정된 공유폴더에 자동 저장(창 이동 절대 금지). 순서: iframe부모 → 네이티브앱 브리지 → FSA 폴더 → blob 다운로드.
         window.rcDownloadShare = async function(url, name){
-            // RAYCloud 네이티브 앱에 임베드된 경우: 앱이 로컬 저장/등록 처리
-            try { if (window.parent && window.parent !== window) { window.parent.postMessage({ type:'rc_dl_share', url:url, name:name }, '*'); return; } } catch(e){}
-            // 📁 2A: 데스크톱 웹 = 공유폴더로 자동 저장(미지정 시 지정 게이트). 미지원/거부/실패 시 일반 다운로드 폴백.
+            // 1) iframe 임베드(앱) → 부모가 저장/등록 처리
+            try { if (window.parent && window.parent !== window) { window.parent.postMessage({ type:'rc_dl_share', url:url, name:name }, '*'); showToast('📁 공유폴더에 저장 중…'); return; } } catch(e){}
+            // 2) 네이티브 앱(Earth Commerce Platform) 브리지 — 지정된 공유폴더에 저장
+            try { if (window.rayApp && window.rayApp.saveShared) { window.rayApp.saveShared(name, url); showToast('📁 공유폴더에 저장 요청됨'); return; } } catch(_){}
+            // 3) 데스크톱 웹: File System Access 공유폴더 저장(미지정 시 지정 게이트)
             try {
                 if (window.RCFolder && window.RCFolder.supported) {
                     const ok = await window.RCFolder.requireFolder();
-                    if (ok && await window.RCFolder.isConnected()) {
+                    if (!ok) return;   // 게이트에서 '나중에' → 중단
+                    if (await window.RCFolder.isConnected()) {
                         try {
                             showToast('⬇️ 공유폴더로 저장 중…');
                             const resp = await fetch(url); const blob = await resp.blob();
                             const saved = await window.RCFolder.writeFile(name, blob);
                             showToast('✅ 공유폴더에 저장됨: ' + saved);
                             return;
-                        } catch(e){ showToast('폴더 저장 실패 — 일반 다운로드로 전환합니다'); }
-                    } else if (!ok) { return; }   // 게이트에서 '나중에' 선택 → 중단
+                        } catch(e){ /* 폴더 저장 실패 → blob 다운로드로 폴백 */ }
+                    }
                 }
             } catch(_){}
-            try { window.open(url, '_blank'); } catch(e){ try{ location.href = url; }catch(_){} }
+            // 4) 폴백: 창 이동 없는 blob 다운로드 (⚠️ window.open 금지 — 앱에서 창 전체가 영상으로 바뀌어 닫히지 않는 문제)
+            try {
+                const resp = await fetch(url); const blob = await resp.blob(); const bu = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = bu; a.download = name || 'download'; document.body.appendChild(a); a.click();
+                setTimeout(()=>{ try{ a.remove(); }catch(_){} try{ URL.revokeObjectURL(bu); }catch(_){} }, 3000);
+                showToast('💾 저장됨: ' + (name||''));
+            } catch(e){ try{ if(!window.rayApp) window.open(url, '_blank'); }catch(_){} }
         };
+        // ▶️ 클릭 시 실행/미리보기: 공유폴더의 파일을 OS로 실행(앱 브리지) → 없으면 인페이지 미리보기(항상 닫기 가능). 창 이동 없음.
+        window.rcOpenShared = async function(url, name, mime){
+            try { if (window.rayApp && window.rayApp.openShared) { window.rayApp.openShared(name); return; } } catch(_){}
+            try { if (window.parent && window.parent !== window) { window.parent.postMessage({ type:'rc_open_share', name:name, url:url }, '*'); return; } } catch(_){}
+            openMediaUrlPreview(url, name, mime);
+        };
+        // URL(원격/R2)을 닫기 가능한 미리보기 모달로 연다(이미지/영상/오디오). 그 외 유형은 저장으로 폴백.
+        function openMediaUrlPreview(url, name, mime){
+            const modal = document.getElementById('chat-file-preview-modal');
+            const content = document.getElementById('cfp-content');
+            const title = document.getElementById('cfp-title');
+            const dl = document.getElementById('cfp-download');
+            if(!modal || !content){ window.rcDownloadShare(url, name); return; }
+            if(title) title.textContent = name || '파일';
+            if(dl){ dl.href = url; dl.download = name || 'asset'; }
+            const fn = (name||'').toLowerCase(); mime = (mime||'').toLowerCase();
+            const isImage = /^image\//.test(mime) || /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(fn);
+            const isVideo = /^video\//.test(mime) || /\.(mp4|webm|mov|m4v)$/.test(fn);
+            const isAudio = /^audio\//.test(mime) || /\.(mp3|wav|ogg|m4a)$/.test(fn);
+            if(isImage) content.innerHTML = '<img src="'+url+'" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.7);">';
+            else if(isVideo) content.innerHTML = '<video src="'+url+'" controls autoplay playsinline style="max-width:100%;max-height:88vh;border-radius:8px;"></video>';
+            else if(isAudio) content.innerHTML = '<div style="background:#1e293b;padding:36px;border-radius:12px;text-align:center;color:#fff;max-width:520px;"><div style="font-size:52px;margin-bottom:16px;">🎵</div><div style="margin-bottom:16px;font-weight:600;">'+(name||'').replace(/</g,'&lt;')+'</div><audio src="'+url+'" controls autoplay style="width:100%;"></audio></div>';
+            else { window.rcDownloadShare(url, name); return; }   // 미리보기 불가 유형 → 저장
+            modal.style.display = 'flex';
+        }
 
         function logout() { _postAuthToParent(null); try{ if(window.EARTH_TOKEN) fetch(`${API_URL}/api/auth/logout`, { method:'POST', headers:{ 'x-auth-token': window.EARTH_TOKEN } }); }catch(_){} setEarthToken(''); localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
 
@@ -9832,8 +9867,15 @@ pdfjsScript,
         };
 
         window.closeChatFilePreview = function() {
+            // 전체화면(영상)에서 빠져나오기 — 앱에서 전체화면 영상이 닫기 버튼을 가리는 문제 방지
+            try { if(document.fullscreenElement) document.exitFullscreen(); } catch(_){}
+            try { if(document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen(); } catch(_){}
             const modal = document.getElementById('chat-file-preview-modal');
-            if(modal) { modal.style.display = 'none'; document.getElementById('cfp-content').innerHTML = ''; }
+            if(modal) {
+                // 미디어 정지(백그라운드 재생 방지)
+                try { modal.querySelectorAll('video,audio').forEach(function(m){ try{ m.pause(); m.removeAttribute('src'); m.load(); }catch(_){} }); } catch(_){}
+                modal.style.display = 'none'; document.getElementById('cfp-content').innerHTML = '';
+            }
             // 3D 뷰어 정리
             if(window.__threeViewer) {
                 try {
@@ -10097,8 +10139,8 @@ pdfjsScript,
 
                 let preview;
                 if(_thumb) {
-                    // 공유 통합뷰어 카드: 썸네일 표시 + 클릭 시 다운로드(스마트: 부모 앱 있으면 로컬 반영, 없으면 파일 저장)
-                    preview = `<div class="kt-card-preview" style="cursor:pointer" onclick="rcDownloadShare('${dataUrl}','${escFname}')"><img src="${_thumb}" alt=""></div>`;
+                    // 공유 통합뷰어 카드: 썸네일 클릭 = 실행/미리보기(공유폴더 파일이면 OS 실행, 아니면 인페이지 미리보기 — 창 이동 없음). 저장은 아래 버튼.
+                    preview = `<div class="kt-card-preview" style="cursor:pointer" onclick="rcOpenShared('${dataUrl}','${escFname}','${mime||''}')"><img src="${_thumb}" alt=""></div>`;
                 } else if(isImage) {
                     preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><img src="${dataUrl}" alt="" loading="lazy" decoding="async"></div>`;
                 } else if(isVideo) {
