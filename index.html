@@ -2223,10 +2223,10 @@
         #chat-file-preview-modal.cfp-dock #cfp-dlbar{ right:392px; }
       }
     </style>
-    <div id="chat-file-preview-modal" class="cfp-dock" onclick="if(event.target===this)closeChatFilePreview()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.86); z-index:4200; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(6px);">
+    <div id="chat-file-preview-modal" class="cfp-dock" onclick="if(event.target===this)closeChatFilePreview()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:4400; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px);">
         <div style="position:fixed; top:20px; left:24px; right:80px; color:#fff; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(0,0,0,0.5); padding:8px 16px; border-radius:20px;" id="cfp-title">파일</div>
         <button id="cfp-close-btn" onclick="closeChatFilePreview()" title="닫기 (ESC)" style="position:fixed; top:16px; right:16px; background:rgba(220,38,38,0.95); border:2px solid #fff; color:#fff; font-size:26px; line-height:1; cursor:pointer; width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; z-index:4300; box-shadow:0 4px 16px rgba(0,0,0,.5);">&times;</button>
-        <div id="cfp-content" style="max-width:96vw; max-height:80vh; width:100%; height:100%; display:flex; align-items:center; justify-content:center;"></div>
+        <div id="cfp-content" style="max-width:min(880px,90vw); max-height:78vh; width:100%; height:auto; display:flex; align-items:center; justify-content:center;"></div>
         <div id="cfp-dlbar" style="position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:4300;">
             <a id="cfp-download" download="" href="#" style="background:linear-gradient(135deg,#4a4a4e,#232326); color:#fff; padding:10px 22px; border-radius:24px; text-decoration:none; font-size:13px; font-weight:600;">원본 다운로드</a>
         </div>
@@ -3169,91 +3169,106 @@
         })();
 
         // 공유폴더 설정 패널(사이드바 "공유폴더" 버튼 → 여기)
+        // 📁 공유폴더 = RAYCloud식 전체화면 갤러리(썸네일·다중선택·미리보기·친구/채팅 골라 보내기)
+        const _sfEsc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const _sfIcon=(mime,fn)=>{ mime=mime||''; fn=fn||''; if(mime.indexOf('image/')===0) return '🖼️'; if(mime.indexOf('video/')===0) return '🎬'; if(mime==='application/pdf') return '📄'; if(mime==='application/dicom'||/\.dcm$/i.test(fn)) return '🩻'; if(mime.indexOf('model/')===0||/\.(stl|ply|obj)$/i.test(fn)) return '🧊'; return '📎'; };
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
             const connected = await R.isConnected();
             const fname = connected ? await R.folderName() : '';
             const devices = await R.list();
             const myId = R.deviceId();
-            const fmtSeen=(t)=>{ if(!t) return ''; const d=Math.floor((Date.now()-t)/60000); if(d<1) return '방금'; if(d<60) return d+'분 전'; if(d<1440) return Math.floor(d/60)+'시간 전'; return Math.floor(d/1440)+'일 전'; };
-            const rows = devices.map(d=>{
-                const me = d.deviceId===myId;
-                return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #f1f5f9;">'+
-                    '<span style="font-size:20px;">'+(/PC|Mac|Linux/.test(d.platform||d.name)?'🖥️':'📱')+'</span>'+
-                    '<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:14px;">'+(d.name||'기기')+(me?' <span style="color:#2563eb;font-size:11px;">(이 기기)</span>':'')+'</div>'+
-                    '<div style="font-size:12px;color:#64748b;">'+(d.hasFolder?('📁 '+(d.folderName||'연결됨')):'⚠️ 공유폴더 미지정')+' · '+fmtSeen(d.lastSeen)+'</div></div></div>';
-            }).join('') || '<div style="padding:12px 0;color:#94a3b8;font-size:13px;">등록된 기기가 없습니다.</div>';
-
-            // 📁 2B: 내 모든 기기 파일 합집합 그리드 — 이 기기에 없으면 반투명 + '없음' 배지
-            const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-            const iconFor=(mime,fn)=>{ mime=mime||''; fn=fn||''; if(mime.indexOf('image/')===0) return '🖼️'; if(mime.indexOf('video/')===0) return '🎬'; if(mime==='application/pdf') return '📄'; if(mime==='application/dicom'||/\.dcm$/i.test(fn)) return '🩻'; if(mime.indexOf('model/')===0||/\.(stl|ply|obj)$/i.test(fn)) return '🧊'; return '📎'; };
-            let gridHtml='';
-            try{
-                const fd=await R.allFiles(); const files=(fd.files||[]).slice(0,300);
-                if(files.length){
-                    gridHtml='<div style="margin-top:18px;font-weight:800;font-size:14px;color:#334155;">내 모든 파일 <span style="font-weight:600;color:#94a3b8;font-size:12px;">('+files.length+') · 흐린 항목은 이 기기에 없음</span></div>'+
-                        '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;margin-top:10px;">'+
-                        files.map(f=>{
-                            const here=(f.devices||[]).indexOf(myId)>=0;
-                            const others=(f.devices||[]).filter(d=>d!==myId).map(d=>fd.deviceNames[d]||'다른 기기');
-                            const thumb=f.thumb?('<img src="'+f.thumb+'" style="width:100%;height:100%;object-fit:cover;">'):('<div style="font-size:26px;">'+iconFor(f.mime,f.fname)+'</div>');
-                            const tip=here?'클릭하면 미리보기':('이 기기엔 없음 — '+(others.join(', ')||'다른 기기')+'에 있음 · 더블클릭/길게눌러 동기화');
-                            const shareBtn = here ? '<button class="rc-gf-share" title="채팅에 공유" style="position:absolute;top:4px;right:4px;width:26px;height:26px;border:none;border-radius:7px;background:rgba(15,23,42,.72);color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3;">📤</button>' : '';
-                            return '<div class="rc-gf" data-hash="'+esc(f.hash)+'" data-fname="'+esc(f.fname)+'" data-mime="'+esc(f.mime||'')+'" data-here="'+(here?1:0)+'" title="'+esc(tip)+'" style="position:relative;border:1px solid #eef2f7;border-radius:10px;overflow:hidden;aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#f8fafc;cursor:pointer;opacity:'+(here?1:0.42)+';">'+
-                                thumb+ shareBtn +
-                                (here?'':'<span style="position:absolute;top:4px;left:4px;background:#0f172a;color:#fff;font-size:9px;padding:1px 5px;border-radius:6px;">없음</span>')+
-                                '<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.65));color:#fff;font-size:9px;padding:8px 4px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(f.fname)+'</span>'+
-                                '</div>';
-                        }).join('')+'</div>';
-                } else if(connected){
-                    gridHtml='<div style="margin-top:18px;color:#94a3b8;font-size:13px;">폴더에 파일이 없거나 아직 인덱싱 중입니다. (연결 직후 잠시 후 다시 열어보세요)</div>';
-                }
-            }catch(_){}
-
             const notSupported = !R.supported;
-            const ov=document.createElement('div');
-            ov.style.cssText='position:fixed;inset:0;z-index:99996;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
-            ov.innerHTML='<div style="background:#fff;color:#0f172a;max-width:460px;width:100%;border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:86vh;overflow:auto;">'+
-                '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-weight:800;font-size:18px;">📁 공유폴더 · 내 기기</div><button id="_sf-x" style="border:none;background:transparent;font-size:20px;color:#94a3b8;cursor:pointer;">✕</button></div>'+
-                '<div style="font-size:12.5px;color:#64748b;line-height:1.6;margin-bottom:14px;">받은 파일이 자동 저장되는 <b>이 기기의 로컬 폴더</b>입니다. 데이터는 내 디스크에 보관되고, 클라우드는 잠깐 거쳐가는 통로로만 쓰여 저장비가 들지 않습니다.</div>'+
-                (notSupported
-                    ? '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:12px;font-size:13px;color:#92400e;line-height:1.6;">이 브라우저/기기는 로컬 폴더 지정을 지원하지 않습니다(모바일·Safari 등). 이 기기에서는 받은 파일을 <b>클라우드로 수신</b>하며, PC(Chrome/Edge)에서 공유폴더를 지정하면 자동 저장됩니다.</div>'
-                    : '<div style="background:'+(connected?'#ecfdf5':'#fef2f2')+';border:1px solid '+(connected?'#a7f3d0':'#fecaca')+';border-radius:12px;padding:14px;margin-bottom:8px;">'+
-                        '<div style="font-weight:700;font-size:14px;margin-bottom:8px;">'+(connected?('✅ 연결됨: '+fname):'⚠️ 이 기기에 공유폴더가 지정되지 않았습니다')+'</div>'+
-                        '<div style="display:flex;gap:8px;">'+
-                        '<button id="_sf-pick" style="flex:1;padding:10px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">'+(connected?'📂 폴더 변경':'📂 공유폴더 지정')+'</button>'+
-                        (connected?'<button id="_sf-disc" style="padding:10px 14px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">연결 해제</button>':'')+
-                        '</div></div>')+
-                '<div style="margin-top:16px;font-weight:800;font-size:14px;color:#334155;">내 기기 목록</div>'+rows+gridHtml+
-                '</div>';
-            document.body.appendChild(ov);
-            window.__sfOv = ov;   // 2D 동기화 완료 시 라이브 새로고침용 핸들
+            let fd={files:[],deviceNames:{}}; try{ fd=await R.allFiles(); }catch(_){}
+            const files=(fd.files||[]).slice(0,500);
+            const selected=new Set();
+            const BTN='padding:8px 12px;border:1px solid #e5e7eb;background:#fff;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px;';
+
+            const statusTxt = notSupported ? '이 기기는 폴더 미지원(모바일/Safari) — PC(Chrome/Edge)에서 지정' : (connected ? ('✅ '+_sfEsc(fname)) : '⚠️ 공유폴더 미지정');
+            const head='<div style="flex:none;background:#fff;border-bottom:1px solid #e5e7eb;padding:13px 18px;display:flex;align-items:center;gap:12px;">'
+                +'<div style="font-weight:800;font-size:18px;white-space:nowrap;">📁 공유폴더</div>'
+                +'<div style="flex:1;font-size:12.5px;color:'+(connected?'#16a34a':(notSupported?'#92400e':'#b91c1c'))+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+statusTxt+' · '+devices.length+'개 기기</div>'
+                +(notSupported?'':'<button id="_sf-pick" style="'+BTN+'background:#2563eb;color:#fff;border:none;">'+(connected?'📂 폴더 변경':'📂 폴더 지정')+'</button>')
+                +'<button id="_sf-x" style="'+BTN+'font-size:16px;">✕</button>'
+                +'</div>';
+            const toolbar='<div style="flex:none;background:#fff;border-bottom:1px solid #eef2f7;padding:8px 18px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+                +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;"><input type="checkbox" id="_sf-all" style="width:18px;height:18px;"> 전체선택</label>'
+                +'<span id="_sf-cnt" style="font-size:12px;color:#64748b;">선택 0</span>'
+                +'<div style="flex:1;"></div>'
+                +'<button class="_sf-act" data-act="preview" style="'+BTN+'">👁 미리보기</button>'
+                +'<button class="_sf-act" data-act="share" style="'+BTN+'background:#2563eb;color:#fff;border:none;">📤 공유</button>'
+                +'<button class="_sf-act" data-act="sync" style="'+BTN+'">🔄 동기화</button>'
+                +'</div>';
+            const tiles = files.length ? files.map(f=>{
+                const here=(f.devices||[]).indexOf(myId)>=0;
+                const thumb=f.thumb?('<img src="'+f.thumb+'" style="width:100%;height:100%;object-fit:cover;">'):('<div style="font-size:36px;">'+_sfIcon(f.mime,f.fname)+'</div>');
+                return '<div class="rc-gf" data-hash="'+_sfEsc(f.hash)+'" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-here="'+(here?1:0)+'" '
+                    +'style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;opacity:'+(here?1:0.5)+';display:flex;align-items:center;justify-content:center;">'
+                    +thumb
+                    +'<input type="checkbox" class="rc-gf-chk" title="선택" style="position:absolute;top:6px;left:6px;width:20px;height:20px;z-index:4;cursor:pointer;">'
+                    +(here?'':'<span style="position:absolute;top:6px;right:6px;background:#0f172a;color:#fff;font-size:9px;padding:2px 6px;border-radius:6px;">없음</span>')
+                    +'<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.68));color:#fff;font-size:10px;padding:14px 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+_sfEsc(f.fname)+'</span>'
+                    +'</div>';
+            }).join('') : '<div style="grid-column:1/-1;padding:56px 20px;text-align:center;color:#94a3b8;font-size:14px;">'+(connected?'폴더에 파일이 없거나 인덱싱 중입니다. (잠시 후 다시 열어보세요)':'상단에서 공유폴더를 지정하면 파일이 표시됩니다.')+'</div>';
+            const grid='<div id="_sf-grid" style="flex:1;overflow:auto;padding:16px 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:12px;align-content:start;">'+tiles+'</div>';
+
+            const ov=document.createElement('div'); ov.id='rc-folder-page';
+            ov.style.cssText='position:fixed;inset:0;z-index:4100;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
+            ov.innerHTML=head+toolbar+grid;
+            document.body.appendChild(ov); window.__sfOv=ov;
+
             const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; };
             ov.querySelector('#_sf-x').onclick=close;
-            ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); });
             const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ close(); openSharedFolderPanel(); } };
-            const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요? (폴더의 파일은 삭제되지 않습니다)')){ await R.disconnect(); close(); openSharedFolderPanel(); } };
-            // 📁 반투명(이 기기에 없음) 항목: 더블클릭(PC)/길게누르기(모바일) → 동기화 (실제 P2P 전송은 2D)
+            const updCnt=()=>{ const c=ov.querySelector('#_sf-cnt'); if(c) c.textContent='선택 '+selected.size; };
+            // 타일: 체크박스=선택, 본문 클릭=미리보기(있음)/동기화(없음)
             ov.querySelectorAll('.rc-gf').forEach(el=>{
-                const hash=el.getAttribute('data-hash');
-                const fnm=el.getAttribute('data-fname');
-                const mim=el.getAttribute('data-mime')||'';
-                const here=el.getAttribute('data-here')==='1';
-                if(here){
-                    // 있는 파일: 클릭 → 로컬 파일 미리보기(구글드라이브식)
-                    el.addEventListener('click', (e)=>{ if(e.target.closest('.rc-gf-share')) return; if(window.rcPreviewFolderFile) window.rcPreviewFolderFile(fnm, mim); });
-                } else {
-                    // 없는 파일: 더블클릭(PC)/롱프레스(모바일) → P2P 동기화
-                    const ask=()=>{ if(window.rcRequestSync) window.rcRequestSync(hash, fnm); };
-                    el.addEventListener('dblclick', ask);
-                    let lp=null;
-                    el.addEventListener('touchstart', ()=>{ lp=setTimeout(ask,600); }, {passive:true});
-                    el.addEventListener('touchend', ()=>{ if(lp) clearTimeout(lp); });
-                    el.addEventListener('touchmove', ()=>{ if(lp) clearTimeout(lp); });
-                }
-                const sb=el.querySelector('.rc-gf-share');
-                if(sb) sb.addEventListener('click', (e)=>{ e.stopPropagation(); if(window.rcShareFromFolder) window.rcShareFromFolder(fnm); });
+                const fnm=el.getAttribute('data-fname'), mim=el.getAttribute('data-mime')||'', hash=el.getAttribute('data-hash'), here=el.getAttribute('data-here')==='1';
+                const chk=el.querySelector('.rc-gf-chk');
+                chk.addEventListener('click',(e)=>{ e.stopPropagation(); if(chk.checked) selected.add(fnm); else selected.delete(fnm); updCnt(); });
+                el.addEventListener('click',(e)=>{ if(e.target===chk) return; if(here){ window.rcPreviewFolderFile(fnm, mim); } else { window.rcRequestSync(hash, fnm); } });
             });
+            const allc=ov.querySelector('#_sf-all'); if(allc) allc.addEventListener('change',()=>{ selected.clear(); ov.querySelectorAll('.rc-gf').forEach(el=>{ const chk=el.querySelector('.rc-gf-chk'); chk.checked=allc.checked; if(allc.checked) selected.add(el.getAttribute('data-fname')); }); updCnt(); });
+            ov.querySelectorAll('._sf-act').forEach(b=>b.addEventListener('click', async()=>{
+                const act=b.getAttribute('data-act'); const names=[...selected];
+                if(act==='preview'){ if(!names.length) return showToast('미리볼 파일을 선택하세요.'); window.rcPreviewFolderFile(names[0], ''); return; }
+                if(act==='share'){ if(!names.length) return showToast('공유할 파일을 선택하세요.'); openShareRecipientPicker(names); return; }
+                if(act==='sync'){ const toSync=[]; ov.querySelectorAll('.rc-gf').forEach(el=>{ const fnm=el.getAttribute('data-fname'); if(selected.has(fnm) && el.getAttribute('data-here')==='0') toSync.push({hash:el.getAttribute('data-hash'),fnm}); }); if(!toSync.length) return showToast('이 기기에 없는(흐린) 파일을 선택하세요.'); toSync.forEach(t=>{ if(window.RCSync) window.RCSync.request(t.hash, t.fnm); }); }
+            }));
+        }
+        // 📤 공유 대상(친구) 선택 → 선택 파일들을 각 대상 대화방으로 전송(R2 1회 업로드 후 팬아웃)
+        async function openShareRecipientPicker(fileNames){
+            let friends=[]; try{ const r=await fetch(API_URL+'/api/friends/'+encodeURIComponent(currentUser.name)); friends=await r.json()||[]; }catch(_){}
+            friends=(friends||[]).filter(f=>f && f.name && f.name!==currentUser.name);
+            const chosen=new Set();
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4400;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            const list = friends.length ? friends.map(f=>'<label style="display:flex;align-items:center;gap:10px;padding:11px 6px;border-top:1px solid #f1f5f9;cursor:pointer;"><input type="checkbox" class="_rp-chk" data-name="'+_sfEsc(f.name)+'" style="width:18px;height:18px;"><span style="font-size:20px;">👤</span><span style="font-weight:600;">'+_sfEsc(f.name)+'</span></label>').join('') : '<div style="padding:18px;color:#94a3b8;font-size:13px;">친구가 없습니다. 먼저 친구를 추가하세요.</div>';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:420px;width:100%;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
+                +'<div style="padding:16px 18px;border-bottom:1px solid #eef2f7;"><div style="font-weight:800;font-size:16px;">📤 공유 대상 선택</div><div style="font-size:12px;color:#64748b;margin-top:3px;">파일 '+fileNames.length+'개를 보낼 친구를 선택하세요.</div></div>'
+                +'<div style="flex:1;overflow:auto;padding:4px 18px;">'+list+'</div>'
+                +'<div style="padding:14px 18px;border-top:1px solid #eef2f7;display:flex;gap:8px;"><button id="_rp-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_rp-send" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">보내기</button></div>'
+                +'</div>';
+            document.body.appendChild(ov);
+            const close=()=>{ try{ ov.remove(); }catch(_){} };
+            ov.querySelector('#_rp-cancel').onclick=close;
+            ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); });
+            ov.querySelectorAll('._rp-chk').forEach(c=>c.addEventListener('change',()=>{ if(c.checked) chosen.add(c.getAttribute('data-name')); else chosen.delete(c.getAttribute('data-name')); }));
+            ov.querySelector('#_rp-send').onclick=async()=>{ if(!chosen.size) return showToast('보낼 대상을 선택하세요.'); close(); await sendFilesToRecipients(fileNames, [...chosen]); };
+        }
+        async function sendFilesToRecipients(fileNames, recipients){
+            const pic=(currentUser && currentUser.profilePic)||null; let ok=0, fail=0;
+            for(const name of fileNames){
+                try{
+                    const f=await window.RCFolder.getFileByName(name); if(!f){ fail++; continue; }
+                    showToast('📤 업로드 중: '+name);
+                    const url=await window.uploadBigFileToR2(f, null);
+                    const mime=f.type||'application/octet-stream'; const sizeKB=(f.size/1024).toFixed(0);
+                    const msg='[FILE_ATTACH]'+name+'|'+sizeKB+'|'+mime+'|'+url;
+                    recipients.forEach(rn=>{ const roomId=createRoomId(currentUser.name, rn); if(socket&&socket.connected) socket.emit('send_message',{ roomId:roomId, sender:currentUser.name, senderPic:pic, message:msg }); });
+                    ok++;
+                }catch(e){ fail++; }
+            }
+            showToast('📤 공유 완료: '+ok+'개'+(fail?(' · 실패 '+fail):'')+' → '+recipients.length+'명');
         }
         // 📁 폴더 파일 미리보기(로컬 파일 → blob → 닫기 가능한 인앱 미리보기)
         window.rcPreviewFolderFile = async function(name, mime){
@@ -3265,17 +3280,8 @@
                 setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){} }, 120000);
             }catch(e){ showToast('미리보기 실패'); }
         };
-        // 📤 폴더 파일 간편 공유(현재 열린 대화방으로 첨부 전송)
-        window.rcShareFromFolder = async function(name){
-            try{
-                const f = await window.RCFolder.getFileByName(name);
-                if(!f){ showToast('파일을 찾을 수 없습니다.'); return; }
-                if(!currentChatRoomId){ showToast('공유할 대화방을 먼저 여세요.'); return; }
-                try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){}
-                if(window.handleChatFileAttach) await window.handleChatFileAttach([f]);
-                showToast('📤 대화방에 공유했습니다: ' + name);
-            }catch(e){ showToast('공유 실패'); }
-        };
+        // 📤 폴더 파일 간편 공유(친구 선택 후 전송)
+        window.rcShareFromFolder = function(name){ try{ openShareRecipientPicker([name]); }catch(e){ showToast('공유 실패'); } };
         // 📁 2D: 반투명 썸네일 → 이 기기로 P2P 자기동기화 요청. 다른 기기가 온라인이면 직접 전송(클라우드 미경유).
         window.rcRequestSync = function(hash, fname){
             if(confirm('이 파일을 이 기기로 동기화하시겠습니까?\n(내 다른 기기가 온라인이면 기기 간 P2P로 직접 전송됩니다)')){
