@@ -7090,6 +7090,12 @@
                 await fetch(API_URL + '/api/push/subscribe', { method:'POST', headers:{'Content-Type':'application/json','x-auth-token':tk}, body: JSON.stringify({ sub: sub }) });
             } catch(e){ /* 조용히 무시 */ }
         };
+        // 🔔 간헐적 알림 누락 방지 — 앱/탭이 다시 보일 때 푸시 구독 갱신(절전/만료 후 재구독) + 채팅목록 재동기화
+        (function _pushKeepAlive(){
+            let _last=0;
+            const refresh=()=>{ try{ if(document.visibilityState!=='visible') return; if(!currentUser) return; const now=Date.now(); if(now-_last<60000) return; _last=now; if('Notification' in window && Notification.permission==='granted' && window._earthSetupPush){ window._earthSetupPush(); } }catch(_){} };
+            try{ document.addEventListener('visibilitychange', refresh); window.addEventListener('focus', refresh); }catch(_){}
+        })();
         // 🔔 알림 탭 → 해당 대화방 직접 열기 (roomId로 상대 유추)
         window.openEarthRoom = function(roomId){
             try {
