@@ -307,6 +307,21 @@ app.get('/lib/cs/:name', async (req, res) => {
         res.type('application/javascript').set('Cache-Control', 'public, max-age=604800').send(_csLibCache[url]);
     } catch (e) { res.status(502).send('// cs lib fetch fail: ' + (e.message || e)); }
 });
+// 🧊 Three.js(3D 모델) 라이브러리도 같은 출처로 프록시 서빙
+const _THREE_LIBS = {
+    'three.min.js': 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+    'PLYLoader.js': 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js',
+    'STLLoader.js': 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js',
+    'OBJLoader.js': 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js',
+    'OrbitControls.js': 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'
+};
+app.get('/lib/three/:name', async (req, res) => {
+    const url = _THREE_LIBS[req.params.name]; if (!url) return res.status(404).end();
+    try {
+        if (!_csLibCache[url]) { const r = await fetch(url); if (!r.ok) throw new Error('upstream ' + r.status); _csLibCache[url] = Buffer.from(await r.arrayBuffer()); }
+        res.type('application/javascript').set('Cache-Control', 'public, max-age=604800').send(_csLibCache[url]);
+    } catch (e) { res.status(502).send('// three lib fetch fail: ' + (e.message || e)); }
+});
 app.get('/sw.js', (req, res) => {
     res.type('application/javascript').send(
         "self.addEventListener('install',e=>self.skipWaiting());\n" +

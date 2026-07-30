@@ -486,6 +486,8 @@
         .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 12px 24px; border-radius: 30px; font-size: 13px; font-weight: bold; z-index: 9999; opacity: 0; transition: 0.3s; pointer-events: none; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         .toast.show { opacity: 1; bottom: 40px; }
 
+        /* 🔧 모바일 최적화: 버튼/칩 글자가 세로로 쪼개지지 않도록(줄바꿈 대신 한 줄 유지). 필요 시 컨테이너는 가로 스크롤. */
+        button, .yt-sb-item, .chip, .filter-chip-bar > *, .karrot-actions > *, .brand-actions > * { white-space: nowrap; }
         /* 💬 플로팅 메신저 서랍장 (깔끔한 UI 교정) */
         .floating-messenger-btn { position: fixed; bottom: 26px; right: 26px; width: 62px; height: 62px; background: #d6006e; border-radius: 20px 20px 20px 6px; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; box-shadow: 0 6px 20px rgba(214,0,110,0.4); z-index: 4000; transition: 0.2s; border: none; }
         .floating-messenger-btn:hover { transform: scale(1.06); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.36); }
@@ -3402,7 +3404,7 @@
                     +'<div style="font-weight:800;font-size:17px;white-space:nowrap;">공유폴더</div>'
                     +(path.length?'<button id="_sf-back" style="'+BTN+'padding:8px 11px;" title="상위 폴더">← 뒤로</button>':'')
                     +'<div style="flex:1;min-width:120px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
-                    +'<span style="font-size:11.5px;color:'+(connected?'#16a34a':(notSupported?'#92400e':'#b91c1c'))+';">'+statusTxt+'</span>'
+                    +'<span style="font-size:11.5px;white-space:nowrap;flex:none;color:'+(connected?'#16a34a':(notSupported?'#92400e':'#b91c1c'))+';">'+statusTxt+'</span>'
                     +(notSupported?'':'<button id="_sf-pick" style="'+BTN+'">폴더 변경</button>')
                     +(connected?'<button id="_sf-disc" style="'+BTN+'color:#dc2626;">연결 해제</button>':'')
                     +'<button id="_sf-x" style="'+BTN+'font-size:16px;">✕</button>'
@@ -3551,7 +3553,8 @@
         async function openShareRecipientPicker(fileNames){
             const myId=window.RCFolder.deviceId();
             let devices=[]; try{ devices=await window.RCFolder.list(); }catch(_){}
-            const myDevices=(devices||[]).filter(d=>d.deviceId!==myId && d.hasFolder);   // 공유폴더 등록된 내 다른 기기
+            const _myName=window.RCFolder.deviceName();
+            const myDevices=(devices||[]).filter(d=>d.deviceId!==myId && d.name!==_myName && d.hasFolder);   // 현재 기기(같은 이름 포함) 제외한 내 다른 기기
             let friends=[]; try{ const r=await fetch(API_URL+'/api/friends/'+encodeURIComponent(currentUser.name)); friends=await r.json()||[]; }catch(_){}
             friends=(friends||[]).filter(f=>f && f.name && f.name!==currentUser.name);
             const chosen=new Map();   // key → {type, id, name}
@@ -3642,13 +3645,15 @@
         };
         // 🧊 3D 모델 뷰어(PLY/STL/OBJ) — 회전/줌, 정점색상 유지. 인앱 창.
         window._model3DViewer = async function(file, fname){
-            await new Promise(r=>{ try{ if(window.__loadThreeJs) window.__loadThreeJs(()=>r()); else r(); }catch(_){ r(); } });
-            if(typeof THREE==='undefined'){ showToast('3D 엔진 로드 실패'); return; }
-            const ext=(String(fname).split('.').pop()||'').toLowerCase();
-            let geom=null, root=null;
-            try{ if(ext==='ply') geom=new THREE.PLYLoader().parse(await file.arrayBuffer()); else if(ext==='stl') geom=new THREE.STLLoader().parse(await file.arrayBuffer()); else if(ext==='obj') root=new THREE.OBJLoader().parse(await file.text()); else { showToast('지원하지 않는 3D 형식'); return; } }catch(e){ showToast('3D 로드 실패: '+(e.message||e)); return; }
             const modal=document.getElementById('chat-file-preview-modal'), content=document.getElementById('cfp-content'), title=document.getElementById('cfp-title');
             if(title) title.textContent=fname||'3D 모델';
+            const failMsg=(m)=>{ if(content){ content.innerHTML='<div style="color:#fff;text-align:center;padding:30px;max-width:520px;"><div style="font-size:40px;">🧊</div><div style="font-weight:700;margin:8px 0;">3D 미리보기 실패</div><div style="font-size:12px;color:#cbd5e1;">'+_sfEsc(m||'')+'</div></div>'; modal.style.display='flex'; } };
+            await new Promise(r=>{ try{ if(window.__loadThreeJs) window.__loadThreeJs(()=>r()); else r(); }catch(_){ r(); } });
+            if(typeof THREE==='undefined'){ return failMsg('THREE 로드 실패(라이브러리 차단/네트워크)'); }
+            const ext=(String(fname).split('.').pop()||'').toLowerCase();
+            if((ext==='ply'&&!THREE.PLYLoader)||(ext==='stl'&&!THREE.STLLoader)||(ext==='obj'&&!THREE.OBJLoader)){ return failMsg('로더 미로드: '+ext+' (THREE.'+ext.toUpperCase()+'Loader 없음)'); }
+            let geom=null, root=null;
+            try{ if(ext==='ply') geom=new THREE.PLYLoader().parse(await file.arrayBuffer()); else if(ext==='stl') geom=new THREE.STLLoader().parse(await file.arrayBuffer()); else if(ext==='obj') root=new THREE.OBJLoader().parse(await file.text()); else { return failMsg('지원하지 않는 3D 형식: '+ext); } }catch(e){ return failMsg('파싱 오류: '+(e.message||e)); }
             content.innerHTML='<div id="_m3d" style="width:min(900px,92vw);height:78vh;background:#0b1220;border-radius:8px;overflow:hidden;"></div>';
             modal.style.display='flex';
             const host=document.getElementById('_m3d'); const W=host.clientWidth||600, H=host.clientHeight||400;
@@ -10555,12 +10560,13 @@ pdfjsScript,
             if(window.__threeLoaded && typeof THREE !== 'undefined' && THREE.OrbitControls && THREE.PLYLoader && THREE.STLLoader && THREE.OBJLoader) {
                 return callback();
             }
+            const _tb = (typeof API_URL!=='undefined'?API_URL:'') + '/lib/three/';
             const scripts = [
-                'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
-                'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js',
-                'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js',
-                'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js',
-                'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'
+                _tb+'three.min.js',
+                _tb+'PLYLoader.js',
+                _tb+'STLLoader.js',
+                _tb+'OBJLoader.js',
+                _tb+'OrbitControls.js'
             ];
             let i = 0;
             function loadNext() {
