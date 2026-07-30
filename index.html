@@ -3480,8 +3480,10 @@
                     +'</div>';
 
                 const ZOOM=(flt.zoom||150);
-                const _nameBar=(nm)=>'<div style="flex:none;padding:7px 10px;font-size:11.5px;font-weight:500;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+_sfEsc(nm)+'</div>';
-                const folderCards=cur.folders.map(nm=>'<div class="rc-gfd" data-name="'+_sfEsc(nm)+'" title="'+_sfEsc(nm)+'" style="position:relative;overflow:hidden;background:#fff;cursor:pointer;display:flex;flex-direction:column;"><div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#f3f4f6;font-size:50px;line-height:1;">📁</div>'+_nameBar(nm)+'</div>').join('');
+                const _nameBar=(nm)=>'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:500;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+_sfEsc(nm)+'</div>';
+                // 정사각 썸네일 박스(padding-top 100%): flex 컬럼에서 aspect-ratio 무시 문제 회피
+                const _sq=(inner,bg)=>'<div style="position:relative;width:100%;padding-top:100%;overflow:hidden;background:'+(bg||'#f3f4f6')+';">'+inner+'</div>';
+                const folderCards=cur.folders.map(nm=>'<div class="rc-gfd" data-name="'+_sfEsc(nm)+'" title="'+_sfEsc(nm)+'" style="position:relative;overflow:hidden;background:#fff;cursor:pointer;display:flex;flex-direction:column;">'+_sq('<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:52px;line-height:1;">📁</div>')+_nameBar(nm)+'</div>').join('');
                 // 🩻 CT 시리즈 그룹핑
                 const seriesMap={};
                 const _dcm=cur.files.filter(f=>/\.dcm$/i.test(f.fname));
@@ -3496,10 +3498,11 @@
                 const _timeChip=(mt)=>'<span style="position:absolute;bottom:6px;left:6px;background:rgba(17,24,39,.6);color:#fff;font-size:10px;padding:2px 7px;border-radius:20px;z-index:2;">'+_relTime(mt)+'</span>';
                 const _more='<button class="rc-more" title="더보기" style="position:absolute;bottom:5px;right:5px;width:26px;height:26px;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);">'+_SFIC.dots+'</button>';
                 const _card=(f)=>{
-                    if(f.series){ return '<div class="rc-serf" data-sid="'+f.sid+'" data-type="dicom" data-mtime="'+(Number(f.mtime)||0)+'" data-fname="'+_sfEsc(f.fname)+'" title="'+_sfEsc(f.fname)+'" style="position:relative;overflow:hidden;background:#fff;cursor:pointer;display:flex;flex-direction:column;"><div style="position:relative;aspect-ratio:1;background:#052e2b;display:flex;align-items:center;justify-content:center;overflow:hidden;"><div class="rc-ser-icon" style="font-size:46px;color:#5eead4;">🩻</div><span style="position:absolute;top:6px;right:6px;background:#0d9488;color:#fff;font-size:9px;padding:2px 6px;border-radius:6px;z-index:3;">'+f.slices+'컷</span>'+_timeChip(f.mtime)+'<button class="rc-ser-del" title="삭제" style="position:absolute;top:5px;left:5px;width:26px;height:26px;border:none;border-radius:8px;background:rgba(15,23,42,.55);color:#fff;font-size:12px;cursor:pointer;z-index:5;">🗑</button></div>'+_nameBar('CT 시리즈 · '+f.slices+'컷')+'</div>'; }
+                    if(f.series){ const inr='<div class="rc-ser-icon" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:46px;color:#5eead4;">🩻</div><span style="position:absolute;top:6px;right:6px;background:#0d9488;color:#fff;font-size:9px;padding:2px 6px;border-radius:6px;z-index:3;">'+f.slices+'컷</span>'+_timeChip(f.mtime)+'<button class="rc-ser-del" title="삭제" style="position:absolute;top:5px;left:5px;width:26px;height:26px;border:none;border-radius:8px;background:rgba(15,23,42,.55);color:#fff;font-size:12px;cursor:pointer;z-index:5;">🗑</button>'; return '<div class="rc-serf" data-sid="'+f.sid+'" data-type="dicom" data-mtime="'+(Number(f.mtime)||0)+'" data-fname="'+_sfEsc(f.fname)+'" title="'+_sfEsc(f.fname)+'" style="position:relative;overflow:hidden;background:#fff;cursor:pointer;display:flex;flex-direction:column;">'+_sq(inr,'#052e2b')+_nameBar('CT 시리즈 · '+f.slices+'컷')+'</div>'; }
                     const isVid=_sfType(f.mime,f.fname)==='video', hasThumb=!!f.thumb;
                     const inner=hasThumb?('<img src="'+f.thumb+'" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isVid?_vov:'')):('<div class="rc-gf-icon" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:46px;color:#9aa3af;">'+_sfIcon(f.mime,f.fname)+'</div>');
-                    return '<div class="rc-gf" draggable="true" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.mtime)||0)+'" data-here="1" title="'+_sfEsc(f.fname)+'" style="position:relative;overflow:hidden;background:#fff;cursor:pointer;display:flex;flex-direction:column;"><div style="position:relative;aspect-ratio:1;background:#f3f4f6;overflow:hidden;">'+inner+'<input type="checkbox" class="rc-gf-chk" title="선택" style="position:absolute;top:6px;left:6px;width:18px;height:18px;z-index:4;cursor:pointer;">'+_timeChip(f.mtime)+_more+'</div>'+_nameBar(f.fname)+'</div>';
+                    const ov2='<input type="checkbox" class="rc-gf-chk" title="선택" style="position:absolute;top:6px;left:6px;width:18px;height:18px;z-index:4;cursor:pointer;">'+_timeChip(f.mtime)+_more;
+                    return '<div class="rc-gf" draggable="true" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.mtime)||0)+'" data-here="1" title="'+_sfEsc(f.fname)+'" style="position:relative;overflow:hidden;background:#fff;cursor:pointer;display:flex;flex-direction:column;">'+_sq(inner+ov2)+_nameBar(f.fname)+'</div>';
                 };
                 // 날짜 그룹
                 const groups={}; const order=[];
@@ -6604,32 +6607,34 @@
                 } catch(_){ return false; }
             };
 
+            const isRcDrag = (e) => { try{ const t=e.dataTransfer&&e.dataTransfer.types; if(!t) return false; for(let i=0;i<t.length;i++){ if(t[i]==='application/x-rc-file') return true; } }catch(_){} return false; };
             room.addEventListener('dragenter', e => {
-                if(!isFileDrag(e)) return;
+                if(!isFileDrag(e) && !isRcDrag(e)) return;
                 e.preventDefault(); e.stopPropagation();
                 dragCounter++;
                 overlay.classList.add('active');
             });
             room.addEventListener('dragleave', e => {
-                if(!isFileDrag(e)) return;
+                if(!isFileDrag(e) && !isRcDrag(e)) return;
                 e.preventDefault(); e.stopPropagation();
                 dragCounter--;
                 if(dragCounter <= 0) { overlay.classList.remove('active'); dragCounter = 0; }
             });
             // dragover는 반드시 preventDefault 해야 drop 이벤트가 발생
             room.addEventListener('dragover', e => {
-                if(!isFileDrag(e)) return;
+                if(!isFileDrag(e) && !isRcDrag(e)) return;
                 e.preventDefault(); e.stopPropagation();
                 if(e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
             });
             room.addEventListener('drop', e => {
-                if(!e.dataTransfer || !e.dataTransfer.files) return;
+                if(!e.dataTransfer) return;
+                let rc=''; try{ rc=e.dataTransfer.getData('application/x-rc-file')||''; }catch(_){}
+                const hasFiles = e.dataTransfer.files && e.dataTransfer.files.length > 0;
+                if(!hasFiles && !rc){ return; }   // 내부 카드도 파일도 아니면 통과(다른 핸들러가 처리)
                 e.preventDefault(); e.stopPropagation();
-                dragCounter = 0;
-                overlay.classList.remove('active');
-                if(e.dataTransfer.files.length > 0 && typeof window.handleChatFileAttach === 'function') {
-                    window.handleChatFileAttach(e.dataTransfer.files);
-                }
+                dragCounter = 0; overlay.classList.remove('active');
+                if(hasFiles && typeof window.handleChatFileAttach === 'function') window.handleChatFileAttach(e.dataTransfer.files);
+                else if(rc && window._rcSendToCurrentRoom) window._rcSendToCurrentRoom(rc);
             });
 
             // 🚀 [신규] 채팅 입력창에 이미지 붙여넣기 (Ctrl+V / Cmd+V)
