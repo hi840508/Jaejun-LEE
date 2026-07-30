@@ -6794,7 +6794,14 @@
         // 📷 화상통화 권한 안내 — earth는 웹/PWA라 Windows '앱 카메라 설정'엔 안 나옴 → 브라우저 권한으로 안내
         window._showCamPermHelp = function(e){
             var noDev = e && (e.name==='NotFoundError' || e.name==='DevicesNotFoundError' || e.name==='OverconstrainedError');
+            var busy = e && (e.name==='NotReadableError' || e.name==='AbortError' || e.name==='TrackStartError');
             var inApp = !!window.rayApp;
+            if(busy){
+                try { overlay('cam-perm-help', '<div style="padding:20px 22px;"><h3 style="margin:0 0 12px;font-size:17px;font-weight:900;color:var(--primary);">📷 카메라 사용 중</h3><p style="margin:0 0 8px;line-height:1.7;">카메라·마이크를 <b>다른 창이 사용 중</b>입니다.</p><p style="font-size:13px;color:#334155;line-height:1.8;margin:0;">같은 계정을 <b>RAY 앱과 웹 브라우저에 동시에</b> 열어두면 한쪽만 카메라를 쓸 수 있습니다. <b>둘 중 하나(다른 창/탭)를 닫고</b> 다시 통화해 주세요. (원격도 동일 — 한 창만 사용)</p><div style="text-align:right;margin-top:14px;"><button class="btn" type="button" style="padding:8px 18px;background:var(--gradient-btn);color:#fff;" onclick="rxCloseOverlay(\'cam-perm-help\')">확인</button></div></div>', 460); }
+                catch(_){ showToast('카메라를 다른 창(앱/브라우저)이 사용 중입니다. 한쪽을 닫고 다시 시도하세요.'); }
+                return;
+            }
+            // 앱이면 브리지로 권한 요청 시도(앱이 지원 시)
             // 앱이면 브리지로 권한 요청 시도(앱이 지원 시)
             try { if(inApp && window.rayApp && window.rayApp.requestMediaPermission){ window.rayApp.requestMediaPermission(); } }catch(_){}
             var body = noDev
