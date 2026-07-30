@@ -488,6 +488,7 @@
 
         /* 🔧 모바일 최적화: 버튼/칩 글자가 세로로 쪼개지지 않도록(줄바꿈 대신 한 줄 유지). 필요 시 컨테이너는 가로 스크롤. */
         button, .yt-sb-item, .chip, .filter-chip-bar > *, .karrot-actions > *, .brand-actions > * { white-space: nowrap; }
+        .history-table th, .history-table td { white-space: nowrap; }   /* 세금계산서·정산 등 데이터표: 세로글자 방지(가로 스크롤) */
         /* 💬 플로팅 메신저 서랍장 (깔끔한 UI 교정) */
         .floating-messenger-btn { position: fixed; bottom: 26px; right: 26px; width: 62px; height: 62px; background: #d6006e; border-radius: 20px 20px 20px 6px; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; box-shadow: 0 6px 20px rgba(214,0,110,0.4); z-index: 4000; transition: 0.2s; border: none; }
         .floating-messenger-btn:hover { transform: scale(1.06); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.36); }
@@ -2850,7 +2851,7 @@
             async function _tGet(k){ try{ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(TSTORE,'readonly').objectStore(TSTORE).get(k); q.onsuccess=()=>res(q.result||''); q.onerror=()=>res(''); }); }catch(_){ return ''; } }
             async function _tPut(k,v){ try{ const db=await _idb(); await new Promise((res)=>{ const q=db.transaction(TSTORE,'readwrite').objectStore(TSTORE).put(v,k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }catch(_){} }
             // 영구 썸네일: 파일명|크기|수정시각 키로 IndexedDB 캐시(재방문/재인덱싱 시 재디코딩·깜빡임 방지)
-            async function getThumb(file, mime, fname){ try{ const key='v2|'+(fname||file.name)+'|'+file.size+'|'+(file.lastModified||0); let t=await _tGet(key); if(t) return t; t=await makeThumbForFile(file, mime, fname); if(t) _tPut(key,t); return t; }catch(_){ return ''; } }
+            async function getThumb(file, mime, fname){ try{ const key='v3|'+(fname||file.name)+'|'+file.size+'|'+(file.lastModified||0); let t=await _tGet(key); if(t) return t; t=await makeThumbForFile(file, mime, fname); if(t) _tPut(key,t); return t; }catch(_){ return ''; } }
             async function _get(k){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readonly').objectStore(STORE).get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
             async function _put(k,v){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).put(v,k); q.onsuccess=()=>res(); q.onerror=()=>rej(q.error); }); }
             async function _rm(k){ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).delete(k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }
@@ -3383,7 +3384,7 @@
             let path=[]; window.__sfPath=path;
             let flt={q:'',type:'all',period:'all',from:'',to:''};
 
-            if(!document.getElementById('_sf-style')){ const st=document.createElement('style'); st.id='_sf-style'; st.textContent='#rc-folder-page #_sf-grid{min-height:0;} @media (max-width:640px){ #rc-folder-page #_sf-grid{grid-template-columns:repeat(auto-fill,minmax(30vw,1fr))!important;gap:8px!important;padding:10px!important;} #rc-folder-page .rc-gf,#rc-folder-page .rc-gfd,#rc-folder-page .rc-serf{border-radius:10px!important;} }'; document.head.appendChild(st); }
+            if(!document.getElementById('_sf-style')){ const st=document.createElement('style'); st.id='_sf-style'; st.textContent='#rc-folder-page #_sf-grid{min-height:0;} #rc-folder-page img{ -webkit-user-drag:none; user-drag:none; } #rc-folder-page .rc-gf *{ pointer-events:none; } #rc-folder-page .rc-gf .rc-gf-chk{ pointer-events:auto; } @media (max-width:640px){ #rc-folder-page #_sf-grid{grid-template-columns:repeat(auto-fill,minmax(30vw,1fr))!important;gap:8px!important;padding:10px!important;} #rc-folder-page .rc-gf,#rc-folder-page .rc-gfd,#rc-folder-page .rc-serf{border-radius:10px!important;} }'; document.head.appendChild(st); }
             const ov=document.createElement('div'); ov.id='rc-folder-page';
             ov.style.cssText='position:fixed;inset:0;z-index:3500;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
             document.body.appendChild(ov); window.__sfOv=ov;
