@@ -2994,10 +2994,10 @@
                     const cam=new THREE.PerspectiveCamera(45,1,0.01,1e7);
                     let obj;
                     if(geom){ try{ geom.computeVertexNormals(); }catch(_){}
-                        const hasFaces = geom.index ? geom.index.count>0 : (geom.attributes && geom.attributes.position && geom.attributes.normal);
-                        if(geom.index || (geom.attributes && geom.attributes.normal)) obj=new THREE.Mesh(geom, new THREE.MeshPhongMaterial({color:0xd9dee7, side:THREE.DoubleSide, flatShading:false}));
-                        else obj=new THREE.Points(geom, new THREE.PointsMaterial({color:0xd9dee7, size:0.5, sizeAttenuation:true}));
-                    } else { obj=root; root.traverse(c=>{ if(c.isMesh) c.material=new THREE.MeshPhongMaterial({color:0xd9dee7, side:THREE.DoubleSide}); }); }
+                        const hasColor=!!(geom.attributes && geom.attributes.color);
+                        if(geom.index || (geom.attributes && geom.attributes.normal)) obj=new THREE.Mesh(geom, new THREE.MeshPhongMaterial({color:hasColor?0xffffff:0xd9dee7, vertexColors:hasColor, side:THREE.DoubleSide, flatShading:false}));
+                        else obj=new THREE.Points(geom, new THREE.PointsMaterial({color:hasColor?0xffffff:0xd9dee7, vertexColors:hasColor, size:1, sizeAttenuation:true}));
+                    } else { obj=root; root.traverse(c=>{ if(c.isMesh && !c.material) c.material=new THREE.MeshPhongMaterial({color:0xd9dee7, side:THREE.DoubleSide}); }); }
                     scene.add(obj);
                     scene.add(new THREE.AmbientLight(0xffffff,0.75)); const dl=new THREE.DirectionalLight(0xffffff,0.85); dl.position.set(1,1,2); scene.add(dl);
                     const box=new THREE.Box3().setFromObject(obj); const c=box.getCenter(new THREE.Vector3()); const sz=box.getSize(new THREE.Vector3()); const md=Math.max(sz.x,sz.y,sz.z)||1;
@@ -3381,6 +3381,7 @@
             let path=[]; window.__sfPath=path;
             let flt={q:'',type:'all',period:'all',from:'',to:''};
 
+            if(!document.getElementById('_sf-style')){ const st=document.createElement('style'); st.id='_sf-style'; st.textContent='#rc-folder-page #_sf-grid{min-height:0;} @media (max-width:640px){ #rc-folder-page #_sf-grid{grid-template-columns:repeat(auto-fill,minmax(30vw,1fr))!important;gap:8px!important;padding:10px!important;} #rc-folder-page .rc-gf,#rc-folder-page .rc-gfd,#rc-folder-page .rc-serf{border-radius:10px!important;} }'; document.head.appendChild(st); }
             const ov=document.createElement('div'); ov.id='rc-folder-page';
             ov.style.cssText='position:fixed;inset:0;z-index:3500;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
             document.body.appendChild(ov); window.__sfOv=ov;
@@ -3394,8 +3395,6 @@
                 const fname=connected?await R.folderName():'';
                 const devices=await R.list();
                 let cur={folders:[],files:[]}; try{ if(connected) cur=await R.listAt(path); }catch(_){}
-                let remote=[];
-                if(connected && path.length===0){ let fd={files:[]}; try{ fd=await R.allFiles(); }catch(_){} const ls={}; cur.files.forEach(f=>ls[f.fname+'|'+f.size]=1); remote=(fd.files||[]).filter(f=>!ls[f.hash]); }
 
                 const crumb='<span class="_sf-crumb" data-i="-1" style="cursor:pointer;color:#2563eb;font-weight:700;">🏠 '+(_sfEsc(fname)||'공유폴더')+'</span>'+path.map((seg,i)=>' <span style="color:#94a3b8;">/</span> <span class="_sf-crumb" data-i="'+i+'" style="cursor:pointer;color:#2563eb;">'+_sfEsc(seg)+'</span>').join('');
                 const statusTxt = notSupported ? '이 기기는 폴더 미지원(모바일/Safari) — PC에서 지정' : (connected ? ('✅ '+_sfEsc(fname)) : '⚠️ 공유폴더 미지정');
@@ -3437,8 +3436,7 @@
                 if(_dcm.length>=2){ const slices=_dcm.map(f=>f.fname).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})); seriesMap['ser0']=slices; fileList.push({ series:true, sid:'ser0', fname:'CT/DICOM 시리즈 ('+_dcm.length+'컷)', slices:_dcm.length, mtime:Math.max.apply(null,_dcm.map(f=>f.mtime||0)), here:true }); }
                 else { _dcm.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.mtime||0,here:true,thumb:''})); }
                 _non.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.mtime||0,here:true,thumb:''}));
-                remote.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.updated||0,here:false,thumb:f.thumb||''}));
-                fileList.sort((a,b)=> (a.here===b.here)?(b.mtime-a.mtime):(a.here?-1:1));
+                fileList.sort((a,b)=> b.mtime-a.mtime);
                 const fileTiles=fileList.map(f=>{
                     if(f.series){
                         return '<div class="rc-serf" data-sid="'+f.sid+'" data-type="dicom" data-mtime="'+(Number(f.mtime)||0)+'" data-fname="'+_sfEsc(f.fname)+'" title="CT 시리즈 — 클릭하면 슬라이스 뷰어" style="position:relative;border:1px solid #99f6e4;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#042f2e;cursor:pointer;display:flex;align-items:center;justify-content:center;">'
@@ -3448,12 +3446,11 @@
                             +'<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));color:#fff;font-size:10px;padding:14px 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2;">'+_sfEsc(f.fname)+'</span>'
                             +'</div>';
                     }
-                    const here=f.here, isVid=_sfType(f.mime,f.fname)==='video', hasThumb=!!f.thumb;
-                    const thumb=hasThumb?('<img src="'+f.thumb+'" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isVid?_vov:'')):('<div class="rc-gf-icon" style="font-size:36px;">'+_sfIcon(f.mime,f.fname)+'</div>');
-                    return '<div class="rc-gf" draggable="true" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.mtime)||0)+'" data-here="'+(here?1:0)+'" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;opacity:'+(here?1:0.5)+';display:flex;align-items:center;justify-content:center;">'
+                    const isVid=_sfType(f.mime,f.fname)==='video', hasThumb=!!f.thumb;
+                    const thumb=hasThumb?('<img src="'+f.thumb+'" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isVid?_vov:'')):('<div class="rc-gf-icon" style="font-size:34px;">'+_sfIcon(f.mime,f.fname)+'</div>');
+                    return '<div class="rc-gf" draggable="true" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.mtime)||0)+'" data-here="1" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;">'
                         +thumb
-                        +'<input type="checkbox" class="rc-gf-chk" title="선택" style="position:absolute;top:6px;left:6px;width:20px;height:20px;z-index:4;cursor:pointer;">'
-                        +(here?'':'<span style="position:absolute;top:6px;right:6px;background:#0f172a;color:#fff;font-size:9px;padding:2px 6px;border-radius:6px;z-index:2;">없음</span>')
+                        +'<input type="checkbox" class="rc-gf-chk" title="선택" style="position:absolute;top:5px;left:5px;width:20px;height:20px;z-index:4;cursor:pointer;">'
                         +'<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.68));color:#fff;font-size:10px;padding:14px 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2;">'+_sfEsc(f.fname)+'</span>'
                         +'</div>';
                 }).join('');
@@ -3492,7 +3489,7 @@
                     const fnm=el.getAttribute('data-fname'), mim=el.getAttribute('data-mime')||'', here=el.getAttribute('data-here')==='1';
                     const chk=el.querySelector('.rc-gf-chk');
                     chk.addEventListener('click',(e)=>{ e.stopPropagation(); if(chk.checked) selected.add(fnm); else selected.delete(fnm); updCnt(); });
-                    el.addEventListener('click',(e)=>{ if(e.target===chk) return; if(here){ window.rcPreviewFolderFile(fnm, mim); } else { showToast('다른 기기에 있는 파일입니다. 그 기기의 공유폴더에서 "공유 / 나에게 보내기"로 보내세요.'); } });
+                    el.addEventListener('click',(e)=>{ if(e.target===chk) return; window.rcPreviewFolderFile(fnm, mim); });
                     el.addEventListener('dragstart',(e)=>{ if(!here){ e.preventDefault(); return; } try{ e.dataTransfer.setData('application/x-rc-file', fnm); e.dataTransfer.setData('text/plain', fnm); e.dataTransfer.effectAllowed='copy'; window.__rcDragFile=fnm; }catch(_){} });
                     el.addEventListener('dragend',()=>{ window.__rcDragFile=null; });
                     if(here) el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); ctxMenu(e.clientX,e.clientY,[
@@ -3547,7 +3544,6 @@
                 (async()=>{ const sers=[].slice.call(ov.querySelectorAll('.rc-serf')); for(const el of sers){ const sid=el.getAttribute('data-sid'); const sl=seriesMap[sid]||[]; if(!sl.length) continue; const mid=sl[Math.floor(sl.length/2)]; try{ const f=await R.getFileAt(path, mid); if(!f) continue; const t=await R.getThumb(f,'application/dicom',mid); if(t){ const ic=el.querySelector('.rc-ser-icon'); if(ic) ic.style.display='none'; el.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;">'); } }catch(_){} } })();
 
                 applyFilter();
-                try{ if(connected && path.length===0) R.syncIndex(); }catch(_){}
             }
             render();
         }
@@ -3644,6 +3640,33 @@
             el.addEventListener('wheel',(e)=>{ e.preventDefault(); show(cur+(e.deltaY>0?1:-1)); }, {passive:false});
             show(cur);
         };
+        // 🧊 3D 모델 뷰어(PLY/STL/OBJ) — 회전/줌, 정점색상 유지. 인앱 창.
+        window._model3DViewer = async function(file, fname){
+            await new Promise(r=>{ try{ if(window.__loadThreeJs) window.__loadThreeJs(()=>r()); else r(); }catch(_){ r(); } });
+            if(typeof THREE==='undefined'){ showToast('3D 엔진 로드 실패'); return; }
+            const ext=(String(fname).split('.').pop()||'').toLowerCase();
+            let geom=null, root=null;
+            try{ if(ext==='ply') geom=new THREE.PLYLoader().parse(await file.arrayBuffer()); else if(ext==='stl') geom=new THREE.STLLoader().parse(await file.arrayBuffer()); else if(ext==='obj') root=new THREE.OBJLoader().parse(await file.text()); else { showToast('지원하지 않는 3D 형식'); return; } }catch(e){ showToast('3D 로드 실패: '+(e.message||e)); return; }
+            const modal=document.getElementById('chat-file-preview-modal'), content=document.getElementById('cfp-content'), title=document.getElementById('cfp-title');
+            if(title) title.textContent=fname||'3D 모델';
+            content.innerHTML='<div id="_m3d" style="width:min(900px,92vw);height:78vh;background:#0b1220;border-radius:8px;overflow:hidden;"></div>';
+            modal.style.display='flex';
+            const host=document.getElementById('_m3d'); const W=host.clientWidth||600, H=host.clientHeight||400;
+            const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(W,H); host.appendChild(renderer.domElement);
+            const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0b1220);
+            const cam=new THREE.PerspectiveCamera(45,W/H,0.01,1e7);
+            let obj;
+            if(geom){ try{ geom.computeVertexNormals(); }catch(_){} const hasColor=!!(geom.attributes&&geom.attributes.color);
+                if(geom.index || (geom.attributes&&geom.attributes.normal)) obj=new THREE.Mesh(geom, new THREE.MeshPhongMaterial({color:hasColor?0xffffff:0xd9dee7, vertexColors:hasColor, side:THREE.DoubleSide}));
+                else obj=new THREE.Points(geom, new THREE.PointsMaterial({color:hasColor?0xffffff:0xd9dee7, vertexColors:hasColor, size:1, sizeAttenuation:true}));
+            } else { obj=root; root.traverse(c=>{ if(c.isMesh && !c.material) c.material=new THREE.MeshPhongMaterial({color:0xd9dee7, side:THREE.DoubleSide}); }); }
+            scene.add(obj); scene.add(new THREE.AmbientLight(0xffffff,0.8)); const dl=new THREE.DirectionalLight(0xffffff,0.8); dl.position.set(1,1,2); scene.add(dl);
+            const box=new THREE.Box3().setFromObject(obj); const c=box.getCenter(new THREE.Vector3()); const sz=box.getSize(new THREE.Vector3()); const md=Math.max(sz.x,sz.y,sz.z)||1;
+            obj.position.sub(c); cam.position.set(md*0.9,md*0.7,md*2.0); cam.lookAt(0,0,0);
+            let controls=null; try{ if(THREE.OrbitControls){ controls=new THREE.OrbitControls(cam, renderer.domElement); controls.enableDamping=true; controls.target.set(0,0,0); } }catch(_){}
+            function loop(){ if(!modal || modal.style.display==='none' || !host.isConnected){ try{ renderer.forceContextLoss&&renderer.forceContextLoss(); renderer.dispose(); }catch(_){} return; } if(controls) controls.update(); renderer.render(scene,cam); requestAnimationFrame(loop); }
+            loop();
+        };
         window.rcPreviewFolderFile = async function(name, mime, url){
             try{
                 let f=null; try{ f=await window.RCFolder.getFileAt(window.__sfPath||[], name); }catch(_){}
@@ -3656,8 +3679,10 @@
                 const isPdf=/pdf/.test(mm)||/\.pdf$/.test(fn);
                 const isHtml=/html/.test(mm)||/\.html?$/.test(fn);
                 const isDcm=(mm==='application/dicom')||/\.dcm$/.test(fn);
+                const is3d=/\.(ply|stl|obj)$/.test(fn);
                 const modal=document.getElementById('chat-file-preview-modal'); const content=document.getElementById('cfp-content'); const title=document.getElementById('cfp-title');
                 if(title) title.textContent=name||'파일';
+                if(is3d){ window._model3DViewer(f, name); return; }
                 if(isImage||isVideo||isAudio){ const u=URL.createObjectURL(f); openMediaUrlPreview(u, name, mm); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}}, 180000); return; }
                 if(isHtml){ try{ const txt=await f.text(); content.innerHTML='<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-forms" style="width:min(900px,92vw);height:78vh;border:none;background:#fff;border-radius:8px;"></iframe>'; content.querySelector('iframe').srcdoc=txt; modal.style.display='flex'; }catch(e){ showToast('HTML 미리보기 실패'); } return; }
                 if(isPdf){ const u=URL.createObjectURL(f); content.innerHTML='<iframe src="'+u+'" style="width:min(900px,92vw);height:82vh;border:none;border-radius:8px;background:#fff;"></iframe>'; modal.style.display='flex'; setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}}, 300000); return; }
