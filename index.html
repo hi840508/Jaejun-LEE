@@ -3021,7 +3021,7 @@
             async function getFileAt(pathArr, name){ try{ const h=await _dirAt(pathArr); const fh=await h.getFileHandle(_safe(name),{create:false}); return await fh.getFile(); }catch(_){ return null; } }
             async function writeFileAt(pathArr, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _dirAt(pathArr); const safe=_safe(name); const fh=await h.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return safe; }
             async function mkdirAt(pathArr, name){ if(!(await _ensurePerm(true))) return false; try{ const h=await _dirAt(pathArr); await h.getDirectoryHandle(_safe(name),{create:true}); _scheduleSync(); return true; }catch(e){ return false; } }
-            async function removeAt(pathArr, name, recursive){ if(!(await _ensurePerm(true))) return false; try{ const h=await _dirAt(pathArr); await h.removeEntry(name, {recursive:!!recursive}); try{ if((pathArr||[]).length===0) fetch(API_URL+'/api/devices/files/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fname:name, deviceId:deviceId()})}); }catch(_){} _scheduleSync(); return true; }catch(e){ return false; } }
+            async function removeAt(pathArr, name, recursive){ if(!(await _ensurePerm(true))){ window.__rcLastErr='공유폴더 권한 없음(권한 허용 필요)'; return false; } try{ const h=await _dirAt(pathArr); await h.removeEntry(name, {recursive:!!recursive}); try{ if((pathArr||[]).length===0) fetch(API_URL+'/api/devices/files/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fname:name, deviceId:deviceId()})}); }catch(_){} _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
             async function renameAt(pathArr, oldName, newName, isDir){ if(!(await _ensurePerm(true))) return false; const safeNew=_safe(newName); let h; try{ h=await _dirAt(pathArr); }catch(_){ return false; }
                 try{ const ent = isDir ? await h.getDirectoryHandle(oldName,{create:false}) : await h.getFileHandle(oldName,{create:false}); if(ent.move){ await ent.move(safeNew); _scheduleSync(); return true; } }catch(_){}
                 if(!isDir){ try{ const f=await (await h.getFileHandle(oldName)).getFile(); const nf=await h.getFileHandle(safeNew,{create:true}); const w=await nf.createWritable(); await w.write(f); await w.close(); await h.removeEntry(oldName); _scheduleSync(); return true; }catch(e){ return false; } }
@@ -3138,7 +3138,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, deleteFile, listAt, getFileAt, writeFileAt, mkdirAt, removeAt, renameAt, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, mkdirAt, removeAt, renameAt, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
@@ -3350,7 +3350,6 @@
                     +'<span style="font-size:11.5px;color:'+(connected?'#16a34a':(notSupported?'#92400e':'#b91c1c'))+';">'+statusTxt+'</span>'
                     +(notSupported?'':'<button id="_sf-pick" style="'+BTN+'">📂 폴더 변경</button>')
                     +(connected?'<button id="_sf-disc" style="'+BTN+'color:#dc2626;">연결 해제</button>':'')
-                    +'<button id="_sf-gdrive" style="'+BTN+'" title="Google Drive 연결/열기">☁ Drive</button>'
                     +'<button id="_sf-x" style="'+BTN+'font-size:16px;">✕</button>'
                     +'</div>';
                 const typeChips=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(flt.type===t?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
@@ -3374,9 +3373,25 @@
                     +'</div>';
 
                 const folderTiles=cur.folders.map(nm=>'<div class="rc-gfd" data-name="'+_sfEsc(nm)+'" title="'+_sfEsc(nm)+'" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;"><div style="font-size:46px;line-height:1;">📁</div><div style="font-size:11px;max-width:92%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+_sfEsc(nm)+'</div></div>').join('');
-                const fileList=[]; cur.files.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.mtime||0,here:true,thumb:''})); remote.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.updated||0,here:false,thumb:f.thumb||''}));
+                // 🩻 CT 시리즈 그룹핑: 같은 폴더의 .dcm 여러 개 → 하나의 시리즈 카드(RAYCloud DATA 탭 방식)
+                const seriesMap={};
+                const _dcm=cur.files.filter(f=>/\.dcm$/i.test(f.fname));
+                const _non=cur.files.filter(f=>!/\.dcm$/i.test(f.fname));
+                const fileList=[];
+                if(_dcm.length>=2){ const slices=_dcm.map(f=>f.fname).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})); seriesMap['ser0']=slices; fileList.push({ series:true, sid:'ser0', fname:'CT/DICOM 시리즈 ('+_dcm.length+'컷)', slices:_dcm.length, mtime:Math.max.apply(null,_dcm.map(f=>f.mtime||0)), here:true }); }
+                else { _dcm.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.mtime||0,here:true,thumb:''})); }
+                _non.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.mtime||0,here:true,thumb:''}));
+                remote.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.updated||0,here:false,thumb:f.thumb||''}));
                 fileList.sort((a,b)=> (a.here===b.here)?(b.mtime-a.mtime):(a.here?-1:1));
                 const fileTiles=fileList.map(f=>{
+                    if(f.series){
+                        return '<div class="rc-serf" data-sid="'+f.sid+'" data-type="dicom" data-mtime="'+(Number(f.mtime)||0)+'" data-fname="'+_sfEsc(f.fname)+'" title="CT 시리즈 — 클릭하면 슬라이스 뷰어" style="position:relative;border:1px solid #99f6e4;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#042f2e;cursor:pointer;display:flex;align-items:center;justify-content:center;">'
+                            +'<div class="rc-ser-icon" style="font-size:42px;color:#5eead4;">🩻</div>'
+                            +'<span style="position:absolute;top:6px;right:6px;background:#0d9488;color:#fff;font-size:9px;padding:2px 6px;border-radius:6px;z-index:3;">'+f.slices+'컷</span>'
+                            +'<button class="rc-ser-del" title="시리즈 삭제" style="position:absolute;top:5px;left:5px;width:24px;height:24px;border:none;border-radius:6px;background:rgba(15,23,42,.6);color:#fff;font-size:12px;cursor:pointer;z-index:5;">🗑</button>'
+                            +'<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));color:#fff;font-size:10px;padding:14px 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2;">'+_sfEsc(f.fname)+'</span>'
+                            +'</div>';
+                    }
                     const here=f.here, isVid=_sfType(f.mime,f.fname)==='video', hasThumb=!!f.thumb;
                     const thumb=hasThumb?('<img src="'+f.thumb+'" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isVid?_vov:'')):('<div class="rc-gf-icon" style="font-size:36px;">'+_sfIcon(f.mime,f.fname)+'</div>');
                     return '<div class="rc-gf" draggable="true" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.mtime)||0)+'" data-here="'+(here?1:0)+'" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;opacity:'+(here?1:0.5)+';display:flex;align-items:center;justify-content:center;">'
@@ -3393,7 +3408,6 @@
 
                 ov.querySelector('#_sf-x').onclick=close;
                 const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } };
-                const gd=ov.querySelector('#_sf-gdrive'); if(gd) gd.onclick=()=>{ try{ window.openDrivePanel(); }catch(_){} };
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); path = i<0?[]:path.slice(0,i+1); render(); }));
                 const bk=ov.querySelector('#_sf-back'); if(bk) bk.onclick=()=>{ path=path.slice(0,-1); render(); };
@@ -3425,14 +3439,20 @@
                         {label:'🗑 삭제',danger:true,fn:async()=>{ if(confirm('"'+fnm+'" 삭제할까요?')){ if(await R.removeAt(path,fnm,false)) render(); else showToast('삭제 실패'); } }}
                     ]); });
                 });
+                // 🩻 CT 시리즈 카드 — 클릭=슬라이스 뷰어, 🗑=시리즈 전체 삭제
+                ov.querySelectorAll('.rc-serf').forEach(el=>{ const sid=el.getAttribute('data-sid'); const slices=seriesMap[sid]||[];
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('.rc-ser-del')) return; window._dicomSeriesViewer(path.slice(), slices); });
+                    const delAll=async()=>{ if(!confirm('CT 시리즈('+slices.length+'컷) 전체를 삭제할까요? (실제 폴더에서 삭제)')) return; if(!(await R.ensureAccess())){ showToast('권한 필요'); return; } let ok=0,err=''; for(const nm of slices){ try{ if(await R.removeAt(path,nm,false)) ok++; }catch(e2){ err=(e2&&e2.message)||String(e2); } } showToast(ok?('🗑 삭제: '+ok+'컷'):('삭제 실패: '+(err||'권한 확인'))); render(); };
+                    const db=el.querySelector('.rc-ser-del'); if(db) db.addEventListener('click',(e)=>{ e.stopPropagation(); delAll(); });
+                    el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); ctxMenu(e.clientX,e.clientY,[ {label:'🩻 시리즈 뷰어 열기',fn:()=>window._dicomSeriesViewer(path.slice(), slices)}, {label:'🗑 시리즈 삭제',danger:true,fn:delAll} ]); });
+                });
                 const allc=ov.querySelector('#_sf-all'); if(allc) allc.addEventListener('change',()=>{ selected.clear(); ov.querySelectorAll('.rc-gf').forEach(el=>{ const chk=el.querySelector('.rc-gf-chk'); chk.checked=allc.checked; if(allc.checked) selected.add(el.getAttribute('data-fname')); }); updCnt(); });
                 ov.querySelectorAll('._sf-act').forEach(b=>b.addEventListener('click', async()=>{
                     const act=b.getAttribute('data-act'); const names=[...selected];
-                    const localSel=names.filter(nm=>{ const el=ov.querySelector('.rc-gf[data-here="1"]'); return true; });
                     if(act==='preview'){ if(!names.length) return showToast('미리볼 파일을 선택하세요.'); window.rcPreviewFolderFile(names[0], ''); return; }
                     if(act==='share'){ if(!names.length) return showToast('공유할 파일을 선택하세요.'); openShareRecipientPicker(names); return; }
                     if(act==='rename'){ if(names.length!==1) return showToast('이름변경할 파일 1개만 선택하세요.'); const old=names[0]; const nn=prompt('새 이름', old); if(nn&&nn!==old){ if(await R.renameAt(path,old,nn,false)) render(); else showToast('이름변경 실패'); } return; }
-                    if(act==='delete'){ if(!names.length) return showToast('삭제할 파일을 선택하세요.'); if(!confirm(names.length+'개 파일을 삭제할까요? (실제 폴더에서 삭제)')) return; let ok=0; for(const nm of names){ if(await R.removeAt(path,nm,false)) ok++; } showToast('🗑 삭제: '+ok+'개'); render(); return; }
+                    if(act==='delete'){ if(!names.length) return showToast('삭제할 파일을 선택하세요.'); if(!confirm(names.length+'개 파일을 삭제할까요? (실제 폴더에서 삭제)')) return; if(!(await R.ensureAccess())){ showToast('공유폴더 권한이 필요합니다.'); return; } window.__rcLastErr=''; let ok=0; for(const nm of names){ if(await R.removeAt(path,nm,false)) ok++; } showToast(ok?('🗑 삭제: '+ok+'개'):('삭제 실패: '+(window.__rcLastErr||'권한/폴더 확인'))); render(); return; }
                 }));
 
                 // 검색·필터
@@ -3460,6 +3480,8 @@
 
                 // 일괄 썸네일(현재 폴더, 로컬 파일)
                 (async()=>{ const pend=[].slice.call(ov.querySelectorAll('.rc-gf[data-here="1"]')).filter(el=>!el.querySelector('img')); let i=0; const CONC=5; async function w(){ while(i<pend.length){ const el=pend[i++]; const fn=el.getAttribute('data-fname'), mm=el.getAttribute('data-mime'); try{ const f=await R.getFileAt(path,fn); if(!f) continue; const t=await R.getThumb(f,mm,fn); if(t && !el.querySelector('img')){ const ic=el.querySelector('.rc-gf-icon'); if(ic) ic.style.display='none'; const isV=_sfType(mm,fn)==='video'; el.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isV?_vov:'')); } }catch(_){} } } const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws); })();
+                // 시리즈 카드 중간 슬라이스 썸네일
+                (async()=>{ const sers=[].slice.call(ov.querySelectorAll('.rc-serf')); for(const el of sers){ const sid=el.getAttribute('data-sid'); const sl=seriesMap[sid]||[]; if(!sl.length) continue; const mid=sl[Math.floor(sl.length/2)]; try{ const f=await R.getFileAt(path, mid); if(!f) continue; const t=await R.getThumb(f,'application/dicom',mid); if(t){ const ic=el.querySelector('.rc-ser-icon'); if(ic) ic.style.display='none'; el.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;">'); } }catch(_){} } })();
 
                 applyFilter();
                 try{ if(connected && path.length===0) R.syncIndex(); }catch(_){}
@@ -3538,89 +3560,27 @@
             return { ping, onSignal };
         })();
 
-        // ☁ Google Drive 연동(선택) — OAuth(GIS) + Drive REST. Client ID는 사용자가 Google Cloud에서 발급해 저장.
-        window.RCDrive = (function(){
-            const CID='gdrive_client_id';
-            function clientId(){ return localStorage.getItem(CID)||''; }
-            function setClientId(v){ if(v) localStorage.setItem(CID,String(v).trim()); else localStorage.removeItem(CID); }
-            let _tok=null;
-            function _ls(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=()=>res(); s.onerror=()=>rej(new Error('load '+src)); document.head.appendChild(s); }); }
-            async function _libs(){ if(!(window.google&&google.accounts&&google.accounts.oauth2)) await _ls('https://accounts.google.com/gsi/client'); }
-            function isConnected(){ return !!_tok; }
-            function connect(){ return new Promise(async(resolve,reject)=>{ const cid=clientId(); if(!cid) return reject(new Error('NO_CLIENT_ID')); try{ await _libs(); }catch(e){ return reject(e); } try{ const tc=google.accounts.oauth2.initTokenClient({ client_id:cid, scope:'https://www.googleapis.com/auth/drive', callback:(r)=>{ if(r&&r.access_token){ _tok=r.access_token; resolve(true); } else reject(new Error('no token')); } }); tc.requestAccessToken(); }catch(e){ reject(e); } }); }
-            async function _api(path, params){ const u=new URL('https://www.googleapis.com/drive/v3/'+path); Object.keys(params||{}).forEach(k=>u.searchParams.set(k,params[k])); const r=await fetch(u, { headers:{ Authorization:'Bearer '+_tok } }); if(!r.ok) throw new Error('drive '+r.status); return r.json(); }
-            async function list(folderId){ folderId=folderId||'root'; const j=await _api('files',{ q:"'"+folderId+"' in parents and trashed=false", fields:'files(id,name,mimeType,size,modifiedTime,thumbnailLink,iconLink)', pageSize:'300', orderBy:'folder,modifiedTime desc' }); return j.files||[]; }
-            async function downloadBlob(fileId){ const r=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media', { headers:{ Authorization:'Bearer '+_tok } }); if(!r.ok) throw new Error('dl '+r.status); return await r.blob(); }
-            async function uploadBlob(name, blob, folderId, mime){ const meta={ name:name }; if(folderId&&folderId!=='root') meta.parents=[folderId]; const fd=new FormData(); fd.append('metadata', new Blob([JSON.stringify(meta)],{type:'application/json'})); fd.append('file', blob); const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method:'POST', headers:{ Authorization:'Bearer '+_tok }, body:fd }); if(!r.ok) throw new Error('up '+r.status); return await r.json(); }
-            function disconnect(clearId){ try{ if(_tok && window.google && google.accounts && google.accounts.oauth2 && google.accounts.oauth2.revoke) google.accounts.oauth2.revoke(_tok, ()=>{}); }catch(_){} _tok=null; if(clearId) setClientId(''); }
-            return { clientId, setClientId, connect, disconnect, isConnected, list, downloadBlob, uploadBlob };
-        })();
-        // ☁ Google Drive 설정/브라우저 패널
-        window.openDriveSetup = function(){
-            const D=window.RCDrive;
-            const origin = window.location.origin;   // ⚠️ 이 값을 '승인된 JavaScript 원본'에 정확히 등록해야 함(no registered origin 방지)
-            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4400;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
-            ov.innerHTML='<div style="background:#fff;color:#0f172a;max-width:560px;width:100%;border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;">'
-                +'<div style="font-weight:800;font-size:17px;margin-bottom:8px;">☁ Google Drive 연결 설정</div>'
-                +'<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px;margin-bottom:12px;font-size:12.5px;line-height:1.6;color:#9a3412;">⚠️ <b>invalid_client / no registered origin</b> 오류는 아래 <b>현재 접속 주소</b>가 OAuth 클라이언트의 <b>승인된 JavaScript 원본</b>에 없어서 납니다. 이 값을 <b>그대로 복사</b>해 등록하세요(끝에 / 없이).</div>'
-                +'<div style="font-size:12px;color:#64748b;margin-bottom:4px;">현재 접속 주소(승인된 JavaScript 원본에 추가)</div>'
-                +'<div style="display:flex;gap:8px;margin-bottom:14px;"><input id="_gd-origin" readonly value="'+_sfEsc(origin)+'" style="flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:9px;font-size:13px;font-weight:700;background:#f8fafc;"><button id="_gd-copy" style="padding:10px 14px;border:1px solid #e5e7eb;background:#fff;border-radius:9px;cursor:pointer;font-weight:700;">복사</button></div>'
-                +'<div style="font-size:13px;line-height:1.7;color:#475569;">1) <b>console.cloud.google.com</b> → 프로젝트 → <b>Google Drive API</b> 사용 설정<br>'
-                +'2) <b>OAuth 동의 화면</b>(외부) → 테스트 사용자에 <b>본인 Google 이메일</b> 추가<br>'
-                +'3) <b>사용자 인증 정보 → OAuth 클라이언트 ID → 웹 애플리케이션</b><br>'
-                +'&nbsp;&nbsp;• <b>승인된 JavaScript 원본</b>에 <u>위 주소</u> 추가 (예: '+_sfEsc(origin)+')<br>'
-                +'&nbsp;&nbsp;• (리디렉션 URI는 비워도 됨)<br>'
-                +'4) 저장 후 <b>몇 분</b> 기다린 뒤 아래 <b>클라이언트 ID</b> 붙여넣기</div>'
-                +'<input id="_gd-cid" value="'+_sfEsc(D.clientId())+'" placeholder="xxxxx.apps.googleusercontent.com" style="width:100%;margin-top:14px;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:13px;box-sizing:border-box;">'
-                +'<div style="display:flex;gap:8px;margin-top:12px;"><button id="_gd-reset" style="padding:11px 12px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:10px;font-weight:700;cursor:pointer;">초기화</button><button id="_gd-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button><button id="_gd-save" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장하고 연결</button></div>'
-                +'<div style="font-size:11px;color:#94a3b8;margin-top:8px;">잘못 입력했으면 <b>초기화</b>로 저장된 Client ID를 지우고 다시 시작할 수 있어요.</div>'
-                +'</div>';
-            document.body.appendChild(ov);
-            const close=()=>{ try{ ov.remove(); }catch(_){} };
-            ov.querySelector('#_gd-cancel').onclick=close;
-            ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); });
-            ov.querySelector('#_gd-copy').onclick=()=>{ try{ navigator.clipboard.writeText(origin); showToast('복사됨: '+origin); }catch(_){ const i=ov.querySelector('#_gd-origin'); i.select(); document.execCommand('copy'); showToast('복사됨'); } };
-            ov.querySelector('#_gd-reset').onclick=()=>{ try{ D.disconnect(true); }catch(_){} const ci=ov.querySelector('#_gd-cid'); if(ci) ci.value=''; showToast('Google Drive 연결 정보가 초기화되었습니다.'); };
-            ov.querySelector('#_gd-save').onclick=()=>{ const v=ov.querySelector('#_gd-cid').value.trim(); if(!v) return showToast('클라이언트 ID를 입력하세요.'); D.setClientId(v); close(); openDrivePanel(true); };
+        // 🩻 CT 시리즈 뷰어 — cornerstone으로 슬라이스 탐색(슬라이더/휠). 인앱 창.
+        window._dicomSeriesViewer = async function(pathArr, sliceNames){
+            if(!sliceNames || !sliceNames.length) return;
+            const R=window.RCFolder;
+            showToast('🩻 CT 시리즈 여는 중… ('+sliceNames.length+'컷)');
+            let cw; try{ cw=await R.csReady(); }catch(_){}
+            if(!cw || !cw.cs){ showToast('DICOM 엔진 로드 실패(인터넷 확인)'); return; }
+            const cs=cw.cs, wl=cw.wl;
+            const modal=document.getElementById('chat-file-preview-modal'), content=document.getElementById('cfp-content'), title=document.getElementById('cfp-title');
+            if(title) title.textContent='CT 시리즈 ('+sliceNames.length+'컷)';
+            content.innerHTML='<div style="position:relative;width:min(820px,90vw);height:76vh;background:#000;border-radius:8px;overflow:hidden;"><div id="_cts-el" style="width:100%;height:100%;"></div><div id="_cts-idx" style="position:absolute;top:10px;left:12px;color:#5eead4;font-size:12px;background:rgba(0,0,0,.5);padding:3px 8px;border-radius:6px;pointer-events:none;">-</div><input id="_cts-slider" type="range" min="0" max="'+(sliceNames.length-1)+'" value="'+Math.floor(sliceNames.length/2)+'" style="position:absolute;left:12px;bottom:12px;width:calc(100% - 24px);"><div style="position:absolute;top:10px;right:12px;color:#94a3b8;font-size:11px;background:rgba(0,0,0,.5);padding:3px 8px;border-radius:6px;pointer-events:none;">휠/슬라이더: 슬라이스</div></div>';
+            modal.style.display='flex';
+            const el=document.getElementById('_cts-el'); try{ cs.enable(el); }catch(_){}
+            const ids=new Array(sliceNames.length);
+            async function idFor(i){ if(ids[i]) return ids[i]; const f=await R.getFileAt(pathArr, sliceNames[i]); if(!f) return null; ids[i]=wl.wadouri.fileManager.add(f); return ids[i]; }
+            let cur=Math.floor(sliceNames.length/2), busy=false;
+            async function show(i){ i=Math.max(0,Math.min(sliceNames.length-1,i)); cur=i; if(busy) return; busy=true; try{ const id=await idFor(i); if(id){ const img=await cs.loadImage(id); cs.displayImage(el, img); } }catch(_){} busy=false; const idx=document.getElementById('_cts-idx'); if(idx) idx.textContent=(i+1)+' / '+sliceNames.length; const s=document.getElementById('_cts-slider'); if(s && Number(s.value)!==i) s.value=i; }
+            const sld=document.getElementById('_cts-slider'); if(sld) sld.addEventListener('input',()=>show(Number(sld.value)));
+            el.addEventListener('wheel',(e)=>{ e.preventDefault(); show(cur+(e.deltaY>0?1:-1)); }, {passive:false});
+            show(cur);
         };
-        window.openDrivePanel = async function(forceConnect){
-            const D=window.RCDrive;
-            if(!D.clientId()) return openDriveSetup();
-            try{ showToast('Google 로그인 중…'); await D.connect(); }
-            catch(e){ const msg=(e&&e.message)||String(e); if(msg==='NO_CLIENT_ID'){ D.setClientId(''); return openDriveSetup(); } showToast('연결 실패: '+msg+' → 설정에서 원본/ID 확인'); return openDriveSetup(); }
-            _driveBrowser([{id:'root',name:'내 드라이브'}]);
-        };
-        // trail = [{id,name}, ...] (첫 항목=내 드라이브 루트). 클릭 가능한 경로 + 뒤로 + 폴더 단일클릭 열기.
-        async function _driveBrowser(trail){
-            trail = trail && trail.length ? trail : [{id:'root',name:'내 드라이브'}];
-            const D=window.RCDrive; const esc=_sfEsc;
-            const cur=trail[trail.length-1];
-            let files=[]; try{ files=await D.list(cur.id); }catch(e){ showToast('목록 실패: '+(e.message||e)); return; }
-            let ov=document.getElementById('_gd-browser'); if(ov) ov.remove();
-            ov=document.createElement('div'); ov.id='_gd-browser'; ov.style.cssText='position:fixed;inset:0;z-index:3600;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
-            const folders=files.filter(f=>f.mimeType==='application/vnd.google-apps.folder');
-            const docs=files.filter(f=>f.mimeType!=='application/vnd.google-apps.folder');
-            const fcards=folders.map(f=>'<div class="_gd-fd" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" style="border:1px solid #e5e7eb;border-radius:12px;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;"><div style="font-size:44px;">📁</div><div style="font-size:11px;max-width:92%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(f.name)+'</div></div>').join('');
-            const dcards=docs.map(f=>{ const th=f.thumbnailLink?('<img src="'+f.thumbnailLink+'&sz=w200" referrerpolicy="no-referrer" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'):('<div style="font-size:34px;">'+_sfIcon(f.mimeType,f.name)+'</div>'); return '<div class="_gd-f" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" data-mime="'+esc(f.mimeType||'')+'" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;">'+th+'<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.68));color:#fff;font-size:10px;padding:14px 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(f.name)+'</span></div>'; }).join('');
-            const crumb=trail.map((t,i)=>'<span class="_gd-crumb" data-i="'+i+'" style="cursor:pointer;color:#2563eb;'+(i===trail.length-1?'font-weight:700;':'')+'">'+esc(t.name)+'</span>').join(' <span style="color:#94a3b8;">/</span> ');
-            ov.innerHTML='<div style="flex:none;background:#fff;border-bottom:1px solid #e5e7eb;padding:12px 18px;display:flex;align-items:center;gap:10px;"><div style="font-weight:800;font-size:17px;white-space:nowrap;">☁ Drive</div>'
-                +(trail.length>1?'<button id="_gd-back" style="padding:8px 11px;border:1px solid #e5e7eb;background:#fff;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700;">⬅ 뒤로</button>':'')
-                +'<div style="flex:1;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
-                +'<button id="_gd-out" style="padding:8px 12px;border:1px solid #e5e7eb;background:#fff;color:#dc2626;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700;">연결 해제</button><button id="_gd-setup" style="padding:8px 12px;border:1px solid #e5e7eb;background:#fff;border-radius:9px;cursor:pointer;font-size:13px;">설정</button><button id="_gd-x" style="padding:8px 12px;border:1px solid #e5e7eb;background:#fff;border-radius:9px;cursor:pointer;font-size:16px;">✕</button></div>'
-                +'<div style="flex:1;overflow:auto;padding:16px 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:12px;align-content:start;">'+(files.length?(fcards+dcards):'<div style="grid-column:1/-1;padding:50px;text-align:center;color:#94a3b8;">폴더가 비어 있습니다.</div>')+'</div>';
-            document.body.appendChild(ov);
-            ov.querySelector('#_gd-x').onclick=()=>ov.remove();
-            const gb=ov.querySelector('#_gd-back'); if(gb) gb.onclick=()=>_driveBrowser(trail.slice(0,-1));
-            ov.querySelectorAll('._gd-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); _driveBrowser(trail.slice(0,i+1)); }));
-            ov.querySelector('#_gd-out').onclick=()=>{ try{ window.RCDrive.disconnect(false); }catch(_){} ov.remove(); showToast('Google Drive 연결을 해제했습니다(로그아웃).'); };
-            ov.querySelector('#_gd-setup').onclick=()=>{ ov.remove(); openDriveSetup(); };
-            ov.querySelectorAll('._gd-fd').forEach(el=>el.addEventListener('click',()=>{ _driveBrowser(trail.concat([{id:el.getAttribute('data-id'),name:el.getAttribute('data-name')}])); }));
-            ov.querySelectorAll('._gd-f').forEach(el=>el.addEventListener('click', async()=>{
-                const id=el.getAttribute('data-id'), nm=el.getAttribute('data-name'), mm=el.getAttribute('data-mime');
-                showToast('⬇ Drive에서 불러오는 중: '+nm);
-                try{ const blob=await D.downloadBlob(id); const u=URL.createObjectURL(blob); openMediaUrlPreview(u, nm, mm); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}}, 180000); }catch(e){ showToast('불러오기 실패: '+(e.message||e)); }
-            }));
-        }
         window.rcPreviewFolderFile = async function(name, mime, url){
             try{
                 let f=null; try{ f=await window.RCFolder.getFileAt(window.__sfPath||[], name); }catch(_){}
@@ -10474,6 +10434,7 @@ pdfjsScript,
             try { if(document.fullscreenElement) document.exitFullscreen(); } catch(_){}
             try { if(document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen(); } catch(_){}
             const modal = document.getElementById('chat-file-preview-modal');
+            try { const _ce=document.getElementById('_cts-el'); if(_ce && window.cornerstone) cornerstone.disable(_ce); } catch(_){}
             if(modal) {
                 // 미디어 정지(백그라운드 재생 방지)
                 try { modal.querySelectorAll('video,audio').forEach(function(m){ try{ m.pause(); m.removeAttribute('src'); m.load(); }catch(_){} }); } catch(_){}
