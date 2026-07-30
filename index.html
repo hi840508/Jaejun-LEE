@@ -6794,14 +6794,22 @@
         // 📷 화상통화 권한 안내 — earth는 웹/PWA라 Windows '앱 카메라 설정'엔 안 나옴 → 브라우저 권한으로 안내
         window._showCamPermHelp = function(e){
             var noDev = e && (e.name==='NotFoundError' || e.name==='DevicesNotFoundError' || e.name==='OverconstrainedError');
+            var inApp = !!window.rayApp;
+            // 앱이면 브리지로 권한 요청 시도(앱이 지원 시)
+            try { if(inApp && window.rayApp && window.rayApp.requestMediaPermission){ window.rayApp.requestMediaPermission(); } }catch(_){}
             var body = noDev
                 ? '<p style="margin:0;">카메라/마이크 장치를 찾을 수 없습니다. 기기 연결을 확인한 뒤 다시 시도해 주세요.</p>'
-                : '<p style="margin:0 0 10px;">화상 통화를 하려면 <b>브라우저 카메라·마이크 권한</b>이 필요합니다.</p>'
-                  + '<ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.9;color:#334155;">'
-                  + '<li>주소창 오른쪽의 <b>🎥 카메라 아이콘</b>(또는 자물쇠 🔒)을 클릭</li>'
-                  + '<li><b>카메라·마이크: 허용</b> 선택</li>'
-                  + '<li>페이지 <b>새로고침(F5)</b> 후 다시 통화</li></ol>'
-                  + '<p style="font-size:12px;color:#94a3b8;margin-top:10px;">※ earth는 웹앱이라 Windows "앱 카메라 설정" 목록엔 나타나지 않습니다. 브라우저(Chrome/Edge)의 카메라 권한만 허용하면 됩니다.</p>';
+                : (inApp
+                    ? '<p style="margin:0 0 10px;">화상 통화를 하려면 <b>앱의 카메라·마이크 권한</b>이 필요합니다.</p>'
+                      + '<ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.9;color:#334155;">'
+                      + '<li><b>Windows 설정 → 개인정보 및 보안 → 카메라/마이크</b>에서 <b>"데스크톱 앱이 카메라에 액세스"</b>가 켜져 있는지 확인</li>'
+                      + '<li>그래도 안 되면 <b>RAY 앱을 최신 버전으로 업데이트</b>(앱 권한 허용 반영본)</li>'
+                      + '<li>임시로는 <b>브라우저(Chrome/Edge)에서 earth.rayaox.com 접속</b> 시 정상 동작합니다</li></ol>'
+                    : '<p style="margin:0 0 10px;">화상 통화를 하려면 <b>브라우저 카메라·마이크 권한</b>이 필요합니다.</p>'
+                      + '<ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.9;color:#334155;">'
+                      + '<li>주소창 오른쪽의 <b>🎥 카메라 아이콘</b>(또는 자물쇠 🔒)을 클릭</li>'
+                      + '<li><b>카메라·마이크: 허용</b> 선택</li>'
+                      + '<li>페이지 <b>새로고침(F5)</b> 후 다시 통화</li></ol>');
             try { overlay('cam-perm-help', '<div style="padding:20px 22px;"><h3 style="margin:0 0 12px;font-size:17px;font-weight:900;color:var(--primary);">📷 카메라 권한 안내</h3>'+body+'<div style="text-align:right;margin-top:14px;"><button class="btn" type="button" style="padding:8px 18px;background:var(--gradient-btn);color:#fff;" onclick="rxCloseOverlay(\'cam-perm-help\')">확인</button></div></div>', 460); }
             catch(_){ showToast('카메라·마이크 권한이 필요합니다. 브라우저 주소창의 카메라 아이콘에서 허용해 주세요.'); }
         };
