@@ -3466,7 +3466,8 @@
                 ov.innerHTML=head+filter+toolbar+grid;
 
                 ov.querySelector('#_sf-x').onclick=close;
-                const mb=ov.querySelector('#_sf-menu'); if(mb) mb.onclick=()=>{ close(); try{ if(typeof toggleSidebar==='function'){ const sb=document.getElementById('yt-sidebar'); if(!sb || !sb.classList.contains('open')) toggleSidebar(); } }catch(_){} };
+                const mb=ov.querySelector('#_sf-menu'); if(mb) mb.onclick=()=>{ try{ const sb=document.getElementById('yt-sidebar'); const bd=document.querySelector('.yt-sidebar-overlay'); if(sb) sb.style.zIndex='3600'; if(bd) bd.style.zIndex='3590'; if(typeof toggleSidebar==='function' && sb && !sb.classList.contains('open')) toggleSidebar(); }catch(_){} };
+                // (메뉴는 공유폴더 위에 뜨고, 배경 클릭 시 메뉴만 닫혀 공유폴더로 복귀. 메뉴 항목 선택 시 switchTab이 공유폴더를 닫고 전환)
                 const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } };
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); path = i<0?[]:path.slice(0,i+1); render(); }));
@@ -4827,6 +4828,7 @@
         };
 
         function switchTab(id) {
+            try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){}   // 공유폴더 전체화면 열려 있으면 닫고 페이지 전환
             window.currentMarketFilter = null; // 상점 탭 이동시 필터 초기화
             window.currentMarketFilterStore = null;
             // 🚀 [v8+] 톱바 검색 placeholder도 기본값 복원 (상점 내부 검색 잔존 버그 수정)
