@@ -293,6 +293,20 @@ app.get('/manifest.webmanifest', (req, res) => {
 });
 app.get('/icon-192.png', (req, res) => { const f = path.join(__dirname, 'icon-192.png'); if (fs.existsSync(f)) res.type('image/png').send(fs.readFileSync(f)); else res.status(404).end(); });
 app.get('/icon-512.png', (req, res) => { const f = path.join(__dirname, 'icon-512.png'); if (fs.existsSync(f)) res.type('image/png').send(fs.readFileSync(f)); else res.status(404).end(); });
+// 🩻 cornerstone(DICOM 뷰어) 라이브러리를 같은 출처로 프록시 서빙 — 브라우저 교차출처 웹워커 제약 회피(앱은 되지만 브라우저에서 안 되던 문제)
+const _csLibCache = {};
+const _CS_LIBS = {
+    'cornerstone.min.js': 'https://unpkg.com/cornerstone-core@2.3.0/dist/cornerstone.min.js',
+    'dicomParser.min.js': 'https://unpkg.com/dicom-parser@1.8.13/dist/dicomParser.min.js',
+    'wado.bundle.min.js': 'https://unpkg.com/cornerstone-wado-image-loader@4.1.5/dist/cornerstoneWADOImageLoader.bundle.min.js'
+};
+app.get('/lib/cs/:name', async (req, res) => {
+    const url = _CS_LIBS[req.params.name]; if (!url) return res.status(404).end();
+    try {
+        if (!_csLibCache[url]) { const r = await fetch(url); if (!r.ok) throw new Error('upstream ' + r.status); _csLibCache[url] = Buffer.from(await r.arrayBuffer()); }
+        res.type('application/javascript').set('Cache-Control', 'public, max-age=604800').send(_csLibCache[url]);
+    } catch (e) { res.status(502).send('// cs lib fetch fail: ' + (e.message || e)); }
+});
 app.get('/sw.js', (req, res) => {
     res.type('application/javascript').send(
         "self.addEventListener('install',e=>self.skipWaiting());\n" +
