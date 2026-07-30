@@ -490,6 +490,11 @@
         /* 🔧 모바일 최적화: 버튼/칩 글자가 세로로 쪼개지지 않도록(줄바꿈 대신 한 줄 유지). 필요 시 컨테이너는 가로 스크롤. */
         button, .yt-sb-item, .chip, .filter-chip-bar > *, .karrot-actions > *, .brand-actions > * { white-space: nowrap; }
         .history-table th, .history-table td { white-space: nowrap; }   /* 세금계산서·정산 등 데이터표: 세로글자 방지(가로 스크롤) */
+        /* 🎨 전역 톤앤매너(공유폴더와 통일) — :where로 0 우선순위 → 기존 스타일 안 깨고 기본값만 정돈 */
+        :where(button,.btn){ border-radius:10px; }
+        :where(input,select,textarea){ border-radius:10px; }
+        :where(.panel,.clean-card,.modal-content,.modal-box,.history-table){ border-radius:14px; }
+        :where(.panel,.clean-card){ border:1px solid #ebedf0; box-shadow:0 1px 2px rgba(17,24,39,.05); }
         /* 💬 플로팅 메신저 서랍장 (깔끔한 UI 교정) */
         .floating-messenger-btn { position: fixed; bottom: 26px; right: 26px; width: 62px; height: 62px; background: #d6006e; border-radius: 20px 20px 20px 6px; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; box-shadow: 0 6px 20px rgba(214,0,110,0.4); z-index: 4000; transition: 0.2s; border: none; }
         .floating-messenger-btn:hover { transform: scale(1.06); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.36); }
@@ -2852,7 +2857,7 @@
             async function _tGet(k){ try{ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(TSTORE,'readonly').objectStore(TSTORE).get(k); q.onsuccess=()=>res(q.result||''); q.onerror=()=>res(''); }); }catch(_){ return ''; } }
             async function _tPut(k,v){ try{ const db=await _idb(); await new Promise((res)=>{ const q=db.transaction(TSTORE,'readwrite').objectStore(TSTORE).put(v,k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }catch(_){} }
             // 영구 썸네일: 파일명|크기|수정시각 키로 IndexedDB 캐시(재방문/재인덱싱 시 재디코딩·깜빡임 방지)
-            async function getThumb(file, mime, fname){ try{ const key='v3|'+(fname||file.name)+'|'+file.size+'|'+(file.lastModified||0); let t=await _tGet(key); if(t) return t; t=await makeThumbForFile(file, mime, fname); if(t) _tPut(key,t); return t; }catch(_){ return ''; } }
+            async function getThumb(file, mime, fname){ try{ const key='v4|'+(fname||file.name)+'|'+file.size+'|'+(file.lastModified||0); let t=await _tGet(key); if(t) return t; t=await makeThumbForFile(file, mime, fname); if(t) _tPut(key,t); return t; }catch(_){ return ''; } }
             async function _get(k){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readonly').objectStore(STORE).get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
             async function _put(k,v){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).put(v,k); q.onsuccess=()=>res(); q.onerror=()=>rej(q.error); }); }
             async function _rm(k){ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).delete(k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }
@@ -2907,14 +2912,14 @@
             }
             // 📁 2B: 이 기기 폴더 파일 인덱스 만들기(이미지 썸네일 포함, 개수/용량 제한)
             function _mimeByExt(n){ const e=(String(n).split('.').pop()||'').toLowerCase(); const m={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',bmp:'image/bmp',pdf:'application/pdf',mp4:'video/mp4',mov:'video/quicktime',stl:'model/stl',ply:'model/ply',obj:'model/obj',dcm:'application/dicom'}; return m[e]||''; }
-            async function _mkThumb(file){ const bmp=await createImageBitmap(file); const max=160; let w=bmp.width,hh=bmp.height; const sc=Math.min(1,max/Math.max(w,hh)); w=Math.max(1,Math.round(w*sc)); hh=Math.max(1,Math.round(hh*sc)); const cv=document.createElement('canvas'); cv.width=w; cv.height=hh; cv.getContext('2d').drawImage(bmp,0,0,w,hh); try{ bmp.close(); }catch(_){} return cv.toDataURL('image/jpeg',0.62); }
+            async function _mkThumb(file){ const bmp=await createImageBitmap(file); const max=320; let w=bmp.width,hh=bmp.height; const sc=Math.min(1,max/Math.max(w,hh)); w=Math.max(1,Math.round(w*sc)); hh=Math.max(1,Math.round(hh*sc)); const cv=document.createElement('canvas'); cv.width=w; cv.height=hh; cv.getContext('2d').drawImage(bmp,0,0,w,hh); try{ bmp.close(); }catch(_){} return cv.toDataURL('image/jpeg',0.78); }
             // 영상 첫 프레임(중간 지점) 썸네일 — 채팅 카드처럼 실제 미리보기용
             function _mkVideoThumb(file){ return new Promise((resolve)=>{
                 let done=false; const url=URL.createObjectURL(file); const v=document.createElement('video');
                 const fin=(r)=>{ if(done)return; done=true; try{ URL.revokeObjectURL(url); }catch(_){} resolve(r||''); };
                 v.muted=true; v.preload='metadata'; v.playsInline=true; v.src=url;
                 v.onloadeddata=()=>{ try{ v.currentTime=Math.min(1,(v.duration||2)/2); }catch(_){ } };
-                v.onseeked=()=>{ try{ const max=160; let w=v.videoWidth||160,h=v.videoHeight||90; const sc=Math.min(1,max/Math.max(w,h)); w=Math.max(1,Math.round(w*sc)); h=Math.max(1,Math.round(h*sc)); const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(v,0,0,w,h); fin(cv.toDataURL('image/jpeg',0.6)); }catch(e){ fin(''); } };
+                v.onseeked=()=>{ try{ const max=320; let w=v.videoWidth||160,h=v.videoHeight||90; const sc=Math.min(1,max/Math.max(w,h)); w=Math.max(1,Math.round(w*sc)); h=Math.max(1,Math.round(h*sc)); const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(v,0,0,w,h); fin(cv.toDataURL('image/jpeg',0.6)); }catch(e){ fin(''); } };
                 v.onerror=()=>fin('');
                 setTimeout(()=>fin(''), 6000);
             }); }
@@ -2993,7 +2998,7 @@
                 }catch(e){ return ''; }
                 let renderer;
                 try{
-                    const S=256; renderer=new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true}); renderer.setSize(S,S);
+                    const S=384; renderer=new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true}); renderer.setSize(S,S);
                     const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0b1220);
                     const cam=new THREE.PerspectiveCamera(45,1,0.01,1e7);
                     let obj;
@@ -3020,7 +3025,7 @@
                     if(mime.indexOf('image/')===0) return await _mkThumb(file);
                     if(mime.indexOf('video/')===0) return await _mkVideoThumb(file);
                     if(/\.(ply|stl|obj)$/i.test(nm)) return await _mkModelThumb(file, nm);
-                    if(mime==='application/dicom' || /\.dcm$/i.test(nm)){ let t=await _dicomViaCornerstone(file, 200); if(!t) t=await _mkDicomThumb(file); return t; }
+                    if(mime==='application/dicom' || /\.dcm$/i.test(nm)){ let t=await _dicomViaCornerstone(file, 320); if(!t) t=await _mkDicomThumb(file); return t; }
                 }catch(_){}
                 return '';
             }
@@ -3406,7 +3411,7 @@
             const CHIPON='background:#2563eb;color:#fff;border-color:#2563eb;';
             const _vov='<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;">▶</span>';
             let path=[]; window.__sfPath=path;
-            let flt={q:'',type:'all',period:'all',from:'',to:'',sort:'new',zoom:124};
+            let flt={q:'',type:'all',period:'all',from:'',to:'',sort:'new',zoom:150};
 
             if(!document.getElementById('_sf-style')){ const st=document.createElement('style'); st.id='_sf-style'; st.textContent=[
  "#rc-folder-page{font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;color:#1f2937;}",
@@ -3418,12 +3423,18 @@
  "#rc-folder-page ._sf-ic:hover{background:#f4f5f7;}",
  "#rc-folder-page ._sf-txt{height:36px;border-radius:10px;border:1px solid #ededf0;background:#fff;color:#374151;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;display:flex;align-items:center;gap:5px;flex:none;white-space:nowrap;}",
  "#rc-folder-page ._sf-txt:hover{background:#f4f5f7;}",
- "#rc-folder-page .rc-gf,#rc-folder-page .rc-gfd,#rc-folder-page .rc-serf{box-shadow:0 1px 3px rgba(17,24,39,.06);border-color:#ededf0!important;}",
- "#rc-folder-page .rc-more{display:flex;align-items:center;justify-content:center;}",
- "@media (max-width:640px){ #rc-folder-page ._sf-secgrid{grid-template-columns:repeat(auto-fill,minmax(31vw,1fr))!important;gap:9px!important;} }"
+ "#rc-folder-page .rc-gf,#rc-folder-page .rc-gfd,#rc-folder-page .rc-serf{border-radius:14px!important;box-shadow:0 1px 2px rgba(17,24,39,.05);border:1px solid #ebedf0!important;transition:box-shadow .12s,transform .06s;}",
+ "#rc-folder-page .rc-gf:hover,#rc-folder-page .rc-gfd:hover,#rc-folder-page .rc-serf:hover{box-shadow:0 4px 14px rgba(17,24,39,.10);}",
+ "#rc-folder-page .rc-more{display:flex;align-items:center;justify-content:center;opacity:.85;}",
+ "#rc-folder-page .rc-gf:hover .rc-more{opacity:1;}",
+ "#rc-folder-page .rc-gf-chk{appearance:none;-webkit-appearance:none;border:2px solid #fff;background:rgba(17,24,39,.28);border-radius:6px;box-shadow:0 0 0 1px rgba(17,24,39,.15);}",
+ "#rc-folder-page .rc-gf-chk:checked{background:#2563eb;border-color:#fff;}",
+ "#rc-folder-page ._sf-secgrid{gap:14px;}",
+ "#rc-folder-page ._sf-sechead,#rc-folder-page ._sf-sechead-plain{font-size:13.5px;font-weight:700;color:#374151;}",
+ "@media (max-width:640px){ #rc-folder-page ._sf-secgrid{grid-template-columns:repeat(auto-fill,minmax(31vw,1fr))!important;gap:10px!important;} }"
 ].join(''); document.head.appendChild(st); }
             const ov=document.createElement('div'); ov.id='rc-folder-page';
-            ov.style.cssText='position:fixed;top:56px;left:0;right:0;bottom:0;z-index:3500;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
+            ov.style.cssText='position:fixed;top:56px;left:0;right:0;bottom:0;z-index:3500;background:#f6f7f9;color:#1f2937;display:flex;flex-direction:column;';
             document.body.appendChild(ov); window.__sfOv=ov;
             const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; window.__sfPath=null; };
 
