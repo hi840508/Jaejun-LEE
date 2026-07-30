@@ -2989,7 +2989,7 @@
             // DICOM 큰 이미지(미리보기용). 실패 시 '' + window.__rcDicomTS에 전송구문 기록.
             async function dicomImage(file, maxSize){ try{ return await _mkDicomThumb(file, maxSize||900); }catch(_){ return ''; } }
             // 폴더에서 파일 삭제(탐색기처럼 실제 삭제)
-            async function deleteFile(name){ try{ if(!(await _ensurePerm(true))) return false; const h=await _loadHandle(); const safe=String(name||'').replace(/[\\/:*?"<>|]/g,'_'); await h.removeEntry(safe); _scheduleSync(); return true; }catch(e){ return false; } }
+            async function deleteFile(name){ try{ if(!(await _ensurePerm(true))) return false; const h=await _loadHandle(); const safe=String(name||'').replace(/[\\/:*?"<>|]/g,'_'); await h.removeEntry(safe); try{ fetch(API_URL+'/api/devices/files/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fname:name})}); }catch(_){} _scheduleSync(); return true; }catch(e){ return false; } }
             async function buildIndex(){
                 if(!(await isConnected())) return [];
                 const h=await _loadHandle(); const files=[]; let tn=0;
@@ -3298,7 +3298,6 @@
             const head='<div style="flex:none;background:#fff;border-bottom:1px solid #e5e7eb;padding:13px 18px;display:flex;align-items:center;gap:12px;">'
                 +'<div style="font-weight:800;font-size:18px;white-space:nowrap;">📁 공유폴더</div>'
                 +'<div style="flex:1;font-size:12.5px;color:'+(connected?'#16a34a':(notSupported?'#92400e':'#b91c1c'))+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+statusTxt+' · '+devices.length+'개 기기</div>'
-                +(notSupported?'':'<button id="_sf-dock" style="'+BTN+'" title="채팅 옆에 두고 카드를 채팅으로 드래그해 전송">🡒 채팅 옆에</button>')
                 +(notSupported?'':'<button id="_sf-pick" style="'+BTN+'background:#2563eb;color:#fff;border:none;">'+(connected?'📂 폴더 변경':'📂 폴더 지정')+'</button>')
                 +'<button id="_sf-x" style="'+BTN+'font-size:16px;">✕</button>'
                 +'</div>';
@@ -3318,8 +3317,7 @@
                 +'<span id="_sf-vis" style="font-size:12px;color:#94a3b8;"></span>'
                 +'<div style="flex:1;"></div>'
                 +'<button class="_sf-act" data-act="preview" style="'+BTN+'">👁 미리보기</button>'
-                +'<button class="_sf-act" data-act="share" style="'+BTN+'background:#2563eb;color:#fff;border:none;">📤 공유</button>'
-                +'<button class="_sf-act" data-act="sync" style="'+BTN+'">🔄 동기화</button>'
+                +'<button class="_sf-act" data-act="share" style="'+BTN+'background:#2563eb;color:#fff;border:none;">📤 공유 / 나에게 보내기</button>'
                 +'<button class="_sf-act" data-act="delete" style="'+BTN+'color:#dc2626;">🗑 삭제</button>'
                 +'</div>';
             const _vov='<span class="rc-gf-vov" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;">▶</span>';
@@ -3339,7 +3337,8 @@
             const grid='<div id="_sf-grid" style="flex:1;overflow:auto;padding:16px 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:12px;align-content:start;">'+tiles+'</div>';
 
             const ov=document.createElement('div'); ov.id='rc-folder-page';
-            ov.style.cssText='position:fixed;inset:0;z-index:4100;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
+            // z-index는 채팅 FAB(4000)·드로어(4001)보다 아래 → 우측하단 채팅 아이콘 토글로 채팅을 위에 띄워 '옆에' 보기 가능
+            ov.style.cssText='position:fixed;inset:0;z-index:3500;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
             ov.innerHTML=head+filterBar+toolbar+grid;
             document.body.appendChild(ov); window.__sfOv=ov;
 
@@ -3352,29 +3351,26 @@
                 const fnm=el.getAttribute('data-fname'), mim=el.getAttribute('data-mime')||'', hash=el.getAttribute('data-hash'), here=el.getAttribute('data-here')==='1';
                 const chk=el.querySelector('.rc-gf-chk');
                 chk.addEventListener('click',(e)=>{ e.stopPropagation(); if(chk.checked) selected.add(fnm); else selected.delete(fnm); updCnt(); });
-                el.addEventListener('click',(e)=>{ if(e.target===chk || e.target.closest('.rc-gf-del')) return; if(here){ window.rcPreviewFolderFile(fnm, mim); } else { window.rcRequestSync(hash, fnm); } });
+                el.addEventListener('click',(e)=>{ if(e.target===chk || e.target.closest('.rc-gf-del')) return; if(here){ window.rcPreviewFolderFile(fnm, mim); } else { showToast('다른 기기에 있는 파일입니다. 그 기기의 공유폴더에서 "공유 / 나에게 보내기"로 이 기기로 보내세요.'); } });
                 const del=el.querySelector('.rc-gf-del'); if(del) del.addEventListener('click', async(e)=>{ e.stopPropagation(); if(!confirm('공유폴더에서 "'+fnm+'" 파일을 삭제할까요? (실제 폴더에서 삭제됩니다)')) return; const ok=await R.deleteFile(fnm); if(ok){ selected.delete(fnm); el.remove(); showToast('🗑 삭제됨: '+fnm); try{ await R.syncIndex(); }catch(_){} } else showToast('삭제 실패(권한 확인)'); });
                 // 카드를 채팅으로 드래그 전송(있는 파일만)
                 el.addEventListener('dragstart',(e)=>{ if(!here){ e.preventDefault(); return; } try{ e.dataTransfer.setData('application/x-rc-file', fnm); e.dataTransfer.setData('text/plain', fnm); e.dataTransfer.effectAllowed='copy'; window.__rcDragFile=fnm; }catch(_){} });
                 el.addEventListener('dragend',()=>{ window.__rcDragFile=null; });
             });
-            // 🡒 '채팅 옆에' 도킹: 갤러리를 좌측으로 좁혀 우측 채팅 드로어가 보이게 → 카드 드래그 전송 가능. 기본 ON(데스크톱).
-            const dock=ov.querySelector('#_sf-dock');
-            const setDocked=(on)=>{ if(on){ ov.style.left='0'; ov.style.right='396px'; ov.setAttribute('data-docked','1'); if(dock) dock.textContent='🡐 전체화면'; try{ const dr=document.getElementById('messenger-drawer'); if(dr && !dr.classList.contains('open') && typeof toggleMessengerDrawer==='function') toggleMessengerDrawer(); }catch(_){} } else { ov.style.right='0'; ov.style.left='0'; ov.removeAttribute('data-docked'); if(dock) dock.textContent='🡒 채팅 옆에'; } };
-            if(dock) dock.onclick=()=>setDocked(ov.getAttribute('data-docked')!=='1');
-            if(window.innerWidth>=900) setDocked(true);   // 기본: 채팅 옆에
             // 📥 OS 파일을 이 창(어디든)으로 끌어다 놓으면 공유폴더에 저장 — 오버레이 전체를 드롭존으로
             ov.addEventListener('dragover',(e)=>{ if(window.__rcDragFile) return; e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} ov.style.outline='3px dashed #2563eb'; ov.style.outlineOffset='-6px'; });
             ov.addEventListener('dragleave',(e)=>{ if(e.target===ov) ov.style.outline=''; });
             ov.addEventListener('drop', async(e)=>{
-                ov.style.outline='';
-                if(window.__rcDragFile) return;   // 내부 카드 드래그는 여기서 처리 안 함
-                if(!(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) return;
+                if(window.__rcDragFile){ ov.style.outline=''; return; }   // 내부 카드 드래그는 여기서 처리 안 함
+                if(!(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) { ov.style.outline=''; return; }
                 e.preventDefault();
-                if(!(await R.ensureAccess())){ if(!(await R.requireFolder())) return; if(!(await R.isConnected())) return; }
-                const fs=[].slice.call(e.dataTransfer.files); let ok=0;
-                for(const f of fs){ try{ await R.writeFile(f.name, f); ok++; }catch(_){} }
-                showToast('📥 공유폴더에 추가: '+ok+'개'); try{ await R.syncIndex(); }catch(_){}
+                const fs=[].slice.call(e.dataTransfer.files);   // ⚠️ await 전에 캡처(비동기 후엔 dataTransfer가 비워짐 → 0개 버그)
+                ov.style.outline='';
+                if(!(await R.ensureAccess())){ if(!(await R.requireFolder())) return; if(!(await R.isConnected())){ showToast('공유폴더 권한이 필요합니다.'); return; } }
+                let ok=0, err='';
+                for(const f of fs){ try{ await R.writeFile(f.name, f); ok++; }catch(e2){ err=(e2&&e2.message)||String(e2); } }
+                showToast(ok? ('📥 공유폴더에 추가: '+ok+'개') : ('추가 실패: '+(err||'권한/폴더 확인')));
+                try{ await R.syncIndex(); }catch(_){}
                 close(); openSharedFolderPanel();
             });
             // 🖼 일괄 썸네일: '이 기기 보유' 전 파일을 영구 캐시로 미리보기 생성(누락/깜빡임 없이 모두 표시)
@@ -3388,8 +3384,7 @@
             ov.querySelectorAll('._sf-act').forEach(b=>b.addEventListener('click', async()=>{
                 const act=b.getAttribute('data-act'); const names=[...selected];
                 if(act==='preview'){ if(!names.length) return showToast('미리볼 파일을 선택하세요.'); window.rcPreviewFolderFile(names[0], ''); return; }
-                if(act==='share'){ if(!names.length) return showToast('공유할 파일을 선택하세요.'); openShareRecipientPicker(names); return; }
-                if(act==='sync'){ const toSync=[]; ov.querySelectorAll('.rc-gf').forEach(el=>{ const fnm=el.getAttribute('data-fname'); if(selected.has(fnm) && el.getAttribute('data-here')==='0') toSync.push({hash:el.getAttribute('data-hash'),fnm}); }); if(!toSync.length) return showToast('이 기기에 없는(흐린) 파일을 선택하세요.'); toSync.forEach(t=>{ if(window.RCSync) window.RCSync.request(t.hash, t.fnm); }); return; }
+                if(act==='share'){ const local=names.filter(nm=>{ const el=ov.querySelector('.rc-gf[data-fname="'+(window.CSS&&CSS.escape?CSS.escape(nm):nm)+'"]'); return el && el.getAttribute('data-here')==='1'; }); if(!local.length) return showToast('이 기기에 있는(선명한) 파일을 선택하세요.'); openShareRecipientPicker(local); return; }
                 if(act==='delete'){ const local=[]; ov.querySelectorAll('.rc-gf').forEach(el=>{ const fnm=el.getAttribute('data-fname'); if(selected.has(fnm) && el.getAttribute('data-here')==='1') local.push(fnm); }); if(!local.length) return showToast('이 기기에 있는 파일을 선택하세요.'); if(!confirm(local.length+'개 파일을 공유폴더에서 삭제할까요? (실제 폴더에서 삭제)')) return; let ok=0; for(const nm of local){ if(await R.deleteFile(nm)){ ok++; selected.delete(nm); const t=ov.querySelector('.rc-gf[data-fname="'+(window.CSS&&CSS.escape?CSS.escape(nm):nm)+'"]'); if(t) t.remove(); } } showToast('🗑 삭제: '+ok+'개'); updCnt(); try{ await R.syncIndex(); }catch(_){} return; }
             }));
             // 🔎 검색·필터 적용
@@ -3417,27 +3412,40 @@
             // 열 때 백그라운드 재인덱싱 → 다른 기기가 이 기기의 최신 폴더 내용을 볼 수 있게(표시는 이미 로컬 기준으로 정확)
             try{ if(connected) R.syncIndex(); }catch(_){}
         }
-        // 📤 공유 대상(친구) 선택 → 선택 파일들을 각 대상 대화방으로 전송(R2 1회 업로드 후 팬아웃)
+        // 📤 공유 대상 선택 — ①나에게 보내기(내 다른 기기, 온라인만 선택) ②친구. 선택 파일 R2 1회 업로드 후 각 대상으로 전송.
         async function openShareRecipientPicker(fileNames){
+            const myId=window.RCFolder.deviceId();
+            let devices=[]; try{ devices=await window.RCFolder.list(); }catch(_){}
+            const myDevices=(devices||[]).filter(d=>d.deviceId!==myId && d.hasFolder);   // 공유폴더 등록된 내 다른 기기
             let friends=[]; try{ const r=await fetch(API_URL+'/api/friends/'+encodeURIComponent(currentUser.name)); friends=await r.json()||[]; }catch(_){}
             friends=(friends||[]).filter(f=>f && f.name && f.name!==currentUser.name);
-            const chosen=new Set();
+            const chosen=new Map();   // key → {type, id, name}
             const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4400;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
-            const list = friends.length ? friends.map(f=>'<label style="display:flex;align-items:center;gap:10px;padding:11px 6px;border-top:1px solid #f1f5f9;cursor:pointer;"><input type="checkbox" class="_rp-chk" data-name="'+_sfEsc(f.name)+'" style="width:18px;height:18px;"><span style="font-size:20px;">👤</span><span style="font-weight:600;">'+_sfEsc(f.name)+'</span></label>').join('') : '<div style="padding:18px;color:#94a3b8;font-size:13px;">친구가 없습니다. 먼저 친구를 추가하세요.</div>';
-            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:420px;width:100%;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
-                +'<div style="padding:16px 18px;border-bottom:1px solid #eef2f7;"><div style="font-weight:800;font-size:16px;">📤 공유 대상 선택</div><div style="font-size:12px;color:#64748b;margin-top:3px;">파일 '+fileNames.length+'개를 보낼 친구를 선택하세요.</div></div>'
-                +'<div style="flex:1;overflow:auto;padding:4px 18px;">'+list+'</div>'
+            const devHtml = myDevices.length
+                ? myDevices.map(d=>'<label class="_rp-devrow" data-dev="'+_sfEsc(d.deviceId)+'" style="display:flex;align-items:center;gap:10px;padding:11px 6px;border-top:1px solid #f1f5f9;opacity:.45;cursor:default;"><input type="checkbox" class="_rp-chk" data-type="device" data-id="'+_sfEsc(d.deviceId)+'" data-name="'+_sfEsc(d.name||'기기')+'" style="width:18px;height:18px;" disabled><span style="font-size:20px;">'+(/PC|Mac|Linux/.test(d.platform||d.name||'')?'🖥️':'📱')+'</span><span style="flex:1;font-weight:600;">'+_sfEsc(d.name||'기기')+'</span><span class="_rp-devstat" style="font-size:11px;color:#94a3b8;">오프라인</span></label>').join('')
+                : '<div style="padding:12px 6px;color:#94a3b8;font-size:12.5px;">공유폴더가 등록된 다른 기기가 없습니다.</div>';
+            const frHtml = friends.length ? friends.map(f=>'<label style="display:flex;align-items:center;gap:10px;padding:11px 6px;border-top:1px solid #f1f5f9;cursor:pointer;"><input type="checkbox" class="_rp-chk" data-type="friend" data-id="'+_sfEsc(f.name)+'" data-name="'+_sfEsc(f.name)+'" style="width:18px;height:18px;"><span style="font-size:20px;">👤</span><span style="font-weight:600;">'+_sfEsc(f.name)+'</span></label>').join('') : '<div style="padding:12px 6px;color:#94a3b8;font-size:12.5px;">친구가 없습니다.</div>';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:440px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
+                +'<div style="padding:16px 18px;border-bottom:1px solid #eef2f7;"><div style="font-weight:800;font-size:16px;">📤 공유 / 나에게 보내기</div><div style="font-size:12px;color:#64748b;margin-top:3px;">파일 '+fileNames.length+'개를 보낼 대상을 선택하세요.</div></div>'
+                +'<div style="flex:1;overflow:auto;padding:4px 18px;">'
+                +'<div style="font-size:12px;font-weight:800;color:#334155;padding:12px 4px 4px;">📲 나에게 보내기 (내 기기)</div>'+devHtml
+                +'<div style="font-size:12px;font-weight:800;color:#334155;padding:16px 4px 4px;">👥 친구</div>'+frHtml
+                +'</div>'
                 +'<div style="padding:14px 18px;border-top:1px solid #eef2f7;display:flex;gap:8px;"><button id="_rp-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_rp-send" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">보내기</button></div>'
                 +'</div>';
             document.body.appendChild(ov);
             const close=()=>{ try{ ov.remove(); }catch(_){} };
             ov.querySelector('#_rp-cancel').onclick=close;
             ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); });
-            ov.querySelectorAll('._rp-chk').forEach(c=>c.addEventListener('change',()=>{ if(c.checked) chosen.add(c.getAttribute('data-name')); else chosen.delete(c.getAttribute('data-name')); }));
-            ov.querySelector('#_rp-send').onclick=async()=>{ if(!chosen.size) return showToast('보낼 대상을 선택하세요.'); close(); await sendFilesToRecipients(fileNames, [...chosen]); };
+            const bind=(c)=>c.addEventListener('change',()=>{ const k=c.getAttribute('data-type')+':'+c.getAttribute('data-id'); if(c.checked) chosen.set(k,{type:c.getAttribute('data-type'),id:c.getAttribute('data-id'),name:c.getAttribute('data-name')}); else chosen.delete(k); });
+            ov.querySelectorAll('._rp-chk').forEach(bind);
+            // 온라인 기기 표시(핑) → 온라인만 선택 가능
+            if(myDevices.length && window.RCSelf){ window.RCSelf.ping((onlineSet)=>{ ov.querySelectorAll('._rp-devrow').forEach(row=>{ const id=row.getAttribute('data-dev'); const on=onlineSet&&onlineSet.has(id); const chk=row.querySelector('._rp-chk'); const st=row.querySelector('._rp-devstat'); if(on){ row.style.opacity='1'; row.style.cursor='pointer'; if(chk) chk.disabled=false; if(st){ st.textContent='온라인'; st.style.color='#16a34a'; } } }); }, 1000); }
+            ov.querySelector('#_rp-send').onclick=async()=>{ if(!chosen.size) return showToast('보낼 대상을 선택하세요.'); close(); await sendFilesToRecipients(fileNames, [...chosen.values()]); };
         }
         async function sendFilesToRecipients(fileNames, recipients){
             const pic=(currentUser && currentUser.profilePic)||null; let ok=0, fail=0;
+            const friends=recipients.filter(r=>r.type==='friend'); const devs=recipients.filter(r=>r.type==='device');
             for(const name of fileNames){
                 try{
                     const f=await window.RCFolder.getFileByName(name); if(!f){ fail++; continue; }
@@ -3445,12 +3453,36 @@
                     const url=await window.uploadBigFileToR2(f, null);
                     const mime=f.type||'application/octet-stream'; const sizeKB=(f.size/1024).toFixed(0);
                     const msg='[FILE_ATTACH]'+name+'|'+sizeKB+'|'+mime+'|'+url;
-                    recipients.forEach(rn=>{ const roomId=createRoomId(currentUser.name, rn); if(socket&&socket.connected) socket.emit('send_message',{ roomId:roomId, sender:currentUser.name, senderPic:pic, message:msg }); });
+                    friends.forEach(r=>{ const roomId=createRoomId(currentUser.name, r.id); if(socket&&socket.connected) socket.emit('send_message',{ roomId:roomId, sender:currentUser.name, senderPic:pic, message:msg }); });
+                    devs.forEach(r=>{ if(socket&&socket.connected) socket.emit('rc_signal',{ to:currentUser.name, kind:'selfsend', fromDevice:window.RCFolder.deviceId(), toDevice:r.id, url:url, name:name, mime:mime, size:f.size }); });
                     ok++;
                 }catch(e){ fail++; }
             }
-            showToast('📤 공유 완료: '+ok+'개'+(fail?(' · 실패 '+fail):'')+' → '+recipients.length+'명');
+            showToast('📤 전송: '+ok+'개'+(fail?(' · 실패 '+fail):'')+' → '+recipients.length+'대상');
         }
+        // 📲 내 기기 프레즌스(온라인 확인) + '나에게 보내기' 수신 — rc_signal kind:'devq'/'selfsend'
+        window.RCSelf = (function(){
+            const myDev=()=> window.RCFolder.deviceId();
+            let onlineSet=null;
+            function ping(cb, ms){ onlineSet=new Set(); try{ if(socket&&socket.connected) socket.emit('rc_signal',{ to:currentUser.name, kind:'devq', sub:'ping', fromDevice:myDev() }); }catch(_){} setTimeout(()=>{ const s=onlineSet; onlineSet=null; if(cb) cb(s||new Set()); }, ms||900); }
+            async function onSignal(d){
+                try{
+                    if(d.kind==='devq'){
+                        if(d.sub==='ping'){ if(d.fromDevice!==myDev() && socket&&socket.connected) socket.emit('rc_signal',{ to:currentUser.name, kind:'devq', sub:'pong', fromDevice:myDev(), name:window.RCFolder.deviceName(), hasFolder: window.RCFolder.chosen()?1:0 }); return; }
+                        if(d.sub==='pong'){ if(onlineSet && d.fromDevice && d.fromDevice!==myDev()) onlineSet.add(d.fromDevice); return; }
+                        return;
+                    }
+                    if(d.kind==='selfsend'){
+                        if(d.toDevice!==myDev() || d.fromDevice===myDev()) return;
+                        if(!(await window.RCFolder.ensureAccess())){ showToast('📥 나에게 보내기: 공유폴더 권한이 필요합니다(공유폴더 열어 허용).'); return; }
+                        showToast('📥 나에게 보내기 수신 중: '+d.name);
+                        try{ const r=await fetch(d.url); const blob=await r.blob(); await window.RCFolder.writeFile(d.name, blob); showToast('✅ 이 기기 공유폴더에 저장됨: '+d.name); window.RCFolder.syncIndex(); }catch(e){ showToast('수신 실패: '+d.name); }
+                        return;
+                    }
+                }catch(_){}
+            }
+            return { ping, onSignal };
+        })();
         // 📁 폴더 파일 미리보기 — 로컬 우선(클라우드/다운로드 안 함), 모든 유형 인앱 표시. 로컬에 없으면 R2(egress 무료)에서 받아 인앱 표시.
         window.rcPreviewFolderFile = async function(name, mime, url){
             try{
@@ -6965,6 +6997,7 @@
             if(d.kind === 'rtc'){ if(window._vcOnSignal) window._vcOnSignal(d); return; }     // 화상 통화(WebRTC) 시그널
             if(d.kind === 'rtcsc'){ if(window._rcpOnSignal) window._rcpOnSignal(d); return; } // 원격제어 화면 송출(WebRTC) 시그널
             if(d.kind === 'fsync'){ if(window.RCSync) window.RCSync.onSignal(d); return; }    // 📁 2D: 기기 간 파일 P2P 자기동기화
+            if(d.kind === 'devq' || d.kind === 'selfsend'){ if(window.RCSelf) window.RCSelf.onSignal(d); return; }   // 📲 내 기기 프레즌스 + 나에게 보내기
             if(d.kind === 'cap'){ // 🖥 원격제어 가능여부(상대가 화면공유 가능한 PC인지) 교환
                 if(d.act === 'query'){ if(socket && socket.connected && d.from) socket.emit('rc_signal', { to:d.from, kind:'cap', act:'reply', canHost: !!window._canHost }); }
                 else if(d.act === 'reply'){ window.__peerCanHost = !!d.canHost; if(window._updateRemoteBtn) window._updateRemoteBtn(); }
