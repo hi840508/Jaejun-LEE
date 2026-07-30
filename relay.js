@@ -264,10 +264,14 @@ app.get('/api/devices/files', (req, res) => {
 // 📁 삭제: 내 계정의 모든 기기 인덱스에서 해당 파일 제거(삭제한 파일이 다른 기기에 반투명으로 남지 않게)
 app.post('/api/devices/files/delete', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
-    const { hash, fname } = req.body || {};
+    const { hash, fname, deviceId } = req.body || {};
     if (!hash && !fname) return res.status(400).json({ error: 'hash/fname 필요' });
-    const q = hash ? `DELETE FROM device_files WHERE userName=? AND hash=?` : `DELETE FROM device_files WHERE userName=? AND fname=?`;
-    db.run(q, [me, hash || fname], (e) => e ? res.status(500).json({ error: e.message }) : res.json({ success: true }));
+    // 삭제한 그 기기의 인덱스에서만 제거(다른 기기가 같은 파일을 갖고 있으면 그 기기 것은 유지)
+    const cond = hash ? 'hash=?' : 'fname=?';
+    const params = [me, hash || fname];
+    let q = `DELETE FROM device_files WHERE userName=? AND ${cond}`;
+    if (deviceId) { q += ' AND deviceId=?'; params.push(deviceId); }
+    db.run(q, params, (e) => e ? res.status(500).json({ error: e.message }) : res.json({ success: true }));
 });
 app.get('/download/RAY_RemoteAgent.exe', (req, res) => {
     const f = path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe');
