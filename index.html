@@ -3282,8 +3282,15 @@
             const devices = await R.list();
             const myId = R.deviceId();
             const notSupported = !R.supported;
+            // ✅ RAYCloud DATA 탭 방식: '실제 로컬 폴더에 있는가'가 진짜 기준. 로컬 목록=선명, 다른 기기에만 있는 것=반투명.
+            let local=[]; try{ if(connected) local=await R.listFiles(); }catch(_){}
             let fd={files:[],deviceNames:{}}; try{ fd=await R.allFiles(); }catch(_){}
-            const files=(fd.files||[]).slice(0,500);
+            const localByHash={}; local.forEach(f=>{ localByHash[(f.fname+'|'+f.size)]=f; });
+            const merged=[];
+            local.forEach(f=>{ merged.push({ fname:f.fname, size:f.size, mime:f.mime||'', hash:(f.fname+'|'+f.size), mtime:(f.updated||0), here:true, thumb:'' }); });
+            (fd.files||[]).forEach(f=>{ if(!localByHash[f.hash]){ merged.push({ fname:f.fname, size:f.size, mime:f.mime||'', hash:f.hash, mtime:(f.updated||0), here:false, thumb:f.thumb||'', devices:f.devices||[] }); } });
+            merged.sort((a,b)=> (a.here===b.here) ? (b.mtime-a.mtime) : (a.here?-1:1));   // 로컬 먼저, 최신순
+            const files=merged.slice(0,800);
             const selected=new Set();
             const BTN='padding:8px 12px;border:1px solid #e5e7eb;background:#fff;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px;';
 
@@ -3317,11 +3324,11 @@
                 +'</div>';
             const _vov='<span class="rc-gf-vov" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;">▶</span>';
             const tiles = files.length ? files.map(f=>{
-                const here=(f.devices||[]).indexOf(myId)>=0;
+                const here=!!f.here;
                 const isVid=_sfType(f.mime,f.fname)==='video';
                 const hasThumb=!!f.thumb;
                 const thumb=hasThumb?('<img src="'+f.thumb+'" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isVid?_vov:'')):('<div class="rc-gf-icon" style="font-size:36px;">'+_sfIcon(f.mime,f.fname)+'</div>');
-                return '<div class="rc-gf" draggable="true" data-hash="'+_sfEsc(f.hash)+'" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.updated)||0)+'" data-here="'+(here?1:0)+'" data-nothumb="'+(hasThumb?'':'1')+'" '
+                return '<div class="rc-gf" draggable="true" data-hash="'+_sfEsc(f.hash)+'" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.mtime)||0)+'" data-here="'+(here?1:0)+'" data-nothumb="'+(hasThumb?'':'1')+'" '
                     +'style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;opacity:'+(here?1:0.5)+';display:flex;align-items:center;justify-content:center;">'
                     +thumb
                     +'<input type="checkbox" class="rc-gf-chk" title="선택" style="position:absolute;top:6px;left:6px;width:20px;height:20px;z-index:4;cursor:pointer;">'
@@ -3407,6 +3414,8 @@
             ov.querySelectorAll('._sf-tchip').forEach(c=>c.addEventListener('click', ()=>{ ftype=c.getAttribute('data-type'); ov.querySelectorAll('._sf-tchip').forEach(x=>x.style.cssText=CHIP+(x===c?CHIPON:'')); applyFilter(); }));
             ov.querySelectorAll('._sf-pchip').forEach(c=>c.addEventListener('click', ()=>{ fperiod=c.getAttribute('data-period'); ov.querySelectorAll('._sf-pchip').forEach(x=>x.style.cssText=CHIP+(x===c?CHIPON:'')); applyFilter(); }));
             applyFilter();
+            // 열 때 백그라운드 재인덱싱 → 다른 기기가 이 기기의 최신 폴더 내용을 볼 수 있게(표시는 이미 로컬 기준으로 정확)
+            try{ if(connected) R.syncIndex(); }catch(_){}
         }
         // 📤 공유 대상(친구) 선택 → 선택 파일들을 각 대상 대화방으로 전송(R2 1회 업로드 후 팬아웃)
         async function openShareRecipientPicker(fileNames){
