@@ -262,6 +262,7 @@
             box-shadow: 2px 0 16px rgba(0,0,0,0.28);
             display: flex;
             flex-direction: column;
+            z-index: 3600;   /* 공유폴더 등 전체화면 뷰 위에도 메뉴가 뜨도록 */
         }
         .yt-sidebar.open { left: 0; }
         /* 사이드바 열려있을 때 뒷배경 스크롤 잠금(모바일) */
@@ -275,7 +276,7 @@
             position: fixed;
             inset: 56px 0 0 0;
             background: rgba(0,0,0,0.3);
-            z-index: 98;
+            z-index: 3590;
         }
         body.sidebar-open .yt-sidebar-overlay { display: block; }
         .yt-sb-section { padding: 4px 8px; }
@@ -3388,7 +3389,7 @@
 
             if(!document.getElementById('_sf-style')){ const st=document.createElement('style'); st.id='_sf-style'; st.textContent='#rc-folder-page #_sf-grid{min-height:0;} #rc-folder-page img{ -webkit-user-drag:none; user-drag:none; } #rc-folder-page .rc-gf *{ pointer-events:none; } #rc-folder-page .rc-gf .rc-gf-chk{ pointer-events:auto; } @media (max-width:640px){ #rc-folder-page #_sf-grid{grid-template-columns:repeat(auto-fill,minmax(30vw,1fr))!important;gap:8px!important;padding:10px!important;} #rc-folder-page .rc-gf,#rc-folder-page .rc-gfd,#rc-folder-page .rc-serf{border-radius:10px!important;} }'; document.head.appendChild(st); }
             const ov=document.createElement('div'); ov.id='rc-folder-page';
-            ov.style.cssText='position:fixed;inset:0;z-index:3500;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
+            ov.style.cssText='position:fixed;top:56px;left:0;right:0;bottom:0;z-index:3500;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
             document.body.appendChild(ov); window.__sfOv=ov;
             const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; window.__sfPath=null; };
 
@@ -3404,14 +3405,12 @@
                 const crumb='<span class="_sf-crumb" data-i="-1" style="cursor:pointer;color:#2563eb;font-weight:700;">🏠 '+(_sfEsc(fname)||'공유폴더')+'</span>'+path.map((seg,i)=>' <span style="color:#94a3b8;">/</span> <span class="_sf-crumb" data-i="'+i+'" style="cursor:pointer;color:#2563eb;">'+_sfEsc(seg)+'</span>').join('');
                 const statusTxt = notSupported ? '이 기기는 폴더 미지원(모바일/Safari) — PC에서 지정' : (connected ? ('✅ '+_sfEsc(fname)) : '⚠️ 공유폴더 미지정');
                 const head='<div style="flex:none;background:#fff;border-bottom:1px solid #e5e7eb;padding:12px 18px;display:flex;align-items:center;gap:10px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
-                    +'<button id="_sf-menu" title="메뉴" style="'+BTN+'padding:8px 11px;font-size:17px;">☰</button>'
                     +'<div style="font-weight:800;font-size:17px;white-space:nowrap;">공유폴더</div>'
                     +(path.length?'<button id="_sf-back" style="'+BTN+'padding:8px 11px;" title="상위 폴더">← 뒤로</button>':'')
                     +'<div style="flex:1;min-width:120px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
                     +'<span style="font-size:11.5px;white-space:nowrap;flex:none;color:'+(connected?'#16a34a':(notSupported?'#92400e':'#b91c1c'))+';">'+statusTxt+'</span>'
                     +(notSupported?'':'<button id="_sf-pick" style="'+BTN+'">폴더 변경</button>')
                     +(connected?'<button id="_sf-disc" style="'+BTN+'color:#dc2626;">연결 해제</button>':'')
-                    +'<button id="_sf-x" style="'+BTN+'font-size:16px;">✕</button>'
                     +'</div>';
                 const typeChips=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(flt.type===t?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
                 const periodChips=[['all','전체'],['today','오늘'],['7','7일'],['30','30일']].map(p=>'<button class="_sf-pchip" data-period="'+p[0]+'" style="'+CHIP+(flt.period===p[0]?CHIPON:'')+'">'+p[1]+'</button>').join('');
@@ -3465,9 +3464,7 @@
 
                 ov.innerHTML=head+filter+toolbar+grid;
 
-                ov.querySelector('#_sf-x').onclick=close;
-                const mb=ov.querySelector('#_sf-menu'); if(mb) mb.onclick=()=>{ try{ const sb=document.getElementById('yt-sidebar'); const bd=document.querySelector('.yt-sidebar-overlay'); if(sb) sb.style.zIndex='3600'; if(bd) bd.style.zIndex='3590'; if(typeof toggleSidebar==='function' && sb && !sb.classList.contains('open')) toggleSidebar(); }catch(_){} };
-                // (메뉴는 공유폴더 위에 뜨고, 배경 클릭 시 메뉴만 닫혀 공유폴더로 복귀. 메뉴 항목 선택 시 switchTab이 공유폴더를 닫고 전환)
+                // 닫기·메뉴는 상단바(캡처 영역)의 표준 햄버거/로고로 통일 — X 버튼 제거. switchTab이 공유폴더를 닫고 전환.
                 const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } };
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); path = i<0?[]:path.slice(0,i+1); render(); }));
