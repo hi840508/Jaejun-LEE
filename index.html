@@ -3011,7 +3011,7 @@
                     const max=maxSize||160, sc=Math.min(1,max/Math.max(src.width,src.height)); const w=Math.max(1,Math.round(src.width*sc)), h=Math.max(1,Math.round(src.height*sc));
                     const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(src,0,0,w,h);
                     return cv.toDataURL('image/jpeg',0.82);
-                }catch(e){ return ''; }
+                }catch(e){ try{ window.__rcDicomErr=(e&&e.message)||String(e); }catch(_){} return ''; }
                 finally{ try{ if(cs&&div) cs.disable(div); }catch(_){} try{ if(div) div.remove(); }catch(_){} try{ if(wl&&wl.wadouri.fileManager.remove&&imageId) wl.wadouri.fileManager.remove(imageId); }catch(_){} }
             }
             // DICOM 이미지: cornerstone(모든 포맷 정확 렌더) 우선, 실패 시 네이티브 폴백.
@@ -3572,8 +3572,8 @@
             if(!sliceNames || !sliceNames.length) return;
             const R=window.RCFolder;
             showToast('🩻 CT 시리즈 여는 중… ('+sliceNames.length+'컷)');
-            let cw; try{ cw=await R.csReady(); }catch(_){}
-            if(!cw || !cw.cs){ showToast('DICOM 엔진 로드 실패(인터넷 확인)'); return; }
+            let cw, csErr=''; try{ cw=await R.csReady(); }catch(e){ csErr=(e&&e.message)||String(e); }
+            if(!cw || !cw.cs){ const modal=document.getElementById('chat-file-preview-modal'), content=document.getElementById('cfp-content'); if(content){ content.innerHTML='<div style="color:#fff;text-align:center;padding:30px;max-width:520px;"><div style="font-size:40px;">🩻</div><div style="font-weight:700;margin:8px 0;">DICOM 엔진 로드 실패</div><div style="font-size:12px;color:#cbd5e1;">'+_sfEsc(csErr||'cornerstone 로드 실패(인터넷/차단 확인)')+'</div></div>'; modal.style.display='flex'; } return; }
             const cs=cw.cs, wl=cw.wl;
             const modal=document.getElementById('chat-file-preview-modal'), content=document.getElementById('cfp-content'), title=document.getElementById('cfp-title');
             if(title) title.textContent='CT 시리즈 ('+sliceNames.length+'컷)';
@@ -3583,7 +3583,7 @@
             const ids=new Array(sliceNames.length);
             async function idFor(i){ if(ids[i]) return ids[i]; const f=await R.getFileAt(pathArr, sliceNames[i]); if(!f) return null; ids[i]=wl.wadouri.fileManager.add(f); return ids[i]; }
             let cur=Math.floor(sliceNames.length/2), busy=false;
-            async function show(i){ i=Math.max(0,Math.min(sliceNames.length-1,i)); cur=i; if(busy) return; busy=true; try{ const id=await idFor(i); if(id){ const img=await cs.loadImage(id); cs.displayImage(el, img); } }catch(_){} busy=false; const idx=document.getElementById('_cts-idx'); if(idx) idx.textContent=(i+1)+' / '+sliceNames.length; const s=document.getElementById('_cts-slider'); if(s && Number(s.value)!==i) s.value=i; }
+            async function show(i){ i=Math.max(0,Math.min(sliceNames.length-1,i)); cur=i; if(busy) return; busy=true; let er=''; try{ const id=await idFor(i); if(!id) er='슬라이스 파일 없음'; else { const img=await cs.loadImage(id); cs.displayImage(el, img); } }catch(e){ er=(e&&e.message)||String(e); } busy=false; const idx=document.getElementById('_cts-idx'); if(idx) idx.textContent=(i+1)+' / '+sliceNames.length+(er?(' · ⚠ '+er):''); const s=document.getElementById('_cts-slider'); if(s && Number(s.value)!==i) s.value=i; }
             const sld=document.getElementById('_cts-slider'); if(sld) sld.addEventListener('input',()=>show(Number(sld.value)));
             el.addEventListener('wheel',(e)=>{ e.preventDefault(); show(cur+(e.deltaY>0?1:-1)); }, {passive:false});
             show(cur);
@@ -3605,7 +3605,7 @@
                 if(isImage||isVideo||isAudio){ const u=URL.createObjectURL(f); openMediaUrlPreview(u, name, mm); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}}, 180000); return; }
                 if(isHtml){ try{ const txt=await f.text(); content.innerHTML='<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-forms" style="width:min(900px,92vw);height:78vh;border:none;background:#fff;border-radius:8px;"></iframe>'; content.querySelector('iframe').srcdoc=txt; modal.style.display='flex'; }catch(e){ showToast('HTML 미리보기 실패'); } return; }
                 if(isPdf){ const u=URL.createObjectURL(f); content.innerHTML='<iframe src="'+u+'" style="width:min(900px,92vw);height:82vh;border:none;border-radius:8px;background:#fff;"></iframe>'; modal.style.display='flex'; setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}}, 300000); return; }
-                if(isDcm){ showToast('🩻 DICOM 여는 중…'); const img=await window.RCFolder.dicomImage(f, 1000); if(img){ content.innerHTML='<img src="'+img+'" style="max-width:min(900px,92vw);max-height:80vh;object-fit:contain;border-radius:8px;background:#000;">'; modal.style.display='flex'; } else { const ts=(window.__rcDicomTS||'?'); content.innerHTML='<div style="color:#fff;text-align:center;padding:30px;max-width:520px;"><div style="font-size:44px;">🩻</div><div style="font-weight:700;margin:10px 0;">'+(name||'')+'</div><div style="font-size:13px;color:#cbd5e1;line-height:1.6;">이 DICOM은 브라우저에서 미리보기가 안 되는 압축 형식일 수 있습니다.<br>Transfer Syntax: <b>'+ts+'</b><br>(이 값을 알려주시면 지원을 추가하겠습니다)</div></div>'; modal.style.display='flex'; } return; }
+                if(isDcm){ showToast('🩻 DICOM 여는 중…'); const img=await window.RCFolder.dicomImage(f, 1000); if(img){ content.innerHTML='<img src="'+img+'" style="max-width:min(900px,92vw);max-height:80vh;object-fit:contain;border-radius:8px;background:#000;">'; modal.style.display='flex'; } else { const ts=(window.__rcDicomTS||'?'); const er=(window.__rcDicomErr||''); content.innerHTML='<div style="color:#fff;text-align:center;padding:30px;max-width:560px;"><div style="font-size:44px;">🩻</div><div style="font-weight:700;margin:10px 0;">'+(name||'')+'</div><div style="font-size:13px;color:#cbd5e1;line-height:1.6;">DICOM 미리보기 실패.<br>Transfer Syntax: <b>'+ts+'</b><br>오류: <b>'+_sfEsc(er||'(없음)')+'</b><br><span style="color:#94a3b8;">이 두 값을 알려주시면 바로 대응합니다.</span></div></div>'; modal.style.display='flex'; } return; }
                 // 기타: 로컬 blob로 인앱 표시 불가 → 저장 안내(클라우드 미사용)
                 content.innerHTML='<div style="color:#fff;text-align:center;padding:30px;"><div style="font-size:44px;">📎</div><div style="margin:10px 0;font-weight:700;">'+(name||'')+'</div><div style="font-size:13px;color:#cbd5e1;">이 형식은 인앱 미리보기를 지원하지 않습니다.</div></div>';
                 modal.style.display='flex';
