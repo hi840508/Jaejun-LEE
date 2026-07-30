@@ -3069,6 +3069,8 @@
             async function listAt(pathArr){ if(!(await _ensurePerm(true))) return {folders:[],files:[]}; let h; try{ h=await _dirAt(pathArr); }catch(_){ return {folders:[],files:[]}; } if(!h) return {folders:[],files:[]}; const folders=[], files=[]; try{ for await (const [nm,ent] of h.entries()){ if(ent.kind==='directory') folders.push(nm); else { try{ const f=await ent.getFile(); files.push({fname:nm,size:f.size,mime:f.type||'',mtime:f.lastModified||0}); }catch(_){} } } }catch(_){} folders.sort((a,b)=>a.localeCompare(b)); return {folders,files}; }
             async function getFileAt(pathArr, name){ try{ const h=await _dirAt(pathArr); const fh=await h.getFileHandle(_safe(name),{create:false}); return await fh.getFile(); }catch(_){ return null; } }
             async function writeFileAt(pathArr, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _dirAt(pathArr); const safe=_safe(name); const fh=await h.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return safe; }
+            // 대화방 이름 폴더(없으면 생성)에 저장 — 자동 수신용
+            async function writeFileInRoom(roomName, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _loadHandle(); const dir=await h.getDirectoryHandle(_safe(roomName||'received'),{create:true}); const safe=_safe(name); const fh=await dir.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return _safe(roomName)+'/'+safe; }
             async function mkdirAt(pathArr, name){ if(!(await _ensurePerm(true))) return false; try{ const h=await _dirAt(pathArr); await h.getDirectoryHandle(_safe(name),{create:true}); _scheduleSync(); return true; }catch(e){ return false; } }
             async function removeAt(pathArr, name, recursive){ if(!(await _ensurePerm(true))){ window.__rcLastErr='공유폴더 권한 없음(권한 허용 필요)'; return false; } try{ const h=await _dirAt(pathArr); await h.removeEntry(name, {recursive:!!recursive}); try{ if((pathArr||[]).length===0) fetch(API_URL+'/api/devices/files/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fname:name, deviceId:deviceId()})}); }catch(_){} _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
             async function _copyDir(srcDir, dstDir){ for await (const [nm,ent] of srcDir.entries()){ if(ent.kind==='directory'){ const nd=await dstDir.getDirectoryHandle(nm,{create:true}); await _copyDir(ent, nd); } else { const f=await ent.getFile(); const nf=await dstDir.getFileHandle(nm,{create:true}); const w=await nf.createWritable(); await w.write(f); await w.close(); } } }
@@ -3198,21 +3200,22 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
         window.__rcIngestQueue = [];
         window.__rcIngesting = false;
-        window.rcAutoIngest = function(name, url, mime, size){
+        window.rcAutoIngest = function(name, url, mime, size, room){
             try{
                 if(!window.RCFolder || !window.RCFolder.supported) return;
                 if(!/^https?:\/\//i.test(url||'')) return;   // 원격(R2) URL만 자동수신 대상
-                const key = (name||'') + '|' + (size||0);
+                const rm = (room||'received');
+                const key = rm + '|' + (name||'') + '|' + (size||0);   // 대화방별로 구분
                 let ledger; try{ ledger = JSON.parse(localStorage.getItem('rc_saved_files')||'[]'); }catch(_){ ledger = []; }
                 if(ledger.indexOf(key) >= 0) return;                              // 이미 저장함
                 if(window.__rcIngestQueue.some(t=>t.key===key)) return;           // 큐 대기 중
-                window.__rcIngestQueue.push({ name, url, mime, size, key });
+                window.__rcIngestQueue.push({ name, url, mime, size, key, room:rm });
                 _rcDrainIngest();
             }catch(_){}
         };
@@ -3228,16 +3231,15 @@
                     let ledger; try{ ledger = JSON.parse(localStorage.getItem('rc_saved_files')||'[]'); }catch(_){ ledger = []; }
                     if(ledger.indexOf(t.key) >= 0) continue;
                     try{
-                        if(await R.fileExists(t.name)){ ledger.push(t.key); }        // 이미 폴더에 있음(수동저장 등)
-                        else {
-                            showToast('📥 받은 파일 저장 중: ' + t.name);
-                            const resp = await fetch(t.url); if(!resp.ok) throw new Error('http '+resp.status);
-                            const blob = await resp.blob();
-                            await R.writeFile(t.name, blob);
-                            changed = true;
-                            showToast('✅ 공유폴더에 자동 저장됨: ' + t.name);
-                        }
-                        localStorage.setItem('rc_saved_files', JSON.stringify(ledger.slice(-1000)));
+                        // 대화방 이름 폴더에 저장(같은 사람도 대화방별로 분리)
+                        showToast('📥 받은 파일 저장 중: ' + t.name + ' → ' + t.room);
+                        const resp = await fetch(t.url); if(!resp.ok) throw new Error('http '+resp.status);
+                        const blob = await resp.blob();
+                        await R.writeFileInRoom(t.room, t.name, blob);
+                        changed = true;
+                        showToast('✅ [' + t.room + '] 폴더에 자동 저장됨: ' + t.name);
+                        ledger.push(t.key);
+                        localStorage.setItem('rc_saved_files', JSON.stringify(ledger.slice(-2000)));
                     }catch(e){ /* 실패(오프라인/네트워크) → 다음 접속 때 히스토리 재렌더로 재시도. 원본은 R2에 90일 보관 */ }
                 }
             } finally {
@@ -3373,6 +3375,9 @@
         const _sfIcon=(mime,fn)=>{ mime=mime||''; fn=fn||''; if(mime.indexOf('image/')===0) return '🖼️'; if(mime.indexOf('video/')===0) return '🎬'; if(mime==='application/pdf') return '📄'; if(mime==='application/dicom'||/\.dcm$/i.test(fn)) return '🩻'; if(mime.indexOf('model/')===0||/\.(stl|ply|obj)$/i.test(fn)) return '🧊'; return '📎'; };
         const _sfType=(mime,fn)=>{ mime=mime||''; fn=(fn||'').toLowerCase(); if(mime.indexOf('image/')===0||/\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(fn)) return 'image'; if(mime.indexOf('video/')===0||/\.(mp4|webm|mov|m4v|avi)$/.test(fn)) return 'video'; if(mime==='application/dicom'||/\.dcm$/.test(fn)) return 'dicom'; if(mime.indexOf('model/')===0||/\.(stl|ply|obj|gltf|glb|fbx)$/.test(fn)) return '3d'; if(mime==='application/pdf'||/\.(pdf|html?|txt|md|csv|docx?|xlsx?|pptx?|zip)$/.test(fn)) return 'doc'; return 'other'; };
         const _sfTypeLabel={ all:'전체', image:'이미지', video:'영상', doc:'문서', '3d':'3D', dicom:'CT/DICOM', other:'기타' };
+        // 상대시간(방금/N분 전/N시간 전/N일 전/날짜) + 날짜 그룹키(오늘/YYYY-MM-DD)
+        const _relTime=(mt)=>{ if(!mt) return ''; const s=Math.floor((Date.now()-mt)/1000); if(s<60) return '방금'; if(s<3600) return Math.floor(s/60)+'분 전'; if(s<86400) return Math.floor(s/3600)+'시간 전'; if(s<86400*7) return Math.floor(s/86400)+'일 전'; const d=new Date(mt); return (d.getMonth()+1)+'월 '+d.getDate()+'일'; };
+        const _sfDateKey=(mt)=>{ const d=new Date(mt||0); const t=new Date(); const ymd=(x)=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); const a=ymd(d); if(a===ymd(t)) return '오늘'; const y=new Date(t.getTime()-86400000); if(a===ymd(y)) return '어제'; return a; };
         // 커스텀 입력창(앱/Electron은 window.prompt 비활성 → 자체 모달). Promise<string|null>
         window._sfPrompt = function(titleTxt, def){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;'; ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="font-weight:800;font-size:15px;margin-bottom:12px;">'+_sfEsc(titleTxt||'')+'</div><input id="_sfp-in" style="width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;box-sizing:border-box;" value="'+_sfEsc(def||'')+'"><div style="display:flex;gap:8px;margin-top:14px;"><button id="_sfp-c" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_sfp-ok" style="flex:1;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">확인</button></div></div>'; document.body.appendChild(ov); const inp=ov.querySelector('#_sfp-in'); setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(_){} },40); const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); }; ov.querySelector('#_sfp-c').onclick=()=>done(null); ov.querySelector('#_sfp-ok').onclick=()=>done(inp.value); inp.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); done(inp.value); } else if(e.key==='Escape'){ done(null); } }); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(null); }); }); };
         async function openSharedFolderPanel(){
@@ -3385,9 +3390,9 @@
             const CHIPON='background:#2563eb;color:#fff;border-color:#2563eb;';
             const _vov='<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;">▶</span>';
             let path=[]; window.__sfPath=path;
-            let flt={q:'',type:'all',period:'all',from:'',to:''};
+            let flt={q:'',type:'all',period:'all',from:'',to:'',sort:'new',zoom:124};
 
-            if(!document.getElementById('_sf-style')){ const st=document.createElement('style'); st.id='_sf-style'; st.textContent='#rc-folder-page #_sf-grid{min-height:0;} #rc-folder-page img{ -webkit-user-drag:none; user-drag:none; } #rc-folder-page .rc-gf *{ pointer-events:none; } #rc-folder-page .rc-gf .rc-gf-chk{ pointer-events:auto; } @media (max-width:640px){ #rc-folder-page #_sf-grid{grid-template-columns:repeat(auto-fill,minmax(30vw,1fr))!important;gap:8px!important;padding:10px!important;} #rc-folder-page .rc-gf,#rc-folder-page .rc-gfd,#rc-folder-page .rc-serf{border-radius:10px!important;} }'; document.head.appendChild(st); }
+            if(!document.getElementById('_sf-style')){ const st=document.createElement('style'); st.id='_sf-style'; st.textContent='#rc-folder-page #_sf-grid{min-height:0;} #rc-folder-page img{ -webkit-user-drag:none; user-drag:none; } #rc-folder-page .rc-gf *{ pointer-events:none; } #rc-folder-page .rc-gf .rc-gf-chk, #rc-folder-page .rc-gf .rc-more{ pointer-events:auto; } @media (max-width:640px){ #rc-folder-page ._sf-secgrid{grid-template-columns:repeat(auto-fill,minmax(30vw,1fr))!important;gap:8px!important;} }'; document.head.appendChild(st); }
             const ov=document.createElement('div'); ov.id='rc-folder-page';
             ov.style.cssText='position:fixed;top:56px;left:0;right:0;bottom:0;z-index:3500;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
             document.body.appendChild(ov); window.__sfOv=ov;
@@ -3430,37 +3435,41 @@
                     +'<button class="_sf-act" data-act="share" style="'+BTN+'background:#2563eb;color:#fff;border:none;">공유/보내기</button>'
                     +'<button class="_sf-act" data-act="rename" style="'+BTN+'">이름변경</button>'
                     +'<button class="_sf-act" data-act="delete" style="'+BTN+'color:#dc2626;">삭제</button>'
+                    +'<button id="_sf-sort" style="'+BTN+'">'+(flt.sort==='old'?'오래된순 ▾':flt.sort==='name'?'이름순 ▾':'최신순 ▾')+'</button>'
+                    +'<button id="_sf-zout" style="'+BTN+'padding:8px 11px;">−</button>'
+                    +'<button id="_sf-zin" style="'+BTN+'padding:8px 11px;">+</button>'
                     +'</div>';
 
-                const folderTiles=cur.folders.map(nm=>'<div class="rc-gfd" data-name="'+_sfEsc(nm)+'" title="'+_sfEsc(nm)+'" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;"><div style="font-size:46px;line-height:1;">📁</div><div style="font-size:11px;max-width:92%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+_sfEsc(nm)+'</div></div>').join('');
-                // 🩻 CT 시리즈 그룹핑: 같은 폴더의 .dcm 여러 개 → 하나의 시리즈 카드(RAYCloud DATA 탭 방식)
+                const ZOOM=(flt.zoom||124);
+                const folderCards=cur.folders.map(nm=>'<div class="rc-gfd" data-name="'+_sfEsc(nm)+'" title="'+_sfEsc(nm)+'" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;"><div style="font-size:44px;line-height:1;">📁</div><div style="font-size:11px;max-width:92%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+_sfEsc(nm)+'</div></div>').join('');
+                // 🩻 CT 시리즈 그룹핑
                 const seriesMap={};
                 const _dcm=cur.files.filter(f=>/\.dcm$/i.test(f.fname));
                 const _non=cur.files.filter(f=>!/\.dcm$/i.test(f.fname));
                 const fileList=[];
-                if(_dcm.length>=2){ const slices=_dcm.map(f=>f.fname).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})); seriesMap['ser0']=slices; fileList.push({ series:true, sid:'ser0', fname:'CT/DICOM 시리즈 ('+_dcm.length+'컷)', slices:_dcm.length, mtime:Math.max.apply(null,_dcm.map(f=>f.mtime||0)), here:true }); }
-                else { _dcm.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.mtime||0,here:true,thumb:''})); }
-                _non.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.mtime||0,here:true,thumb:''}));
-                fileList.sort((a,b)=> b.mtime-a.mtime);
-                const fileTiles=fileList.map(f=>{
-                    if(f.series){
-                        return '<div class="rc-serf" data-sid="'+f.sid+'" data-type="dicom" data-mtime="'+(Number(f.mtime)||0)+'" data-fname="'+_sfEsc(f.fname)+'" title="CT 시리즈 — 클릭하면 슬라이스 뷰어" style="position:relative;border:1px solid #99f6e4;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#042f2e;cursor:pointer;display:flex;align-items:center;justify-content:center;">'
-                            +'<div class="rc-ser-icon" style="font-size:42px;color:#5eead4;">🩻</div>'
-                            +'<span style="position:absolute;top:6px;right:6px;background:#0d9488;color:#fff;font-size:9px;padding:2px 6px;border-radius:6px;z-index:3;">'+f.slices+'컷</span>'
-                            +'<button class="rc-ser-del" title="시리즈 삭제" style="position:absolute;top:5px;left:5px;width:24px;height:24px;border:none;border-radius:6px;background:rgba(15,23,42,.6);color:#fff;font-size:12px;cursor:pointer;z-index:5;">🗑</button>'
-                            +'<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));color:#fff;font-size:10px;padding:14px 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2;">'+_sfEsc(f.fname)+'</span>'
-                            +'</div>';
-                    }
+                if(_dcm.length>=2){ const slices=_dcm.map(f=>f.fname).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})); seriesMap['ser0']=slices; fileList.push({ series:true, sid:'ser0', fname:'CT/DICOM 시리즈 ('+_dcm.length+'컷)', slices:_dcm.length, mtime:Math.max.apply(null,_dcm.map(f=>f.mtime||0)) }); }
+                else { _dcm.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.mtime||0})); }
+                _non.forEach(f=>fileList.push({fname:f.fname,size:f.size,mime:f.mime||'',mtime:f.mtime||0}));
+                if(flt.sort==='old') fileList.sort((a,b)=>a.mtime-b.mtime);
+                else if(flt.sort==='name') fileList.sort((a,b)=>String(a.fname).localeCompare(String(b.fname),undefined,{numeric:true}));
+                else fileList.sort((a,b)=>b.mtime-a.mtime);
+                const _timeChip=(mt)=>'<span style="position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;padding:2px 7px;border-radius:20px;z-index:2;">'+_relTime(mt)+'</span>';
+                const _more='<button class="rc-more" title="더보기" style="position:absolute;bottom:5px;right:5px;width:24px;height:24px;border:none;border-radius:50%;background:rgba(255,255,255,.9);color:#334155;font-size:15px;line-height:1;cursor:pointer;z-index:5;display:flex;align-items:center;justify-content:center;">⋮</button>';
+                const _card=(f)=>{
+                    if(f.series){ return '<div class="rc-serf" data-sid="'+f.sid+'" data-type="dicom" data-mtime="'+(Number(f.mtime)||0)+'" data-fname="'+_sfEsc(f.fname)+'" title="'+_sfEsc(f.fname)+'" style="position:relative;border:1px solid #99f6e4;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#042f2e;cursor:pointer;display:flex;align-items:center;justify-content:center;"><div class="rc-ser-icon" style="font-size:42px;color:#5eead4;">🩻</div><span style="position:absolute;top:6px;right:6px;background:#0d9488;color:#fff;font-size:9px;padding:2px 6px;border-radius:6px;z-index:3;">'+f.slices+'컷</span>'+_timeChip(f.mtime)+'<button class="rc-ser-del" title="삭제" style="position:absolute;top:5px;left:5px;width:24px;height:24px;border:none;border-radius:6px;background:rgba(15,23,42,.6);color:#fff;font-size:12px;cursor:pointer;z-index:5;">🗑</button></div>'; }
                     const isVid=_sfType(f.mime,f.fname)==='video', hasThumb=!!f.thumb;
                     const thumb=hasThumb?('<img src="'+f.thumb+'" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isVid?_vov:'')):('<div class="rc-gf-icon" style="font-size:34px;">'+_sfIcon(f.mime,f.fname)+'</div>');
-                    return '<div class="rc-gf" draggable="true" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.mtime)||0)+'" data-here="1" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;">'
-                        +thumb
-                        +'<input type="checkbox" class="rc-gf-chk" title="선택" style="position:absolute;top:5px;left:5px;width:20px;height:20px;z-index:4;cursor:pointer;">'
-                        +'<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.68));color:#fff;font-size:10px;padding:14px 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2;">'+_sfEsc(f.fname)+'</span>'
-                        +'</div>';
-                }).join('');
+                    return '<div class="rc-gf" draggable="true" data-fname="'+_sfEsc(f.fname)+'" data-mime="'+_sfEsc(f.mime||'')+'" data-type="'+_sfType(f.mime,f.fname)+'" data-mtime="'+(Number(f.mtime)||0)+'" data-here="1" title="'+_sfEsc(f.fname)+'" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;">'+thumb+'<input type="checkbox" class="rc-gf-chk" title="선택" style="position:absolute;top:5px;left:5px;width:18px;height:18px;z-index:4;cursor:pointer;">'+_timeChip(f.mtime)+_more+'</div>';
+                };
+                // 날짜 그룹
+                const groups={}; const order=[];
+                fileList.forEach(f=>{ const k=_sfDateKey(f.mtime); if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(f); });
+                const _secGridStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+ZOOM+'px,1fr));gap:12px;';
+                let sectionsHtml='';
+                if(folderCards) sectionsHtml+='<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:8px 2px 6px;">폴더 <span style="color:#94a3b8;font-weight:600;">('+cur.folders.length+')</span></div><div class="_sf-secgrid" style="'+_secGridStyle+'">'+folderCards+'</div></div>';
+                order.forEach((k)=>{ const cards=groups[k].map(_card).join(''); sectionsHtml+='<div class="_sf-sec"><div class="_sf-sechead" style="display:flex;align-items:center;justify-content:space-between;font-weight:800;font-size:14px;color:#334155;padding:14px 2px 6px;cursor:pointer;user-select:none;"><span>'+_sfEsc(k)+' <span style="color:#94a3b8;font-weight:600;">('+groups[k].length+')</span></span><span class="_sf-chev" style="color:#94a3b8;transition:transform .15s;">▾</span></div><div class="_sf-secgrid" style="'+_secGridStyle+'">'+cards+'</div></div>'; });
                 const empty=(!cur.folders.length && !fileList.length);
-                const grid='<div id="_sf-grid" style="flex:1;overflow:auto;padding:16px 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:12px;align-content:start;">'+(empty?('<div style="grid-column:1/-1;padding:56px 20px;text-align:center;color:#94a3b8;font-size:14px;">'+(connected?'이 폴더는 비어 있습니다. 파일을 끌어다 놓거나 새 폴더를 만들어 보세요.':'상단에서 공유폴더를 지정하세요.')+'</div>'):(folderTiles+fileTiles))+'</div>';
+                const grid='<div id="_sf-grid" style="flex:1;overflow:auto;padding:12px 18px 40px;">'+(empty?('<div style="padding:56px 20px;text-align:center;color:#94a3b8;font-size:14px;">'+(connected?'이 폴더는 비어 있습니다. 파일을 끌어다 놓거나 새 폴더를 만들어 보세요.':'상단에서 공유폴더를 지정하세요.')+'</div>'):sectionsHtml)+'</div>';
 
                 ov.innerHTML=head+filter+toolbar+grid;
 
@@ -3493,8 +3502,9 @@
                 ov.querySelectorAll('.rc-gf').forEach(el=>{
                     const fnm=el.getAttribute('data-fname'), mim=el.getAttribute('data-mime')||'', here=el.getAttribute('data-here')==='1';
                     const chk=el.querySelector('.rc-gf-chk');
-                    chk.addEventListener('click',(e)=>{ e.stopPropagation(); if(chk.checked) selected.add(fnm); else selected.delete(fnm); updCnt(); });
-                    el.addEventListener('click',(e)=>{ if(e.target===chk) return; window.rcPreviewFolderFile(fnm, mim); });
+                    chk.addEventListener('click',(e)=>{ e.stopPropagation(); if(chk.checked){ selected.add(fnm); el.style.outline='3px solid #2563eb'; el.style.outlineOffset='-3px'; } else { selected.delete(fnm); el.style.outline=''; } updCnt(); });
+                    const more=el.querySelector('.rc-more'); if(more) more.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); el.dispatchEvent(new MouseEvent('contextmenu',{clientX:e.clientX,clientY:e.clientY,bubbles:true})); });
+                    el.addEventListener('click',(e)=>{ if(e.target===chk || (e.target&&e.target.closest&&e.target.closest('.rc-more'))) return; window.rcPreviewFolderFile(fnm, mim); });
                     el.addEventListener('dragstart',(e)=>{ if(!here){ e.preventDefault(); return; } try{ e.dataTransfer.setData('application/x-rc-file', fnm); e.dataTransfer.setData('text/plain', fnm); e.dataTransfer.effectAllowed='copy'; window.__rcDragFile=fnm; }catch(_){} });
                     el.addEventListener('dragend',()=>{ window.__rcDragFile=null; });
                     if(here) el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); ctxMenu(e.clientX,e.clientY,[
@@ -3519,6 +3529,11 @@
                     if(act==='rename'){ if(names.length!==1) return showToast('이름변경할 파일 1개만 선택하세요.'); const old=names[0]; const nn=await _sfPrompt('새 이름', old); if(nn&&nn!==old){ if(await R.renameAt(path,old,nn,false)) render(); else showToast('이름변경 실패'); } return; }
                     if(act==='delete'){ if(!names.length) return showToast('삭제할 파일을 선택하세요.'); if(!confirm(names.length+'개 파일을 삭제할까요? (실제 폴더에서 삭제)')) return; if(!(await R.ensureAccess())){ showToast('공유폴더 권한이 필요합니다.'); return; } window.__rcLastErr=''; let ok=0; for(const nm of names){ if(await R.removeAt(path,nm,false)) ok++; } showToast(ok?('🗑 삭제: '+ok+'개'):('삭제 실패: '+(window.__rcLastErr||'권한/폴더 확인'))); render(); return; }
                 }));
+                // 정렬/확대 + 섹션 접기
+                const sb2=ov.querySelector('#_sf-sort'); if(sb2) sb2.onclick=()=>{ flt.sort = flt.sort==='new'?'old':(flt.sort==='old'?'name':'new'); render(); };
+                const zi=ov.querySelector('#_sf-zin'); if(zi) zi.onclick=()=>{ flt.zoom=Math.min(240,(flt.zoom||124)+28); render(); };
+                const zo=ov.querySelector('#_sf-zout'); if(zo) zo.onclick=()=>{ flt.zoom=Math.max(84,(flt.zoom||124)-28); render(); };
+                ov.querySelectorAll('._sf-sechead').forEach(h=>h.addEventListener('click',()=>{ const g=h.nextElementSibling; const chev=h.querySelector('._sf-chev'); if(!g) return; if(g.style.display==='none'){ g.style.display='grid'; if(chev) chev.style.transform=''; } else { g.style.display='none'; if(chev) chev.style.transform='rotate(-90deg)'; } }));
 
                 // 검색·필터
                 const applyFilter=()=>{
@@ -10789,7 +10804,7 @@ pdfjsScript,
                 if (dataUrl.startsWith('THUMB::')) { const rest = dataUrl.slice(7); const sp = rest.indexOf('::'); if (sp >= 0) { _thumb = rest.substring(0, sp); dataUrl = rest.substring(sp + 2); } }
                 const _isUrl = /^https?:\/\//i.test(dataUrl);
                 // 📥 2C: 받은 파일(내가 보낸 게 아니고 원격 URL)을 공유폴더에 자동 저장·즉시등록. 오프라인이었으면 재접속 후 히스토리 재렌더 시 자동 이어받기.
-                try { if(!isMe && _isUrl && window.rcAutoIngest) window.rcAutoIngest(fname, dataUrl, mime, (parseFloat(sizeKB)||0)*1024); } catch(_){}
+                try { if(!isMe && _isUrl && window.rcAutoIngest){ const _room=(typeof activeChatFriend!=='undefined' && activeChatFriend) ? activeChatFriend : (sender||'received'); window.rcAutoIngest(fname, dataUrl, mime, (parseFloat(sizeKB)||0)*1024, _room); } } catch(_){}
                 const escFname = (fname||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 const fnLower = (fname||'').toLowerCase();
                 const isImage = /^image\//.test(mime) || /\.(png|jpg|jpeg|gif|webp|bmp)$/.test(fnLower);
