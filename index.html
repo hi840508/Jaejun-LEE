@@ -2982,12 +2982,37 @@
                 try{
                     if(mime.indexOf('image/')===0) return await _mkThumb(file);
                     if(mime.indexOf('video/')===0) return await _mkVideoThumb(file);
-                    if(mime==='application/dicom' || /\.dcm$/i.test(nm)) return await _mkDicomThumb(file);
+                    if(mime==='application/dicom' || /\.dcm$/i.test(nm)){ let t=await _mkDicomThumb(file); if(!t) t=await _dicomViaCornerstone(file, 160); return t; }
                 }catch(_){}
                 return '';
             }
-            // DICOM 큰 이미지(미리보기용). 실패 시 '' + window.__rcDicomTS에 전송구문 기록.
-            async function dicomImage(file, maxSize){ try{ return await _mkDicomThumb(file, maxSize||900); }catch(_){ return ''; } }
+            // 🩻 압축 DICOM(JPEG2000/JPEG-LS/RLE 등): cornerstone(WADO) lazy 로드로 디코드
+            let _csP=null;
+            function _loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=()=>res(); s.onerror=()=>rej(new Error('load '+src)); document.head.appendChild(s); }); }
+            function _ensureCornerstone(){ if(_csP) return _csP; _csP=(async()=>{
+                if(!window.cornerstone) await _loadScript('https://unpkg.com/cornerstone-core@2.3.0/dist/cornerstone.min.js');
+                if(!window.dicomParser) await _loadScript('https://unpkg.com/dicom-parser@1.8.13/dist/dicomParser.min.js');
+                if(!window.cornerstoneWADOImageLoader) await _loadScript('https://unpkg.com/cornerstone-wado-image-loader@4.1.5/dist/cornerstoneWADOImageLoader.bundle.min.js');
+                const cs=window.cornerstone, wl=window.cornerstoneWADOImageLoader;
+                if(wl && !wl.external.cornerstone){ wl.external.cornerstone=cs; wl.external.dicomParser=window.dicomParser; try{ wl.webWorkerManager.initialize({ maxWebWorkers: Math.max(1,(navigator.hardwareConcurrency||2)-1), startWebWorkersOnDemand:true, taskConfiguration:{ 'decodeTask':{ initializeCodecsOnStartup:false } } }); }catch(_){} }
+                return { cs, wl };
+            })(); return _csP; }
+            async function _dicomViaCornerstone(file, maxSize){
+                try{
+                    const { cs, wl }=await _ensureCornerstone(); if(!cs||!wl) return '';
+                    const imageId = wl.wadouri.fileManager.add(file);
+                    const image = await cs.loadImage(imageId);
+                    let w=image.width||image.columns||256, h=image.height||image.rows||256;
+                    const max=maxSize||160, sc=Math.min(1,max/Math.max(w,h)); const tw=Math.max(1,Math.round(w*sc)), th=Math.max(1,Math.round(h*sc));
+                    const div=document.createElement('div'); div.style.cssText='position:fixed;left:-99999px;top:0;width:'+tw+'px;height:'+th+'px;'; document.body.appendChild(div);
+                    let url='';
+                    try{ cs.enable(div); cs.displayImage(div, image); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r()))); const cv=div.querySelector('canvas'); if(cv) url=cv.toDataURL('image/jpeg',0.85); }
+                    finally{ try{ cs.disable(div); }catch(_){} try{ div.remove(); }catch(_){} try{ if(wl.wadouri.fileManager.remove) wl.wadouri.fileManager.remove(imageId); }catch(_){} }
+                    return url;
+                }catch(e){ return ''; }
+            }
+            // DICOM 큰 이미지(미리보기용): 네이티브(비압축/JPEG) 우선, 실패 시 cornerstone(압축) 폴백.
+            async function dicomImage(file, maxSize){ let t=''; try{ t=await _mkDicomThumb(file, maxSize||900); }catch(_){} if(!t){ t=await _dicomViaCornerstone(file, maxSize||900); } return t; }
 
             // ===== 탐색기 조작(하위폴더 지원) =====
             function _safe(n){ return String(n||'').replace(/[\\/:*?"<>|]/g,'_'); }
@@ -3323,6 +3348,7 @@
                     +'<div style="flex:1;min-width:120px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
                     +'<span style="font-size:11.5px;color:'+(connected?'#16a34a':(notSupported?'#92400e':'#b91c1c'))+';">'+statusTxt+'</span>'
                     +(notSupported?'':'<button id="_sf-pick" style="'+BTN+'">📂 폴더 변경</button>')
+                    +'<button id="_sf-gdrive" style="'+BTN+'" title="Google Drive 연결/열기">☁ Drive</button>'
                     +'<button id="_sf-x" style="'+BTN+'font-size:16px;">✕</button>'
                     +'</div>';
                 const typeChips=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(flt.type===t?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
@@ -3365,6 +3391,7 @@
 
                 ov.querySelector('#_sf-x').onclick=close;
                 const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } };
+                const gd=ov.querySelector('#_sf-gdrive'); if(gd) gd.onclick=()=>{ try{ window.openDrivePanel(); }catch(_){} };
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); path = i<0?[]:path.slice(0,i+1); render(); }));
                 const nf=ov.querySelector('#_sf-newfolder'); if(nf) nf.onclick=async()=>{ const nm=prompt('새 폴더 이름'); if(!nm) return; if(await R.mkdirAt(path,nm)) render(); else showToast('폴더 생성 실패'); };
                 const up=ov.querySelector('#_sf-upload'), upi=ov.querySelector('#_sf-upl-input'); if(up&&upi){ up.onclick=()=>upi.click(); upi.onchange=async()=>{ const fs=[].slice.call(upi.files||[]); let ok=0; for(const f of fs){ try{ await R.writeFileAt(path,f.name,f); ok++; }catch(_){} } showToast('⬆ 업로드: '+ok+'개'); render(); }; }
@@ -3506,7 +3533,69 @@
             }
             return { ping, onSignal };
         })();
-        // 📁 폴더 파일 미리보기 — 로컬 우선(클라우드/다운로드 안 함), 모든 유형 인앱 표시. 로컬에 없으면 R2(egress 무료)에서 받아 인앱 표시.
+
+        // ☁ Google Drive 연동(선택) — OAuth(GIS) + Drive REST. Client ID는 사용자가 Google Cloud에서 발급해 저장.
+        window.RCDrive = (function(){
+            const CID='gdrive_client_id';
+            function clientId(){ return localStorage.getItem(CID)||''; }
+            function setClientId(v){ if(v) localStorage.setItem(CID,String(v).trim()); else localStorage.removeItem(CID); }
+            let _tok=null;
+            function _ls(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=()=>res(); s.onerror=()=>rej(new Error('load '+src)); document.head.appendChild(s); }); }
+            async function _libs(){ if(!(window.google&&google.accounts&&google.accounts.oauth2)) await _ls('https://accounts.google.com/gsi/client'); }
+            function isConnected(){ return !!_tok; }
+            function connect(){ return new Promise(async(resolve,reject)=>{ const cid=clientId(); if(!cid) return reject(new Error('NO_CLIENT_ID')); try{ await _libs(); }catch(e){ return reject(e); } try{ const tc=google.accounts.oauth2.initTokenClient({ client_id:cid, scope:'https://www.googleapis.com/auth/drive', callback:(r)=>{ if(r&&r.access_token){ _tok=r.access_token; resolve(true); } else reject(new Error('no token')); } }); tc.requestAccessToken(); }catch(e){ reject(e); } }); }
+            async function _api(path, params){ const u=new URL('https://www.googleapis.com/drive/v3/'+path); Object.keys(params||{}).forEach(k=>u.searchParams.set(k,params[k])); const r=await fetch(u, { headers:{ Authorization:'Bearer '+_tok } }); if(!r.ok) throw new Error('drive '+r.status); return r.json(); }
+            async function list(folderId){ folderId=folderId||'root'; const j=await _api('files',{ q:"'"+folderId+"' in parents and trashed=false", fields:'files(id,name,mimeType,size,modifiedTime,thumbnailLink,iconLink)', pageSize:'300', orderBy:'folder,modifiedTime desc' }); return j.files||[]; }
+            async function downloadBlob(fileId){ const r=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media', { headers:{ Authorization:'Bearer '+_tok } }); if(!r.ok) throw new Error('dl '+r.status); return await r.blob(); }
+            async function uploadBlob(name, blob, folderId, mime){ const meta={ name:name }; if(folderId&&folderId!=='root') meta.parents=[folderId]; const fd=new FormData(); fd.append('metadata', new Blob([JSON.stringify(meta)],{type:'application/json'})); fd.append('file', blob); const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method:'POST', headers:{ Authorization:'Bearer '+_tok }, body:fd }); if(!r.ok) throw new Error('up '+r.status); return await r.json(); }
+            return { clientId, setClientId, connect, isConnected, list, downloadBlob, uploadBlob };
+        })();
+        // ☁ Google Drive 설정/브라우저 패널
+        window.openDrivePanel = async function(){
+            const D=window.RCDrive;
+            if(!D.clientId()){
+                const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4400;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+                ov.innerHTML='<div style="background:#fff;color:#0f172a;max-width:520px;width:100%;border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:86vh;overflow:auto;">'
+                    +'<div style="font-weight:800;font-size:17px;margin-bottom:8px;">☁ Google Drive 연결 설정</div>'
+                    +'<div style="font-size:13px;line-height:1.7;color:#475569;">Google 계정으로 직접 연결하려면 <b>OAuth 클라이언트 ID</b>가 한 번 필요합니다:<br>'
+                    +'1) <b>console.cloud.google.com</b> → 프로젝트 생성<br>'
+                    +'2) <b>API 및 서비스 → 라이브러리 → Google Drive API</b> 사용 설정<br>'
+                    +'3) <b>OAuth 동의 화면</b> 구성(외부, 테스트 사용자에 본인 이메일 추가)<br>'
+                    +'4) <b>사용자 인증 정보 → OAuth 클라이언트 ID → 웹 애플리케이션</b><br>'
+                    +'&nbsp;&nbsp;• 승인된 JavaScript 원본: <b>https://earth.rayaox.com</b><br>'
+                    +'5) 생성된 <b>클라이언트 ID</b>를 아래에 붙여넣기</div>'
+                    +'<input id="_gd-cid" placeholder="xxxxx.apps.googleusercontent.com" style="width:100%;margin-top:14px;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:13px;box-sizing:border-box;">'
+                    +'<div style="display:flex;gap:8px;margin-top:12px;"><button id="_gd-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_gd-save" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장하고 연결</button></div>'
+                    +'</div>';
+                document.body.appendChild(ov);
+                ov.querySelector('#_gd-cancel').onclick=()=>ov.remove();
+                ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
+                ov.querySelector('#_gd-save').onclick=()=>{ const v=ov.querySelector('#_gd-cid').value.trim(); if(!v) return showToast('클라이언트 ID를 입력하세요.'); D.setClientId(v); ov.remove(); openDrivePanel(); };
+                return;
+            }
+            try{ showToast('Google 로그인 중…'); await D.connect(); }catch(e){ if((e&&e.message)==='NO_CLIENT_ID'){ D.setClientId(''); return openDrivePanel(); } showToast('Google Drive 연결 실패: '+(e.message||e)+' (원본/동의화면 확인)'); return; }
+            _driveBrowser('root', ['내 드라이브']);
+        };
+        async function _driveBrowser(folderId, crumbNames){
+            const D=window.RCDrive;
+            let files=[]; try{ files=await D.list(folderId); }catch(e){ showToast('목록 실패: '+(e.message||e)); return; }
+            const esc=_sfEsc;
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:3600;background:#f8fafc;color:#0f172a;display:flex;flex-direction:column;';
+            const folders=files.filter(f=>f.mimeType==='application/vnd.google-apps.folder');
+            const docs=files.filter(f=>f.mimeType!=='application/vnd.google-apps.folder');
+            const fcards=folders.map(f=>'<div class="_gd-fd" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" style="border:1px solid #e5e7eb;border-radius:12px;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;"><div style="font-size:44px;">📁</div><div style="font-size:11px;max-width:92%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(f.name)+'</div></div>').join('');
+            const dcards=docs.map(f=>{ const th=f.thumbnailLink?('<img src="'+f.thumbnailLink+'&sz=w200" referrerpolicy="no-referrer" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'):('<div style="font-size:34px;">'+_sfIcon(f.mimeType,f.name)+'</div>'); return '<div class="_gd-f" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" data-mime="'+esc(f.mimeType||'')+'" style="position:relative;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;aspect-ratio:1;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;">'+th+'<span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.68));color:#fff;font-size:10px;padding:14px 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(f.name)+'</span></div>'; }).join('');
+            ov.innerHTML='<div style="flex:none;background:#fff;border-bottom:1px solid #e5e7eb;padding:13px 18px;display:flex;align-items:center;gap:12px;"><div style="font-weight:800;font-size:17px;">☁ Google Drive</div><div style="flex:1;font-size:13px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(crumbNames.join(' / '))+'</div><button id="_gd-x" style="padding:8px 12px;border:1px solid #e5e7eb;background:#fff;border-radius:9px;cursor:pointer;font-size:16px;">✕</button></div>'
+                +'<div style="flex:1;overflow:auto;padding:16px 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:12px;align-content:start;">'+(files.length?(fcards+dcards):'<div style="grid-column:1/-1;padding:50px;text-align:center;color:#94a3b8;">폴더가 비어 있습니다.</div>')+'</div>';
+            document.body.appendChild(ov);
+            ov.querySelector('#_gd-x').onclick=()=>ov.remove();
+            ov.querySelectorAll('._gd-fd').forEach(el=>el.addEventListener('dblclick',()=>{ ov.remove(); _driveBrowser(el.getAttribute('data-id'), crumbNames.concat([el.getAttribute('data-name')])); }));
+            ov.querySelectorAll('._gd-f').forEach(el=>el.addEventListener('click', async()=>{
+                const id=el.getAttribute('data-id'), nm=el.getAttribute('data-name'), mm=el.getAttribute('data-mime');
+                showToast('⬇ Drive에서 불러오는 중: '+nm);
+                try{ const blob=await D.downloadBlob(id); const u=URL.createObjectURL(blob); openMediaUrlPreview(u, nm, mm); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}}, 180000); }catch(e){ showToast('불러오기 실패: '+(e.message||e)); }
+            }));
+        }
         window.rcPreviewFolderFile = async function(name, mime, url){
             try{
                 let f=null; try{ f=await window.RCFolder.getFileAt(window.__sfPath||[], name); }catch(_){}
