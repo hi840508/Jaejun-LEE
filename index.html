@@ -3551,29 +3551,36 @@
             return { clientId, setClientId, connect, isConnected, list, downloadBlob, uploadBlob };
         })();
         // ☁ Google Drive 설정/브라우저 패널
-        window.openDrivePanel = async function(){
+        window.openDriveSetup = function(){
             const D=window.RCDrive;
-            if(!D.clientId()){
-                const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4400;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
-                ov.innerHTML='<div style="background:#fff;color:#0f172a;max-width:520px;width:100%;border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:86vh;overflow:auto;">'
-                    +'<div style="font-weight:800;font-size:17px;margin-bottom:8px;">☁ Google Drive 연결 설정</div>'
-                    +'<div style="font-size:13px;line-height:1.7;color:#475569;">Google 계정으로 직접 연결하려면 <b>OAuth 클라이언트 ID</b>가 한 번 필요합니다:<br>'
-                    +'1) <b>console.cloud.google.com</b> → 프로젝트 생성<br>'
-                    +'2) <b>API 및 서비스 → 라이브러리 → Google Drive API</b> 사용 설정<br>'
-                    +'3) <b>OAuth 동의 화면</b> 구성(외부, 테스트 사용자에 본인 이메일 추가)<br>'
-                    +'4) <b>사용자 인증 정보 → OAuth 클라이언트 ID → 웹 애플리케이션</b><br>'
-                    +'&nbsp;&nbsp;• 승인된 JavaScript 원본: <b>https://earth.rayaox.com</b><br>'
-                    +'5) 생성된 <b>클라이언트 ID</b>를 아래에 붙여넣기</div>'
-                    +'<input id="_gd-cid" placeholder="xxxxx.apps.googleusercontent.com" style="width:100%;margin-top:14px;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:13px;box-sizing:border-box;">'
-                    +'<div style="display:flex;gap:8px;margin-top:12px;"><button id="_gd-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_gd-save" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장하고 연결</button></div>'
-                    +'</div>';
-                document.body.appendChild(ov);
-                ov.querySelector('#_gd-cancel').onclick=()=>ov.remove();
-                ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
-                ov.querySelector('#_gd-save').onclick=()=>{ const v=ov.querySelector('#_gd-cid').value.trim(); if(!v) return showToast('클라이언트 ID를 입력하세요.'); D.setClientId(v); ov.remove(); openDrivePanel(); };
-                return;
-            }
-            try{ showToast('Google 로그인 중…'); await D.connect(); }catch(e){ if((e&&e.message)==='NO_CLIENT_ID'){ D.setClientId(''); return openDrivePanel(); } showToast('Google Drive 연결 실패: '+(e.message||e)+' (원본/동의화면 확인)'); return; }
+            const origin = window.location.origin;   // ⚠️ 이 값을 '승인된 JavaScript 원본'에 정확히 등록해야 함(no registered origin 방지)
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4400;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;max-width:560px;width:100%;border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;">'
+                +'<div style="font-weight:800;font-size:17px;margin-bottom:8px;">☁ Google Drive 연결 설정</div>'
+                +'<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px;margin-bottom:12px;font-size:12.5px;line-height:1.6;color:#9a3412;">⚠️ <b>invalid_client / no registered origin</b> 오류는 아래 <b>현재 접속 주소</b>가 OAuth 클라이언트의 <b>승인된 JavaScript 원본</b>에 없어서 납니다. 이 값을 <b>그대로 복사</b>해 등록하세요(끝에 / 없이).</div>'
+                +'<div style="font-size:12px;color:#64748b;margin-bottom:4px;">현재 접속 주소(승인된 JavaScript 원본에 추가)</div>'
+                +'<div style="display:flex;gap:8px;margin-bottom:14px;"><input id="_gd-origin" readonly value="'+_sfEsc(origin)+'" style="flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:9px;font-size:13px;font-weight:700;background:#f8fafc;"><button id="_gd-copy" style="padding:10px 14px;border:1px solid #e5e7eb;background:#fff;border-radius:9px;cursor:pointer;font-weight:700;">복사</button></div>'
+                +'<div style="font-size:13px;line-height:1.7;color:#475569;">1) <b>console.cloud.google.com</b> → 프로젝트 → <b>Google Drive API</b> 사용 설정<br>'
+                +'2) <b>OAuth 동의 화면</b>(외부) → 테스트 사용자에 <b>본인 Google 이메일</b> 추가<br>'
+                +'3) <b>사용자 인증 정보 → OAuth 클라이언트 ID → 웹 애플리케이션</b><br>'
+                +'&nbsp;&nbsp;• <b>승인된 JavaScript 원본</b>에 <u>위 주소</u> 추가 (예: '+_sfEsc(origin)+')<br>'
+                +'&nbsp;&nbsp;• (리디렉션 URI는 비워도 됨)<br>'
+                +'4) 저장 후 <b>몇 분</b> 기다린 뒤 아래 <b>클라이언트 ID</b> 붙여넣기</div>'
+                +'<input id="_gd-cid" value="'+_sfEsc(D.clientId())+'" placeholder="xxxxx.apps.googleusercontent.com" style="width:100%;margin-top:14px;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:13px;box-sizing:border-box;">'
+                +'<div style="display:flex;gap:8px;margin-top:12px;"><button id="_gd-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button><button id="_gd-save" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장하고 연결</button></div>'
+                +'</div>';
+            document.body.appendChild(ov);
+            const close=()=>{ try{ ov.remove(); }catch(_){} };
+            ov.querySelector('#_gd-cancel').onclick=close;
+            ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); });
+            ov.querySelector('#_gd-copy').onclick=()=>{ try{ navigator.clipboard.writeText(origin); showToast('복사됨: '+origin); }catch(_){ const i=ov.querySelector('#_gd-origin'); i.select(); document.execCommand('copy'); showToast('복사됨'); } };
+            ov.querySelector('#_gd-save').onclick=()=>{ const v=ov.querySelector('#_gd-cid').value.trim(); if(!v) return showToast('클라이언트 ID를 입력하세요.'); D.setClientId(v); close(); openDrivePanel(true); };
+        };
+        window.openDrivePanel = async function(forceConnect){
+            const D=window.RCDrive;
+            if(!D.clientId()) return openDriveSetup();
+            try{ showToast('Google 로그인 중…'); await D.connect(); }
+            catch(e){ const msg=(e&&e.message)||String(e); if(msg==='NO_CLIENT_ID'){ D.setClientId(''); return openDriveSetup(); } showToast('연결 실패: '+msg+' → 설정에서 원본/ID 확인'); return openDriveSetup(); }
             _driveBrowser('root', ['내 드라이브']);
         };
         async function _driveBrowser(folderId, crumbNames){
