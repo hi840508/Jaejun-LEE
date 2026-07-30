@@ -262,7 +262,6 @@
             box-shadow: 2px 0 16px rgba(0,0,0,0.28);
             display: flex;
             flex-direction: column;
-            z-index: 3600;   /* 공유폴더 등 전체화면 뷰 위에도 메뉴가 뜨도록 */
         }
         .yt-sidebar.open { left: 0; }
         /* 사이드바 열려있을 때 뒷배경 스크롤 잠금(모바일) */
@@ -276,7 +275,7 @@
             position: fixed;
             inset: 56px 0 0 0;
             background: rgba(0,0,0,0.3);
-            z-index: 3590;
+            z-index: 98;
         }
         body.sidebar-open .yt-sidebar-overlay { display: block; }
         .yt-sb-section { padding: 4px 8px; }
@@ -3434,7 +3433,7 @@
  "@media (max-width:640px){ #rc-folder-page ._sf-secgrid{grid-template-columns:repeat(auto-fill,minmax(44vw,1fr))!important;gap:12px!important;} }"
 ].join(''); document.head.appendChild(st); }
             const ov=document.createElement('div'); ov.id='rc-folder-page';
-            ov.style.cssText='position:fixed;top:56px;left:0;right:0;bottom:0;z-index:3500;background:#f6f7f9;color:#1f2937;display:flex;flex-direction:column;';
+            ov.style.cssText='position:fixed;top:56px;left:0;right:0;bottom:0;z-index:95;background:#f6f7f9;color:#1f2937;display:flex;flex-direction:column;';
             document.body.appendChild(ov); window.__sfOv=ov;
             const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; window.__sfPath=null; };
 
@@ -4158,7 +4157,7 @@
             if(!isAdmin) return showToast("먼저 Admin 권한을 활성화해 주세요.");
             const newPwd = document.getElementById('admin-new-pwd').value;
             if(!newPwd || newPwd.length < 2) return showToast("새 비밀번호를 2자 이상 입력해 주세요.");
-            const cur = prompt("현재 Admin 비밀번호를 입력하세요 (확인용):");
+            const cur = await window._sfPrompt("현재 Admin 비밀번호 (확인용)","");
             if(cur === null) return;
             try {
                 const res = await fetch(`${API_URL}/api/admin/change-password`, {
@@ -4366,7 +4365,7 @@
         }
 
         window.adminResetUserPassword = async function(targetName) {
-            const newPwd = prompt(`[${targetName}] 회원의 새 비밀번호를 입력하세요. (4자 이상)\n(설정 후 본인이 직접 변경하도록 안내해 주세요.)`, '');
+            const newPwd = await window._sfPrompt(`[${targetName}] 회원의 새 비밀번호를 입력하세요. (4자 이상)\n(설정 후 본인이 직접 변경하도록 안내해 주세요.)`, '');
             if(!newPwd || newPwd.length < 4) return showToast("4자 이상 입력하세요.");
             try {
                 const res = await fetch(`${API_URL}/api/admin/reset-password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminSecret: 'mars', targetName, newPassword: newPwd }) });
@@ -5654,7 +5653,7 @@
             img.src=st.dataUrl;
         };
         async function editStoreDescription(storeId, currentDesc) {
-            const newDesc = prompt("상점 소개 문구를 입력하세요.", currentDesc || '');
+            const newDesc = await window._sfPrompt("상점 소개 문구", currentDesc || '');
             if(newDesc === null) return;
             await fetch(`${API_URL}/api/store/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: storeId, owner: currentUser.name, description: newDesc }) });
             showToast("상점 소개가 업데이트되었습니다."); loadMyBrandStores();
@@ -5783,7 +5782,7 @@
                 }
             }
             const listText = cats.map((c, i) => `${i+1}. ${c.n}${c.v === currentCat ? ' (현재)' : ''}`).join('\n');
-            const input = prompt(`변경할 카테고리 번호를 입력하세요:\n\n${listText}`, String(cats.findIndex(c => c.v === currentCat) + 1));
+            const input = await window._sfPrompt(`변경할 카테고리 번호를 입력하세요:\n\n${listText}`, String(cats.findIndex(c => c.v === currentCat) + 1));
             if(input === null) return;
             const idx = parseInt(input, 10) - 1;
             if(isNaN(idx) || idx < 0 || idx >= cats.length) return showToast('잘못된 번호입니다.');
@@ -6095,7 +6094,7 @@
         window.handleFilesSelected = async function(files) {
             scannedFiles = Array.from(files); if(scannedFiles.length === 0) return; const storeId = document.getElementById('target-brand-selector').value; if(!storeId) return showToast("상향 콤보박스에서 상점을 선택하세요.");
             // 🚀 가격을 묻고 검증 — 기존엔 무음으로 10,000원 고정 등록되던 버그
-            const _raw = prompt(`등록할 ${scannedFiles.length}개 상품의 판매가(원)를 입력하세요.`, '');
+            const _raw = await window._sfPrompt(`등록할 ${scannedFiles.length}개 상품 판매가(원)`, '');
             if(_raw === null) return;
             const price = Number((_raw||'').trim());
             if((_raw||'').trim()==='' || !Number.isFinite(price) || price < 0 || !Number.isInteger(price)) return showToast("판매가를 0원 이상의 정수로 입력하세요.");
@@ -11160,7 +11159,7 @@ pdfjsScript,
         };
 
         window.rejectPendingOrder = async function(orderId) {
-            const reason = prompt('거절 사유를 입력해 주세요 (선택):', '');
+            const reason = await window._sfPrompt('거절 사유를 입력해 주세요 (선택):', '');
             if(reason === null) return;
             try {
                 const res = await fetch(`${API_URL}/api/order/reject`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, seller: currentUser.name, reason: reason || '' }) });
@@ -11374,7 +11373,7 @@ pdfjsScript,
         };
         // 💰 [에스크로] 구매자: 환불 요청 → 상점이 수락(환불완료)하면 Admin 보관금이 반환됨
         window.requestOrderRefund = async function(orderId){
-            const reason = prompt('환불 사유를 입력하세요.'); if(reason===null) return;
+            const reason = await window._sfPrompt('환불 사유를 입력하세요.'); if(reason===null) return;
             try{
                 const r=await fetch(`${API_URL}/api/order/refund-request`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ orderId, reason: reason||'' })});
                 const d=await r.json(); if(!r.ok||!d.success) throw new Error(d.error||'실패');
@@ -11942,7 +11941,7 @@ pdfjsScript,
 
         // 🚀 환불 요청 (판매자 승인 대기 상태 생성, 자금 이동 X)
         window.requestRefund = async function(txId, productName) {
-            const reason = prompt(`[${productName}] 환불 사유를 간단히 입력해 주세요.\n(판매자에게 함께 전송됩니다)`, '');
+            const reason = await window._sfPrompt(`[${productName}] 환불 사유를 간단히 입력해 주세요.\n(판매자에게 함께 전송됩니다)`, '');
             if(reason === null) return;
             try {
                 const res = await fetch(`${API_URL}/api/refund/request`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ txId, requester: currentUser.name, reason }) });
@@ -12906,7 +12905,7 @@ pdfjsScript,
             // 🔁 구매자: 리메이크/리페어 요청 → 새 주문(처음 구매와 동일 흐름) 생성 + 새 대화방으로 이동
             window.requestRemake = async function(orderId, kind){
                 const label = kind==='repair' ? '리페어' : '리메이크';
-                const reason = prompt(label+' 요청 사유/요청사항을 입력해 주세요 (선택):', '');
+                const reason = await (window._sfPrompt ? window._sfPrompt(label+' 요청 사유/요청사항 (선택)','') : Promise.resolve(prompt(label+' 요청 사유/요청사항을 입력해 주세요 (선택):','')));
                 if(reason === null) return;
                 try {
                     const r = await fetch(`${API_URL}/api/order/remake`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, kind, reason: reason||'', buyer: currentUser.name }) });
