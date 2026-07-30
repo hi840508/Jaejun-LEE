@@ -2843,8 +2843,12 @@
         //  - 데이터 본체는 각 기기의 로컬 폴더에 저장(클라우드 저장비 0). R2는 임시 중계만.
         //  - 데스크톱 Chrome/Edge = 실제 폴더 지정/자동수신. 모바일/비지원 = 클라우드 폴백.
         window.RCFolder = (function(){
-            const DB_NAME='rc_fs', STORE='handles', KEY='shared';
-            function _idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB_NAME,1); r.onupgradeneeded=()=>{ try{ r.result.createObjectStore(STORE); }catch(_){} }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+            const DB_NAME='rc_fs', STORE='handles', KEY='shared', TSTORE='thumbs';
+            function _idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB_NAME,2); r.onupgradeneeded=()=>{ const db=r.result; try{ if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE); }catch(_){} try{ if(!db.objectStoreNames.contains(TSTORE)) db.createObjectStore(TSTORE); }catch(_){} }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+            async function _tGet(k){ try{ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(TSTORE,'readonly').objectStore(TSTORE).get(k); q.onsuccess=()=>res(q.result||''); q.onerror=()=>res(''); }); }catch(_){ return ''; } }
+            async function _tPut(k,v){ try{ const db=await _idb(); await new Promise((res)=>{ const q=db.transaction(TSTORE,'readwrite').objectStore(TSTORE).put(v,k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }catch(_){} }
+            // 영구 썸네일: 파일명|크기|수정시각 키로 IndexedDB 캐시(재방문/재인덱싱 시 재디코딩·깜빡임 방지)
+            async function getThumb(file, mime, fname){ try{ const key=(fname||file.name)+'|'+file.size+'|'+(file.lastModified||0); let t=await _tGet(key); if(t) return t; t=await makeThumbForFile(file, mime, fname); if(t) _tPut(key,t); return t; }catch(_){ return ''; } }
             async function _get(k){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readonly').objectStore(STORE).get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
             async function _put(k,v){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).put(v,k); q.onsuccess=()=>res(); q.onerror=()=>rej(q.error); }); }
             async function _rm(k){ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).delete(k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }
@@ -2910,51 +2914,63 @@
                 v.onerror=()=>fin('');
                 setTimeout(()=>fin(''), 6000);
             }); }
-            // 🩻 DICOM(.dcm) 썸네일 — 비압축 monochrome/RGB 지원(압축 전송구문은 skip). 실패 시 ''.
+            // 🩻 DICOM(.dcm) 썸네일 — 비압축 mono/RGB + JPEG 캡슐화 지원, 시퀀스(undefined length) 건너뜀. 실패 시 ''.
             async function _mkDicomThumb(file){
                 try{
-                    const buf = await file.slice(0, Math.min(file.size, 80*1024*1024)).arrayBuffer();
-                    const dv = new DataView(buf); const u8 = new Uint8Array(buf);
+                    const buf = await file.slice(0, Math.min(file.size, 120*1024*1024)).arrayBuffer();
+                    const dv = new DataView(buf); const u8 = new Uint8Array(buf); const LEN=dv.byteLength;
                     let p = (u8[128]===0x44&&u8[129]===0x49&&u8[130]===0x43&&u8[131]===0x4D) ? 132 : 0;
                     let explicit=true, little=true, tsSwitched=false, tsUID='';
-                    let rows=0,cols=0,ba=16,pr=0,spp=1,photo='MONOCHROME2',pixelOff=0;
-                    const str=(o,l)=>{ let s=''; for(let i=0;i<l;i++) s+=String.fromCharCode(u8[o+i]); return s.replace(/\0+$/,'').trim(); };
-                    while(p+8 <= dv.byteLength){
+                    let rows=0,cols=0,ba=16,pr=0,spp=1,photo='MONOCHROME2',pixelOff=0,pixelLen=0,encap=false;
+                    const str=(o,l)=>{ let s=''; for(let i=0;i<l&&o+i<LEN;i++) s+=String.fromCharCode(u8[o+i]); return s.replace(/\0+$/,'').trim(); };
+                    // undefined-length 시퀀스 건너뛰기 → 시퀀스 종료(FFFE,E0DD)까지
+                    function skipSeq(q){
+                        while(q+8<=LEN){
+                            const g=dv.getUint16(q,true),e=dv.getUint16(q+2,true),l=dv.getUint32(q+4,true); q+=8;
+                            if(g===0xFFFE && e===0xE0DD) return q;
+                            if(g===0xFFFE && e===0xE000){ if(l===0xFFFFFFFF){ while(q+8<=LEN){ const g2=dv.getUint16(q,true),e2=dv.getUint16(q+2,true),l2=dv.getUint32(q+4,true); q+=8; if(g2===0xFFFE&&e2===0xE00D) break; if(g2===0xFFFE&&e2===0xE0DD) return q; q+=l2; } } else q+=l; }
+                            else return q;
+                        }
+                        return q;
+                    }
+                    while(p+8 <= LEN){
                         const tagStart=p;
                         const g=dv.getUint16(p,little), e=dv.getUint16(p+2,little); p+=4;
-                        if(g>0x0002 && !tsSwitched){
-                            tsSwitched=true;
+                        if(g>0x0002 && !tsSwitched){ tsSwitched=true;
                             if(tsUID==='1.2.840.10008.1.2'){ explicit=false; little=true; }
                             else if(tsUID==='1.2.840.10008.1.2.2'){ explicit=true; little=false; }
-                            else if(/^1\.2\.840\.10008\.1\.2\.[45]/.test(tsUID)){ return ''; }   // 압축 → 미지원
                             else { explicit=true; little=true; }
-                            p=tagStart; continue;   // 새 구문으로 이 태그부터 재파싱
+                            p=tagStart; continue;
                         }
                         let vr='', len=0;
                         if(explicit){ vr=String.fromCharCode(u8[p],u8[p+1]); p+=2; if(['OB','OW','OF','SQ','UT','UN'].indexOf(vr)>=0){ p+=2; len=dv.getUint32(p,little); p+=4; } else { len=dv.getUint16(p,little); p+=2; } }
                         else { len=dv.getUint32(p,little); p+=4; }
                         const off=p;
-                        if(len===0xFFFFFFFF) return '';   // undefined length(encapsulated) → 미지원
+                        if(g===0x7FE0 && e===0x0010){ if(len===0xFFFFFFFF){ encap=true; pixelOff=off; } else { pixelOff=off; pixelLen=len; } break; }
+                        if(len===0xFFFFFFFF){ p=skipSeq(off); continue; }   // 시퀀스 건너뛰기
                         if(g===0x0002 && e===0x0010) tsUID=str(off,len);
                         else if(g===0x0028){ if(e===0x0010) rows=dv.getUint16(off,little); else if(e===0x0011) cols=dv.getUint16(off,little); else if(e===0x0100) ba=dv.getUint16(off,little); else if(e===0x0103) pr=dv.getUint16(off,little); else if(e===0x0002) spp=dv.getUint16(off,little); else if(e===0x0004) photo=str(off,len); }
-                        else if(g===0x7FE0 && e===0x0010){ pixelOff=off; break; }
                         p = off + len;
                     }
-                    if(!rows||!cols||!pixelOff) return '';
-                    const max=160, sc=Math.min(1,max/Math.max(rows,cols)); const tw=Math.max(1,Math.round(cols*sc)), th=Math.max(1,Math.round(rows*sc));
-                    const cv=document.createElement('canvas'); cv.width=tw; cv.height=th; const ctx=cv.getContext('2d'); const img=ctx.createImageData(tw,th);
-                    const invert=(photo==='MONOCHROME1');
-                    if(spp>=3 && ba===8){
-                        for(let y=0;y<th;y++)for(let x=0;x<tw;x++){ const sx=Math.floor(x/sc),sy=Math.floor(y/sc); const si=pixelOff+(sy*cols+sx)*3; const di=(y*tw+x)*4; img.data[di]=u8[si]||0; img.data[di+1]=u8[si+1]||0; img.data[di+2]=u8[si+2]||0; img.data[di+3]=255; }
-                    } else {
-                        const is16=ba>8; const N=rows*cols; const getV=(i)=>{ if(is16){ const o=pixelOff+i*2; if(o+2>dv.byteLength) return 0; return pr===1?dv.getInt16(o,little):dv.getUint16(o,little); } return u8[pixelOff+i]||0; };
-                        let mn=Infinity,mx=-Infinity; const step=Math.max(1,Math.floor(N/5000));
-                        for(let i=0;i<N;i+=step){ const v=getV(i); if(v<mn)mn=v; if(v>mx)mx=v; }
-                        const rng=(mx-mn)||1;
-                        for(let y=0;y<th;y++)for(let x=0;x<tw;x++){ const sx=Math.floor(x/sc),sy=Math.floor(y/sc); let g=Math.round((getV(sy*cols+sx)-mn)/rng*255); if(g<0)g=0; if(g>255)g=255; if(invert)g=255-g; const di=(y*tw+x)*4; img.data[di]=g;img.data[di+1]=g;img.data[di+2]=g;img.data[di+3]=255; }
+                    if(!pixelOff) return '';
+                    const draw=(getRGB)=>{ const max=160,sc=Math.min(1,max/Math.max(rows,cols)); const tw=Math.max(1,Math.round(cols*sc)),th=Math.max(1,Math.round(rows*sc)); const cv=document.createElement('canvas'); cv.width=tw; cv.height=th; const ctx=cv.getContext('2d'); const img=ctx.createImageData(tw,th); for(let y=0;y<th;y++)for(let x=0;x<tw;x++){ const sx=Math.floor(x/sc),sy=Math.floor(y/sc); const c=getRGB(sx,sy); const di=(y*tw+x)*4; img.data[di]=c[0];img.data[di+1]=c[1];img.data[di+2]=c[2];img.data[di+3]=255; } ctx.putImageData(img,0,0); return cv.toDataURL('image/jpeg',0.62); };
+                    // 캡슐화(압축): JPEG 계열만 첫 프레임 프래그먼트를 브라우저로 디코드
+                    if(encap){
+                        if(!/^1\.2\.840\.10008\.1\.2\.4\.(50|51|57|70)$/.test(tsUID)) return '';   // JPEG2000/RLE 등 미지원
+                        let q=pixelOff, frag=null;
+                        if(q+8<=LEN && dv.getUint16(q,true)===0xFFFE && dv.getUint16(q+2,true)===0xE000){ const bl=dv.getUint32(q+4,true); q+=8+(bl===0xFFFFFFFF?0:bl); }   // Basic Offset Table
+                        if(q+8<=LEN && dv.getUint16(q,true)===0xFFFE && dv.getUint16(q+2,true)===0xE000){ const fl=dv.getUint32(q+4,true); q+=8; if(fl>0&&fl!==0xFFFFFFFF) frag=u8.subarray(q, Math.min(LEN,q+fl)); }
+                        if(!frag) return '';
+                        try{ const bmp=await createImageBitmap(new Blob([frag],{type:'image/jpeg'})); const max=160,sc=Math.min(1,max/Math.max(bmp.width,bmp.height)); const w=Math.max(1,Math.round(bmp.width*sc)),h=Math.max(1,Math.round(bmp.height*sc)); const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(bmp,0,0,w,h); try{bmp.close();}catch(_){} return cv.toDataURL('image/jpeg',0.62); }catch(e){ return ''; }
                     }
-                    ctx.putImageData(img,0,0);
-                    return cv.toDataURL('image/jpeg',0.62);
+                    if(!rows||!cols) return '';
+                    const invert=(photo==='MONOCHROME1');
+                    if(spp>=3 && ba===8){ return draw((sx,sy)=>{ const si=pixelOff+(sy*cols+sx)*3; return [u8[si]||0,u8[si+1]||0,u8[si+2]||0]; }); }
+                    const is16=ba>8; const N=rows*cols; const getV=(i)=>{ if(is16){ const o=pixelOff+i*2; if(o+2>LEN) return 0; return pr===1?dv.getInt16(o,little):dv.getUint16(o,little); } return u8[pixelOff+i]||0; };
+                    let mn=Infinity,mx=-Infinity; const step=Math.max(1,Math.floor(N/5000));
+                    for(let i=0;i<N;i+=step){ const v=getV(i); if(v<mn)mn=v; if(v>mx)mx=v; }
+                    const rng=(mx-mn)||1;
+                    return draw((sx,sy)=>{ let g=Math.round((getV(sy*cols+sx)-mn)/rng*255); if(g<0)g=0; if(g>255)g=255; if(invert)g=255-g; return [g,g,g]; });
                 }catch(e){ return ''; }
             }
             // 파일 → 썸네일(유형 자동): 이미지/영상/DICOM. 그 외 ''.
@@ -2968,19 +2984,18 @@
                 }catch(_){}
                 return '';
             }
-            const _thumbCache=new Map();   // hash → dataURL (세션 캐시: 재인덱싱마다 재디코딩 방지)
             async function buildIndex(){
                 if(!(await isConnected())) return [];
-                const h=await _loadHandle(); const files=[]; let tc=0, tv=0;
+                const h=await _loadHandle(); const files=[]; let tn=0;
                 try{ for await (const [nm, ent] of h.entries()){
                     if(ent.kind!=='file') continue;
                     let f; try{ f=await ent.getFile(); }catch(_){ continue; }
                     const mime=f.type||_mimeByExt(nm);
                     const key=nm+'|'+f.size;
                     const entry={ fname:nm, size:f.size, mime, hash:key, thumb:'', mtime: f.lastModified||0 };
-                    if(_thumbCache.has(key)) entry.thumb=_thumbCache.get(key);
-                    else if(mime.indexOf('image/')===0 && f.size<15*1024*1024 && tc<80){ try{ entry.thumb=await _mkThumb(f); tc++; if(entry.thumb) _thumbCache.set(key,entry.thumb); }catch(_){} }
-                    else if(mime.indexOf('video/')===0 && f.size<800*1024*1024 && tv<40){ try{ entry.thumb=await _mkVideoThumb(f); tv++; if(entry.thumb) _thumbCache.set(key,entry.thumb); }catch(_){} }
+                    // 썸네일은 영구 캐시 사용(교차기기 표시용). 이미지/영상/DICOM, 상한 200개(페이로드 보호) — 나머지는 각 기기 갤러리가 로컬로 채움
+                    const isImg=mime.indexOf('image/')===0, isVid=mime.indexOf('video/')===0, isDcm=(mime==='application/dicom'||/\.dcm$/i.test(nm));
+                    if((isImg||isVid||isDcm) && tn<200){ try{ entry.thumb=await getThumb(f, mime, nm)||''; if(entry.thumb) tn++; }catch(_){} }
                     files.push(entry);
                     if(files.length>=2000) break;
                 } }catch(_){}
@@ -3078,7 +3093,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
@@ -3331,26 +3346,25 @@
             // 🡒 '채팅 옆에' 도킹 토글: 갤러리를 좌측으로 좁혀 우측 채팅 드로어가 보이게 → 카드 드래그 전송 가능
             const dock=ov.querySelector('#_sf-dock');
             if(dock) dock.onclick=()=>{ const on=ov.getAttribute('data-docked')==='1'; if(on){ ov.style.right='0'; ov.style.left='0'; ov.removeAttribute('data-docked'); dock.textContent='🡒 채팅 옆에'; } else { ov.style.left='0'; ov.style.right='396px'; ov.setAttribute('data-docked','1'); dock.textContent='🡐 전체화면'; try{ const dr=document.getElementById('messenger-drawer'); if(dr && !dr.classList.contains('open') && typeof toggleMessengerDrawer==='function') toggleMessengerDrawer(); }catch(_){} showToast('오른쪽 채팅(대화방)으로 카드를 끌어다 놓아 전송하세요.'); } };
-            // 📥 OS 파일을 이 창으로 끌어다 놓으면 공유폴더에 저장
-            const gridEl=ov.querySelector('#_sf-grid');
-            if(gridEl){
-                gridEl.addEventListener('dragover',(e)=>{ if(e.dataTransfer && e.dataTransfer.types && [].indexOf.call(e.dataTransfer.types,'Files')>=0){ e.preventDefault(); gridEl.style.background='#eef4ff'; } });
-                gridEl.addEventListener('dragleave',()=>{ gridEl.style.background=''; });
-                gridEl.addEventListener('drop', async(e)=>{
-                    if(!(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) return;
-                    e.preventDefault(); gridEl.style.background='';
-                    if(!(await R.ensureAccess())){ if(!(await R.requireFolder())) return; }
-                    const fs=[...e.dataTransfer.files]; let ok=0;
-                    for(const f of fs){ try{ await R.writeFile(f.name, f); ok++; }catch(_){} }
-                    showToast('📥 공유폴더에 추가: '+ok+'개'); try{ await R.syncIndex(); }catch(_){}
-                    close(); openSharedFolderPanel();
-                });
-            }
-            // 🖼 지연 썸네일: 인덱스에 썸네일이 없는(아이콘) '이 기기 보유' 파일은 로컬에서 직접 생성해 표시
+            // 📥 OS 파일을 이 창(어디든)으로 끌어다 놓으면 공유폴더에 저장 — 오버레이 전체를 드롭존으로
+            ov.addEventListener('dragover',(e)=>{ if(window.__rcDragFile) return; e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} ov.style.outline='3px dashed #2563eb'; ov.style.outlineOffset='-6px'; });
+            ov.addEventListener('dragleave',(e)=>{ if(e.target===ov) ov.style.outline=''; });
+            ov.addEventListener('drop', async(e)=>{
+                ov.style.outline='';
+                if(window.__rcDragFile) return;   // 내부 카드 드래그는 여기서 처리 안 함
+                if(!(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) return;
+                e.preventDefault();
+                if(!(await R.ensureAccess())){ if(!(await R.requireFolder())) return; if(!(await R.isConnected())) return; }
+                const fs=[].slice.call(e.dataTransfer.files); let ok=0;
+                for(const f of fs){ try{ await R.writeFile(f.name, f); ok++; }catch(_){} }
+                showToast('📥 공유폴더에 추가: '+ok+'개'); try{ await R.syncIndex(); }catch(_){}
+                close(); openSharedFolderPanel();
+            });
+            // 🖼 일괄 썸네일: '이 기기 보유' 전 파일을 영구 캐시로 미리보기 생성(누락/깜빡임 없이 모두 표시)
             (async()=>{
-                const pend=[].slice.call(ov.querySelectorAll('.rc-gf[data-here="1"][data-nothumb="1"]'));
-                let i=0; const CONC=3;
-                async function worker(){ while(i<pend.length){ const el=pend[i++]; const fn=el.getAttribute('data-fname'), mm=el.getAttribute('data-mime'); try{ const f=await R.getFileByName(fn); if(!f) continue; const t=await R.makeThumbForFile(f, mm, fn); if(t){ const ic=el.querySelector('.rc-gf-icon'); if(ic) ic.style.display='none'; const isV=_sfType(mm,fn)==='video'; el.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isV?_vov:'')); el.setAttribute('data-nothumb','0'); } }catch(_){} } }
+                const pend=[].slice.call(ov.querySelectorAll('.rc-gf[data-here="1"]')).filter(el=>!el.querySelector('img'));
+                let i=0; const CONC=5;
+                async function worker(){ while(i<pend.length){ const el=pend[i++]; const fn=el.getAttribute('data-fname'), mm=el.getAttribute('data-mime'); try{ const f=await R.getFileByName(fn); if(!f) continue; const t=await R.getThumb(f, mm, fn); if(t && !el.querySelector('img')){ const ic=el.querySelector('.rc-gf-icon'); if(ic) ic.style.display='none'; const isV=_sfType(mm,fn)==='video'; el.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isV?_vov:'')); el.setAttribute('data-nothumb','0'); } }catch(_){} } }
                 const ws=[]; for(let k=0;k<CONC;k++) ws.push(worker()); await Promise.all(ws);
             })();
             const allc=ov.querySelector('#_sf-all'); if(allc) allc.addEventListener('change',()=>{ selected.clear(); ov.querySelectorAll('.rc-gf').forEach(el=>{ const chk=el.querySelector('.rc-gf-chk'); chk.checked=allc.checked; if(allc.checked) selected.add(el.getAttribute('data-fname')); }); updCnt(); });
