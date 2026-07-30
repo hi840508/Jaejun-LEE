@@ -2982,7 +2982,7 @@
                 try{
                     if(mime.indexOf('image/')===0) return await _mkThumb(file);
                     if(mime.indexOf('video/')===0) return await _mkVideoThumb(file);
-                    if(mime==='application/dicom' || /\.dcm$/i.test(nm)){ let t=await _mkDicomThumb(file); if(!t) t=await _dicomViaCornerstone(file, 160); return t; }
+                    if(mime==='application/dicom' || /\.dcm$/i.test(nm)){ let t=await _dicomViaCornerstone(file, 200); if(!t) t=await _mkDicomThumb(file); return t; }
                 }catch(_){}
                 return '';
             }
@@ -2998,21 +2998,24 @@
                 return { cs, wl };
             })(); return _csP; }
             async function _dicomViaCornerstone(file, maxSize){
+                let cs,wl,imageId,div;
                 try{
-                    const { cs, wl }=await _ensureCornerstone(); if(!cs||!wl) return '';
-                    const imageId = wl.wadouri.fileManager.add(file);
+                    const r=await _ensureCornerstone(); cs=r.cs; wl=r.wl; if(!cs||!wl) return '';
+                    imageId = wl.wadouri.fileManager.add(file);
+                    div=document.createElement('div'); div.style.cssText='position:fixed;left:-99999px;top:0;width:512px;height:512px;'; document.body.appendChild(div);
+                    cs.enable(div);
                     const image = await cs.loadImage(imageId);
-                    let w=image.width||image.columns||256, h=image.height||image.rows||256;
-                    const max=maxSize||160, sc=Math.min(1,max/Math.max(w,h)); const tw=Math.max(1,Math.round(w*sc)), th=Math.max(1,Math.round(h*sc));
-                    const div=document.createElement('div'); div.style.cssText='position:fixed;left:-99999px;top:0;width:'+tw+'px;height:'+th+'px;'; document.body.appendChild(div);
-                    let url='';
-                    try{ cs.enable(div); cs.displayImage(div, image); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r()))); const cv=div.querySelector('canvas'); if(cv) url=cv.toDataURL('image/jpeg',0.85); }
-                    finally{ try{ cs.disable(div); }catch(_){} try{ div.remove(); }catch(_){} try{ if(wl.wadouri.fileManager.remove) wl.wadouri.fileManager.remove(imageId); }catch(_){} }
-                    return url;
+                    await new Promise((res)=>{ let done=false; const on=()=>{ if(done)return; done=true; try{ div.removeEventListener('cornerstoneimagerendered', on); }catch(_){} res(); }; try{ div.addEventListener('cornerstoneimagerendered', on); }catch(_){} try{ cs.displayImage(div, image); }catch(e){ if(!done){done=true;res();} } setTimeout(()=>{ if(!done){ done=true; res(); } }, 2000); });
+                    const en=cs.getEnabledElement(div); const src=en&&en.canvas;
+                    if(!src) return '';
+                    const max=maxSize||160, sc=Math.min(1,max/Math.max(src.width,src.height)); const w=Math.max(1,Math.round(src.width*sc)), h=Math.max(1,Math.round(src.height*sc));
+                    const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(src,0,0,w,h);
+                    return cv.toDataURL('image/jpeg',0.82);
                 }catch(e){ return ''; }
+                finally{ try{ if(cs&&div) cs.disable(div); }catch(_){} try{ if(div) div.remove(); }catch(_){} try{ if(wl&&wl.wadouri.fileManager.remove&&imageId) wl.wadouri.fileManager.remove(imageId); }catch(_){} }
             }
-            // DICOM 큰 이미지(미리보기용): 네이티브(비압축/JPEG) 우선, 실패 시 cornerstone(압축) 폴백.
-            async function dicomImage(file, maxSize){ let t=''; try{ t=await _mkDicomThumb(file, maxSize||900); }catch(_){} if(!t){ t=await _dicomViaCornerstone(file, maxSize||900); } return t; }
+            // DICOM 이미지: cornerstone(모든 포맷 정확 렌더) 우선, 실패 시 네이티브 폴백.
+            async function dicomImage(file, maxSize){ let t=''; try{ t=await _dicomViaCornerstone(file, maxSize||900); }catch(_){} if(!t){ try{ t=await _mkDicomThumb(file, maxSize||900); }catch(_){} } return t; }
 
             // ===== 탐색기 조작(하위폴더 지원) =====
             function _safe(n){ return String(n||'').replace(/[\\/:*?"<>|]/g,'_'); }
@@ -3022,10 +3025,14 @@
             async function writeFileAt(pathArr, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _dirAt(pathArr); const safe=_safe(name); const fh=await h.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return safe; }
             async function mkdirAt(pathArr, name){ if(!(await _ensurePerm(true))) return false; try{ const h=await _dirAt(pathArr); await h.getDirectoryHandle(_safe(name),{create:true}); _scheduleSync(); return true; }catch(e){ return false; } }
             async function removeAt(pathArr, name, recursive){ if(!(await _ensurePerm(true))){ window.__rcLastErr='공유폴더 권한 없음(권한 허용 필요)'; return false; } try{ const h=await _dirAt(pathArr); await h.removeEntry(name, {recursive:!!recursive}); try{ if((pathArr||[]).length===0) fetch(API_URL+'/api/devices/files/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fname:name, deviceId:deviceId()})}); }catch(_){} _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
-            async function renameAt(pathArr, oldName, newName, isDir){ if(!(await _ensurePerm(true))) return false; const safeNew=_safe(newName); let h; try{ h=await _dirAt(pathArr); }catch(_){ return false; }
-                try{ const ent = isDir ? await h.getDirectoryHandle(oldName,{create:false}) : await h.getFileHandle(oldName,{create:false}); if(ent.move){ await ent.move(safeNew); _scheduleSync(); return true; } }catch(_){}
-                if(!isDir){ try{ const f=await (await h.getFileHandle(oldName)).getFile(); const nf=await h.getFileHandle(safeNew,{create:true}); const w=await nf.createWritable(); await w.write(f); await w.close(); await h.removeEntry(oldName); _scheduleSync(); return true; }catch(e){ return false; } }
-                return false;   // 폴더 이름변경은 move 미지원 브라우저에선 불가
+            async function _copyDir(srcDir, dstDir){ for await (const [nm,ent] of srcDir.entries()){ if(ent.kind==='directory'){ const nd=await dstDir.getDirectoryHandle(nm,{create:true}); await _copyDir(ent, nd); } else { const f=await ent.getFile(); const nf=await dstDir.getFileHandle(nm,{create:true}); const w=await nf.createWritable(); await w.write(f); await w.close(); } } }
+            async function renameAt(pathArr, oldName, newName, isDir){ if(!(await _ensurePerm(true))){ window.__rcLastErr='권한 없음'; return false; } const safeNew=_safe(newName); let h; try{ h=await _dirAt(pathArr); }catch(_){ return false; }
+                // 1) 네이티브 move() (Chrome 최신: 파일·폴더 지원)
+                try{ const ent = isDir ? await h.getDirectoryHandle(oldName,{create:false}) : await h.getFileHandle(oldName,{create:false}); if(ent.move){ await ent.move(safeNew); _scheduleSync(); return true; } }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); }
+                // 2) 파일: 복사+삭제
+                if(!isDir){ try{ const f=await (await h.getFileHandle(oldName)).getFile(); const nf=await h.getFileHandle(safeNew,{create:true}); const w=await nf.createWritable(); await w.write(f); await w.close(); await h.removeEntry(oldName); _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
+                // 3) 폴더: 재귀 복사+삭제(move 미지원 브라우저 폴백)
+                try{ const src=await h.getDirectoryHandle(oldName,{create:false}); const dst=await h.getDirectoryHandle(safeNew,{create:true}); await _copyDir(src, dst); await h.removeEntry(oldName,{recursive:true}); _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; }
             }
             // (루트) 파일 삭제 — 하위호환
             async function deleteFile(name){ return await removeAt([], name, false); }
@@ -3420,7 +3427,7 @@
                     el.addEventListener('click',()=>{ path=path.concat([nm]); render(); });
                     el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); ctxMenu(e.clientX,e.clientY,[
                         {label:'📂 열기',fn:()=>{ path=path.concat([nm]); render(); }},
-                        {label:'✏️ 이름 변경',fn:async()=>{ const nn=prompt('폴더 새 이름',nm); if(nn&&nn!==nm){ if(await R.renameAt(path,nm,nn,true)) render(); else showToast('이름변경 실패(브라우저 미지원일 수 있음)'); } }},
+                        {label:'✏️ 이름 변경',fn:async()=>{ const nn=prompt('폴더 새 이름',nm); if(nn&&nn!==nm){ window.__rcLastErr=''; showToast('폴더 이름 변경 중…(파일이 많으면 잠시 걸립니다)'); if(await R.renameAt(path,nm,nn,true)) { showToast('✅ 폴더 이름 변경됨'); render(); } else showToast('이름변경 실패: '+(window.__rcLastErr||'')); } }},
                         {label:'🗑 삭제',danger:true,fn:async()=>{ if(confirm('폴더 "'+nm+'" 를 삭제할까요? (안의 파일도 함께 삭제)')){ if(await R.removeAt(path,nm,true)) render(); else showToast('삭제 실패'); } }}
                     ]); });
                 });
