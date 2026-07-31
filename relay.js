@@ -1,3 +1,4 @@
+// build: 2026-07-31 항목5 미러 라우트 반영 재시작 트리거
 const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
