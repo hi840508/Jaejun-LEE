@@ -644,6 +644,11 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS locked_files (token TEXT PRIMARY KEY, owner TEXT, fileName TEXT, url TEXT, mime TEXT, size INTEGER, price INTEGER DEFAULT 0, pwHash TEXT DEFAULT '', createdAt INTEGER)`);
         db.run(`CREATE TABLE IF NOT EXISTS locked_file_unlocks (token TEXT, userName TEXT, at INTEGER, paid INTEGER DEFAULT 0, UNIQUE(token, userName))`);
 
+        // ☁️ [항목5] 로컬 공유폴더 R2 미러 백업(유료 옵션) — 원하는 사용자만 cloud_storage 할당량으로 결제해 사용.
+        //   mirror_files: 사용자별 미러된 파일 목록(rpath=공유폴더 상대경로). mirror_prefs: 사용자별 on/off.
+        db.run(`CREATE TABLE IF NOT EXISTS mirror_files (userName TEXT, rpath TEXT, key TEXT, size INTEGER DEFAULT 0, mime TEXT, mtime INTEGER, PRIMARY KEY(userName, rpath))`);
+        db.run(`CREATE TABLE IF NOT EXISTS mirror_prefs (userName TEXT PRIMARY KEY, enabled INTEGER DEFAULT 0)`);
+
         // 🚀 [v6] 구매로 자동 생성된 대화방 메타 (브랜드명 + 최신 상품명 + 양측 표시 동기화)
         // type: 'order' (구매 후 자동 생성, 한쪽이 leave 시 양측 종료) | 'normal' (수동 친구 추가)
         db.run(`CREATE TABLE IF NOT EXISTS chat_rooms (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT UNIQUE, type TEXT DEFAULT 'normal', buyer TEXT, seller TEXT, storeId TEXT, storeName TEXT, lastProductId TEXT, lastProductName TEXT, ended INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)`);

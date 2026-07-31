@@ -3400,6 +3400,59 @@
         };
         // 커스텀 입력창(앱/Electron은 window.prompt 비활성 → 자체 모달). Promise<string|null>
         window._sfPrompt = function(titleTxt, def){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;'; ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="font-weight:800;font-size:15px;margin-bottom:12px;">'+_sfEsc(titleTxt||'')+'</div><input id="_sfp-in" style="width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;box-sizing:border-box;" value="'+_sfEsc(def||'')+'"><div style="display:flex;gap:8px;margin-top:14px;"><button id="_sfp-c" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_sfp-ok" style="flex:1;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">확인</button></div></div>'; document.body.appendChild(ov); const inp=ov.querySelector('#_sfp-in'); setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(_){} },40); const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); }; ov.querySelector('#_sfp-c').onclick=()=>done(null); ov.querySelector('#_sfp-ok').onclick=()=>done(inp.value); inp.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); done(inp.value); } else if(e.key==='Escape'){ done(null); } }); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(null); }); }); };
+        // 🔒 확인 모달(Electron confirm() 비활성 대응) → Promise<bool>
+        window._sfConfirm = function(titleTxt, okLabel){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;'; ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="font-weight:700;font-size:14px;line-height:1.5;margin-bottom:16px;white-space:pre-line;">'+_sfEsc(titleTxt||'')+'</div><div style="display:flex;gap:8px;"><button id="_sfc-c" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_sfc-ok" style="flex:1;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">'+_sfEsc(okLabel||'확인')+'</button></div></div>'; document.body.appendChild(ov); const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); }; ov.querySelector('#_sfc-c').onclick=()=>done(false); ov.querySelector('#_sfc-ok').onclick=()=>done(true); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(false); }); document.addEventListener('keydown',function _k(e){ if(e.key==='Escape'){ document.removeEventListener('keydown',_k); done(false); } }); }); };
+
+        // 🔒💰 전송 잠금 옵션 모달 — 금액/암호(둘 다 선택). 비우면 기존처럼 바로 전송. 취소=전송 중단(null).
+        window._askLockOptions = function(count){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:400px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
+              +'<div style="font-weight:800;font-size:16px;margin-bottom:4px;">파일 전송'+(count>1?(" · "+count+"개"):"")+'</div>'
+              +'<div style="font-size:12px;color:#64748b;margin-bottom:16px;">금액·암호는 선택입니다. 비워두면 지금처럼 바로 전송됩니다.</div>'
+              +'<label style="font-size:12px;font-weight:700;color:#475569;">💰 열람 금액 (원, 선택)</label>'
+              +'<input id="_lk-price" type="number" min="0" inputmode="numeric" placeholder="예: 5000 (비우면 무료)" style="width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;box-sizing:border-box;margin:6px 0 14px;">'
+              +'<label style="font-size:12px;font-weight:700;color:#475569;">🔒 암호 (선택)</label>'
+              +'<input id="_lk-pw" type="text" placeholder="비우면 암호 없음" style="width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;box-sizing:border-box;margin:6px 0 4px;">'
+              +'<div style="font-size:11px;color:#94a3b8;margin-bottom:16px;">금액 지정 시 수신자가 Earth 잔액으로 결제해야 열람됩니다. 암호 지정 시 암호를 입력해야 열립니다.</div>'
+              +'<div style="display:flex;gap:8px;"><button id="_lk-c" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_lk-ok" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">보내기</button></div></div>';
+            document.body.appendChild(ov); const pr=ov.querySelector('#_lk-price'), pw=ov.querySelector('#_lk-pw'); setTimeout(()=>{ try{ pr.focus(); }catch(_){} },40);
+            const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); };
+            ov.querySelector('#_lk-c').onclick=()=>done(null);
+            ov.querySelector('#_lk-ok').onclick=()=>{ const price=Math.max(0,Math.floor(Number(pr.value)||0)); const password=(pw.value||'').trim(); done({price, password}); };
+            pw.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); ov.querySelector('#_lk-ok').click(); } });
+            ov.addEventListener('click',(e)=>{ if(e.target===ov) done(null); }); }); };
+
+        // 🔒 잠금 파일 전송 헬퍼 — lock(price/password) 있으면 서버에 등록 후 [LOCKED_FILE] 메시지, 없으면 기존 [FILE_ATTACH].
+        window._buildAttachMsg = async function(name, sizeKB, mime, url, lock){
+            if(lock && (lock.price>0 || lock.password)){
+                try{
+                    const r=await fetch(API_URL+'/api/lockfile/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileName:name,url,mime,size:(parseFloat(sizeKB)||0)*1024,price:lock.price||0,password:lock.password||''})});
+                    const d=await r.json(); if(!r.ok||!d.token) throw new Error(d.error||'잠금 등록 실패');
+                    return '[LOCKED_FILE]'+name+'|'+sizeKB+'|'+mime+'|'+d.token+'|'+(lock.price||0)+'|'+(lock.password?'1':'0');
+                }catch(e){ showToast('잠금 설정 실패 — 일반 전송합니다: '+(e.message||e)); }
+            }
+            return '[FILE_ATTACH]'+name+'|'+sizeKB+'|'+mime+'|'+url;
+        };
+
+        // 🔓 수신자: 잠금 해제(암호/결제) → 실제 URL 받아 미리보기·공유폴더 저장
+        window.openLockedFile = async function(token){
+            try{
+                const ir=await fetch(API_URL+'/api/lockfile/'+token+'/info'); const info=await ir.json();
+                if(!ir.ok) return showToast(info.error||'열 수 없습니다.');
+                let password='';
+                if(!info.unlocked){
+                    if(info.hasPw){ password=await window._sfPrompt('🔒 암호를 입력하세요',''); if(password===null) return; }
+                    if(info.price>0){ const ok=await window._sfConfirm(info.fileName+'\n\n열람하려면 '+Number(info.price).toLocaleString()+'원이 결제됩니다.\n계속하시겠습니까?', Number(info.price).toLocaleString()+'원 결제하고 열기'); if(!ok) return; }
+                }
+                const or=await fetch(API_URL+'/api/lockfile/'+token+'/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});
+                const d=await or.json();
+                if(!or.ok){ showToast(d.error||'해제 실패'); return; }
+                const room=(typeof activeChatFriend!=='undefined' && activeChatFriend)?activeChatFriend:'received';
+                try{ if(window.rcAutoIngest) window.rcAutoIngest(d.fileName, d.url, d.mime, d.size, room); }catch(_){}
+                try{ if(window.rcPreviewFolderFile) window.rcPreviewFolderFile(d.fileName, d.mime, d.url); else if(window.openMediaUrlPreview) window.openMediaUrlPreview(d.url, d.mime, d.fileName); else window.open(d.url,'_blank'); }catch(_){ try{ window.open(d.url,'_blank'); }catch(__){} }
+                showToast('🔓 잠금 해제됨: '+d.fileName);
+            }catch(e){ showToast('오류: '+(e.message||e)); }
+        };
+
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
             try{ await R.ensureAccess(); }catch(_){}
@@ -5213,6 +5266,7 @@
                     const preview = message.startsWith('[TRANSFER]') ? '💸 송금 도착' :
                                     message.startsWith('[PRIVATE_ASSET]') ? '📦 1:1 비공개 상품' :
                                     message.startsWith('[FILE_ATTACH]') ? '📎 파일 도착' :
+                                    message.startsWith('[LOCKED_FILE]') ? '🔒 잠금 파일 도착' :
                                     message.startsWith('[ORDER_CONFIRM]') ? '🛒 주문 확정 도착' :
                                     message.startsWith('[META_QR]') ? '🎫 상품권 도착' :
                                     message.length > 50 ? message.substring(0, 47) + '…' : message;
@@ -7691,7 +7745,7 @@ pdfjsScript,
             return cj.url;
         };
         // 대용량 파일: 진행률 카드(왼→오 채움 + %) 표시하며 전송 → 완료 시 첨부 메시지로 전환
-        async function _sendBigFile(f, pic){
+        async function _sendBigFile(f, pic, lock){
             const cardId = 'bf_' + Math.random().toString(36).slice(2,9);
             const body = document.getElementById('main-chat-body');
             if(body){ body.insertAdjacentHTML('beforeend', '<div class="kt-msg-line me" id="'+cardId+'"><div class="kt-time"></div><div class="kt-bubble me"><div style="width:232px;">'
@@ -7704,7 +7758,7 @@ pdfjsScript,
                 const url = await window.uploadBigFileToR2(f, upd);
                 const c=document.getElementById(cardId); if(c) c.remove();
                 const mime = f.type || 'application/octet-stream'; const sizeKB=(f.size/1024).toFixed(0);
-                const msg = '[FILE_ATTACH]'+f.name+'|'+sizeKB+'|'+mime+'|'+url;
+                const msg = await window._buildAttachMsg(f.name, sizeKB, mime, url, lock);
                 if(socket && socket.connected) socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
                 appendMainMessage(currentUser.name, msg, pic);
                 showToast(f.name+' 전송 완료');
@@ -7726,19 +7780,22 @@ pdfjsScript,
             if(totalSize > 2 * 1024 * 1024 * 1024) {
                 return showToast(`전체 파일 크기가 ${totalMB}MB입니다. 2GB 이하로 보내 주세요.`);
             }
+            // 🔒💰 전송 잠금 옵션(금액/암호) — 비우면 기존과 동일. 취소=전송 중단.
+            const lock = await window._askLockOptions(arr.length);
+            if(lock === null) return;
             showToast(arr.length === 1 ? `${arr[0].name} 전송 중...` : `${arr.length}개 파일 전송 중...`);
 
             const pic = document.getElementById('my-profile-pic').src;
             const BIG = 20 * 1024 * 1024;   // 20MB 초과 = R2 재개가능 멀티파트 전송(CT 등 대용량)
             let sentCount = 0, queuedCount = 0;
             for(const f of arr) {
-                if(f.size > BIG && window.uploadBigFileToR2){ await _sendBigFile(f, pic); sentCount++; continue; }
+                if(f.size > BIG && window.uploadBigFileToR2){ await _sendBigFile(f, pic, lock); sentCount++; continue; }
                 try {
                     const url = await window.uploadChatAttachment(f);
                     const mime = f.type || 'application/octet-stream';
                     const sizeKB = (f.size / 1024).toFixed(0);
-                    // 파일마다 카드 1개(이미지·영상은 URL로 네이티브 미리보기 + 캐시). [FILE_ATTACH]이름|KB|mime|URL
-                    const msg = `[FILE_ATTACH]${f.name}|${sizeKB}|${mime}|${url}`;
+                    // 파일마다 카드 1개(이미지·영상은 URL로 네이티브 미리보기 + 캐시). 잠금 지정 시 [LOCKED_FILE], 아니면 [FILE_ATTACH]
+                    const msg = await window._buildAttachMsg(f.name, sizeKB, mime, url, lock);
                     if(socket && socket.connected) {
                         socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg });
                         sentCount++;
@@ -10356,6 +10413,7 @@ pdfjsScript,
 
                     const lastMsgPreview = r.lastMsg.includes('[PRIVATE_ASSET]')?'📦 1:1 비공개 상품'
                         : r.lastMsg.includes('[FILE_ATTACH]')?'📎 파일 전송'
+                        : r.lastMsg.includes('[LOCKED_FILE]')?'🔒 잠금 파일 전송'
                         : r.lastMsg.includes('[ORDER_PENDING]')?'📝 주문서 도착 — 승인 대기'
                         : r.lastMsg.includes('[ORDER_APPROVED]')?'✅ 주문 승인 완료'
                         : r.lastMsg.includes('[ORDER_REJECTED]')?'✕ 주문 거절됨'
@@ -10833,7 +10891,7 @@ pdfjsScript,
             }
             let displayHtml = text;
             // 일반 텍스트 메시지인지 (특수 카드가 아닌 경우만 수정/삭제 허용)
-            const isPlainText = !/^\[(TRANSFER|VIDEO_INVITE|FILE_ATTACH|PRIVATE_ASSET|ORDER_|RX_DOC|REMOTE_|ITEM_SALE|SETTLE)/.test(text);
+            const isPlainText = !/^\[(TRANSFER|VIDEO_INVITE|FILE_ATTACH|LOCKED_FILE|PRIVATE_ASSET|ORDER_|RX_DOC|REMOTE_|ITEM_SALE|SETTLE)/.test(text);
             // 🔐 XSS 차단: 일반 텍스트는 insertAdjacentHTML 전에 HTML 이스케이프(특수 카드는 아래 분기에서 자체 처리)
             if(isPlainText) displayHtml = _escChatText(text);
 
@@ -10921,6 +10979,17 @@ pdfjsScript,
                     </div>
                     <div class="kt-card-actions">${previewBtn}${dlBtn}${(!_thumb && window.parent && window.parent !== window) ? `<button class="kt-card-btn" onclick="sendChatFileToImages('${fileKey}')">\uD83D\uDCE5 Images로</button>` : ''}</div>
                 </div>`;
+            } else if(text.startsWith('[LOCKED_FILE]')) {
+                // [LOCKED_FILE]name|sizeKB|mime|token|price|hasPw — 실제 URL은 서버 보관, 해제 성공 시에만 전달
+                const _p = text.replace('[LOCKED_FILE]','').split('|');
+                const fname=_p[0]||'파일', sizeKB=_p[1]||'0', mime=_p[2]||'', token=(_p[3]||'').replace(/[^a-f0-9]/gi,''), price=Number(_p[4])||0, hasPw=(_p[5]==='1');
+                const escFname=(fname||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                const cond=(price>0?(price.toLocaleString()+'원 결제'):'')+(price>0&&hasPw?' · ':'')+(hasPw?'암호 필요':'');
+                if(isMe){
+                    displayHtml = `<div class="kt-card-msg" style="max-width:280px;"><div class="kt-card-preview" style="background:#0f172a;cursor:default;"><div class="icon" style="color:#fbbf24;">🔒</div></div><div class="kt-card-meta"><div class="kt-card-name">${escFname}</div><div class="kt-card-sub">🔒 잠금 전송 · ${cond||'제한'}</div></div></div>`;
+                } else {
+                    displayHtml = `<div class="kt-card-msg" style="max-width:280px;"><div class="kt-card-preview" style="background:#0f172a;cursor:pointer;" onclick="openLockedFile('${token}')"><div class="icon" style="color:#fbbf24;">🔒</div></div><div class="kt-card-meta"><div class="kt-card-name">${escFname}</div><div class="kt-card-sub">${sizeKB}KB · ${cond||'잠금 파일'}</div></div><div class="kt-card-actions"><button class="kt-card-btn primary" onclick="openLockedFile('${token}')">🔓 ${price>0?(price.toLocaleString()+'원 결제 후 열기'):'잠금 해제'}</button></div></div>`;
+                }
             } else if(text.startsWith('[ORDER_PENDING]')) {
                 // 🚀 [v8] 승인 대기 주문 카드 — 상태에 따라 자동 변환 (거절/승인/취소된 건은 결과 카드로 대체)
                 // [ORDER_PENDING]orderId|productId|productName|amount|fileCount|memoPreview
@@ -11251,7 +11320,7 @@ pdfjsScript,
             const line = lines[lines.length - 1];
             const bubble = line.querySelector('.kt-bubble');
             // 텍스트 일치 확인 (특수 카드는 제외)
-            const isPlainText = !/^\[(TRANSFER|VIDEO_INVITE|FILE_ATTACH|PRIVATE_ASSET|ORDER_|ITEM_SALE|SETTLE)/.test(message);
+            const isPlainText = !/^\[(TRANSFER|VIDEO_INVITE|FILE_ATTACH|LOCKED_FILE|PRIVATE_ASSET|ORDER_|ITEM_SALE|SETTLE)/.test(message);
             line.setAttribute('data-msg-id', msgId);
             if(isPlainText && bubble && !line.querySelector('.kt-msg-menu-btn')) {
                 const btn = document.createElement('button');
