@@ -111,12 +111,13 @@ function _syncAppToR2() {
 }
 setTimeout(_syncAppToR2, 8000);
 
-// 🗑 R2 첨부 리텐션 — 90일 지난 채팅 첨부(att_*) 자동 삭제(용량 무한증가 방지). 앱 파일(app/*)은 제외.
-function _r2RetentionSweepPrefix(prefix) {
+// 🗑 [항목4] R2 리텐션 — 접두사별 보관일 초과분 자동 삭제(용량 무한증가 방지). 앱 파일(app/*)·백업(backup/*)은 별도 관리.
+//   att_(채팅 첨부, 소형) = 90일 / big_(대용량 전송, CT 등) = 30일. 대용량은 임시 중계이므로 더 짧게 회수해 10GB 무료 한도 유지.
+function _r2RetentionSweepPrefix(prefix, days) {
     if (!_r2) return;
     try {
         const { ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
-        const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+        const cutoff = Date.now() - (days || 90) * 24 * 60 * 60 * 1000;
         let token, toDel = [];
         const rx = new RegExp('^' + prefix + '(\\d+)_');
         const run = () => _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, Prefix: prefix, ContinuationToken: token }))
@@ -124,14 +125,32 @@ function _r2RetentionSweepPrefix(prefix) {
                 (out.Contents || []).forEach(o => { const m = rx.exec(o.Key || ''); if (m && Number(m[1]) < cutoff) toDel.push({ Key: o.Key }); });
                 if (out.IsTruncated) { token = out.NextContinuationToken; return run(); }
                 for (let i = 0; i < toDel.length; i += 1000) { _r2.client.send(new DeleteObjectsCommand({ Bucket: _r2.bucket, Delete: { Objects: toDel.slice(i, i + 1000) } })).catch(() => {}); }
-                if (toDel.length) console.log('🗑 R2 90일 리텐션 삭제(' + prefix + '):', toDel.length);
+                if (toDel.length) console.log('🗑 R2 리텐션 삭제(' + prefix + ', ' + (days || 90) + '일):', toDel.length);
             }).catch(e => console.warn('R2 리텐션 스윕(' + prefix + '):', e && e.message));
         run();
     } catch (e) {}
 }
-function _r2RetentionSweep() { _r2RetentionSweepPrefix('att_'); _r2RetentionSweepPrefix('big_'); }
+function _r2RetentionSweep() { _r2RetentionSweepPrefix('att_', 90); _r2RetentionSweepPrefix('big_', 30); }
 setTimeout(_r2RetentionSweep, 60 * 1000);
 setInterval(_r2RetentionSweep, 24 * 60 * 60 * 1000);
+
+// 📊 [항목4] R2 사용량 집계(접두사별 바이트/개수) — 관리자 화면에서 10GB 무료 한도 모니터링. 무료 조회(Class B).
+function _r2Usage(cb) {
+    if (!_r2) return cb(new Error('R2 미설정'));
+    try {
+        const { ListObjectsV2Command } = require('@aws-sdk/client-s3');
+        const groups = {};
+        const bucketOf = (k) => { const m = /^(backup|app|big|att)/.exec(k); return m ? m[1] : 'etc'; };
+        let token, total = 0;
+        const run = () => _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, ContinuationToken: token }))
+            .then(out => {
+                (out.Contents || []).forEach(o => { const g = bucketOf(o.Key || ''); groups[g] = groups[g] || { bytes: 0, count: 0 }; groups[g].bytes += (o.Size || 0); groups[g].count++; total += (o.Size || 0); });
+                if (out.IsTruncated) { token = out.NextContinuationToken; return run(); }
+                cb(null, { total, freeLimit: 10 * 1024 * 1024 * 1024, groups });
+            }).catch(e => cb(e));
+        run();
+    } catch (e) { cb(e); }
+}
 
 // ☁️ R2 CORS — 브라우저가 프리사인 URL로 직접 PUT/GET 가능하게(멀티파트 대용량 업로드용). ETag 노출 필수.
 function _r2SetCors() {
@@ -293,21 +312,36 @@ app.get('/manifest.webmanifest', (req, res) => {
 });
 app.get('/icon-192.png', (req, res) => { const f = path.join(__dirname, 'icon-192.png'); if (fs.existsSync(f)) res.type('image/png').send(fs.readFileSync(f)); else res.status(404).end(); });
 app.get('/icon-512.png', (req, res) => { const f = path.join(__dirname, 'icon-512.png'); if (fs.existsSync(f)) res.type('image/png').send(fs.readFileSync(f)); else res.status(404).end(); });
-// 🩻 cornerstone(DICOM 뷰어) 라이브러리를 같은 출처로 프록시 서빙 — 브라우저 교차출처 웹워커 제약 회피(앱은 되지만 브라우저에서 안 되던 문제)
+// 🩻🧊 [항목3] cornerstone(DICOM)·Three.js(3D) 라이브러리 같은 출처 프록시 — 브라우저 교차출처 웹워커 제약 회피.
+//   R2 직접 로드는 교차출처라 워커를 다시 깨뜨리므로 불가. 대신 ① 디스크 영속(lib_cache/, 재시작·unpkg 장애에도 유지)
+//   ② 버전 고정 URL이므로 immutable 1년 캐시 → 클라이언트가 최초 1회만 받고 재방문엔 0바이트 → EC2 egress 실질 제거.
 const _csLibCache = {};
+const LIB_CACHE_DIR = path.join(__dirname, 'lib_cache');   // git 미추적(reset --hard에도 보존)
+try { fs.mkdirSync(LIB_CACHE_DIR, { recursive: true }); } catch (_) {}
+async function _serveLib(res, name, url) {
+    try {
+        if (!_csLibCache[url]) {
+            const disk = path.join(LIB_CACHE_DIR, name);
+            if (fs.existsSync(disk)) {
+                _csLibCache[url] = fs.readFileSync(disk);
+            } else {
+                const r = await fetch(url); if (!r.ok) throw new Error('upstream ' + r.status);
+                _csLibCache[url] = Buffer.from(await r.arrayBuffer());
+                try { fs.writeFileSync(disk, _csLibCache[url]); } catch (_) {}
+            }
+        }
+        res.type('application/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(_csLibCache[url]);
+    } catch (e) { res.status(502).send('// lib fetch fail: ' + (e.message || e)); }
+}
 const _CS_LIBS = {
     'cornerstone.min.js': 'https://unpkg.com/cornerstone-core@2.3.0/dist/cornerstone.min.js',
     'dicomParser.min.js': 'https://unpkg.com/dicom-parser@1.8.13/dist/dicomParser.min.js',
     'wado.bundle.min.js': 'https://unpkg.com/cornerstone-wado-image-loader@4.1.5/dist/cornerstoneWADOImageLoader.bundle.min.js'
 };
-app.get('/lib/cs/:name', async (req, res) => {
+app.get('/lib/cs/:name', (req, res) => {
     const url = _CS_LIBS[req.params.name]; if (!url) return res.status(404).end();
-    try {
-        if (!_csLibCache[url]) { const r = await fetch(url); if (!r.ok) throw new Error('upstream ' + r.status); _csLibCache[url] = Buffer.from(await r.arrayBuffer()); }
-        res.type('application/javascript').set('Cache-Control', 'public, max-age=604800').send(_csLibCache[url]);
-    } catch (e) { res.status(502).send('// cs lib fetch fail: ' + (e.message || e)); }
+    _serveLib(res, req.params.name, url);
 });
-// 🧊 Three.js(3D 모델) 라이브러리도 같은 출처로 프록시 서빙
 const _THREE_LIBS = {
     'three.min.js': 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
     'PLYLoader.js': 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js',
@@ -315,12 +349,9 @@ const _THREE_LIBS = {
     'OBJLoader.js': 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js',
     'OrbitControls.js': 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'
 };
-app.get('/lib/three/:name', async (req, res) => {
+app.get('/lib/three/:name', (req, res) => {
     const url = _THREE_LIBS[req.params.name]; if (!url) return res.status(404).end();
-    try {
-        if (!_csLibCache[url]) { const r = await fetch(url); if (!r.ok) throw new Error('upstream ' + r.status); _csLibCache[url] = Buffer.from(await r.arrayBuffer()); }
-        res.type('application/javascript').set('Cache-Control', 'public, max-age=604800').send(_csLibCache[url]);
-    } catch (e) { res.status(502).send('// three lib fetch fail: ' + (e.message || e)); }
+    _serveLib(res, req.params.name, url);
 });
 app.get('/sw.js', (req, res) => {
     res.type('application/javascript').send(
@@ -607,6 +638,11 @@ function initTables() {
         // 🔒 통합 뷰어 DRM — 복호 키를 서버 보관, 로그인+바인딩+만료 통과 시에만 전달
         db.run(`CREATE TABLE IF NOT EXISTS viewer_files (fileId TEXT PRIMARY KEY, k TEXT, expiry INTEGER DEFAULT 0, creator TEXT, title TEXT, boundUser TEXT, firstOpenedAt INTEGER, createdAt INTEGER)`);
         db.run(`CREATE TABLE IF NOT EXISTS viewer_opens (id INTEGER PRIMARY KEY AUTOINCREMENT, fileId TEXT, userName TEXT, at INTEGER, ok INTEGER, reason TEXT)`);
+
+        // 🔒💰 전송 파일 잠금(선택) — 금액(price>0: 수신자가 Earth 잔액으로 결제해야 열림)/암호(pwHash) 설정.
+        //   둘 다 미설정이면 잠금 미사용(기존 공개 전송과 동일). 실제 R2 URL은 서버에만 보관, 잠금 해제 성공 시에만 전달.
+        db.run(`CREATE TABLE IF NOT EXISTS locked_files (token TEXT PRIMARY KEY, owner TEXT, fileName TEXT, url TEXT, mime TEXT, size INTEGER, price INTEGER DEFAULT 0, pwHash TEXT DEFAULT '', createdAt INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS locked_file_unlocks (token TEXT, userName TEXT, at INTEGER, paid INTEGER DEFAULT 0, UNIQUE(token, userName))`);
 
         // 🚀 [v6] 구매로 자동 생성된 대화방 메타 (브랜드명 + 최신 상품명 + 양측 표시 동기화)
         // type: 'order' (구매 후 자동 생성, 한쪽이 leave 시 양측 종료) | 'normal' (수동 친구 추가)
@@ -896,6 +932,109 @@ function getAdminPassword(cb) {
 function verifyAdminSecret(secret, cb) {
     getAdminPassword((pw) => cb(secret === pw));   // ⛔ 'mars' 레거시 백도어 제거(이 함수 자체도 현재 미사용 — 신원 기반 requireAdmin으로 대체)
 }
+
+// ===================== 💾 [항목1] DB 자동 백업 → R2(backup/) =====================
+// earth_database_master.sqlite를 매일 1회(+부팅 2분 후) R2에 gzip 백업. R2 저장·egress 무료 → 비용 0.
+// VACUUM INTO로 일관성 있는 스냅샷 생성(라이브 DB 안전) → gzip → PutObject. 30일 초과 백업 자동 삭제.
+let _lastDbBackup = { at: 0, key: '', ok: false, err: '' };
+function backupDatabaseToR2(cb) {
+    cb = cb || function () {};
+    if (!_r2) { console.warn('💾 DB백업 스킵: R2 미설정'); _lastDbBackup = { at: Date.now(), key: '', ok: false, err: 'R2 미설정' }; return cb(new Error('R2 미설정')); }
+    try {
+        const zlib = require('zlib');
+        const { PutObjectCommand } = require('@aws-sdk/client-s3');
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+        const tmp = path.join(__dirname, `._dbbak_${ts}.sqlite`);
+        try { fs.rmSync(tmp, { force: true }); } catch (_) {}
+        db.run(`VACUUM INTO ?`, [tmp], (err) => {
+            if (err) { console.error('💾 DB백업 VACUUM 실패:', err.message); _lastDbBackup = { at: Date.now(), key: '', ok: false, err: err.message }; return cb(err); }
+            try {
+                const raw = fs.readFileSync(tmp);
+                const gz = zlib.gzipSync(raw);
+                const key = `backup/earth_${ts}.sqlite.gz`;
+                _r2.client.send(new PutObjectCommand({ Bucket: _r2.bucket, Key: key, Body: gz, ContentType: 'application/gzip' }))
+                    .then(() => {
+                        _lastDbBackup = { at: Date.now(), key, ok: true, err: '' };
+                        console.log(`💾 DB 백업 완료 → R2 ${key} (압축 ${(gz.length / 1048576).toFixed(2)}MB / 원본 ${(raw.length / 1048576).toFixed(2)}MB)`);
+                        pruneOldDbBackups();
+                        cb(null, key);
+                    })
+                    .catch(e => { console.error('💾 DB백업 업로드 실패:', e && e.message); _lastDbBackup = { at: Date.now(), key: '', ok: false, err: (e && e.message) || 'upload' }; cb(e); })
+                    .finally(() => { try { fs.rmSync(tmp, { force: true }); } catch (_) {} });
+            } catch (e) { console.error('💾 DB백업 처리 오류:', e && e.message); try { fs.rmSync(tmp, { force: true }); } catch (_) {} _lastDbBackup = { at: Date.now(), key: '', ok: false, err: (e && e.message) || 'proc' }; cb(e); }
+        });
+    } catch (e) { console.error('💾 DB백업 오류:', e && e.message); cb(e); }
+}
+const DB_BACKUP_RETAIN_MS = 30 * 24 * 60 * 60 * 1000;   // 30일 보관
+function pruneOldDbBackups() {
+    if (!_r2) return;
+    try {
+        const { ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
+        const cutoff = Date.now() - DB_BACKUP_RETAIN_MS;
+        const rx = /^backup\/earth_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.sqlite\.gz$/;
+        let token, toDel = [];
+        const run = () => _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, Prefix: 'backup/', ContinuationToken: token }))
+            .then(out => {
+                (out.Contents || []).forEach(o => {
+                    const m = rx.exec(o.Key || '');
+                    if (m) { const t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime(); if (t < cutoff) toDel.push({ Key: o.Key }); }
+                });
+                if (out.IsTruncated) { token = out.NextContinuationToken; return run(); }
+                for (let i = 0; i < toDel.length; i += 1000) _r2.client.send(new DeleteObjectsCommand({ Bucket: _r2.bucket, Delete: { Objects: toDel.slice(i, i + 1000) } })).catch(() => {});
+                if (toDel.length) console.log('💾 오래된 DB백업 삭제:', toDel.length, '개 (30일 초과)');
+            }).catch(e => console.warn('DB백업 정리:', e && e.message));
+        run();
+    } catch (e) {}
+}
+setTimeout(() => backupDatabaseToR2(), 2 * 60 * 1000);
+setInterval(() => backupDatabaseToR2(), 24 * 60 * 60 * 1000);
+
+// 관리자 수동 백업/조회/복원용 — index.html 관리자 화면에서 호출
+app.post('/api/admin/db-backup', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    backupDatabaseToR2((err, key) => {
+        if (err) return res.status(500).json({ error: (err.message || '백업 실패') });
+        res.json({ ok: true, key, at: _lastDbBackup.at });
+    });
+});
+app.get('/api/admin/db-backups', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    if (!_r2) return res.json({ last: _lastDbBackup, items: [] });
+    try {
+        const { ListObjectsV2Command } = require('@aws-sdk/client-s3');
+        const rx = /^backup\/earth_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.sqlite\.gz$/;
+        let token, items = [];
+        const run = () => _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, Prefix: 'backup/', ContinuationToken: token }))
+            .then(out => {
+                (out.Contents || []).forEach(o => {
+                    const m = rx.exec(o.Key || '');
+                    if (m) items.push({ key: o.Key, size: o.Size, at: new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() });
+                });
+                if (out.IsTruncated) { token = out.NextContinuationToken; return run(); }
+                items.sort((a, b) => b.at - a.at);
+                res.json({ last: _lastDbBackup, items });
+            }).catch(e => res.status(500).json({ error: (e && e.message) || 'list 실패' }));
+        run();
+    } catch (e) { res.status(500).json({ error: (e && e.message) || 'list 오류' }); }
+});
+app.get('/api/admin/db-backup/download', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const key = String(req.query.key || '');
+    if (!/^backup\/earth_\d{8}_\d{6}\.sqlite\.gz$/.test(key)) return res.status(400).json({ error: '잘못된 키' });
+    try {
+        const { GetObjectCommand } = require('@aws-sdk/client-s3');
+        const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+        getSignedUrl(_r2.client, new GetObjectCommand({ Bucket: _r2.bucket, Key: key }), { expiresIn: 600 })
+            .then(url => res.json({ url })).catch(e => res.status(500).json({ error: (e && e.message) || 'presign 실패' }));
+    } catch (e) { res.status(500).json({ error: (e && e.message) || 'download 오류' }); }
+});
+app.get('/api/admin/r2-usage', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    _r2Usage((err, u) => { if (err) return res.status(500).json({ error: err.message || 'usage 실패' }); res.json(u); });
+});
 
 // Admin 권한 비밀번호 확인 (활성화용)
 app.post('/api/admin/verify-password', (req, res) => {
@@ -1396,6 +1535,68 @@ app.post('/api/transfer', (req, res) => {
                 db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate) VALUES (?, ?, ?, ?, ?)`, [sender, receiver, amount, date, rawDate]);
                 db.run('COMMIT', () => res.json({ success: true }));
             });
+        });
+    });
+});
+
+// ===================== 🔒💰 전송 파일 잠금(금액/암호) =====================
+// 전송 시 sender가 금액·암호를 선택 지정 → 실제 R2 URL은 서버 보관, 수신자가 결제/암호 통과 시에만 URL 전달.
+// 둘 다 미설정이면 클라가 이 API를 쓰지 않고 기존처럼 URL을 그대로 첨부(동작 동일).
+app.post('/api/lockfile/create', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const url = String(req.body.url || '');
+    const fileName = String(req.body.fileName || 'file');
+    const mime = String(req.body.mime || 'application/octet-stream');
+    const size = Math.max(0, Math.floor(Number(req.body.size) || 0));
+    const price = Math.max(0, Math.floor(Number(req.body.price) || 0));
+    const password = req.body.password == null ? '' : String(req.body.password);
+    if (!url) return res.status(400).json({ error: 'url이 필요합니다.' });
+    if (price === 0 && !password) return res.status(400).json({ error: '금액 또는 암호 중 하나는 지정해야 합니다.' });
+    const token = crypto.randomBytes(16).toString('hex');
+    const pwHash = password ? hashPassword(password) : '';
+    db.run(`INSERT INTO locked_files (token, owner, fileName, url, mime, size, price, pwHash, createdAt) VALUES (?,?,?,?,?,?,?,?,?)`,
+        [token, owner, fileName, url, mime, size, price, pwHash, Date.now()], function (e) {
+            if (e) return res.status(500).json({ error: '저장 실패' });
+            res.json({ ok: true, token, price, hasPw: !!password });
+        });
+});
+// 잠금 파일 메타(잠금 상태 렌더용) — URL은 절대 포함하지 않음
+app.get('/api/lockfile/:token/info', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.get(`SELECT owner, fileName, mime, size, price, pwHash FROM locked_files WHERE token = ?`, [req.params.token], (e, row) => {
+        if (e || !row) return res.status(404).json({ error: '없는 파일입니다.' });
+        db.get(`SELECT paid FROM locked_file_unlocks WHERE token = ? AND userName = ?`, [req.params.token, me], (e2, u) => {
+            res.json({ owner: row.owner, fileName: row.fileName, mime: row.mime, size: row.size, price: row.price, hasPw: !!row.pwHash, isOwner: row.owner === me, unlocked: (row.owner === me) || !!u });
+        });
+    });
+});
+// 잠금 해제(암호 검증 + 금액 결제) → 성공 시 실제 URL 전달. 이미 해제한 사용자는 재결제 없이 재발급.
+app.post('/api/lockfile/:token/open', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const token = req.params.token;
+    const password = req.body.password == null ? '' : String(req.body.password);
+    db.get(`SELECT * FROM locked_files WHERE token = ?`, [token], (e, row) => {
+        if (e || !row) return res.status(404).json({ error: '없는 파일입니다.' });
+        const done = () => res.json({ ok: true, url: row.url, fileName: row.fileName, mime: row.mime, size: row.size });
+        if (row.owner === me) return done();   // 소유자는 무료
+        db.get(`SELECT paid FROM locked_file_unlocks WHERE token = ? AND userName = ?`, [token, me], (e2, u) => {
+            if (u) return done();   // 이미 해제(결제)함 → 재발급
+            if (row.pwHash && !verifyPassword(password, row.pwHash)) return res.status(403).json({ error: '암호가 일치하지 않습니다.', needPw: true });
+            if (row.price > 0) {
+                const rawDate = new Date().toISOString(); const date = new Date().toLocaleString('ko-KR');
+                db.serialize(() => {
+                    db.run('BEGIN IMMEDIATE');
+                    db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [row.price, me, row.price], function (ue) {
+                        if (ue || this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '잔액이 부족합니다.', needPay: true, price: row.price }); }
+                        db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [row.price, row.owner]);
+                        db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate) VALUES (?, ?, ?, ?, ?)`, [me, row.owner, row.price, date, rawDate]);
+                        db.run(`INSERT OR IGNORE INTO locked_file_unlocks (token, userName, at, paid) VALUES (?,?,?,1)`, [token, me, Date.now()]);
+                        db.run('COMMIT', () => done());
+                    });
+                });
+            } else {
+                db.run(`INSERT OR IGNORE INTO locked_file_unlocks (token, userName, at, paid) VALUES (?,?,?,0)`, [token, me, Date.now()], () => done());
+            }
         });
     });
 });
