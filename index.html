@@ -1039,6 +1039,8 @@
                         <button class="yt-sb-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg></span><span>구매 목록</span></button>
                         <!-- 📁 공유폴더: 받은 파일 자동저장 폴더 지정 + 내 기기 목록 -->
                         <button class="yt-sb-item" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>공유폴더</span></button>
+                        <!-- ☁️ 클라우드 미러 백업(유료 옵션): 공유폴더를 R2에 백업/복원 -->
+                        <button class="yt-sb-item" onclick="openMirrorPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path><path d="M12 12v5"></path><path d="M9.5 14.5 12 12l2.5 2.5"></path></svg></span><span>클라우드 미러 백업</span></button>
                     </div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
@@ -3241,6 +3243,8 @@
                         const blob = await resp.blob();
                         await R.writeFileInRoom(t.room, t.name, blob);
                         changed = true;
+                        // ☁️ 미러 백업이 켜져 있으면 클라우드에도 사본 업로드(실패해도 로컬 저장엔 영향 없음)
+                        try{ if(window.RCMirror){ const _san=(s)=>String(s||'').replace(/[\\/:*?"<>|]/g,'_'); window.RCMirror.autoMirror(_san(t.room)+'/'+_san(t.name), blob, t.mime||blob.type||'', Date.now()); } }catch(_){}
                         showToast('✅ [' + t.room + '] 폴더에 자동 저장됨: ' + t.name);
                         ledger.push(t.key);
                         localStorage.setItem('rc_saved_files', JSON.stringify(ledger.slice(-2000)));
@@ -3451,6 +3455,67 @@
                 try{ if(window.rcPreviewFolderFile) window.rcPreviewFolderFile(d.fileName, d.mime, d.url); else if(window.openMediaUrlPreview) window.openMediaUrlPreview(d.url, d.mime, d.fileName); else window.open(d.url,'_blank'); }catch(_){ try{ window.open(d.url,'_blank'); }catch(__){} }
                 showToast('🔓 잠금 해제됨: '+d.fileName);
             }catch(e){ showToast('오류: '+(e.message||e)); }
+        };
+
+        // ☁️ [항목5] 로컬 공유폴더 R2 미러 백업(유료 옵션) — 원하는 사용자만 클라우드 용량을 결제해 사용.
+        window.RCMirror = (function(){
+            const A=()=>API_URL;
+            async function status(){ try{ const r=await fetch(A()+'/api/mirror/status'); return await r.json(); }catch(_){ return null; } }
+            async function enable(on){ try{ const r=await fetch(A()+'/api/mirror/enable',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:!!on})}); return await r.json(); }catch(_){ return null; } }
+            async function _enabled(){ const s=await status(); return !!(s&&s.enabled); }
+            async function _walk(R){ const out=[]; async function rec(pathArr){ const {folders,files}=await R.listAt(pathArr); for(const f of files){ out.push({pathArr, fname:f.fname, size:f.size, mime:f.mime, mtime:f.mtime, rpath:pathArr.concat(f.fname).join('/')}); } for(const d of folders){ await rec(pathArr.concat(d)); } } await rec([]); return out; }
+            async function uploadOne(rpath, blob, mime, mtime){
+                const u=await fetch(A()+'/api/mirror/upload-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath,size:blob.size,mime:mime||''})});
+                const uj=await u.json(); if(!u.ok) throw new Error(uj.error||'용량 부족/오류');
+                const put=await fetch(uj.url,{method:'PUT',headers:{'Content-Type':mime||'application/octet-stream'},body:blob}); if(!put.ok) throw new Error('업로드 실패('+put.status+')');
+                const c=await fetch(A()+'/api/mirror/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath,key:uj.key,size:blob.size,mime:mime||'',mtime:mtime||Date.now()})});
+                const cj=await c.json(); if(!c.ok) throw new Error(cj.error||'commit 오류'); return cj;
+            }
+            async function backupAll(onProg){
+                const R=window.RCFolder; if(!R||!R.chosen()) throw new Error('공유폴더가 지정되지 않았습니다.');
+                const files=await _walk(R);
+                const have={}; try{ const l=await (await fetch(A()+'/api/mirror/list')).json(); (l.items||[]).forEach(it=>have[it.rpath]=it); }catch(_){}
+                let done=0,up=0,skip=0,fail=0;
+                for(const f of files){ done++;
+                    const ex=have[f.rpath]; if(ex&&ex.size===f.size){ skip++; if(onProg)onProg(done,files.length,f.fname,'건너뜀'); continue; }
+                    try{ const blob=await R.getFileAt(f.pathArr,f.fname); if(!blob){ fail++; continue; } await uploadOne(f.rpath,blob,f.mime,f.mtime); up++; if(onProg)onProg(done,files.length,f.fname,'백업'); }
+                    catch(e){ fail++; if(onProg)onProg(done,files.length,f.fname,(e.message||'실패')); if(String(e.message||'').indexOf('용량')>=0) break; }
+                }
+                return {total:files.length,up,skip,fail};
+            }
+            async function autoMirror(rpath, blob, mime, mtime){ try{ if(!(await _enabled())) return; await uploadOne(rpath,blob,mime,mtime); }catch(_){}}
+            async function list(){ try{ return (await (await fetch(A()+'/api/mirror/list')).json()).items||[]; }catch(_){ return []; } }
+            async function restoreOne(rpath){ const R=window.RCFolder; const d=await fetch(A()+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath})}); const dj=await d.json(); if(!d.ok) throw new Error(dj.error||'복원 오류'); const blob=await (await fetch(dj.url)).blob(); const parts=rpath.split('/'); const fname=parts.pop(); let acc=[]; for(const p of parts){ try{ await R.mkdirAt(acc.slice(),p); }catch(_){} acc.push(p); } await R.writeFileAt(parts,fname,blob); return true; }
+            async function restoreAll(onProg){ const items=await list(); let done=0,ok=0,fail=0; for(const it of items){ done++; try{ await restoreOne(it.rpath); ok++; }catch(_){ fail++; } if(onProg)onProg(done,items.length,it.rpath); } return {total:items.length,ok,fail}; }
+            async function del(rpath){ try{ await fetch(A()+'/api/mirror/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath})}); }catch(_){}}
+            return { status, enable, backupAll, autoMirror, list, restoreAll, restoreOne, del, uploadOne };
+        })();
+
+        window.openMirrorPanel = async function(){
+            const fmt=(b)=>{ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            ov.innerHTML='<div id="_mir-box" style="background:#fff;color:#0f172a;border-radius:16px;max-width:460px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="font-weight:800;font-size:17px;margin-bottom:4px;">☁️ 클라우드 미러 백업</div><div style="font-size:12px;color:#64748b;margin-bottom:16px;">공유폴더 파일을 클라우드(R2)에 백업합니다. 디스크 고장·기기 분실 시 복원할 수 있는 유료 옵션입니다.</div><div id="_mir-body" style="font-size:13px;color:#475569;">불러오는 중…</div></div>';
+            document.body.appendChild(ov); ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
+            const body=ov.querySelector('#_mir-body');
+            async function refresh(){
+                const s=await window.RCMirror.status();
+                if(!s){ body.innerHTML='상태를 불러오지 못했습니다.'; return; }
+                if(!s.r2){ body.innerHTML='<div style="color:#b45309;">서버에 클라우드(R2)가 설정되어 있지 않아 미러 백업을 사용할 수 없습니다.</div>'; return; }
+                const pct=s.quota? Math.min(100,Math.round(s.used/s.quota*100)):0;
+                body.innerHTML=
+                  '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><label style="font-weight:700;">미러 백업 사용</label>'
+                  +'<button id="_mir-tog" style="margin-left:auto;padding:7px 14px;border-radius:999px;border:none;font-weight:800;cursor:pointer;'+(s.enabled?'background:#16a34a;color:#fff;':'background:#e2e8f0;color:#475569;')+'">'+(s.enabled?'ON':'OFF')+'</button></div>'
+                  +'<div style="background:#f1f5f9;border-radius:10px;padding:12px;margin-bottom:14px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span>사용량</span><span>'+fmt(s.used)+' / '+fmt(s.quota)+' ('+pct+'%)</span></div><div style="height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+(pct>=90?'#dc2626':'#2563eb')+';"></div></div><div style="font-size:11px;color:#94a3b8;margin-top:6px;">무료 '+fmt(s.freeBytes)+' 포함 · 추가 용량 '+ (s.pricePerGB) +'원/GB</div></div>'
+                  +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><button id="_mir-bk" style="padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">⬆️ 지금 백업</button><button id="_mir-rs" style="padding:11px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:10px;font-weight:800;cursor:pointer;">⬇️ 복원</button></div>'
+                  +'<button id="_mir-buy" style="width:100%;padding:10px;border:1px solid #e2e8f0;background:#f8fafc;color:#475569;border-radius:10px;font-weight:700;cursor:pointer;">＋ 용량 구매</button>'
+                  +'<div id="_mir-prog" style="font-size:12px;color:#475569;margin-top:12px;white-space:pre-line;"></div>';
+                const prog=body.querySelector('#_mir-prog');
+                body.querySelector('#_mir-tog').onclick=async()=>{ await window.RCMirror.enable(!s.enabled); refresh(); };
+                body.querySelector('#_mir-bk').onclick=async()=>{ if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('먼저 공유폴더를 지정하세요.'); return; } prog.textContent='백업 시작…'; try{ const r=await window.RCMirror.backupAll((d,t,nm,st)=>{ prog.textContent='('+d+'/'+t+') '+st+': '+nm; }); prog.textContent='✅ 백업 완료 — 업로드 '+r.up+' · 건너뜀 '+r.skip+' · 실패 '+r.fail; refresh(); }catch(e){ prog.textContent='❌ '+(e.message||e); } };
+                body.querySelector('#_mir-rs').onclick=async()=>{ if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('먼저 공유폴더를 지정하세요.'); return; } const ok=await window._sfConfirm('클라우드 백업본을 현재 공유폴더로 복원합니다. 같은 이름 파일은 덮어씁니다.\n계속하시겠습니까?','복원'); if(!ok) return; prog.textContent='복원 시작…'; try{ const r=await window.RCMirror.restoreAll((d,t,rp)=>{ prog.textContent='('+d+'/'+t+') 복원: '+rp; }); prog.textContent='✅ 복원 완료 — 성공 '+r.ok+' · 실패 '+r.fail; }catch(e){ prog.textContent='❌ '+(e.message||e); } };
+                body.querySelector('#_mir-buy').onclick=async()=>{ const g=await window._sfPrompt('구매할 용량(GB)을 입력하세요 (예: 5)',''); if(g===null) return; const gb=Math.max(0,Number(g)||0); if(!gb) return; try{ const r=await fetch(API_URL+'/api/cloud/purchase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gb})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'구매 실패'); return; } showToast('용량 구매 완료: +'+gb+'GB'); refresh(); }catch(e){ showToast('오류: '+(e.message||e)); } };
+            }
+            refresh();
         };
 
         async function openSharedFolderPanel(){
@@ -10470,7 +10535,9 @@ pdfjsScript,
             { k:['채팅','알림','미읽음','메세지','메시지','안읽','읽지','대화방삭제','방삭제','퇴장'], a:'💬 채팅/알림: 우하단 자홍색 채팅 버튼에 총 미읽음 개수가 표시되고, 각 대화방 목록에도 방별 미읽음 개수가 보입니다. 대화방은 좌측 ◀ 버튼으로 목록으로 돌아가고, 주문 이력이 없는 일반 대화방은 목록의 🗑 버튼으로 삭제할 수 있어요(상대에게는 퇴장 안내가 표시됩니다).' },
             { k:['원격','원격제어','제어','화상','화상채팅','영상통화','화면공유','원격지원'], a:'🖥 화상/원격제어: 대화방 상단 📹(화상 회의)와 🖥(원격제어) 버튼을 쓸 수 있어요. 원격제어는 🖥을 눌러 요청 → 상대가 "수락하고 원격 지원 시작"을 누르는 순간 상대 화면이 큰 창으로 보이고 마우스·키보드로 바로 조작됩니다. 채팅에서 바로 되며 RAYCloud 앱 창을 따로 띄우지 않아도 돼요(제어측은 아무 준비 불필요). 종료는 상단 "원격제어 종료" 버튼. ※ 화면을 내주는(제어당하는) 쪽 PC는 RAYCloud 로컬 서버(원격 도우미)가 실행 중이어야 합니다 — 브라우저 보안상 화면 캡처·입력은 로컬 프로그램이 담당해요. 수락 후 "로컬 서버가 실행 중이어야 합니다" 안내가 뜨면 그 PC에서 RAYCloud 실행기를 한 번 켜 주세요.' },
             { k:['세금','계산서','세금계산서','정산완료'], a:'🧾 세금계산서/정산: 관리자(Admin)가 구매확정된 거래를 월별로 정산하고 전자세금계산서를 발행합니다. 가입 시 입력한 사업자 정보가 자동으로 반영돼요.' },
-            { k:['새기능','업데이트','변경','바뀐','최근','신규'], a:'🆕 최근 반영된 기능:\n• 주문 상태 카드 상단 고정(채팅 늘어도 항상 표시)\n• 상품 카드 전체 클릭 → 상세·결제, 상품 카드 미리보기\n• 대문 이미지 편집(확대·회전), 배송조회 링크\n• 리메이크/리페어(기공소 전용), 거래내역 매출/정산 열\n• 채팅 알림 강화(방별 미읽음), AI 상담원 도입\n• 화상 회의(화면 공유) + 자체 원격제어(설치 불필요, 수락 즉시 상대 화면 제어)\n바뀌는 기능도 여기서 계속 안내해 드릴게요!' },
+            { k:['새기능','업데이트','변경','바뀐','최근','신규'], a:'🆕 최근 반영된 기능:\n• 주문 상태 카드 상단 고정(채팅 늘어도 항상 표시)\n• 상품 카드 전체 클릭 → 상세·결제, 상품 카드 미리보기\n• 대문 이미지 편집(확대·회전), 배송조회 링크\n• 리메이크/리페어(기공소 전용), 거래내역 매출/정산 열\n• 채팅 알림 강화(방별 미읽음), AI 상담원 도입\n• 화상 회의(화면 공유) + 자체 원격제어(설치 불필요, 수락 즉시 상대 화면 제어)\n• 🔒 잠금 전송(파일에 금액·암호 지정) + ☁️ 클라우드 미러 백업(공유폴더를 클라우드에 백업·복원, 유료 옵션)\n바뀌는 기능도 여기서 계속 안내해 드릴게요!' },
+            { k:['잠금','파일잠금','암호전송','금액전송','유료전송','비밀번호전송','열람료','결제파일','잠금전송'], a:'🔒 잠금 전송(금액/암호): 파일을 보낼 때 뜨는 창에서 "열람 금액"이나 "암호"를 지정할 수 있어요. 금액을 넣으면 받는 사람이 Earth 잔액으로 결제해야 열리고(보낸 사람에게 자동 정산), 암호를 넣으면 암호를 입력해야 열립니다. 둘 다 비우면 지금처럼 바로 전송돼요. 한 번 결제·해제한 파일은 다시 받을 때 추가 결제 없이 열립니다.' },
+            { k:['미러','백업','클라우드백업','공유폴더백업','복원','디스크','원본보관','미러백업'], a:'☁️ 클라우드 미러 백업(유료 옵션): 좌측 메뉴 "클라우드 미러 백업"에서 공유폴더 파일을 클라우드(R2)에 백업하고, 다른 기기나 디스크 고장 시 복원할 수 있어요. 원하는 분만 용량을 구매해(무료 100MB 포함, 추가 GB당 60원) 쓰는 선택 기능입니다. "지금 백업"으로 올리고 "복원"으로 되받으며, 토글을 켜면 새로 받은 파일도 자동 백업됩니다.' },
             { k:['상담원','사람','전화','연결','문의','도와'], a:'👩‍💼 담당자 연결이 필요하시면 이 창에 문의 내용을 자세히 남겨주세요. 확인 후 답변드리겠습니다. 그 사이 제가 도울 수 있는 건 무엇이든 물어봐 주세요! 😊' },
             { k:['고마','감사','thanks','ㄳ','수고'], a:'도움이 되어 기뻐요! 😊 더 궁금한 점이 있으면 언제든 물어봐 주세요.' }
         ];

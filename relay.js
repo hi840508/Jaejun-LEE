@@ -1658,6 +1658,97 @@ app.post('/api/cloud/usage', (req, res) => {
     });
 });
 
+// ===================== ☁️ [항목5] 로컬 공유폴더 R2 미러 백업(유료 옵션) =====================
+// 원하는 사용자만 클라우드 지갑(cloud_storage, GB당 60원)으로 결제해 공유폴더 파일을 R2에 백업.
+// 원본 손실(디스크 고장) 대비 클라우드 사본. 업로드=브라우저→R2 프리사인 PUT(무료 egress), 복원=프리사인 GET.
+function _mirrorKey(user, rpath) { return 'mirror/' + crypto.createHash('sha1').update(user + '|' + rpath).digest('hex'); }
+function _mirrorUsage(name, cb) {   // cb(err, {used, quota, purchased, enabled})
+    db.get(`SELECT COALESCE(SUM(size),0) AS used FROM mirror_files WHERE userName = ?`, [name], (e, r) => {
+        if (e) return cb(e);
+        db.get(`SELECT purchasedBytes FROM cloud_storage WHERE name = ?`, [name], (e2, c) => {
+            db.get(`SELECT enabled FROM mirror_prefs WHERE userName = ?`, [name], (e3, p) => {
+                const purchased = (c && c.purchasedBytes) || 0;
+                cb(null, { used: (r && r.used) || 0, purchased, quota: CLOUD_FREE_BYTES + purchased, enabled: !!(p && p.enabled) });
+            });
+        });
+    });
+}
+app.get('/api/mirror/status', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    _mirrorUsage(name, (e, u) => { if (e) return res.status(500).json({ error: e.message }); res.json(Object.assign({ freeBytes: CLOUD_FREE_BYTES, pricePerGB: CLOUD_PRICE_PER_GB, r2: !!_r2 }, u)); });
+});
+app.post('/api/mirror/enable', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    const on = req.body.on ? 1 : 0;
+    db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?, ?) ON CONFLICT(userName) DO UPDATE SET enabled = ?`, [name, on, on], (e) => {
+        if (e) return res.status(500).json({ error: e.message });
+        res.json({ ok: true, enabled: !!on });
+    });
+});
+app.post('/api/mirror/upload-url', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const rpath = String(req.body.rpath || ''); const size = Math.max(0, Math.floor(Number(req.body.size) || 0)); const mime = String(req.body.mime || 'application/octet-stream');
+    if (!rpath) return res.status(400).json({ error: 'rpath 필요' });
+    _mirrorUsage(name, (e, u) => {
+        if (e) return res.status(500).json({ error: e.message });
+        db.get(`SELECT size FROM mirror_files WHERE userName = ? AND rpath = ?`, [name, rpath], (e2, ex) => {
+            const usedExcl = u.used - ((ex && ex.size) || 0);
+            if (usedExcl + size > u.quota) return res.status(402).json({ error: '클라우드 용량이 부족합니다. 용량을 구매하세요.', need: (usedExcl + size) - u.quota, quota: u.quota, used: usedExcl });
+            try {
+                const { PutObjectCommand } = require('@aws-sdk/client-s3');
+                const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+                const key = _mirrorKey(name, rpath);
+                getSignedUrl(_r2.client, new PutObjectCommand({ Bucket: _r2.bucket, Key: key, ContentType: mime }), { expiresIn: 3600 })
+                    .then(url => res.json({ url, key })).catch(err => res.status(500).json({ error: err.message }));
+            } catch (err) { res.status(500).json({ error: err.message }); }
+        });
+    });
+});
+app.post('/api/mirror/commit', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    const rpath = String(req.body.rpath || ''); const key = String(req.body.key || '');
+    const size = Math.max(0, Math.floor(Number(req.body.size) || 0)); const mime = String(req.body.mime || ''); const mtime = Math.floor(Number(req.body.mtime) || Date.now());
+    if (!rpath || key !== _mirrorKey(name, rpath)) return res.status(400).json({ error: '잘못된 요청' });
+    db.run(`INSERT INTO mirror_files (userName, rpath, key, size, mime, mtime) VALUES (?,?,?,?,?,?) ON CONFLICT(userName, rpath) DO UPDATE SET key=?, size=?, mime=?, mtime=?`,
+        [name, rpath, key, size, mime, mtime, key, size, mime, mtime], (e) => {
+            if (e) return res.status(500).json({ error: e.message });
+            _mirrorUsage(name, (e2, u) => res.json({ ok: true, used: u ? u.used : 0, quota: u ? u.quota : 0 }));
+        });
+});
+app.get('/api/mirror/list', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    db.all(`SELECT rpath, key, size, mime, mtime FROM mirror_files WHERE userName = ? ORDER BY mtime DESC`, [name], (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        res.json({ items: rows || [] });
+    });
+});
+app.post('/api/mirror/download-url', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const rpath = String(req.body.rpath || '');
+    db.get(`SELECT key, mime FROM mirror_files WHERE userName = ? AND rpath = ?`, [name, rpath], (e, row) => {
+        if (e || !row) return res.status(404).json({ error: '없는 파일' });
+        try {
+            const { GetObjectCommand } = require('@aws-sdk/client-s3');
+            const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+            getSignedUrl(_r2.client, new GetObjectCommand({ Bucket: _r2.bucket, Key: row.key }), { expiresIn: 3600 })
+                .then(url => res.json({ url, mime: row.mime })).catch(err => res.status(500).json({ error: err.message }));
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+});
+app.post('/api/mirror/delete', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    const rpath = String(req.body.rpath || '');
+    db.get(`SELECT key FROM mirror_files WHERE userName = ? AND rpath = ?`, [name, rpath], (e, row) => {
+        if (!row) return res.json({ ok: true });
+        db.run(`DELETE FROM mirror_files WHERE userName = ? AND rpath = ?`, [name, rpath], () => {
+            if (_r2) { try { const { DeleteObjectCommand } = require('@aws-sdk/client-s3'); _r2.client.send(new DeleteObjectCommand({ Bucket: _r2.bucket, Key: row.key })).catch(() => {}); } catch (_) {} }
+            res.json({ ok: true });
+        });
+    });
+});
+
 // 🦷 [기공소] 기본 보철 품목/수가 시드(상점이 편집 가능). tab: general(일반보철·임플란트)/denture(덴처)/ortho(교정)
 function _defaultRxItems() {
     return [
