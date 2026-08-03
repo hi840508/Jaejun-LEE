@@ -1922,7 +1922,10 @@
             <div class="input-group"><label>세금계산서 이메일</label><input type="email" id="modal-tax-email" placeholder="세금계산서 수신 이메일"></div>
 
             <button class="btn btn-success" style="width:100%; padding:14px;" onclick="saveProfile()">설정 저장</button>
-            
+
+            <div style="height:1px; background:var(--border-color); margin:8px 0;"></div>
+            <button class="btn btn-outline" style="width:100%; padding:11px; color:#dc2626; border-color:#fecaca;" onclick="withdrawAccount()">회원 탈퇴</button>
+
             <button class="btn btn-outline" id="admin-ops-btn" style="width:100%; padding:12px; display:none; margin-top:5px;" onclick="openAdminOps()">🛠 서버 관리 — DB 백업 · 저장소 사용량</button>
             <button class="btn btn-danger" id="admin-db-reset-btn" style="width:100%; padding:12px; display:none; margin-top:5px; background:#7f1d1d;" onclick="adminForceResetDB()">⚠️ 전체 데이터 초기화 (DB 초기화)</button>
         </div>
@@ -2835,6 +2838,29 @@
         }
 
         function logout() { _postAuthToParent(null); try{ if(window.EARTH_TOKEN) fetch(`${API_URL}/api/auth/logout`, { method:'POST', headers:{ 'x-auth-token': window.EARTH_TOKEN } }); }catch(_){} setEarthToken(''); localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
+
+        // 🚪 회원 탈퇴 — 계정/개인데이터 삭제 + 진행 중 대화방에 상대에게 '퇴장' 안내(나가기와 동일)
+        window.withdrawAccount = async function(){
+            if(typeof currentUser==='undefined' || !currentUser || !currentUser.name) return;
+            const bal = Number(currentUser.balance)||0;
+            let warn = '정말 회원 탈퇴하시겠습니까?\n\n• 계정과 내 상점·개인 데이터가 삭제됩니다.\n• 진행 중인 대화방에는 상대에게 "퇴장" 안내가 표시됩니다.\n• 이 작업은 되돌릴 수 없습니다.';
+            if(bal>0) warn += '\n\n⚠️ 남은 잔액 '+bal.toLocaleString()+'원은 환급되지 않습니다. 먼저 출금해 주세요.';
+            const ok = await window._sfConfirm(warn, '탈퇴하기');
+            if(!ok) return;
+            const typed = await window._sfPrompt('확인을 위해 본인 아이디("'+currentUser.name+'")를 입력하세요', '');
+            if(typed===null) return;
+            if((typed||'').trim() !== currentUser.name){ showToast('아이디가 일치하지 않습니다.'); return; }
+            try{
+                const r = await fetch(API_URL+'/api/account/withdraw',{method:'POST'});
+                const d = await r.json();
+                if(!r.ok){ showToast(d.error||'탈퇴 처리 실패'); return; }
+                showToast('회원 탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.');
+                try{ _postAuthToParent(null); }catch(_){}
+                try{ setEarthToken(''); }catch(_){}
+                try{ localStorage.removeItem('earth_auto_login'); }catch(_){}
+                setTimeout(function(){ location.reload(); }, 1400);
+            }catch(e){ showToast('오류: '+(e.message||e)); }
+        };
 
         // 🔐 세션 만료(401) 처리 — 토큰 제거 + 안내 토스트 + 로그인 화면 복귀. 중복 호출 방지(짧은 디바운스).
         window.__handleSessionExpired = function(){

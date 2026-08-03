@@ -1521,6 +1521,63 @@ app.post('/api/chat/leave-room', (req, res) => {
     _doHide(false);
 });
 
+// ===================== 🚪 회원 탈퇴 =====================
+// 계정과 개인 데이터 삭제 + 진행 중 대화방마다 '퇴장' 시스템 메시지(=상대가 나갔을 때와 동일) 전송.
+// 재무 원장(transactions/transfers/deposits/withdrawals/refund_requests)은 기록 보존.
+app.post('/api/account/withdraw', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (isAdminName(me)) return res.status(403).json({ error: '관리자 계정은 탈퇴할 수 없습니다. 먼저 관리자 권한을 다른 계정으로 이전하세요.' });
+    const LEAVE_MSG = '🚪 상대방이 대화방을 퇴장하셨습니다.';
+    const now = new Date().toLocaleString('ko-KR'); const iso = new Date().toISOString();
+    // 1) 내가 속한 활성 대화방 수집(개인방 room_msg_ + 주문방 chat_rooms)
+    db.all(`SELECT DISTINCT roomId FROM chats WHERE roomId LIKE 'room_msg_%'`, [], (e1, drows) => {
+        const dmRooms = (drows || []).map(r => r.roomId).filter(rid => _roomParticipants(rid).includes(me));
+        db.all(`SELECT roomId FROM chat_rooms WHERE buyer = ? OR seller = ?`, [me, me], (e2, orows) => {
+            const rooms = Array.from(new Set(dmRooms.concat((orows || []).map(r => r.roomId)).filter(Boolean)));
+            // 각 방에 이미 상대가 나가지 않았다면 퇴장 안내 + 내 숨김 기록
+            db.all(`SELECT roomId, user FROM chat_hidden`, [], (e3, hrows) => {
+                const hiddenBy = {}; (hrows || []).forEach(h => { (hiddenBy[h.roomId] = hiddenBy[h.roomId] || new Set()).add(h.user); });
+                rooms.forEach(rid => {
+                    const others = _roomParticipants(rid).filter(p => p && p !== me);
+                    const someoneStays = others.some(o => !(hiddenBy[rid] && hiddenBy[rid].has(o)));
+                    db.run(`INSERT INTO chat_hidden (user, roomId, hidden_at) VALUES (?, ?, ?)`, [me, rid, iso], () => {});
+                    if (someoneStays) {
+                        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [rid, LEAVE_MSG, now, iso], function () {
+                            try { _emitToRoomUsers(rid, 'receive_message', { roomId: rid, sender: '__system__', message: LEAVE_MSG, id: this.lastID, date: now }); } catch (_) {}
+                        });
+                    }
+                });
+                // 2) R2 미러 사본 삭제(용량 회수)
+                db.all(`SELECT key FROM mirror_files WHERE userName = ?`, [me], (em, mrows) => {
+                    const keys = (mrows || []).map(r => r.key).filter(Boolean);
+                    if (_r2 && keys.length) { try { const { DeleteObjectsCommand } = require('@aws-sdk/client-s3'); for (let i = 0; i < keys.length; i += 1000) _r2.client.send(new DeleteObjectsCommand({ Bucket: _r2.bucket, Delete: { Objects: keys.slice(i, i + 1000).map(k => ({ Key: k })) } })).catch(() => {}); } catch (_) {} }
+                    // 3) 계정 + 개인 데이터 삭제(재무 원장은 보존)
+                    db.serialize(() => {
+                        db.run(`DELETE FROM users WHERE name = ?`, [me]);
+                        db.run(`DELETE FROM friends WHERE userName = ? OR friendName = ?`, [me, me]);
+                        db.run(`DELETE FROM push_subs WHERE userName = ?`, [me]);
+                        db.run(`DELETE FROM devices WHERE userName = ?`, [me]);
+                        db.run(`DELETE FROM mirror_files WHERE userName = ?`, [me]);
+                        db.run(`DELETE FROM mirror_prefs WHERE userName = ?`, [me]);
+                        db.run(`DELETE FROM guest_shares WHERE owner = ?`, [me]);
+                        db.run(`DELETE FROM locked_files WHERE owner = ?`, [me]);
+                        db.run(`DELETE FROM favorite_stores WHERE userName = ?`, [me]);
+                        db.run(`DELETE FROM products WHERE seller = ?`, [me]);
+                        db.run(`DELETE FROM stores WHERE owner = ?`, [me]);
+                        // 4) 세션 폐기(재로그인 불가)
+                        db.all(`SELECT token FROM sessions WHERE name = ?`, [me], (es, srows) => {
+                            (srows || []).forEach(s => SESSIONS.delete(String(s.token)));
+                            db.run(`DELETE FROM sessions WHERE name = ?`, [me], () => {
+                                res.json({ ok: true, roomsNotified: rooms.length });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+});
+
 app.post('/api/deposit/request', (req, res) => { const me = requireUser(req, res); if (!me) return; const rawDate = new Date().toISOString(); db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date, rawDate) VALUES (?, ?, ?, '대기', ?, ?)`, [me, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR'), rawDate], () => { res.json({ success: true }); }); });
 
 app.post('/api/withdraw/request', (req, res) => {
