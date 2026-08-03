@@ -2544,6 +2544,9 @@
                 }
             } catch(e) {}
 
+            // 🔗 외부공유 링크 진입(?claim=토큰) → 저장해두고 로그인 후 수령 처리(loginSuccess에서 __processClaim 호출)
+            try { const _cl = new URLSearchParams(location.search).get('claim'); if(_cl){ window.__pendingClaim = _cl; try{ localStorage.setItem('earth_pending_claim', _cl); }catch(_){} try{ history.replaceState(null,'',location.pathname); }catch(_){} } } catch(_){}
+
             const savedData = localStorage.getItem('earth_auto_login');
             if(savedData) loginSuccess(JSON.parse(savedData));
         };
@@ -3197,10 +3200,10 @@
                 if(document.getElementById('rc-folder-banner')) return;
                 const b=document.createElement('div');
                 b.id='rc-folder-banner';
-                b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:99990;background:#0f172a;color:#fff;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:92vw;';
-                b.innerHTML='<span style="font-size:20px;">📁</span><span style="font-size:13px;line-height:1.4;">받은 파일을 자동 저장할 <b>공유폴더</b>를 연결하세요.</span>'+
-                    '<button id="rc-bn-pick" style="padding:7px 12px;border:none;background:#2563eb;color:#fff;border-radius:8px;font-weight:800;cursor:pointer;white-space:nowrap;">연결</button>'+
-                    '<button id="rc-bn-x" style="padding:7px 10px;border:none;background:transparent;color:#94a3b8;border-radius:8px;cursor:pointer;">✕</button>';
+                b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:99990;background:#0f172a;color:#fff;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.3);width:min(420px,92vw);box-sizing:border-box;';
+                b.innerHTML='<span style="font-size:20px;flex:none;">📁</span><span style="font-size:13px;line-height:1.4;flex:1;min-width:0;word-break:keep-all;">받은 파일을 자동 저장할 <b>공유폴더</b>를 연결하세요.</span>'+
+                    '<button id="rc-bn-pick" style="padding:7px 12px;border:none;background:#2563eb;color:#fff;border-radius:8px;font-weight:800;cursor:pointer;white-space:nowrap;flex:none;">연결</button>'+
+                    '<button id="rc-bn-x" style="padding:7px 10px;border:none;background:transparent;color:#94a3b8;border-radius:8px;cursor:pointer;flex:none;">✕</button>';
                 document.body.appendChild(b);
                 b.querySelector('#rc-bn-pick').onclick=async()=>{ await pick(); b.remove(); };
                 b.querySelector('#rc-bn-x').onclick=()=>b.remove();
@@ -3529,6 +3532,22 @@
             _showGuestShareSheet(fileName, link);
         };
         window.openGuestShareByKey = function(k){ const f=window.__chatFileRegistry && window.__chatFileRegistry[k]; if(f) window.openGuestShare(f.filename, f.content, f.mime, f.size||0); };
+        // 🔗 외부공유 수령 — 로그인 후 호출. 발신자와의 방으로 파일 전달받아(채팅 전송과 동일) 공유폴더 자동저장.
+        window.__processClaim = async function(){
+            let token=''; try{ token = window.__pendingClaim || localStorage.getItem('earth_pending_claim') || ''; }catch(_){}
+            if(!token) return;
+            if(typeof currentUser==='undefined' || !currentUser || !currentUser.name) return;   // 로그인 완료 후 loginSuccess가 재호출
+            window.__pendingClaim=''; try{ localStorage.removeItem('earth_pending_claim'); }catch(_){}
+            try{
+                const r=await fetch(API_URL+'/api/guestshare/'+encodeURIComponent(token)+'/claim',{method:'POST'});
+                const d=await r.json();
+                if(!r.ok){ showToast(d.error||'파일 수령 실패'); return; }
+                if(d.self){ showToast('본인이 만든 공유 링크입니다.'); return; }
+                try{ if(window.RCFolder && window.RCFolder.supported && !window.RCFolder.chosen()){ await window.RCFolder.requireFolder(); } }catch(_){}
+                showToast('📥 '+(d.fileName||'파일')+' 수령 — 대화방에서 공유폴더로 저장됩니다.');
+                setTimeout(function(){ try{ if(typeof openMessengerChat==='function') openMessengerChat(d.owner, d.roomId); else if(window.openEarthRoom) window.openEarthRoom(d.roomId); }catch(_){} }, 300);
+            }catch(e){ showToast('수령 오류: '+(e.message||e)); }
+        };
         // 로컬 공유폴더 파일을 외부 공유: R2 업로드 후 링크 생성
         window.guestShareLocalFile = async function(pathArr, fname, mime, size){
             try{
@@ -3993,6 +4012,8 @@
             }, 1500); } catch(_){}
             // 🔔 알림을 탭해 앱이 새로 열린 경우(?openroom=) → 로그인 후 해당 대화방 열기
             try { const _op = new URLSearchParams(location.search).get('openroom'); if(_op){ setTimeout(function(){ try{ window.openEarthRoom(_op); }catch(_){} }, 2000); } } catch(_){}
+            // 🔗 외부공유(?claim=)로 진입 → 로그인/가입 완료 후 파일 수령(발신자와의 방으로 전달 + 공유폴더 자동저장)
+            try { setTimeout(function(){ if(window.__processClaim) window.__processClaim(); }, 1800); } catch(_){}
             document.getElementById('display-name').innerText = data.name; if(data.profilePic) document.getElementById('my-profile-pic').src = data.profilePic;
             
             // 🚀 [v8] 로고 초기화 (localStorage 우선 → 기본 오름앤파트너스)

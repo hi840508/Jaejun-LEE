@@ -1781,7 +1781,28 @@ app.get('/s/:token/dl', (req, res) => {
         if (e || !row) return res.status(404).send('없는 공유입니다.');
         if (row.expiresAt && Date.now() > row.expiresAt) return res.status(410).send('만료된 공유입니다.');
         db.run(`UPDATE guest_shares SET downloads = downloads + 1 WHERE token = ?`, [req.params.token]);
-        res.redirect(row.url);
+        res.redirect(row.url);   // R2(Cloudflare) 직접 다운로드 — egress 무료
+    });
+});
+// 로그인/가입한 사용자가 외부공유를 '수령' → 발신자와의 채팅방에 파일 메시지를 넣어 일반 채팅 전송과 동일한 흐름으로(수신 시 공유폴더 자동저장) 이어지게 함.
+app.post('/api/guestshare/:token/claim', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.get(`SELECT owner, fileName, url, mime, size, expiresAt FROM guest_shares WHERE token = ?`, [req.params.token], (e, row) => {
+        if (e || !row) return res.status(404).json({ error: '없는 공유입니다.' });
+        if (row.expiresAt && Date.now() > row.expiresAt) return res.status(410).json({ error: '만료된 공유입니다.' });
+        if (row.owner === me) return res.json({ ok: true, self: true });
+        const roomId = 'room_msg_' + [row.owner, me].sort().join('_');
+        const sizeKB = Math.round((row.size || 0) / 1024);
+        const msg = '[FILE_ATTACH]' + row.fileName + '|' + sizeKB + '|' + (row.mime || '') + '|' + row.url;
+        const date = new Date().toLocaleString('ko-KR');
+        db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [row.owner, me]);
+        db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [me, row.owner]);
+        db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?,?,?,?,?,?)`, [roomId, row.owner, null, msg, date, new Date().toISOString()], function () {
+            const payload = { roomId, sender: row.owner, message: msg, id: this.lastID, date };
+            try { _emitToRoomUsers(roomId, 'receive_message', payload); } catch (_) {}
+            db.run(`UPDATE guest_shares SET downloads = downloads + 1 WHERE token = ?`, [req.params.token]);
+            res.json({ ok: true, roomId, owner: row.owner, fileName: row.fileName });
+        });
     });
 });
 function _guestLandingHtml(token) {
@@ -1816,15 +1837,6 @@ function _guestLandingHtml(token) {
  var TOKEN=${t};
  function fmt(b){b=Number(b)||0;if(b>=1073741824)return (b/1073741824).toFixed(2)+'GB';if(b>=1048576)return (b/1048576).toFixed(1)+'MB';if(b>=1024)return (b/1024).toFixed(0)+'KB';return b+'B';}
  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
- async function saveToFolder(url,name,mime){
-   try{
-     if(window.showSaveFilePicker){
-       var h=await window.showSaveFilePicker({suggestedName:name});
-       var w=await h.createWritable(); var resp=await fetch(url); await resp.body.pipeTo(w); return true;
-     }
-   }catch(e){ if(e && e.name==='AbortError') return false; }
-   var a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();return true;
- }
  (async function(){
    var app=document.getElementById('app');
    try{
@@ -1832,15 +1844,15 @@ function _guestLandingHtml(token) {
      if(!r.ok || d.expired){ app.innerHTML='<div class="err"><div style="font-size:40px">⌛</div><b>'+(d.expired?'만료된 공유입니다.':'존재하지 않는 공유입니다.')+'</b><div style="margin-top:6px;font-size:13px">보낸 분께 다시 요청해 주세요.</div></div>'; return; }
      var isImg=/^image\\//.test(d.mime||'');
      var dl='/s/'+encodeURIComponent(TOKEN)+'/dl';
+     var claimUrl='/?claim='+encodeURIComponent(TOKEN);
      app.innerHTML=
        '<div class="fileicon">'+(isImg?'🖼️':'📄')+'</div>'
        +'<div class="fn">'+esc(d.fileName)+'</div>'
        +'<div class="meta">'+fmt(d.size)+' · '+esc((d.owner||'')+'님이 보냄')+'</div>'
        +'<div class="prev" id="prev"'+(isImg?' style="display:block"':'')+'>'+(isImg?'<img src="'+esc(d.url)+'" alt="">':'')+'</div>'
-       +'<button class="btn p" id="save">📁 공유폴더에 저장</button>'
-       +'<a class="btn o" href="'+dl+'">⬇️ 그냥 다운로드</a>'
-       +'<div class="join"><h3>🌍 Earth로 더 편하게 받아보세요</h3><p>Earth에 가입하면 받은 파일이 지정한 공유폴더에 자동 저장되고, 채팅·대용량 전송·백업까지 한 번에 이용할 수 있어요.</p><a class="btn p" href="/" style="margin-top:0">Earth 가입하고 시작하기</a></div>';
-     document.getElementById('save').onclick=async function(){ this.textContent='저장 중…'; var ok=await saveToFolder(d.url,d.fileName,d.mime); this.textContent= ok?'✅ 저장됨':'📁 공유폴더에 저장'; };
+       +'<a class="btn p" href="'+claimUrl+'">📥 Earth에서 받기 (공유폴더 자동저장)</a>'
+       +'<a class="btn o" href="'+dl+'">⬇️ 로그인 없이 바로 다운로드</a>'
+       +'<div class="join"><h3>🌍 Earth로 받으면?</h3><p>가입/로그인하면 이 파일이 보낸 분과의 <b>채팅방으로 전달</b>되어 지정한 <b>공유폴더에 자동 저장</b>됩니다. 이후 채팅·대용량 전송·백업까지 그대로 쓸 수 있어요. "바로 다운로드"는 가입 없이 파일만 내려받습니다.</p></div>';
      if(d.expiresAt){ document.getElementById('exp').textContent='이 링크는 '+new Date(d.expiresAt).toLocaleDateString('ko-KR')+'까지 유효합니다.'; }
    }catch(e){ app.innerHTML='<div class="err">불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>'; }
  })();
