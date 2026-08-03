@@ -1044,6 +1044,26 @@ app.get('/api/admin/r2-usage', (req, res) => {
     if (!requireAdmin(req, res)) return;
     _r2Usage((err, u) => { if (err) return res.status(500).json({ error: err.message || 'usage 실패' }); res.json(u); });
 });
+// 📊 회원별 클라우드 사용현황(미러 백업 사용량 + 구매/사용 용량) — 관리자 모니터링
+app.get('/api/admin/cloud-usage', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    db.all(`SELECT userName AS name, COALESCE(SUM(size),0) AS mirrorBytes, COUNT(*) AS files FROM mirror_files GROUP BY userName`, [], (e, mrows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        db.all(`SELECT name, purchasedBytes, usedBytes FROM cloud_storage`, [], (e2, crows) => {
+            const map = {};
+            const ensure = (n) => (map[n] = map[n] || { name: n, mirrorBytes: 0, files: 0, purchasedBytes: 0, usedBytes: 0 });
+            (crows || []).forEach(c => { const m = ensure(c.name); m.purchasedBytes = c.purchasedBytes || 0; m.usedBytes = c.usedBytes || 0; });
+            (mrows || []).forEach(r => { const m = ensure(r.name); m.mirrorBytes = r.mirrorBytes || 0; m.files = r.files || 0; });
+            const users = Object.values(map).sort((a, b) => (b.mirrorBytes + b.usedBytes) - (a.mirrorBytes + a.usedBytes));
+            res.json({
+                free: CLOUD_FREE_BYTES, pricePerGB: CLOUD_PRICE_PER_GB, users,
+                totalMirror: users.reduce((s, u) => s + u.mirrorBytes, 0),
+                totalPurchased: users.reduce((s, u) => s + u.purchasedBytes, 0),
+                totalUsed: users.reduce((s, u) => s + u.usedBytes, 0)
+            });
+        });
+    });
+});
 
 // Admin 권한 비밀번호 확인 (활성화용)
 app.post('/api/admin/verify-password', (req, res) => {
@@ -1773,7 +1793,16 @@ app.get('/api/guestshare/:token', (req, res) => {
     db.get(`SELECT owner, fileName, mime, size, url, expiresAt FROM guest_shares WHERE token = ?`, [req.params.token], (e, row) => {
         if (e || !row) return res.status(404).json({ error: '없는 공유입니다.' });
         if (row.expiresAt && Date.now() > row.expiresAt) return res.json({ expired: true, fileName: row.fileName });
-        res.json({ fileName: row.fileName, mime: row.mime, size: row.size, url: row.url, owner: row.owner, expiresAt: row.expiresAt });
+        // 발신자 프로필/브랜드(로고) 동봉 → 랜딩에서 신뢰감 있게 표시
+        db.get(`SELECT profilePic, realname FROM users WHERE name = ?`, [row.owner], (e2, u) => {
+            db.get(`SELECT name, logo FROM stores WHERE owner = ? ORDER BY rowid LIMIT 1`, [row.owner], (e3, st) => {
+                res.json({
+                    fileName: row.fileName, mime: row.mime, size: row.size, url: row.url, owner: row.owner, expiresAt: row.expiresAt,
+                    ownerPic: (u && u.profilePic) || '', ownerReal: (u && u.realname) || '',
+                    brand: (st && st.name) || '', brandLogo: (st && st.logo) || ''
+                });
+            });
+        });
     });
 });
 app.get('/s/:token/dl', (req, res) => {
@@ -1819,8 +1848,18 @@ function _guestLandingHtml(token) {
  .fileicon{width:64px;height:64px;border-radius:16px;background:#eef2ff;color:var(--pri);display:flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:14px}
  .fn{font-size:18px;font-weight:800;word-break:break-all;line-height:1.35}
  .meta{font-size:13px;color:var(--sub);margin-top:4px}
- .prev{margin:16px 0;border-radius:14px;overflow:hidden;border:1px solid var(--line);max-height:280px;display:none}
+ .sender{display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+ .avatar{width:46px;height:46px;border-radius:50%;background:#eef2ff;flex:none;display:flex;align-items:center;justify-content:center;font-size:19px;color:var(--pri);font-weight:800;overflow:hidden}
+ .avatar img{width:100%;height:100%;object-fit:cover}
+ .sender .nm{font-weight:800;font-size:14px;line-height:1.3}
+ .sender .br{font-size:12px;color:var(--sub);margin-top:1px}
+ .prev{margin:16px 0;border-radius:14px;overflow:hidden;border:1px solid var(--line);max-height:300px;display:none;cursor:zoom-in;position:relative}
  .prev img{width:100%;display:block}
+ .prev .zoom{position:absolute;right:8px;bottom:8px;background:rgba(15,23,42,.7);color:#fff;font-size:11px;padding:4px 8px;border-radius:8px}
+ .lb{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:100;padding:14px}
+ .lb.show{display:flex}
+ .lb img{max-width:100%;max-height:100%;border-radius:8px}
+ .lb .x{position:absolute;top:14px;right:16px;color:#fff;font-size:30px;cursor:pointer;line-height:1}
  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;border-radius:12px;font-weight:800;font-size:15px;cursor:pointer;border:none;margin-top:10px;text-decoration:none}
  .btn.p{background:var(--pri);color:#fff}.btn.o{background:#fff;color:var(--tx);border:1px solid #cbd5e1}
  .join{margin-top:22px;background:linear-gradient(135deg,#eef2ff,#faf5ff);border:1px solid #e5e7fb;border-radius:16px;padding:18px}
@@ -1833,8 +1872,10 @@ function _guestLandingHtml(token) {
  <div id="app" class="card"><div class="err">불러오는 중…</div></div>
  <div class="exp" id="exp"></div>
 </div>
+<div class="lb" id="lb"><span class="x">✕</span><img src="" alt=""></div>
 <script>
  var TOKEN=${t};
+ (function(){ var lb=document.getElementById('lb'); if(lb){ lb.addEventListener('click',function(e){ if(e.target===lb || e.target.className==='x') lb.classList.remove('show'); }); document.addEventListener('keydown',function(e){ if(e.key==='Escape') lb.classList.remove('show'); }); } })();
  function fmt(b){b=Number(b)||0;if(b>=1073741824)return (b/1073741824).toFixed(2)+'GB';if(b>=1048576)return (b/1048576).toFixed(1)+'MB';if(b>=1024)return (b/1024).toFixed(0)+'KB';return b+'B';}
  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
  (async function(){
@@ -1845,14 +1886,20 @@ function _guestLandingHtml(token) {
      var isImg=/^image\\//.test(d.mime||'');
      var dl='/s/'+encodeURIComponent(TOKEN)+'/dl';
      var claimUrl='/?claim='+encodeURIComponent(TOKEN);
+     var av=d.brandLogo||d.ownerPic||'';
+     var avHtml=av?('<span class="avatar"><img src="'+esc(av)+'" alt=""></span>'):('<span class="avatar">'+esc((d.owner||'?').slice(0,1))+'</span>');
+     var title=d.brand||d.owner||'보낸 사람';
+     var sub=d.brand?('보낸 사람 · '+esc(d.owner||'')):(d.ownerReal?esc(d.ownerReal)+'님이 보냄':'회원이 보냄');
      app.innerHTML=
-       '<div class="fileicon">'+(isImg?'🖼️':'📄')+'</div>'
+       '<div class="sender">'+avHtml+'<div><div class="nm">'+esc(title)+'</div><div class="br">'+sub+'</div></div></div>'
+       +'<div class="fileicon">'+(isImg?'🖼️':'📄')+'</div>'
        +'<div class="fn">'+esc(d.fileName)+'</div>'
-       +'<div class="meta">'+fmt(d.size)+' · '+esc((d.owner||'')+'님이 보냄')+'</div>'
-       +'<div class="prev" id="prev"'+(isImg?' style="display:block"':'')+'>'+(isImg?'<img src="'+esc(d.url)+'" alt="">':'')+'</div>'
+       +'<div class="meta">'+fmt(d.size)+(isImg?' · 눌러서 크게 보기':'')+'</div>'
+       +'<div class="prev" id="prev"'+(isImg?' style="display:block"':'')+'>'+(isImg?'<img src="'+esc(d.url)+'" alt=""><span class="zoom">🔍 크게 보기</span>':'')+'</div>'
        +'<a class="btn p" href="'+claimUrl+'">📥 Earth에서 받기 (공유폴더 자동저장)</a>'
        +'<a class="btn o" href="'+dl+'">⬇️ 로그인 없이 바로 다운로드</a>'
        +'<div class="join"><h3>🌍 Earth로 받으면?</h3><p>가입/로그인하면 이 파일이 보낸 분과의 <b>채팅방으로 전달</b>되어 지정한 <b>공유폴더에 자동 저장</b>됩니다. 이후 채팅·대용량 전송·백업까지 그대로 쓸 수 있어요. "바로 다운로드"는 가입 없이 파일만 내려받습니다.</p></div>';
+     if(isImg){ var pv=document.getElementById('prev'); if(pv) pv.onclick=function(){ var lb=document.getElementById('lb'); lb.querySelector('img').src=d.url; lb.classList.add('show'); }; }
      if(d.expiresAt){ document.getElementById('exp').textContent='이 링크는 '+new Date(d.expiresAt).toLocaleDateString('ko-KR')+'까지 유효합니다.'; }
    }catch(e){ app.innerHTML='<div class="err">불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>'; }
  })();

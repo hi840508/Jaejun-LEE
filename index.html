@@ -3584,6 +3584,7 @@
                 let bk={items:[],last:null}, usage=null;
                 try{ const r=await fetch(API_URL+'/api/admin/db-backups'); if(r.ok) bk=await r.json(); else if(r.status===403||r.status===401){ body.innerHTML='<div style="color:#b45309;">관리자 권한이 필요합니다. 프로필에서 Admin 권한을 먼저 활성화하세요.</div>'; return; } }catch(_){}
                 try{ const r=await fetch(API_URL+'/api/admin/r2-usage'); if(r.ok) usage=await r.json(); }catch(_){}
+                let cloud=null; try{ const r=await fetch(API_URL+'/api/admin/cloud-usage'); if(r.ok) cloud=await r.json(); }catch(_){}
                 const last=bk.last||{}; const items=(bk.items||[]).slice(0,20);
                 let usageHtml='';
                 if(usage){ const pct=usage.freeLimit?Math.min(100,Math.round(usage.total/usage.freeLimit*100)):0; const g=usage.groups||{};
@@ -3592,6 +3593,16 @@
                       + order.filter(([k])=>g[k]).map(([k,lbl])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;"><span>'+lbl+'</span><span>'+fmt(g[k].bytes)+' · '+g[k].count+'개</span></div>').join('')
                       + '</div>';
                 } else { usageHtml='<div style="font-size:12px;color:#94a3b8;margin:10px 0 18px;">저장소 사용량을 불러오지 못했습니다(R2 미설정일 수 있음).</div>'; }
+                let cloudHtml='';
+                if(cloud){ const us=(cloud.users||[]).filter(u=>(u.mirrorBytes+u.purchasedBytes+u.usedBytes)>0);
+                    cloudHtml='<div style="height:1px;background:#eef2f7;margin:18px 0;"></div>'
+                      +'<div style="font-weight:700;margin-bottom:4px;">👥 회원별 클라우드 사용</div>'
+                      +'<div style="font-size:12px;color:#64748b;margin-bottom:10px;">미러 백업 사용량 · 구매 용량 (합계 미러 '+fmt(cloud.totalMirror)+' · 구매 '+fmt(cloud.totalPurchased)+')</div>'
+                      +'<div style="border:1px solid #eef2f7;border-radius:10px;max-height:220px;overflow:auto;">'
+                      +'<div style="display:flex;gap:8px;padding:7px 10px;font-size:11px;color:#94a3b8;border-bottom:1px solid #f1f5f9;font-weight:700;"><span style="flex:1;">회원</span><span style="width:78px;text-align:right;">미러</span><span style="width:64px;text-align:right;">파일</span><span style="width:78px;text-align:right;">구매용량</span></div>'
+                      +(us.length? us.map(u=>{ const quota=cloud.free+(u.purchasedBytes||0); const over=u.mirrorBytes>quota; return '<div style="display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;"><span style="flex:1;font-weight:600;">'+(u.name||'').replace(/</g,'&lt;')+'</span><span style="width:78px;text-align:right;'+(over?'color:#dc2626;font-weight:700;':'')+'">'+fmt(u.mirrorBytes)+'</span><span style="width:64px;text-align:right;color:#94a3b8;">'+(u.files||0)+'</span><span style="width:78px;text-align:right;color:#64748b;">'+(u.purchasedBytes?fmt(u.purchasedBytes):'-')+'</span></div>'; }).join('') : '<div style="padding:14px;text-align:center;color:#94a3b8;">미러 백업/구매 이력이 있는 회원이 없습니다.</div>')
+                      +'</div>';
+                }
                 body.innerHTML=
                   '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;"><div style="font-weight:700;">💾 데이터베이스 백업</div><button id="_ao-bk" style="padding:9px 16px;border:none;background:#2563eb;color:#fff;border-radius:9px;font-weight:800;cursor:pointer;">지금 백업</button></div>'
                   +'<div style="font-size:12px;color:#64748b;margin-bottom:10px;">매일 자동 백업됩니다. 최근 성공: '+(last&&last.ok?('<b>'+fmtTime(last.at)+'</b>'):'-')+(last&&!last.ok&&last.err?(' <span style="color:#dc2626;">('+(''+last.err).replace(/</g,'&lt;')+')</span>'):'')+'</div>'
@@ -3600,7 +3611,7 @@
                   + (items.length? items.map(it=>'<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;"><span style="flex:1;">'+fmtTime(it.at)+'</span><span style="color:#94a3b8;">'+fmt(it.size)+'</span><button data-k="'+it.key+'" class="_ao-dl" style="border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:700;">복원 다운로드</button></div>').join('') : '<div style="padding:14px;text-align:center;color:#94a3b8;">아직 백업이 없습니다. "지금 백업"을 눌러 생성하세요.</div>')
                   +'</div>'
                   +'<div style="height:1px;background:#eef2f7;margin:18px 0;"></div>'
-                  + usageHtml;
+                  + usageHtml + cloudHtml;
                 body.querySelector('#_ao-bk').onclick=async()=>{ const msg=body.querySelector('#_ao-bkmsg'); msg.textContent='백업 중…'; try{ const r=await fetch(API_URL+'/api/admin/db-backup',{method:'POST'}); const d=await r.json(); if(!r.ok){ msg.style.color='#dc2626'; msg.textContent='실패: '+(d.error||''); return; } msg.style.color='#16a34a'; msg.textContent='✅ 백업 완료'; setTimeout(refresh,600); }catch(e){ msg.textContent='오류: '+(e.message||e); } };
                 body.querySelectorAll('._ao-dl').forEach(b=>{ b.onclick=async()=>{ try{ const r=await fetch(API_URL+'/api/admin/db-backup/download?key='+encodeURIComponent(b.dataset.k)); const d=await r.json(); if(!r.ok){ showToast(d.error||'다운로드 오류'); return; } const a=document.createElement('a'); a.href=d.url; a.download=b.dataset.k.split('/').pop(); document.body.appendChild(a); a.click(); a.remove(); }catch(e){ showToast('오류: '+(e.message||e)); } }; });
             }
