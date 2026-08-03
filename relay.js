@@ -1527,6 +1527,15 @@ app.post('/api/chat/leave-room', (req, res) => {
 app.post('/api/account/withdraw', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     if (isAdminName(me)) return res.status(403).json({ error: '관리자 계정은 탈퇴할 수 없습니다. 먼저 관리자 권한을 다른 계정으로 이전하세요.' });
+    // 💰 잔액이 남아 있으면 탈퇴 불가 — 먼저 출금 완료해야 함(잔액 소실 방지)
+    db.get(`SELECT balance FROM users WHERE name = ?`, [me], (eb, urow) => {
+        if (eb || !urow) return res.status(404).json({ error: '계정을 찾을 수 없습니다.' });
+        const bal = Number(urow.balance) || 0;
+        if (bal > 0) return res.status(400).json({ error: '남은 잔액 ' + bal.toLocaleString() + '원을 먼저 출금(정산)한 뒤 탈퇴할 수 있습니다.', balance: bal, needWithdrawFunds: true });
+        _doWithdrawAccount(me, res);
+    });
+});
+function _doWithdrawAccount(me, res) {
     const LEAVE_MSG = '🚪 상대방이 대화방을 퇴장하셨습니다.';
     const now = new Date().toLocaleString('ko-KR'); const iso = new Date().toISOString();
     // 1) 내가 속한 활성 대화방 수집(개인방 room_msg_ + 주문방 chat_rooms)
@@ -1576,7 +1585,7 @@ app.post('/api/account/withdraw', (req, res) => {
             });
         });
     });
-});
+}
 
 app.post('/api/deposit/request', (req, res) => { const me = requireUser(req, res); if (!me) return; const rawDate = new Date().toISOString(); db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date, rawDate) VALUES (?, ?, ?, '대기', ?, ?)`, [me, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR'), rawDate], () => { res.json({ success: true }); }); });
 
