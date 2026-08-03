@@ -1064,6 +1064,29 @@ app.get('/api/admin/cloud-usage', (req, res) => {
         });
     });
 });
+// 🧹 특정 회원의 미러 백업 강제 정리 → mirror_files 삭제 + R2 오브젝트 삭제(용량 회수)
+app.post('/api/admin/mirror-purge', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const userName = String(req.body.userName || '');
+    if (!userName) return res.status(400).json({ error: 'userName 필요' });
+    db.all(`SELECT key, size FROM mirror_files WHERE userName = ?`, [userName], (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        const keys = (rows || []).map(r => r.key).filter(Boolean);
+        const freed = (rows || []).reduce((s, r) => s + (r.size || 0), 0);
+        db.run(`DELETE FROM mirror_files WHERE userName = ?`, [userName], (de) => {
+            if (de) return res.status(500).json({ error: de.message });
+            if (_r2 && keys.length) {
+                try {
+                    const { DeleteObjectsCommand } = require('@aws-sdk/client-s3');
+                    for (let i = 0; i < keys.length; i += 1000) {
+                        _r2.client.send(new DeleteObjectsCommand({ Bucket: _r2.bucket, Delete: { Objects: keys.slice(i, i + 1000).map(k => ({ Key: k })) } })).catch(() => {});
+                    }
+                } catch (_) {}
+            }
+            res.json({ ok: true, count: keys.length, freed });
+        });
+    });
+});
 
 // Admin 권한 비밀번호 확인 (활성화용)
 app.post('/api/admin/verify-password', (req, res) => {
@@ -1170,7 +1193,7 @@ app.post('/api/auth/register', (req, res) => {
     // 🔐 개인정보 수집·이용 동의(필수) — 미동의 시 가입 거부
     if(!privacy_agreed) return res.status(400).json({ error: '개인정보 수집·이용 동의가 필요합니다.' });
     // 🚀 [v8+] 의료·약무 관련 업종은 자격증 필수 + Admin 승인 대기
-    const regulated = ['dental_lab', 'medical', 'pharmacy', 'medical_wholesale'];
+    const regulated = ['dental_lab', 'dental_clinic', 'medical', 'pharmacy', 'medical_wholesale'];
     const needsApproval = regulated.includes(business_type);
     if(needsApproval && !license_doc) return res.status(400).json({ error: '해당 업종은 자격증 업로드가 필수입니다.' });
     const approvalStatus = needsApproval ? 'pending' : 'approved';

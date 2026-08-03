@@ -902,7 +902,8 @@
                         <option value="general">일반 상점 / 소매</option>
                         <option value="food">음식점 · 카페</option>
                         <option value="dental_lab">치과 기공소 ※ 자격증 필요</option>
-                        <option value="medical">병원 · 의원 ※ 자격증 필요</option>
+                        <option value="dental_clinic">치과 병·의원 ※ 자격증 필요</option>
+                        <option value="medical">일반 병·의원 ※ 자격증 필요</option>
                         <option value="pharmacy">약국 ※ 자격증 필요</option>
                         <option value="medical_wholesale">의약 도·소매 ※ 자격증 필요</option>
                         <option value="fashion">패션 · 의류</option>
@@ -3594,13 +3595,14 @@
                       + '</div>';
                 } else { usageHtml='<div style="font-size:12px;color:#94a3b8;margin:10px 0 18px;">저장소 사용량을 불러오지 못했습니다(R2 미설정일 수 있음).</div>'; }
                 let cloudHtml='';
-                if(cloud){ const us=(cloud.users||[]).filter(u=>(u.mirrorBytes+u.purchasedBytes+u.usedBytes)>0);
+                if(cloud){
                     cloudHtml='<div style="height:1px;background:#eef2f7;margin:18px 0;"></div>'
                       +'<div style="font-weight:700;margin-bottom:4px;">👥 회원별 클라우드 사용</div>'
                       +'<div style="font-size:12px;color:#64748b;margin-bottom:10px;">미러 백업 사용량 · 구매 용량 (합계 미러 '+fmt(cloud.totalMirror)+' · 구매 '+fmt(cloud.totalPurchased)+')</div>'
-                      +'<div style="border:1px solid #eef2f7;border-radius:10px;max-height:220px;overflow:auto;">'
-                      +'<div style="display:flex;gap:8px;padding:7px 10px;font-size:11px;color:#94a3b8;border-bottom:1px solid #f1f5f9;font-weight:700;"><span style="flex:1;">회원</span><span style="width:78px;text-align:right;">미러</span><span style="width:64px;text-align:right;">파일</span><span style="width:78px;text-align:right;">구매용량</span></div>'
-                      +(us.length? us.map(u=>{ const quota=cloud.free+(u.purchasedBytes||0); const over=u.mirrorBytes>quota; return '<div style="display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;"><span style="flex:1;font-weight:600;">'+(u.name||'').replace(/</g,'&lt;')+'</span><span style="width:78px;text-align:right;'+(over?'color:#dc2626;font-weight:700;':'')+'">'+fmt(u.mirrorBytes)+'</span><span style="width:64px;text-align:right;color:#94a3b8;">'+(u.files||0)+'</span><span style="width:78px;text-align:right;color:#64748b;">'+(u.purchasedBytes?fmt(u.purchasedBytes):'-')+'</span></div>'; }).join('') : '<div style="padding:14px;text-align:center;color:#94a3b8;">미러 백업/구매 이력이 있는 회원이 없습니다.</div>')
+                      +'<div style="display:flex;gap:6px;margin-bottom:8px;"><input id="_ao-cq" placeholder="회원 검색" style="flex:1;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;"><select id="_ao-cs" style="padding:8px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;"><option value="mirror">미러 많은순</option><option value="purchased">구매 많은순</option><option value="name">이름순</option></select></div>'
+                      +'<div style="border:1px solid #eef2f7;border-radius:10px;overflow:hidden;">'
+                      +'<div style="display:flex;gap:8px;padding:7px 10px;font-size:11px;color:#94a3b8;border-bottom:1px solid #f1f5f9;font-weight:700;"><span style="flex:1;">회원</span><span style="width:70px;text-align:right;">미러</span><span style="width:44px;text-align:right;">파일</span><span style="width:64px;text-align:right;">구매</span><span style="width:52px;text-align:right;">정리</span></div>'
+                      +'<div id="_ao-cloud-rows" style="max-height:240px;overflow:auto;"></div>'
                       +'</div>';
                 }
                 body.innerHTML=
@@ -3614,6 +3616,23 @@
                   + usageHtml + cloudHtml;
                 body.querySelector('#_ao-bk').onclick=async()=>{ const msg=body.querySelector('#_ao-bkmsg'); msg.textContent='백업 중…'; try{ const r=await fetch(API_URL+'/api/admin/db-backup',{method:'POST'}); const d=await r.json(); if(!r.ok){ msg.style.color='#dc2626'; msg.textContent='실패: '+(d.error||''); return; } msg.style.color='#16a34a'; msg.textContent='✅ 백업 완료'; setTimeout(refresh,600); }catch(e){ msg.textContent='오류: '+(e.message||e); } };
                 body.querySelectorAll('._ao-dl').forEach(b=>{ b.onclick=async()=>{ try{ const r=await fetch(API_URL+'/api/admin/db-backup/download?key='+encodeURIComponent(b.dataset.k)); const d=await r.json(); if(!r.ok){ showToast(d.error||'다운로드 오류'); return; } const a=document.createElement('a'); a.href=d.url; a.download=b.dataset.k.split('/').pop(); document.body.appendChild(a); a.click(); a.remove(); }catch(e){ showToast('오류: '+(e.message||e)); } }; });
+                // 👥 회원별 사용 — 검색/정렬/정리
+                if(cloud){
+                    const rowsEl=body.querySelector('#_ao-cloud-rows'); const qEl=body.querySelector('#_ao-cq'); const sEl=body.querySelector('#_ao-cs');
+                    const renderRows=()=>{
+                        const q=(qEl.value||'').toLowerCase().trim(); const sort=sEl.value;
+                        let list=(cloud.users||[]).filter(u=>(u.mirrorBytes+u.purchasedBytes+u.usedBytes)>0);
+                        if(q) list=list.filter(u=>(u.name||'').toLowerCase().includes(q));
+                        if(sort==='purchased') list.sort((a,b)=>b.purchasedBytes-a.purchasedBytes);
+                        else if(sort==='name') list.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+                        else list.sort((a,b)=>b.mirrorBytes-a.mirrorBytes);
+                        rowsEl.innerHTML = list.length? list.map(u=>{ const quota=cloud.free+(u.purchasedBytes||0); const over=u.mirrorBytes>quota; const nm=(u.name||'').replace(/</g,'&lt;');
+                            return '<div style="display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;"><span style="flex:1;font-weight:600;">'+nm+'</span><span style="width:70px;text-align:right;'+(over?'color:#dc2626;font-weight:700;':'')+'">'+fmt(u.mirrorBytes)+'</span><span style="width:44px;text-align:right;color:#94a3b8;">'+(u.files||0)+'</span><span style="width:64px;text-align:right;color:#64748b;">'+(u.purchasedBytes?fmt(u.purchasedBytes):'-')+'</span><span style="width:52px;text-align:right;">'+(u.mirrorBytes>0?'<button class="_ao-pg" data-u="'+(u.name||'').replace(/"/g,'&quot;')+'" style="border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;padding:3px 8px;cursor:pointer;font-size:11px;font-weight:700;">정리</button>':'')+'</span></div>';
+                        }).join('') : '<div style="padding:14px;text-align:center;color:#94a3b8;">해당하는 회원이 없습니다.</div>';
+                        rowsEl.querySelectorAll('._ao-pg').forEach(b=>{ b.onclick=async()=>{ const u=b.dataset.u; const ok=await window._sfConfirm('['+u+'] 회원의 클라우드 미러 백업을 모두 삭제하고 용량을 회수할까요?\n(클라우드 사본만 삭제 — 회원의 로컬 공유폴더 파일은 그대로입니다.)','정리하기'); if(!ok) return; b.textContent='…'; try{ const r=await fetch(API_URL+'/api/admin/mirror-purge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userName:u})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'정리 실패'); return; } showToast('🧹 '+u+' 미러 정리: '+d.count+'개, '+fmt(d.freed)+' 회수'); refresh(); }catch(e){ showToast('오류: '+(e.message||e)); } }; });
+                    };
+                    if(qEl) qEl.oninput=renderRows; if(sEl) sEl.onchange=renderRows; renderRows();
+                }
             }
             refresh();
         };
@@ -5556,7 +5575,8 @@
             { id: 'general', label: '일반 상점' },
             { id: 'food', label: '음식점 · 카페' },
             { id: 'dental_lab', label: '치과 기공소' },
-            { id: 'medical', label: '병원 · 의원' },
+            { id: 'dental_clinic', label: '치과 병·의원' },
+            { id: 'medical', label: '일반 병·의원' },
             { id: 'pharmacy', label: '약국' },
             { id: 'medical_wholesale', label: '의약 도·소매' },
             { id: 'fashion', label: '패션 · 의류' },
@@ -5578,7 +5598,14 @@
         ];
 
         // 🚀 [v8+] 규제 업종 (자격증 + Admin 승인 필요)
-        window.REGULATED_TYPES = ['dental_lab', 'medical', 'pharmacy', 'medical_wholesale'];
+        window.REGULATED_TYPES = ['dental_lab', 'dental_clinic', 'medical', 'pharmacy', 'medical_wholesale'];
+
+        // 🦷 치과 기공소(dental_lab) 상점은 '치과 병·의원(dental_clinic)' 회원에게만 노출. 관리자·상점 소유자 관리화면은 예외.
+        window.canSeeStoreCategory = function(cat){
+            try{ if(typeof isAdmin!=='undefined' && isAdmin) return true; }catch(_){}
+            if(cat === 'dental_lab') return !!(typeof currentUser!=='undefined' && currentUser && currentUser.business_type === 'dental_clinic');
+            return true;
+        };
 
         // 🚀 [v8+] 업체 유형별 기본 표시 카테고리 매핑 (가입 시 자동 체크되는 카테고리)
         //   - 치과 기공소 → 치과 기공소만
@@ -5588,7 +5615,8 @@
         //   - 그 외 일반 회원 → 규제 업종을 제외한 전체
         window.DEFAULT_VISIBLE_BY_TYPE = {
             'dental_lab':        ['dental_lab'],
-            'medical':           ['pharmacy', 'dental_lab', 'medical_wholesale', 'medical'],
+            'dental_clinic':     ['dental_lab', 'pharmacy', 'medical_wholesale', 'medical'],   // 🦷 치과 병·의원 = 치과 기공소 이용 가능
+            'medical':           ['pharmacy', 'medical_wholesale', 'medical'],                  // 일반 병·의원 = 치과 기공소 제외
             'pharmacy':          ['medical_wholesale', 'pharmacy'],
             'medical_wholesale': ['medical_wholesale']
         };
@@ -5902,7 +5930,7 @@
                     const bgPreview = hasBg ? `<div style="width:100%; height:60px; border-radius:8px; background-image:url('${st.background.replace(/'/g, "\\'")}'); background-size:cover; background-position:center; margin-top:8px; border:1px solid var(--border-color);"></div>` : '';
                     const descStr = (st.description || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
                     const currentCat = st.category || 'general';
-                    const catLabelMap = { general:'일반 상점', food:'음식점·카페', dental_lab:'치과 기공소', medical:'병원·의원', pharmacy:'약국', medical_wholesale:'의약 도·소매', fashion:'패션·의류', beauty:'뷰티·미용', education:'교육·강의', art:'아트·디자인', music:'음악·음원', game:'게임·IT', craft:'공예·수공', construction:'건설·시공', real_estate:'부동산', auto:'자동차·운송', pet:'반려동물', sports:'스포츠·레저', book:'도서·출판', legal:'법률·자문', finance:'금융·컨설팅', other:'기타' };
+                    const catLabelMap = { general:'일반 상점', food:'음식점·카페', dental_lab:'치과 기공소', dental_clinic:'치과 병·의원', medical:'일반 병·의원', pharmacy:'약국', medical_wholesale:'의약 도·소매', fashion:'패션·의류', beauty:'뷰티·미용', education:'교육·강의', art:'아트·디자인', music:'음악·음원', game:'게임·IT', craft:'공예·수공', construction:'건설·시공', real_estate:'부동산', auto:'자동차·운송', pet:'반려동물', sports:'스포츠·레저', book:'도서·출판', legal:'법률·자문', finance:'금융·컨설팅', other:'기타' };
                     const catLabel = catLabelMap[currentCat] || '일반 상점';
                     h += `<div style="padding:14px; background:#f8fafc; border:1px solid var(--border-color); border-radius:14px;">
                         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
@@ -5951,7 +5979,7 @@
         window.editBrandFull = function(storeId){
             const st = (window.myBrandStores||[]).find(s=>s.id===storeId);
             if(!st){ showToast('상점 정보를 찾을 수 없습니다.'); return; }
-            const catMap = { general:'일반 상점', food:'음식점·카페', dental_lab:'치과 기공소', medical:'병원·의원', pharmacy:'약국', medical_wholesale:'의약 도·소매', fashion:'패션·의류', beauty:'뷰티·미용', education:'교육·강의', art:'아트·디자인', music:'음악·음원', game:'게임·IT', craft:'공예·수공', construction:'건설·시공', real_estate:'부동산', auto:'자동차·운송', pet:'반려동물', sports:'스포츠·레저', book:'도서·출판', legal:'법률·자문', finance:'금융·컨설팅', other:'기타' };
+            const catMap = { general:'일반 상점', food:'음식점·카페', dental_lab:'치과 기공소', dental_clinic:'치과 병·의원', medical:'일반 병·의원', pharmacy:'약국', medical_wholesale:'의약 도·소매', fashion:'패션·의류', beauty:'뷰티·미용', education:'교육·강의', art:'아트·디자인', music:'음악·음원', game:'게임·IT', craft:'공예·수공', construction:'건설·시공', real_estate:'부동산', auto:'자동차·운송', pet:'반려동물', sports:'스포츠·레저', book:'도서·출판', legal:'법률·자문', finance:'금융·컨설팅', other:'기타' };
             const cur = st.category || 'general';
             const catOpts = Object.keys(catMap).map(k=>`<option value="${k}" ${k===cur?'selected':''}>${catMap[k]}</option>`).join('');
             const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
@@ -8534,14 +8562,15 @@ pdfjsScript,
             try {
                 const res = await fetch(`${API_URL}/api/stores/showcase`);
                 if(!res.ok) throw new Error(`HTTP ${res.status} from ${API_URL}/api/stores/showcase`);
-                const showcase = await res.json() || [];
+                // 🦷 치과 기공소 상점은 치과 병·의원 회원(+관리자)에게만 노출
+                const showcase = (await res.json() || []).filter(s => window.canSeeStoreCategory(s.category));
                 window.showcaseCache = showcase;
                 // 🚀 [수정] allStoreCache는 활성 상점 전체로 채워 즐겨찾기/입장이 항상 동작하도록
                 let allActive = showcase.slice();
                 try {
                     const actRes = await fetch(`${API_URL}/api/stores/active`);
                     if(actRes.ok) {
-                        const active = await actRes.json() || [];
+                        const active = (await actRes.json() || []).filter(s => window.canSeeStoreCategory(s.category));
                         const seen = new Set(allActive.map(s => s.id));
                         active.forEach(s => { if(!seen.has(s.id)) { allActive.push(s); seen.add(s.id); } });
                     }
@@ -8908,7 +8937,7 @@ pdfjsScript,
                     wrap.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-sub); background:#fafafa; border-radius:10px;">승인 대기 중인 회원이 없습니다.</div>';
                     return;
                 }
-                const typeLabel = { dental_lab:'치과 기공소', medical:'병원 · 의원', pharmacy:'약국', medical_wholesale:'의약 도·소매' };
+                const typeLabel = { dental_lab:'치과 기공소', dental_clinic:'치과 병·의원', medical:'일반 병·의원', pharmacy:'약국', medical_wholesale:'의약 도·소매' };
                 let h = '';
                 list.forEach(u => {
                     const safe = (s) => String(s||'').replace(/</g,'&lt;').replace(/'/g, "\\'");
