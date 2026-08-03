@@ -650,6 +650,9 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS mirror_files (userName TEXT, rpath TEXT, key TEXT, size INTEGER DEFAULT 0, mime TEXT, mtime INTEGER, PRIMARY KEY(userName, rpath))`);
         db.run(`CREATE TABLE IF NOT EXISTS mirror_prefs (userName TEXT PRIMARY KEY, enabled INTEGER DEFAULT 0)`);
 
+        // 🔗 [비회원 외부 공유] QR+웹링크로 Earth 미가입 고객에게 파일 전달 → 랜딩페이지에서 가입안내 + 공유폴더 다운로드
+        db.run(`CREATE TABLE IF NOT EXISTS guest_shares (token TEXT PRIMARY KEY, owner TEXT, fileName TEXT, url TEXT, mime TEXT, size INTEGER, createdAt INTEGER, expiresAt INTEGER, downloads INTEGER DEFAULT 0)`);
+
         // 🚀 [v6] 구매로 자동 생성된 대화방 메타 (브랜드명 + 최신 상품명 + 양측 표시 동기화)
         // type: 'order' (구매 후 자동 생성, 한쪽이 leave 시 양측 종료) | 'normal' (수동 친구 추가)
         db.run(`CREATE TABLE IF NOT EXISTS chat_rooms (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId TEXT UNIQUE, type TEXT DEFAULT 'normal', buyer TEXT, seller TEXT, storeId TEXT, storeName TEXT, lastProductId TEXT, lastProductName TEXT, ended INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)`);
@@ -1749,6 +1752,101 @@ app.post('/api/mirror/delete', (req, res) => {
         });
     });
 });
+
+// ===================== 🔗 비회원 외부 공유(QR + 웹링크) =====================
+// Earth 미가입 고객에게 파일 전달: 회원이 링크 생성 → 메일/메신저로 QR+링크 전송 → 고객이 랜딩페이지에서 가입안내 + 공유폴더 다운로드.
+app.post('/api/guestshare/create', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const url = String(req.body.url || ''); const fileName = String(req.body.fileName || 'file');
+    const mime = String(req.body.mime || 'application/octet-stream'); const size = Math.max(0, Math.floor(Number(req.body.size) || 0));
+    const days = Math.min(90, Math.max(1, Math.floor(Number(req.body.days) || 14)));
+    if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: '공개 URL이 필요합니다.' });
+    const token = crypto.randomBytes(9).toString('base64url');
+    const now = Date.now(); const expiresAt = now + days * 86400000;
+    db.run(`INSERT INTO guest_shares (token, owner, fileName, url, mime, size, createdAt, expiresAt, downloads) VALUES (?,?,?,?,?,?,?,?,0)`,
+        [token, owner, fileName, url, mime, size, now, expiresAt], function (e) {
+            if (e) return res.status(500).json({ error: '저장 실패' });
+            res.json({ ok: true, token, link: _shareBaseUrl(req) + '/s/' + token, expiresAt });
+        });
+});
+app.get('/api/guestshare/:token', (req, res) => {
+    db.get(`SELECT owner, fileName, mime, size, url, expiresAt FROM guest_shares WHERE token = ?`, [req.params.token], (e, row) => {
+        if (e || !row) return res.status(404).json({ error: '없는 공유입니다.' });
+        if (row.expiresAt && Date.now() > row.expiresAt) return res.json({ expired: true, fileName: row.fileName });
+        res.json({ fileName: row.fileName, mime: row.mime, size: row.size, url: row.url, owner: row.owner, expiresAt: row.expiresAt });
+    });
+});
+app.get('/s/:token/dl', (req, res) => {
+    db.get(`SELECT url, expiresAt FROM guest_shares WHERE token = ?`, [req.params.token], (e, row) => {
+        if (e || !row) return res.status(404).send('없는 공유입니다.');
+        if (row.expiresAt && Date.now() > row.expiresAt) return res.status(410).send('만료된 공유입니다.');
+        db.run(`UPDATE guest_shares SET downloads = downloads + 1 WHERE token = ?`, [req.params.token]);
+        res.redirect(row.url);
+    });
+});
+function _guestLandingHtml(token) {
+    const t = JSON.stringify(String(token));
+    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Earth 파일 받기</title><link rel="icon" href="/icon-192.png">
+<style>
+ :root{--bg:#f5f6f8;--card:#fff;--tx:#0f172a;--sub:#64748b;--pri:#2563eb;--line:#e8eaee}
+ *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;-webkit-font-smoothing:antialiased}
+ .wrap{max-width:480px;margin:0 auto;padding:24px 18px 48px}
+ .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;color:var(--pri);margin-bottom:18px}
+ .brand .dot{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px}
+ .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 4px 24px rgba(15,23,42,.06)}
+ .fileicon{width:64px;height:64px;border-radius:16px;background:#eef2ff;color:var(--pri);display:flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:14px}
+ .fn{font-size:18px;font-weight:800;word-break:break-all;line-height:1.35}
+ .meta{font-size:13px;color:var(--sub);margin-top:4px}
+ .prev{margin:16px 0;border-radius:14px;overflow:hidden;border:1px solid var(--line);max-height:280px;display:none}
+ .prev img{width:100%;display:block}
+ .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;border-radius:12px;font-weight:800;font-size:15px;cursor:pointer;border:none;margin-top:10px;text-decoration:none}
+ .btn.p{background:var(--pri);color:#fff}.btn.o{background:#fff;color:var(--tx);border:1px solid #cbd5e1}
+ .join{margin-top:22px;background:linear-gradient(135deg,#eef2ff,#faf5ff);border:1px solid #e5e7fb;border-radius:16px;padding:18px}
+ .join h3{margin:0 0 6px;font-size:15px}.join p{margin:0 0 12px;font-size:13px;color:var(--sub);line-height:1.5}
+ .exp{text-align:center;font-size:12px;color:#94a3b8;margin-top:18px}
+ .err{text-align:center;padding:40px 10px;color:#64748b}
+</style></head><body>
+<div class="wrap">
+ <div class="brand"><span class="dot">E</span> Earth</div>
+ <div id="app" class="card"><div class="err">불러오는 중…</div></div>
+ <div class="exp" id="exp"></div>
+</div>
+<script>
+ var TOKEN=${t};
+ function fmt(b){b=Number(b)||0;if(b>=1073741824)return (b/1073741824).toFixed(2)+'GB';if(b>=1048576)return (b/1048576).toFixed(1)+'MB';if(b>=1024)return (b/1024).toFixed(0)+'KB';return b+'B';}
+ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+ async function saveToFolder(url,name,mime){
+   try{
+     if(window.showSaveFilePicker){
+       var h=await window.showSaveFilePicker({suggestedName:name});
+       var w=await h.createWritable(); var resp=await fetch(url); await resp.body.pipeTo(w); return true;
+     }
+   }catch(e){ if(e && e.name==='AbortError') return false; }
+   var a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();return true;
+ }
+ (async function(){
+   var app=document.getElementById('app');
+   try{
+     var r=await fetch('/api/guestshare/'+encodeURIComponent(TOKEN)); var d=await r.json();
+     if(!r.ok || d.expired){ app.innerHTML='<div class="err"><div style="font-size:40px">⌛</div><b>'+(d.expired?'만료된 공유입니다.':'존재하지 않는 공유입니다.')+'</b><div style="margin-top:6px;font-size:13px">보낸 분께 다시 요청해 주세요.</div></div>'; return; }
+     var isImg=/^image\\//.test(d.mime||'');
+     var dl='/s/'+encodeURIComponent(TOKEN)+'/dl';
+     app.innerHTML=
+       '<div class="fileicon">'+(isImg?'🖼️':'📄')+'</div>'
+       +'<div class="fn">'+esc(d.fileName)+'</div>'
+       +'<div class="meta">'+fmt(d.size)+' · '+esc((d.owner||'')+'님이 보냄')+'</div>'
+       +'<div class="prev" id="prev"'+(isImg?' style="display:block"':'')+'>'+(isImg?'<img src="'+esc(d.url)+'" alt="">':'')+'</div>'
+       +'<button class="btn p" id="save">📁 공유폴더에 저장</button>'
+       +'<a class="btn o" href="'+dl+'">⬇️ 그냥 다운로드</a>'
+       +'<div class="join"><h3>🌍 Earth로 더 편하게 받아보세요</h3><p>Earth에 가입하면 받은 파일이 지정한 공유폴더에 자동 저장되고, 채팅·대용량 전송·백업까지 한 번에 이용할 수 있어요.</p><a class="btn p" href="/" style="margin-top:0">Earth 가입하고 시작하기</a></div>';
+     document.getElementById('save').onclick=async function(){ this.textContent='저장 중…'; var ok=await saveToFolder(d.url,d.fileName,d.mime); this.textContent= ok?'✅ 저장됨':'📁 공유폴더에 저장'; };
+     if(d.expiresAt){ document.getElementById('exp').textContent='이 링크는 '+new Date(d.expiresAt).toLocaleDateString('ko-KR')+'까지 유효합니다.'; }
+   }catch(e){ app.innerHTML='<div class="err">불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>'; }
+ })();
+</script></body></html>`;
+}
+app.get('/s/:token', (req, res) => { res.type('html').send(_guestLandingHtml(req.params.token)); });
 
 // 🦷 [기공소] 기본 보철 품목/수가 시드(상점이 편집 가능). tab: general(일반보철·임플란트)/denture(덴처)/ortho(교정)
 function _defaultRxItems() {

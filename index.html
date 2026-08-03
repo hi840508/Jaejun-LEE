@@ -1922,6 +1922,7 @@
 
             <button class="btn btn-success" style="width:100%; padding:14px;" onclick="saveProfile()">설정 저장</button>
             
+            <button class="btn btn-outline" id="admin-ops-btn" style="width:100%; padding:12px; display:none; margin-top:5px;" onclick="openAdminOps()">🛠 서버 관리 — DB 백업 · 저장소 사용량</button>
             <button class="btn btn-danger" id="admin-db-reset-btn" style="width:100%; padding:12px; display:none; margin-top:5px; background:#7f1d1d;" onclick="adminForceResetDB()">⚠️ 전체 데이터 초기화 (DB 초기화)</button>
         </div>
     </div>
@@ -3518,6 +3519,75 @@
             refresh();
         };
 
+        // 🔗 비회원 외부 공유 — 이미 업로드된(R2) 파일 URL을 QR+웹링크로 만들어 메일/메신저로 전달
+        window.openGuestShare = async function(fileName, url, mime, size){
+            if(!/^https?:\/\//i.test(url||'')){ showToast('외부 공유는 업로드된 파일만 가능합니다.'); return; }
+            showToast('외부 공유 링크 생성 중…');
+            let link='';
+            try{ const r=await fetch(API_URL+'/api/guestshare/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileName,url,mime:mime||'',size:size||0})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'링크 생성 실패'); return; } link=d.link; }
+            catch(e){ showToast('오류: '+(e.message||e)); return; }
+            _showGuestShareSheet(fileName, link);
+        };
+        window.openGuestShareByKey = function(k){ const f=window.__chatFileRegistry && window.__chatFileRegistry[k]; if(f) window.openGuestShare(f.filename, f.content, f.mime, f.size||0); };
+        // 로컬 공유폴더 파일을 외부 공유: R2 업로드 후 링크 생성
+        window.guestShareLocalFile = async function(pathArr, fname, mime, size){
+            try{
+                const R=window.RCFolder; const blob=await R.getFileAt(pathArr||[], fname); if(!blob){ showToast('파일을 읽지 못했습니다.'); return; }
+                showToast('업로드 중… '+fname);
+                const BIG=20*1024*1024; let url;
+                if(blob.size>BIG && window.uploadBigFileToR2){ const f=new File([blob], fname, {type:mime||blob.type||''}); url=await window.uploadBigFileToR2(f, null); }
+                else { const f=new File([blob], fname, {type:mime||blob.type||''}); url=await window.uploadChatAttachment(f); }
+                await window.openGuestShare(fname, url, mime||blob.type||'', blob.size);
+            }catch(e){ showToast('외부 공유 실패: '+(e.message||e)); }
+        };
+        function _showGuestShareSheet(fileName, link){
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            const bodyText='['+fileName+'] 파일을 보냅니다.\n\n아래 링크를 열면 바로 받을 수 있어요:\n'+link+'\n\n(Earth를 통해 안전하게 전달됩니다)';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:380px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center;"><div style="font-weight:800;font-size:16px;margin-bottom:4px;">🔗 외부 공유 (비회원 전달)</div><div style="font-size:12px;color:#64748b;margin-bottom:14px;word-break:break-all;">'+_sfEsc(fileName)+'</div><div style="display:flex;justify-content:center;margin-bottom:12px;"><canvas id="_gs-qr" style="border-radius:12px;border:1px solid #eef2f7;"></canvas></div><div style="display:flex;gap:6px;margin-bottom:12px;"><input id="_gs-link" readonly value="'+_sfEsc(link)+'" style="flex:1;padding:9px 10px;border:1px solid #e5e7eb;border-radius:9px;font-size:12px;background:#f8fafc;"><button id="_gs-copy" style="padding:9px 12px;border:none;background:#0f172a;color:#fff;border-radius:9px;font-weight:700;cursor:pointer;white-space:nowrap;">복사</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button id="_gs-mail" style="padding:11px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;font-weight:800;cursor:pointer;">✉️ 메일로</button><button id="_gs-msg" style="padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">💬 메신저로</button><button id="_gs-qrsave" style="padding:11px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;font-weight:700;cursor:pointer;">🖼️ QR 저장</button><button id="_gs-close" style="padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button></div><div style="font-size:11px;color:#94a3b8;margin-top:12px;line-height:1.5;">받는 분은 링크를 열거나 QR을 찍으면 파일을 받고 Earth 가입 안내를 볼 수 있어요.</div></div>';
+            document.body.appendChild(ov); ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
+            const cv=ov.querySelector('#_gs-qr'); try{ if(window.QRCode&&QRCode.toCanvas){ QRCode.toCanvas(cv, link, {width:180, margin:1}, ()=>{}); } else { cv.width=180;cv.height=180; const c=cv.getContext('2d'); c.fillStyle='#f1f5f9';c.fillRect(0,0,180,180);c.fillStyle='#64748b';c.font='12px sans-serif';c.fillText('QR 미지원',52,92); } }catch(_){}
+            ov.querySelector('#_gs-close').onclick=()=>ov.remove();
+            ov.querySelector('#_gs-copy').onclick=()=>{ try{ const i=ov.querySelector('#_gs-link'); i.select(); if(navigator.clipboard) navigator.clipboard.writeText(link); else document.execCommand('copy'); showToast('링크 복사됨'); }catch(_){ showToast('복사 실패 — 길게 눌러 복사하세요'); } };
+            ov.querySelector('#_gs-mail').onclick=()=>{ location.href='mailto:?subject='+encodeURIComponent('['+fileName+'] 파일을 보냅니다')+'&body='+encodeURIComponent(bodyText); };
+            ov.querySelector('#_gs-msg').onclick=async()=>{ try{ if(navigator.share){ await navigator.share({title:fileName+' 파일 전달', text:bodyText, url:link}); } else { const i=ov.querySelector('#_gs-link'); i.select(); if(navigator.clipboard) navigator.clipboard.writeText(link); showToast('이 기기는 공유 시트를 지원하지 않아 링크를 복사했어요. 원하는 메신저에 붙여넣으세요.'); } }catch(e){ if(e&&e.name!=='AbortError') showToast('공유 취소됨'); } };
+            ov.querySelector('#_gs-qrsave').onclick=()=>{ try{ const a=document.createElement('a'); a.href=cv.toDataURL('image/png'); a.download='Earth_QR_'+fileName.replace(/[^\w.-]+/g,'_')+'.png'; document.body.appendChild(a); a.click(); a.remove(); showToast('QR 이미지 저장됨'); }catch(_){ showToast('QR 저장 실패'); } };
+        }
+
+        // 🛠 관리자 서버 관리 — DB 백업(수동/목록/복원) + R2 저장소 사용량
+        window.openAdminOps = async function(){
+            const fmt=(b)=>{ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
+            const fmtTime=(t)=>{ if(!t) return '-'; try{ return new Date(t).toLocaleString('ko-KR'); }catch(_){ return '-'; } };
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:560px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><div style="font-weight:800;font-size:17px;">🛠 서버 관리</div><button id="_ao-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div id="_ao-body" style="font-size:13px;color:#475569;">불러오는 중…</div></div>';
+            document.body.appendChild(ov); ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); }); ov.querySelector('#_ao-x').onclick=()=>ov.remove();
+            const body=ov.querySelector('#_ao-body');
+            async function refresh(){
+                let bk={items:[],last:null}, usage=null;
+                try{ const r=await fetch(API_URL+'/api/admin/db-backups'); if(r.ok) bk=await r.json(); else if(r.status===403||r.status===401){ body.innerHTML='<div style="color:#b45309;">관리자 권한이 필요합니다. 프로필에서 Admin 권한을 먼저 활성화하세요.</div>'; return; } }catch(_){}
+                try{ const r=await fetch(API_URL+'/api/admin/r2-usage'); if(r.ok) usage=await r.json(); }catch(_){}
+                const last=bk.last||{}; const items=(bk.items||[]).slice(0,20);
+                let usageHtml='';
+                if(usage){ const pct=usage.freeLimit?Math.min(100,Math.round(usage.total/usage.freeLimit*100)):0; const g=usage.groups||{};
+                    const order=[['backup','DB 백업'],['big','대용량 전송'],['att','채팅 첨부'],['app','앱 설치파일'],['mirror','미러 백업'],['etc','기타']];
+                    usageHtml='<div style="background:#f8fafc;border-radius:12px;padding:14px;margin:10px 0 18px;"><div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:8px;"><span>☁️ R2 저장소</span><span>'+fmt(usage.total)+' / '+fmt(usage.freeLimit)+' 무료 ('+pct+'%)</span></div><div style="height:9px;background:#e2e8f0;border-radius:6px;overflow:hidden;margin-bottom:10px;"><div style="height:100%;width:'+pct+'%;background:'+(pct>=90?'#dc2626':pct>=70?'#f59e0b':'#2563eb')+';"></div></div>'
+                      + order.filter(([k])=>g[k]).map(([k,lbl])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;"><span>'+lbl+'</span><span>'+fmt(g[k].bytes)+' · '+g[k].count+'개</span></div>').join('')
+                      + '</div>';
+                } else { usageHtml='<div style="font-size:12px;color:#94a3b8;margin:10px 0 18px;">저장소 사용량을 불러오지 못했습니다(R2 미설정일 수 있음).</div>'; }
+                body.innerHTML=
+                  '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;"><div style="font-weight:700;">💾 데이터베이스 백업</div><button id="_ao-bk" style="padding:9px 16px;border:none;background:#2563eb;color:#fff;border-radius:9px;font-weight:800;cursor:pointer;">지금 백업</button></div>'
+                  +'<div style="font-size:12px;color:#64748b;margin-bottom:10px;">매일 자동 백업됩니다. 최근 성공: '+(last&&last.ok?('<b>'+fmtTime(last.at)+'</b>'):'-')+(last&&!last.ok&&last.err?(' <span style="color:#dc2626;">('+(''+last.err).replace(/</g,'&lt;')+')</span>'):'')+'</div>'
+                  +'<div id="_ao-bkmsg" style="font-size:12px;color:#2563eb;margin-bottom:8px;"></div>'
+                  +'<div style="border:1px solid #eef2f7;border-radius:10px;max-height:210px;overflow:auto;">'
+                  + (items.length? items.map(it=>'<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;"><span style="flex:1;">'+fmtTime(it.at)+'</span><span style="color:#94a3b8;">'+fmt(it.size)+'</span><button data-k="'+it.key+'" class="_ao-dl" style="border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:700;">복원 다운로드</button></div>').join('') : '<div style="padding:14px;text-align:center;color:#94a3b8;">아직 백업이 없습니다. "지금 백업"을 눌러 생성하세요.</div>')
+                  +'</div>'
+                  +'<div style="height:1px;background:#eef2f7;margin:18px 0;"></div>'
+                  + usageHtml;
+                body.querySelector('#_ao-bk').onclick=async()=>{ const msg=body.querySelector('#_ao-bkmsg'); msg.textContent='백업 중…'; try{ const r=await fetch(API_URL+'/api/admin/db-backup',{method:'POST'}); const d=await r.json(); if(!r.ok){ msg.style.color='#dc2626'; msg.textContent='실패: '+(d.error||''); return; } msg.style.color='#16a34a'; msg.textContent='✅ 백업 완료'; setTimeout(refresh,600); }catch(e){ msg.textContent='오류: '+(e.message||e); } };
+                body.querySelectorAll('._ao-dl').forEach(b=>{ b.onclick=async()=>{ try{ const r=await fetch(API_URL+'/api/admin/db-backup/download?key='+encodeURIComponent(b.dataset.k)); const d=await r.json(); if(!r.ok){ showToast(d.error||'다운로드 오류'); return; } const a=document.createElement('a'); a.href=d.url; a.download=b.dataset.k.split('/').pop(); document.body.appendChild(a); a.click(); a.remove(); }catch(e){ showToast('오류: '+(e.message||e)); } }; });
+            }
+            refresh();
+        };
+
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
             try{ await R.ensureAccess(); }catch(_){}
@@ -3674,6 +3744,7 @@
                     if(here) el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); ctxMenu(e.clientX,e.clientY,[
                         {label:'👁 미리보기',fn:()=>window.rcPreviewFolderFile(fnm,mim)},
                         {label:'📤 공유 / 나에게 보내기',fn:()=>openShareRecipientPicker([fnm])},
+                        {label:'🔗 외부 공유(비회원 · QR/링크)',fn:()=>window.guestShareLocalFile(path, fnm, mim, 0)},
                         {label:'✏️ 이름 변경',fn:async()=>{ const nn=await _sfPrompt('새 파일 이름',fnm); if(nn&&nn!==fnm){ if(await R.renameAt(path,fnm,nn,false)) render(); else showToast('이름변경 실패'); } }},
                         {label:'🗑 삭제',danger:true,fn:async()=>{ if(confirm('"'+fnm+'" 삭제할까요?')){ if(await R.removeAt(path,fnm,false)) render(); else showToast('삭제 실패'); } }}
                     ]); });
@@ -4311,6 +4382,8 @@
             if(dep) dep.style.display = active ? 'block' : 'none';
             const dbReset = document.getElementById('admin-db-reset-btn');
             if(dbReset) dbReset.style.display = active ? 'block' : 'none';
+            const adminOps = document.getElementById('admin-ops-btn');
+            if(adminOps) adminOps.style.display = active ? 'block' : 'none';
             const logoBtn = document.getElementById('admin-logo-btn');
             if(logoBtn) logoBtn.style.display = active ? 'inline-block' : 'none';
             const linkRow = document.getElementById('prod-link-row');   // 🔗 링크 상품(홈페이지) 입력란 — Admin 전용
@@ -11012,7 +11085,7 @@ pdfjsScript,
                 // 🚀 글로벌 파일 등록 (모달에서 사용)
                 if(!window.__chatFileRegistry) window.__chatFileRegistry = {};
                 const fileKey = 'cf_' + Math.random().toString(36).substr(2, 10);
-                window.__chatFileRegistry[fileKey] = { filename: fname, mime, content: dataUrl };
+                window.__chatFileRegistry[fileKey] = { filename: fname, mime, content: dataUrl, size: (parseFloat(sizeKB)||0)*1024 };
 
                 let preview;
                 if(_thumb) {
@@ -11044,7 +11117,7 @@ pdfjsScript,
                         <div class="kt-card-name">${escFname}</div>
                         <div class="kt-card-sub">${sizeKB}KB · ${mime || (isImage?'이미지':isVideo?'영상':isPdf?'PDF':is3d?'3D 모델':'파일')}</div>
                     </div>
-                    <div class="kt-card-actions">${previewBtn}${dlBtn}${(!_thumb && window.parent && window.parent !== window) ? `<button class="kt-card-btn" onclick="sendChatFileToImages('${fileKey}')">\uD83D\uDCE5 Images로</button>` : ''}</div>
+                    <div class="kt-card-actions">${previewBtn}${dlBtn}${_isUrl ? `<button class="kt-card-btn" onclick="openGuestShareByKey('${fileKey}')">\uD83D\uDD17 \uC678\uBD80\uACF5\uC720</button>` : ''}${(!_thumb && window.parent && window.parent !== window) ? `<button class="kt-card-btn" onclick="sendChatFileToImages('${fileKey}')">\uD83D\uDCE5 Images로</button>` : ''}</div>
                 </div>`;
             } else if(text.startsWith('[LOCKED_FILE]')) {
                 // [LOCKED_FILE]name|sizeKB|mime|token|price|hasPw — 실제 URL은 서버 보관, 해제 성공 시에만 전달
