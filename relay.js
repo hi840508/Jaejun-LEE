@@ -2616,7 +2616,7 @@ function _autoConfirmSweep() {
         db.all(`SELECT id, buyer, seller, delivered_at FROM product_orders WHERE status='delivered' AND escrow_held > 0 AND settled = 0 AND delivered_at IS NOT NULL AND delivered_at <= ?`, [cutoff], (e, rows) => {
             if (e || !rows || !rows.length) return;
             const now = new Date(); const month = _kstMonth();   // 정산 귀속월(KST 기준)
-            rows.forEach(r => db.run(`UPDATE product_orders SET status='confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, r.id], () => { _notifyOrderStatus(r.buyer, r.seller, r.id, 'confirmed', '🎉 [자동 완결] 상품서비스 제공 후 5영업일 경과로 자동 완결(구매확정) 처리되었습니다. 완결 후 3영업일 이내에 수수료(2.7%)를 제외한 금액이 기공사에게 지급됩니다. 이 대화방은 종료됩니다.'); _closeOrderRoom(r.id, r.buyer, r.seller); }));
+            rows.forEach(r => db.run(`UPDATE product_orders SET status='confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, r.id], () => { _notifyOrderStatus(r.buyer, r.seller, r.id, 'confirmed', '🎉 [자동 완결] 상품서비스 제공 후 5영업일 경과로 자동 완결(구매확정) 처리되었습니다. 완결 후 3영업일 이내에 수수료(2.7%)를 제외한 금액이 판매자에게 지급됩니다. 이 대화방은 종료됩니다.'); _closeOrderRoom(r.id, r.buyer, r.seller); }));
             console.log(`[에스크로] 자동 완결(구매확정) ${rows.length}건 (5영업일 경과)`);
         });
     } catch (_) {}
