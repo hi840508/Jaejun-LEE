@@ -95,12 +95,12 @@ function _escapeHtml(s) {
 const RC_AGENT_DIR = path.join(__dirname, 'agent');
 try { fs.mkdirSync(RC_AGENT_DIR, { recursive: true }); } catch (_) {}
 
-// ☁️ 앱 설치파일(APP_Setup.exe/Earth.apk)을 R2로 동기화 → 다운로드 전송비 무료. 크기 같으면 스킵(변경 시에만 업로드).
+// ☁️ 앱 설치파일(APP_Setup.exe/Alpha K.apk)을 R2로 동기화 → 다운로드 전송비 무료. 크기 같으면 스킵(변경 시에만 업로드).
 function _syncAppToR2() {
     if (!_r2) return;
     try {
         const { PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
-        [{ name: 'APP_Setup.exe', ct: 'application/octet-stream' }, { name: 'Earth.apk', ct: 'application/vnd.android.package-archive' }].forEach(fi => {
+        [{ name: 'APP_Setup.exe', ct: 'application/octet-stream' }, { name: 'Alpha K.apk', ct: 'application/vnd.android.package-archive' }].forEach(fi => {
             const fp = path.join(RC_AGENT_DIR, fi.name);
             if (!fs.existsSync(fp)) return;
             const size = fs.statSync(fp).size;
@@ -301,7 +301,7 @@ app.get('/download/RAY_RemoteAgent.exe', (req, res) => {
 // 📱 PWA(모바일 홈 화면 앱 설치) — manifest / service worker / 아이콘
 app.get('/manifest.webmanifest', (req, res) => {
     res.type('application/manifest+json').send(JSON.stringify({
-        name: 'Earth', short_name: 'Earth', start_url: '/', scope: '/',
+        name: 'Alpha K', short_name: 'Alpha K', start_url: '/', scope: '/',
         display: 'standalone', background_color: '#0b0b0f', theme_color: '#111111',
         icons: [
             { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
@@ -360,8 +360,8 @@ app.get('/sw.js', (req, res) => {
         "self.addEventListener('activate',e=>self.clients.claim());\n" +
         "self.addEventListener('fetch',function(e){ /* 네트워크 패스스루 — 설치 가능 조건 충족용 */ });\n" +
         "self.addEventListener('push',function(e){\n" +
-        "  var d={}; try{ d=e.data.json(); }catch(_){ try{ d={title:'Earth',body:e.data&&e.data.text()}; }catch(__){ d={title:'Earth'}; } }\n" +
-        "  var title=d.title||'Earth', body=d.body||'';\n" +
+        "  var d={}; try{ d=e.data.json(); }catch(_){ try{ d={title:'Alpha K',body:e.data&&e.data.text()}; }catch(__){ d={title:'Alpha K'}; } }\n" +
+        "  var title=d.title||'Alpha K', body=d.body||'';\n" +
         "  var opts={ body:body, icon:'/icon-192.png', badge:'/icon-192.png', data:d.data||{}, tag:(d.data&&d.data.roomId)||'earth', renotify:true, requireInteraction:true, silent:false, vibrate:[300,120,300,120,300] };\n" +
         "  e.waitUntil((async function(){\n" +
         "    var cs=await self.clients.matchAll({type:'window',includeUncontrolled:true});\n" +
@@ -411,13 +411,13 @@ app.get('/download/APP_Setup.exe', (req, res) => {
     if (!fs.existsSync(f)) return res.status(404).send('app not published yet');
     res.download(f, 'APP_Setup.exe');
 });
-// 📱 Android APK(사이드로드) — agent/Earth.apk 에 두면 배포됨. '알 수 없는 앱 허용' 후 설치.
-app.get('/download/Earth.apk', (req, res) => {
-    if (_r2) return res.redirect(302, _r2.publicBase + '/app/Earth.apk');
-    const f = path.join(RC_AGENT_DIR, 'Earth.apk');
+// 📱 Android APK(사이드로드) — agent/Alpha K.apk 에 두면 배포됨. '알 수 없는 앱 허용' 후 설치.
+app.get('/download/Alpha K.apk', (req, res) => {
+    if (_r2) return res.redirect(302, _r2.publicBase + '/app/Alpha K.apk');
+    const f = path.join(RC_AGENT_DIR, 'Alpha K.apk');
     if (!fs.existsSync(f)) return res.status(404).send('apk not published yet');
     res.type('application/vnd.android.package-archive');
-    res.download(f, 'Earth.apk');
+    res.download(f, 'Alpha K.apk');
 });
 // TWA(APK) 도메인 검증용 — PWABuilder/Bubblewrap이 준 assetlinks.json 을 agent/assetlinks.json 로 올리면 제공됨
 app.get('/.well-known/assetlinks.json', (req, res) => {
@@ -500,7 +500,7 @@ function _pushPreview(msg) {
 }
 app.get('/api/rc/version', (req, res) => {
     let v = '0'; try { v = fs.readFileSync(path.join(RC_AGENT_DIR, 'version.txt'), 'utf8').trim(); } catch (_) {}
-    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe', apk: fs.existsSync(path.join(RC_AGENT_DIR, 'Earth.apk')), apkUrl: '/download/Earth.apk' });
+    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe', apk: fs.existsSync(path.join(RC_AGENT_DIR, 'Alpha K.apk')), apkUrl: '/download/Alpha K.apk' });
 });
 // 개인화 원클릭 설치 배치 — 로그인 필요. exe 자동 다운로드 + 페어링(장기 기기 토큰) + 자동시작.
 app.post('/api/rc/installer', (req, res) => {
@@ -640,7 +640,7 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS viewer_files (fileId TEXT PRIMARY KEY, k TEXT, expiry INTEGER DEFAULT 0, creator TEXT, title TEXT, boundUser TEXT, firstOpenedAt INTEGER, createdAt INTEGER)`);
         db.run(`CREATE TABLE IF NOT EXISTS viewer_opens (id INTEGER PRIMARY KEY AUTOINCREMENT, fileId TEXT, userName TEXT, at INTEGER, ok INTEGER, reason TEXT)`);
 
-        // 🔒💰 전송 파일 잠금(선택) — 금액(price>0: 수신자가 Earth 잔액으로 결제해야 열림)/암호(pwHash) 설정.
+        // 🔒💰 전송 파일 잠금(선택) — 금액(price>0: 수신자가 Alpha K 잔액으로 결제해야 열림)/암호(pwHash) 설정.
         //   둘 다 미설정이면 잠금 미사용(기존 공개 전송과 동일). 실제 R2 URL은 서버에만 보관, 잠금 해제 성공 시에만 전달.
         db.run(`CREATE TABLE IF NOT EXISTS locked_files (token TEXT PRIMARY KEY, owner TEXT, fileName TEXT, url TEXT, mime TEXT, size INTEGER, price INTEGER DEFAULT 0, pwHash TEXT DEFAULT '', createdAt INTEGER)`);
         db.run(`CREATE TABLE IF NOT EXISTS locked_file_unlocks (token TEXT, userName TEXT, at INTEGER, paid INTEGER DEFAULT 0, UNIQUE(token, userName))`);
@@ -650,7 +650,7 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS mirror_files (userName TEXT, rpath TEXT, key TEXT, size INTEGER DEFAULT 0, mime TEXT, mtime INTEGER, PRIMARY KEY(userName, rpath))`);
         db.run(`CREATE TABLE IF NOT EXISTS mirror_prefs (userName TEXT PRIMARY KEY, enabled INTEGER DEFAULT 0)`);
 
-        // 🔗 [비회원 외부 공유] QR+웹링크로 Earth 미가입 고객에게 파일 전달 → 랜딩페이지에서 가입안내 + 공유폴더 다운로드
+        // 🔗 [비회원 외부 공유] QR+웹링크로 Alpha K 미가입 고객에게 파일 전달 → 랜딩페이지에서 가입안내 + 공유폴더 다운로드
         db.run(`CREATE TABLE IF NOT EXISTS guest_shares (token TEXT PRIMARY KEY, owner TEXT, fileName TEXT, url TEXT, mime TEXT, size INTEGER, createdAt INTEGER, expiresAt INTEGER, downloads INTEGER DEFAULT 0)`);
 
         // 🚀 [v6] 구매로 자동 생성된 대화방 메타 (브랜드명 + 최신 상품명 + 양측 표시 동기화)
@@ -708,6 +708,7 @@ function initTables() {
         db.run(`ALTER TABLE users ADD COLUMN reset_otp_expiry INTEGER`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN reset_otp_used INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN privacy_agreed_at TEXT`, () => {});   // 🔐 개인정보 수집·이용 동의 시각
+        db.run(`ALTER TABLE users ADD COLUMN terms_agreed_at TEXT`, () => {});     // 📜 회원가입 동의서(이용약관) 동의 시각
         db.run(`ALTER TABLE users ADD COLUMN force_pwd_change INTEGER DEFAULT 0`, () => {});
         db.run(`ALTER TABLE transfers ADD COLUMN rawDate TEXT`, () => {});
         db.run(`ALTER TABLE transfers ADD COLUMN memo TEXT`, () => {});   // 💰 정산 입금 상세(정산에 포함된 판매 항목 JSON)
@@ -757,9 +758,10 @@ function initTables() {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_vat_rate', '10')`, () => {});
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_pay_fee_rate', '2.7')`, () => {});
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_sw_fee', '10000')`, () => {});
-            // 💰 [정산 신규변수] 카드결제 수수료율 2.4% + 거래 수수료율 0.6% (SW월사용료·VAT 폐지). 결제수수료=두 율의 합, 지급액=매출−결제수수료.
+            // 💰 [정산] 제5조: Alpha K 거래 수수료 총 2.7%(VAT 별도) = 카드결제 2.4% + 거래 0.3%. 결제수수료=두 율의 합, 지급액=매출−결제수수료.
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_card_fee_rate', '2.4')`, () => {});
-            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_txn_fee_rate', '0.6')`, () => {});
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_txn_fee_rate', '0.3')`, () => {});
+            db.run(`UPDATE settings SET value='0.3' WHERE key='tax_txn_fee_rate' AND value='0.6'`, () => {});   // 기존(3.0%) DB → 제5조 2.7% 마이그레이션
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_supplier', '')`, () => {});   // 공급자(플랫폼) 정보 JSON — 마지막 입력값 자동 저장
         });
         // 🔐 로그인 세션(토큰) — 자금/민감 엔드포인트의 신원을 요청 본문이 아닌 서버 세션으로 판정
@@ -1185,25 +1187,28 @@ app.post('/api/auth/check-id', (req, res) => {
 app.post('/api/auth/logout', (req, res) => { revokeToken(req.headers['x-auth-token']); res.json({ success: true }); });
 
 app.post('/api/auth/register', (req, res) => {
-    const { name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc, privacy_agreed } = req.body;
+    const { name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc, privacy_agreed, terms_agreed } = req.body;
     // 🧾 세금계산서용 사업자 정보(선택 — 사업자는 발행 자동반영에 사용)
     const biz_no = _digits(req.body.biz_no || ''), biz_company = String(req.body.biz_company || ''), biz_ceo = String(req.body.biz_ceo || ''),
           biz_addr = String(req.body.biz_addr || ''), biz_industry = String(req.body.biz_industry || ''), biz_item = String(req.body.biz_item || ''),
           tax_email = String(req.body.tax_email || email || '');
     // 🔐 개인정보 수집·이용 동의(필수) — 미동의 시 가입 거부
     if(!privacy_agreed) return res.status(400).json({ error: '개인정보 수집·이용 동의가 필요합니다.' });
+    // 📜 회원가입 동의서(서비스 이용약관) 동의(필수)
+    if(!terms_agreed) return res.status(400).json({ error: '회원가입 동의서(서비스 이용약관) 동의가 필요합니다.' });
     // 🚀 [v8+] 의료·약무 관련 업종은 자격증 필수 + Admin 승인 대기
     const regulated = ['dental_lab', 'dental_clinic', 'medical', 'pharmacy', 'medical_wholesale'];
     const needsApproval = regulated.includes(business_type);
     if(needsApproval && !license_doc) return res.status(400).json({ error: '해당 업종은 자격증 업로드가 필수입니다.' });
     const approvalStatus = needsApproval ? 'pending' : 'approved';
     const privacyAgreedAt = new Date().toISOString();   // 동의 시각 기록(보관 근거)
+    const termsAgreedAt = new Date().toISOString();      // 📜 이용약관 동의 시각
 
     // 💳 (선택) 카드 비밀번호 4자리 — 실 PG 대비 저장만(현재 미검증). 형식 안 맞으면 저장 안 함.
     const cardPwRaw = _digits(req.body.card_pw || ''); const cardPw = /^\d{4}$/.test(cardPwRaw) ? cardPwRaw : null;
     // ⛔ 가입 축하금(10,000원) 정책 폐지 — 모든 신규 계정은 잔액 0으로 시작.
-    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_doc, approval_status, privacy_agreed_at, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, card_pw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, hashPassword(password), realname, bank, account, 0, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus, privacyAgreedAt, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, cardPw], (err) => {
+    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_doc, approval_status, privacy_agreed_at, terms_agreed_at, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, card_pw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, hashPassword(password), realname, bank, account, 0, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus, privacyAgreedAt, termsAgreedAt, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, cardPw], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
         res.json({
             name, realname, bank, account,
@@ -1719,7 +1724,7 @@ app.post('/api/lockfile/:token/open', (req, res) => {
     });
 });
 
-// ☁️ 클라우드 저장 용량 (Earth 지갑 결제) — 100MB 무료, 500GB당 3만원(= GB당 60원)
+// ☁️ 클라우드 저장 용량 (Alpha K 지갑 결제) — 100MB 무료, 500GB당 3만원(= GB당 60원)
 const CLOUD_FREE_BYTES = 100 * 1024 * 1024;
 const CLOUD_PRICE_PER_GB = 60;
 app.get('/api/cloud/usage/:name', (req, res) => {
@@ -1863,7 +1868,7 @@ app.post('/api/mirror/delete', (req, res) => {
 });
 
 // ===================== 🔗 비회원 외부 공유(QR + 웹링크) =====================
-// Earth 미가입 고객에게 파일 전달: 회원이 링크 생성 → 메일/메신저로 QR+링크 전송 → 고객이 랜딩페이지에서 가입안내 + 공유폴더 다운로드.
+// Alpha K 미가입 고객에게 파일 전달: 회원이 링크 생성 → 메일/메신저로 QR+링크 전송 → 고객이 랜딩페이지에서 가입안내 + 공유폴더 다운로드.
 app.post('/api/guestshare/create', (req, res) => {
     const owner = requireUser(req, res); if (!owner) return;
     const url = String(req.body.url || ''); const fileName = String(req.body.fileName || 'file');
@@ -1926,7 +1931,7 @@ app.post('/api/guestshare/:token/claim', (req, res) => {
 function _guestLandingHtml(token) {
     const t = JSON.stringify(String(token));
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Earth 파일 받기</title><link rel="icon" href="/icon-192.png">
+<title>Alpha K 파일 받기</title><link rel="icon" href="/icon-192.png">
 <style>
  :root{--bg:#f5f6f8;--card:#fff;--tx:#0f172a;--sub:#64748b;--pri:#2563eb;--line:#e8eaee}
  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;-webkit-font-smoothing:antialiased}
@@ -1957,7 +1962,7 @@ function _guestLandingHtml(token) {
  .err{text-align:center;padding:40px 10px;color:#64748b}
 </style></head><body>
 <div class="wrap">
- <div class="brand"><span class="dot">E</span> Earth</div>
+ <div class="brand"><span class="dot">A</span> Alpha K</div>
  <div id="app" class="card"><div class="err">불러오는 중…</div></div>
  <div class="exp" id="exp"></div>
 </div>
@@ -1985,9 +1990,9 @@ function _guestLandingHtml(token) {
        +'<div class="fn">'+esc(d.fileName)+'</div>'
        +'<div class="meta">'+fmt(d.size)+(isImg?' · 눌러서 크게 보기':'')+'</div>'
        +'<div class="prev" id="prev"'+(isImg?' style="display:block"':'')+'>'+(isImg?'<img src="'+esc(d.url)+'" alt=""><span class="zoom">🔍 크게 보기</span>':'')+'</div>'
-       +'<a class="btn p" href="'+claimUrl+'">📥 Earth에서 받기 (공유폴더 자동저장)</a>'
+       +'<a class="btn p" href="'+claimUrl+'">📥 Alpha K에서 받기 (공유폴더 자동저장)</a>'
        +'<a class="btn o" href="'+dl+'">⬇️ 로그인 없이 바로 다운로드</a>'
-       +'<div class="join"><h3>🌍 Earth로 받으면?</h3><p>가입/로그인하면 이 파일이 보낸 분과의 <b>채팅방으로 전달</b>되어 지정한 <b>공유폴더에 자동 저장</b>됩니다. 이후 채팅·대용량 전송·백업까지 그대로 쓸 수 있어요. "바로 다운로드"는 가입 없이 파일만 내려받습니다.</p></div>';
+       +'<div class="join"><h3>🌍 Alpha K로 받으면?</h3><p>가입/로그인하면 이 파일이 보낸 분과의 <b>채팅방으로 전달</b>되어 지정한 <b>공유폴더에 자동 저장</b>됩니다. 이후 채팅·대용량 전송·백업까지 그대로 쓸 수 있어요. "바로 다운로드"는 가입 없이 파일만 내려받습니다.</p></div>';
      if(isImg){ var pv=document.getElementById('prev'); if(pv) pv.onclick=function(){ var lb=document.getElementById('lb'); lb.querySelector('img').src=d.url; lb.classList.add('show'); }; }
      if(d.expiresAt){ document.getElementById('exp').textContent='이 링크는 '+new Date(d.expiresAt).toLocaleDateString('ko-KR')+'까지 유효합니다.'; }
    }catch(e){ app.innerHTML='<div class="err">불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>'; }
@@ -2520,7 +2525,7 @@ app.post('/api/order/status', (req, res) => {
             const dlvAt = (status === 'delivered') ? (ord.delivered_at || new Date().toISOString()) : ord.delivered_at;
             const _trk = tracking || ord.tracking || null;
             db.run(`UPDATE product_orders SET status = ?, tracking = ?, courier = ?, delivered_at = ? WHERE id = ?`, [status, _trk, req.body.courier || ord.courier || null, dlvAt || null, orderId], () => {
-                const msg = status === 'delivered' ? '📦 [배송 완료] 상품이 배송 완료되었습니다. 구매확정을 눌러주세요. (배송완료 3일 후 자동 구매확정)'
+                const msg = status === 'delivered' ? '📦 [상품서비스 제공 완료] 상품서비스가 제공되었습니다. 확인 후 완료(구매확정)를 눌러주세요. (제4조: 5영업일 경과 시 자동 완결 · 완결 후 3영업일 이내 수수료 2.7% 제외 금액 지급)'
                           : (_trk ? `🚚 [배송 시작] 송장번호 ${_trk} 로 배송이 시작되었습니다.` : '🚚 [배송 시작] 배송이 시작되었습니다.');
                 _notifyOrderStatus(ord.buyer, ord.seller, orderId, status, msg);
                 res.json({ success: true });
@@ -2597,16 +2602,22 @@ app.post('/api/order/refund-request', (req, res) => {
     });
 });
 
-// 💰 [에스크로] 3일 자동 구매확정 스윕: 배송완료(delivered) 후 3일 지난 에스크로 주문을 자동 confirmed 처리(구매자 미확정 시).
+// 📅 n영업일 전 시각(ISO) — 주말(토·일) 제외하고 하루씩 되돌아 카운트. 제4조 마(5영업일) 자동완결 기준.
+function _businessDaysAgoISO(n) {
+    const d = new Date(); let cnt = 0;
+    while (cnt < n) { d.setDate(d.getDate() - 1); const w = d.getDay(); if (w !== 0 && w !== 6) cnt++; }
+    return d.toISOString();
+}
+// 💰 [에스크로] 제4조 마: 배송완료(delivered) 후 5영업일 경과 에스크로 주문을 자동 confirmed 처리(구매자 미확정 시).
 //  자금 이동 없음(정산 대기로 전환만). 1시간마다 실행 + 부팅 30초 후 1회.
 function _autoConfirmSweep() {
     try {
-        const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+        const cutoff = _businessDaysAgoISO(5);   // 제4조 마: 5영업일 경과
         db.all(`SELECT id, buyer, seller, delivered_at FROM product_orders WHERE status='delivered' AND escrow_held > 0 AND settled = 0 AND delivered_at IS NOT NULL AND delivered_at <= ?`, [cutoff], (e, rows) => {
             if (e || !rows || !rows.length) return;
             const now = new Date(); const month = _kstMonth();   // 정산 귀속월(KST 기준)
-            rows.forEach(r => db.run(`UPDATE product_orders SET status='confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, r.id], () => { _notifyOrderStatus(r.buyer, r.seller, r.id, 'confirmed', '🎉 [자동 구매확정] 배송완료 3일 경과로 구매가 자동 확정되었습니다. (정산 대기) 이 대화방은 종료됩니다.'); _closeOrderRoom(r.id, r.buyer, r.seller); }));
-            console.log(`[에스크로] 자동 구매확정 ${rows.length}건 (배송완료 3일 경과)`);
+            rows.forEach(r => db.run(`UPDATE product_orders SET status='confirmed', confirmed_at = ?, settle_month = ? WHERE id = ?`, [now.toISOString(), month, r.id], () => { _notifyOrderStatus(r.buyer, r.seller, r.id, 'confirmed', '🎉 [자동 완결] 상품서비스 제공 후 5영업일 경과로 자동 완결(구매확정) 처리되었습니다. 완결 후 3영업일 이내에 수수료(2.7%)를 제외한 금액이 기공사에게 지급됩니다. 이 대화방은 종료됩니다.'); _closeOrderRoom(r.id, r.buyer, r.seller); }));
+            console.log(`[에스크로] 자동 완결(구매확정) ${rows.length}건 (5영업일 경과)`);
         });
     } catch (_) {}
 }
@@ -2995,7 +3006,7 @@ app.post('/api/check/issue', (req, res) => {
             if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
             if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '발행 한도 초과' }); }
             db.run(`INSERT INTO qr_checks (id, amount, issuer, secretKey, eccSignature, is_used, date) VALUES (?, ?, ?, ?, ?, 0, ?)`, [checkId, amount, issuer, secretKey, signature, date]);
-            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, rawDate, date) VALUES (?, ?, ?, ?, ?, ?)`, [issuer, 'Earth(Root)', '보안 수표 발행', amount, rawDate, date]);
+            db.run(`INSERT INTO transactions (buyer, seller, productName, amount, rawDate, date) VALUES (?, ?, ?, ?, ?, ?)`, [issuer, 'Alpha K(Root)', '보안 수표 발행', amount, rawDate, date]);
             db.run('COMMIT', () => res.json({ success: true, checkId, secretKey, signature }));
         });
     });
@@ -3016,7 +3027,7 @@ app.post('/api/check/redeem', (req, res) => {
                 if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
                 if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '이미 회수된 핀입니다.' }); }
                 db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [row.amount, redeemer]);
-                db.run(`INSERT INTO transactions (buyer, seller, productName, amount, rawDate, date) VALUES (?, ?, ?, ?, ?, ?)`, ['Earth(Root)', redeemer, '보안 수표 환원 충전', row.amount, rawDate, date]);
+                db.run(`INSERT INTO transactions (buyer, seller, productName, amount, rawDate, date) VALUES (?, ?, ?, ?, ?, ?)`, ['Alpha K(Root)', redeemer, '보안 수표 환원 충전', row.amount, rawDate, date]);
                 db.run('COMMIT', () => res.json({ success: true, amount: row.amount }));
             });
         });
@@ -3240,7 +3251,7 @@ app.get('/api/transactions/:name', async (req, res) => {
                 history.push({ type: t.sender === name ? '송금 (출금)' : '송금 (입금)', date: t.date, rawDate: t.rawDate || t.date, amount: t.amount, seller: t.receiver || t.sender, sender: t.sender, receiver: t.receiver });
             }
         });
-        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, rawDate: d.rawDate || d.date, amount: d.amount, seller: 'Earth(Root)' }));
+        dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, rawDate: d.rawDate || d.date, amount: d.amount, seller: 'Alpha K(Root)' }));
         wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, rawDate: w.rawDate || w.date, amount: w.amount, seller: '지정 등록 계좌' }));
 
         // 🚀 최신순 정렬 (rawDate 우선)
@@ -3373,7 +3384,7 @@ function _taxConfig(cb){
     db.all(`SELECT key,value FROM settings WHERE key IN ('tax_card_fee_rate','tax_txn_fee_rate')`, [], (e, rows) => {
         const m = {}; (rows||[]).forEach(r => m[r.key] = r.value);
         let cardFeeRate = parseFloat(m.tax_card_fee_rate); if (isNaN(cardFeeRate)) cardFeeRate = 2.4;
-        let txnFeeRate  = parseFloat(m.tax_txn_fee_rate);  if (isNaN(txnFeeRate))  txnFeeRate = 0.6;
+        let txnFeeRate  = parseFloat(m.tax_txn_fee_rate);  if (isNaN(txnFeeRate))  txnFeeRate = 0.3;   // 제5조 2.7%=카드2.4+거래0.3
         cb({ cardFeeRate, txnFeeRate, payFeeRate: cardFeeRate + txnFeeRate });
     });
 }
