@@ -2065,6 +2065,34 @@ app.post('/api/store/create', (req, res) => {
     });
 });
 
+// 🏥 상점 소유자(또는 관리자): 거래 치과 정보 조회
+app.get('/api/store/:id/clinics', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.get(`SELECT owner, partner_clinics FROM stores WHERE id = ?`, [req.params.id], (e, row) => {
+        if (e || !row) return res.status(404).json({ error: '상점이 존재하지 않습니다.' });
+        if (row.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '본인 상점만 조회할 수 있습니다.' });
+        let clinics = []; try { clinics = JSON.parse(row.partner_clinics || '[]') || []; } catch (_) {}
+        res.json({ clinics });
+    });
+});
+// 🏥 상점 소유자(또는 관리자): 거래 치과 정보 저장(전체 교체)
+app.post('/api/store/:id/clinics', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.get(`SELECT owner FROM stores WHERE id = ?`, [req.params.id], (e, row) => {
+        if (e || !row) return res.status(404).json({ error: '상점이 존재하지 않습니다.' });
+        if (row.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '본인 상점만 수정할 수 있습니다.' });
+        let clinics = [];
+        if (Array.isArray(req.body.clinics)) clinics = req.body.clinics.slice(0, 200).map(c => ({
+            name: String((c && c.name) || '').slice(0, 100), phone: String((c && c.phone) || '').slice(0, 40),
+            email: String((c && c.email) || '').slice(0, 120), addr: String((c && c.addr) || '').slice(0, 200)
+        })).filter(c => c.name || c.phone || c.email || c.addr);
+        db.run(`UPDATE stores SET partner_clinics = ? WHERE id = ?`, [clinics.length ? JSON.stringify(clinics) : null, req.params.id], (ue) => {
+            if (ue) return res.status(500).json({ error: ue.message });
+            res.json({ ok: true, count: clinics.length });
+        });
+    });
+});
+
 // 🏥 [관리자] 기공소 상점의 거래 치과 정보 열람(홍보용). 관리자 전용.
 app.get('/api/admin/partner-clinics', (req, res) => {
     if (!requireAdmin(req, res)) return;
@@ -2629,6 +2657,20 @@ function _businessDaysAgoISO(n) {
     const d = new Date(); let cnt = 0;
     while (cnt < n) { d.setDate(d.getDate() - 1); const w = d.getDay(); if (w !== 0 && w !== 6) cnt++; }
     return d.toISOString();
+}
+// 📅 기준일(ISO) + n영업일 후 날짜(ISO). 주말 제외. 정산예정일 계산용(제4조 바 3영업일 / 마 5영업일).
+function _addBusinessDaysISO(baseISO, n) {
+    if (!baseISO) return null;
+    const d = new Date(baseISO); if (isNaN(d.getTime())) return null; let cnt = 0;
+    while (cnt < n) { d.setDate(d.getDate() + 1); const w = d.getDay(); if (w !== 0 && w !== 6) cnt++; }
+    return d.toISOString();
+}
+// 💰 정산예정일 = min(구매확정일+3영업일, 배송완료일+5영업일). 선도래일 반환(ISO). 둘 다 없으면 null.
+function _settleDueISO(confirmedAt, deliveredAt) {
+    const a = confirmedAt ? _addBusinessDaysISO(confirmedAt, 3) : null;
+    const b = deliveredAt ? _addBusinessDaysISO(deliveredAt, 5) : null;
+    if (a && b) return (a <= b) ? a : b;
+    return a || b || null;
 }
 // 💰 [에스크로] 제4조 마: 배송완료(delivered) 후 5영업일 경과 에스크로 주문을 자동 confirmed 처리(구매자 미확정 시).
 //  자금 이동 없음(정산 대기로 전환만). 1시간마다 실행 + 부팅 30초 후 1회.
@@ -3522,6 +3564,7 @@ app.get('/api/admin/tax/settlement', (req, res) => {
         if (month) { where += ` AND o.settle_month=?`; params.push(month); }
         if (owner) { where += ` AND o.seller=?`; params.push(owner); }
         db.all(`SELECT o.seller, COUNT(*) cnt, SUM(o.escrow_held) salesTotal,
+                    MAX(o.confirmed_at) lastConfirmedAt, MIN(o.confirmed_at) firstConfirmedAt, MIN(o.delivered_at) firstDeliveredAt,
                     su.realname sellerRealname, su.biz_no su_bizno, su.biz_company su_company, su.biz_ceo su_ceo,
                     su.biz_addr su_addr, su.biz_industry su_industry, su.biz_item su_item, su.tax_email su_taxemail, su.email su_email,
                     GROUP_CONCAT(DISTINCT p.storeId) storeIds,
@@ -3533,13 +3576,19 @@ app.get('/api/admin/tax/settlement', (req, res) => {
                 LEFT JOIN users su ON su.name = o.seller
                 WHERE ${where} GROUP BY o.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
-            const vendors = (rows || []).map(r => Object.assign({
-                seller: r.seller, count: r.cnt,
-                bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
-                bizNo: r.su_bizno || (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
-                bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '', taxEmail: r.su_taxemail || r.su_email || '',
-                storeIds: r.storeIds || '', brands: r.brands || ''
-            }, _settleCalc(r.salesTotal, cfg)));
+            const vendors = (rows || []).map(r => {
+                // 정산예정일 = min(구매확정일+3영업일, 배송완료일+5영업일). 상점 집계라 가장 임박한 확정건 기준.
+                const settleDue = _settleDueISO(r.firstConfirmedAt, r.firstDeliveredAt);
+                return Object.assign({
+                    seller: r.seller, count: r.cnt,
+                    bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
+                    bizNo: r.su_bizno || (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
+                    bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '', taxEmail: r.su_taxemail || r.su_email || '',
+                    storeIds: r.storeIds || '', brands: r.brands || '',
+                    confirmedAt: r.lastConfirmedAt || '', firstConfirmedAt: r.firstConfirmedAt || '', firstDeliveredAt: r.firstDeliveredAt || '',
+                    settleDueAt: settleDue || '', settleDuePassed: settleDue ? (settleDue <= new Date().toISOString()) : false
+                }, _settleCalc(r.salesTotal, cfg));
+            });
             const adminRevenue = vendors.reduce((s, v) => s + (v.payFee || 0), 0);   // 거래 수수료 = Admin 매출
             res.json({ month, config: cfg, vendors, adminRevenue });
         });

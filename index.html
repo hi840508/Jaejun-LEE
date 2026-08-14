@@ -1601,8 +1601,8 @@
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;">
-                            <thead><tr><th><input type="checkbox" id="tax-check-all" onclick="toggleAllVendors(this)"></th><th>거래처 (상호/실명·ID·브랜드·상품)</th><th>건수</th><th>매출</th><th>결제수수료</th><th>지급액</th><th>정산</th><th>세금계산서</th></tr></thead>
-                            <tbody id="settlement-body"><tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [정산 불러오기]를 누르세요.</td></tr></tbody>
+                            <thead><tr><th><input type="checkbox" id="tax-check-all" onclick="toggleAllVendors(this)"></th><th>거래처 (상호/실명·ID·브랜드·상품)</th><th>건수</th><th>매출</th><th>결제수수료</th><th>지급액</th><th>구매확정 / 정산예정일</th><th>정산</th><th>세금계산서</th></tr></thead>
+                            <tbody id="settlement-body"><tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [정산 불러오기]를 누르세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -3625,6 +3625,25 @@
         }
 
         // 🛠 관리자 서버 관리 — DB 백업(수동/목록/복원) + R2 저장소 사용량
+        // 🏥 상점 관리: 거래 치과 정보 추가/편집(소유자)
+        window.openClinicManage = async function(storeId, storeName){
+            const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;');
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:560px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="font-weight:800;font-size:16px;">🏥 거래 치과 관리</div><button id="_cm-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">'+esc(storeName||'')+' · 거래 치과 정보(홍보용, 관리자 열람)</div><div id="_cm-list"></div><button type="button" id="_cm-add" style="margin:2px 0 12px;padding:8px 12px;border:1px dashed #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">＋ 거래 치과 추가</button><div style="display:flex;gap:8px;"><button id="_cm-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button><button id="_cm-save" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장</button></div></div>';
+            document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); }); ov.querySelector('#_cm-x').onclick=()=>ov.remove(); ov.querySelector('#_cm-cancel').onclick=()=>ov.remove();
+            const list=ov.querySelector('#_cm-list');
+            const addRow=(v)=>{ v=v||{}; const row=document.createElement('div'); row.className='_cm-row'; row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:8px;border:1px solid #eef2f7;border-radius:8px;background:#fafafa;';
+                const inp=(cls,ph,val)=>`<input type="text" class="${cls}" placeholder="${ph}" value="${esc(val)}" style="flex:1 1 46%;min-width:120px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;">`;
+                row.innerHTML=inp('c-name','치과 이름',v.name)+inp('c-phone','전화번호',v.phone)+inp('c-email','이메일(선택)',v.email)+inp('c-addr','주소(선택)',v.addr)+`<button type="button" onclick="this.parentNode.remove()" style="flex:0 0 auto;padding:6px 10px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;font-size:11px;cursor:pointer;">삭제</button>`;
+                list.appendChild(row); };
+            ov.querySelector('#_cm-add').onclick=()=>addRow();
+            try{ const r=await fetch(API_URL+'/api/store/'+encodeURIComponent(storeId)+'/clinics'); const d=await r.json(); const arr=(d&&d.clinics)||[]; if(arr.length) arr.forEach(addRow); else addRow(); }catch(_){ addRow(); }
+            ov.querySelector('#_cm-save').onclick=async()=>{
+                const clinics=[]; list.querySelectorAll('._cm-row').forEach(r=>{ const g=c=>((r.querySelector('.'+c)||{}).value||'').trim(); const o={name:g('c-name'),phone:g('c-phone'),email:g('c-email'),addr:g('c-addr')}; if(o.name||o.phone||o.email||o.addr) clinics.push(o); });
+                try{ const r=await fetch(API_URL+'/api/store/'+encodeURIComponent(storeId)+'/clinics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'저장 실패'); return; } showToast('거래 치과 '+d.count+'건 저장됨'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
+            };
+        };
+
         // 🏥 [관리자] 기공소 상점 거래 치과 정보 열람
         window.openPartnerClinics = async function(){
             if(!isAdmin){ showToast('관리자 전용입니다.'); return; }
@@ -4770,7 +4789,8 @@
                 const d=await fetch(`${API_URL}/api/admin/tax/settlement?month=${encodeURIComponent(month)}`).then(r=>r.json());
                 window.taxSettlement=d.vendors||[];
                 window.taxAdminRevenue=d.adminRevenue||0; renderAdminRevenue();
-                if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 정산 대상(구매확정·미정산) 매출이 없습니다.</td></tr>'; return; }
+                if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 정산 대상(구매확정·미정산) 매출이 없습니다.</td></tr>'; return; }
+                const _d=(iso)=>{ if(!iso) return '-'; try{ return new Date(iso).toLocaleDateString('ko-KR',{year:'2-digit',month:'2-digit',day:'2-digit'}); }catch(_){ return '-'; } };
                 body.innerHTML=window.taxSettlement.map((v,i)=>`<tr>
                     <td style="text-align:center;"><input type="checkbox" class="tax-vsel" data-i="${i}"></td>
                     <td style="font-weight:700;min-width:200px;">
@@ -4781,10 +4801,14 @@
                     <td style="text-align:right;">${taxFmt(v.salesTotal)}</td>
                     <td style="text-align:right;color:#b45309;">${taxFmt(v.payFee)}</td>
                     <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
+                    <td style="text-align:center;font-size:11px;white-space:nowrap;">
+                        <div style="color:#64748b;">확정 ${_d(v.firstConfirmedAt)}</div>
+                        <div style="font-weight:800;color:${v.settleDuePassed?'#dc2626':'#0f766e'};">정산예정 ${_d(v.settleDueAt)}${v.settleDuePassed?' ⚠️':''}</div>
+                    </td>
                     <td style="text-align:center;"><button class="btn btn-success" style="padding:4px 10px;font-size:11px;" onclick="settleVendor(${i})">정산 지급</button></td>
                     <td style="text-align:center;"><button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" onclick="issueOneTax(${i})">발행·PDF</button></td>
                 </tr>`).join('');
-            }catch(e){ body.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+            }catch(e){ body.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         window.toggleAllVendors=function(cb){ document.querySelectorAll('.tax-vsel').forEach(x=>x.checked=cb.checked); };
         // 💰 정산 지급 — 지급액(매출−결제수수료)을 Admin→상점주 이체 후 해당 주문 정산완료 처리
@@ -6030,6 +6054,7 @@
                                 <button class="btn" style="padding:6px 10px; font-size:11px;" onclick="enterBrandStoreById('${st.id}')">내 상점 입장</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:var(--primary); border-color:var(--primary);" onclick="editBrandFull('${st.id}')">✏️ 전체 편집</button>
                                 ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#7c3aed; border-color:#c4b5fd;" onclick="openRxItemsModal('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🦷 보철 품목·수가 관리</button>` : ''}
+                                ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#0e7490; border-color:#a5f3fc;" onclick="openClinicManage('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🏥 거래 치과 관리</button>` : ''}
                                 <button class="btn btn-warning" style="padding:6px 10px; font-size:11px;" onclick="openPromoQR('${st.id}', '${st.name.replace(/'/g, "\\'")}')">홍보 QR</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="editStoreCategory('${st.id}', '${currentCat}')">카테고리 변경</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="uploadStoreBackground('${st.id}')">배경 ${hasBg?'변경':'등록'}</button>
