@@ -1240,6 +1240,13 @@
                                 <div style="font-size:11px; color:#94a3b8; padding:6px 12px 0;">체크 없이 등록 시 기본 품목이 자동으로 시드됩니다. 수가/폰틱은 나중에 상점 관리에서 수정할 수 있습니다.</div>
                                 <div id="new-brand-rx-list" style="max-height:300px; overflow-y:auto; padding:6px 8px;"></div>
                             </div>
+                            <!-- 🦷 치과 기공소: 기존 거래 치과 정보(홍보용) -->
+                            <div id="new-brand-clinic-wrap" style="display:none; margin:10px 12px 0; border:1px solid var(--border-color); border-radius:10px; overflow:hidden;">
+                                <div style="padding:8px 12px; background:var(--primary-soft); font-size:12px; font-weight:700; color:var(--primary);">🏥 기존 거래 치과 정보 (추후 홍보용 · 선택)</div>
+                                <div style="font-size:11px; color:#94a3b8; padding:6px 12px 0;">거래 중인 치과의 이름·연락처를 등록해 두면 추후 홍보에 활용됩니다. (관리자만 열람)</div>
+                                <div id="new-brand-clinic-list" style="padding:8px;"></div>
+                                <button type="button" onclick="addClinicRow()" style="margin:0 8px 10px; padding:8px 12px; border:1px dashed var(--primary); background:var(--primary-soft); color:var(--primary); border-radius:8px; font-size:12px; font-weight:700; cursor:pointer;">＋ 거래 치과 추가</button>
+                            </div>
                             <button class="btn" style="width:calc(100% - 24px); margin:10px 12px 14px; padding:12px;" onclick="registerNewBrandStore()">상점 등록하기</button>
                         </div>
                     </div>
@@ -1433,6 +1440,7 @@
                     <div style="margin-top:12px; padding-top:12px; border-top:1px dashed var(--danger); display:flex; gap:8px; flex-wrap:wrap;">
                         <button class="btn btn-danger" style="padding:10px 16px; font-size:13px;" onclick="loadAdminUsers(); openModal('admin-users-modal');">전체 회원 정보 보기 (복구용)</button>
                         <button class="btn btn-warning" style="padding:10px 16px; font-size:13px;" onclick="loadPendingApprovals(); openModal('admin-pending-modal');">가입 승인 대기 <span id="admin-pending-badge" style="background:#fff; color:var(--danger); padding:2px 8px; border-radius:20px; font-size:10px; margin-left:4px; display:none;">0</span></button>
+                        <button class="btn btn-outline" style="padding:10px 16px; font-size:13px;" onclick="openPartnerClinics()">🏥 기공소 거래 치과 정보</button>
                         <span style="font-size:11px; color:#7f1d1d; align-self:center;">회원 비밀번호 분실 시 복구를 위한 Admin 전용 도구입니다.</span>
                     </div>
                 </div>
@@ -3617,6 +3625,33 @@
         }
 
         // 🛠 관리자 서버 관리 — DB 백업(수동/목록/복원) + R2 저장소 사용량
+        // 🏥 [관리자] 기공소 상점 거래 치과 정보 열람
+        window.openPartnerClinics = async function(){
+            if(!isAdmin){ showToast('관리자 전용입니다.'); return; }
+            const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:720px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div style="font-weight:800;font-size:17px;">🏥 기공소 거래 치과 정보</div><button id="_pc-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div style="font-size:12px;color:#64748b;margin-bottom:6px;">상점 등록 시 입력된 거래 치과 정보입니다. (홍보용 · 관리자 전용)</div><div style="display:flex;gap:6px;margin-bottom:12px;"><input id="_pc-q" placeholder="치과·기공소·연락처 검색" style="flex:1;padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;"><button id="_pc-csv" style="padding:9px 12px;border:none;background:#0f172a;color:#fff;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;">CSV 내보내기</button></div><div id="_pc-body" style="font-size:13px;color:#475569;">불러오는 중…</div></div>';
+            document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); }); ov.querySelector('#_pc-x').onclick=()=>ov.remove();
+            const body=ov.querySelector('#_pc-body'); let data=null;
+            try{ const r=await fetch(API_URL+'/api/admin/partner-clinics'); if(!r.ok){ body.innerHTML='<div style="color:#b45309;">권한이 없거나 불러올 수 없습니다.</div>'; return; } data=await r.json(); }
+            catch(e){ body.innerHTML='오류: '+(e.message||e); return; }
+            // flatten
+            const rows=[]; (data.stores||[]).forEach(s=>(s.clinics||[]).forEach(c=>rows.push({store:s.storeName,owner:s.owner,name:c.name,phone:c.phone,email:c.email,addr:c.addr})));
+            const render=()=>{ const q=(ov.querySelector('#_pc-q').value||'').toLowerCase().trim();
+                const list=rows.filter(r=>!q||[r.store,r.name,r.phone,r.email,r.addr,r.owner].some(v=>String(v||'').toLowerCase().includes(q)));
+                body.innerHTML='<div style="font-size:12px;color:#64748b;margin-bottom:8px;">기공소 '+data.totalStores+'곳 · 거래 치과 '+data.totalClinics+'건'+(q?(' · 검색 '+list.length+'건'):'')+'</div>'
+                  +'<div style="border:1px solid #eef2f7;border-radius:10px;overflow:hidden;">'
+                  +'<div style="display:flex;gap:8px;padding:8px 10px;font-size:11px;color:#94a3b8;font-weight:700;border-bottom:1px solid #f1f5f9;"><span style="flex:1.3;">치과</span><span style="flex:1;">전화</span><span style="flex:1.3;">이메일</span><span style="flex:1.6;">주소</span><span style="flex:1;">기공소</span></div>'
+                  +(list.length?list.map(r=>'<div style="display:flex;gap:8px;padding:8px 10px;font-size:12px;border-bottom:1px solid #f6f8fa;"><span style="flex:1.3;font-weight:600;">'+esc(r.name)+'</span><span style="flex:1;">'+esc(r.phone)+'</span><span style="flex:1.3;word-break:break-all;">'+esc(r.email)+'</span><span style="flex:1.6;">'+esc(r.addr)+'</span><span style="flex:1;color:#64748b;">'+esc(r.store)+'</span></div>').join(''):'<div style="padding:16px;text-align:center;color:#94a3b8;">등록된 거래 치과 정보가 없습니다.</div>')
+                  +'</div>';
+            };
+            render();
+            ov.querySelector('#_pc-q').oninput=render;
+            ov.querySelector('#_pc-csv').onclick=()=>{ const q='"'; const hdr=['치과','전화','이메일','주소','기공소','기공소회원'];
+                const csv=[hdr.join(',')].concat(rows.map(r=>[r.name,r.phone,r.email,r.addr,r.store,r.owner].map(v=>q+String(v||'').replace(/"/g,'""')+q).join(','))).join('\r\n');
+                const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='거래치과정보.csv'; document.body.appendChild(a); a.click(); a.remove(); };
+        };
+
         window.openAdminOps = async function(){
             const fmt=(b)=>{ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
             const fmtTime=(t)=>{ if(!t) return '-'; try{ return new Date(t).toLocaleString('ko-KR'); }catch(_){ return '-'; } };
@@ -5857,15 +5892,18 @@
             if(!bizNo) return showToast(bizType === 'individual' ? "주민등록번호를 입력해 주세요." : "사업자등록번호를 입력해 주세요.");
             // 🦷 치과 기공소: 체크된 취급 품목만 rxItems로 전송(없으면 백엔드가 기본 시드)
             const rxItems = (category === 'dental_lab' && typeof window.collectNewBrandRxItems === 'function') ? window.collectNewBrandRxItems() : null;
+            // 🏥 거래 치과 정보(홍보용, 관리자 열람)
+            const clinics = (category === 'dental_lab' && typeof window.collectClinics === 'function') ? window.collectClinics() : null;
             const toB64 = (file) => new Promise(res => { if(!file) return res(''); const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(file); });
             Promise.all([toB64(logoFile), toB64(bgFile)]).then(([logo, background]) => {
-                sendBrandStorePayload(storeName, logo, background, desc, category, bizType, bizNo, rxItems);
+                sendBrandStorePayload(storeName, logo, background, desc, category, bizType, bizNo, rxItems, clinics);
             });
         }
-        async function sendBrandStorePayload(name, logo, background, description, category, bizType, bizNo, rxItems) {
+        async function sendBrandStorePayload(name, logo, background, description, category, bizType, bizNo, rxItems, clinics) {
             try {
                 const _body = { name, owner: currentUser.name, logo, background, description, category: category || 'general', bizType: bizType || 'business', bizNo: bizNo || '' };
                 if(Array.isArray(rxItems) && rxItems.length) _body.rxItems = rxItems;
+                if(Array.isArray(clinics) && clinics.length) _body.clinics = clinics;
                 const res = await fetch(`${API_URL}/api/store/create`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(_body) });
                 if(res.ok) {
                     showToast("상점이 등록되었습니다.");
@@ -5875,6 +5913,7 @@
                     document.getElementById('new-brand-description').value = '';
                     if(document.getElementById('new-brand-category')) document.getElementById('new-brand-category').value = '';
                     if(document.getElementById('new-brand-rx-wrap')) document.getElementById('new-brand-rx-wrap').style.display = 'none';
+                    const _cw=document.getElementById('new-brand-clinic-wrap'); if(_cw){ _cw.style.display='none'; _cw.dataset.init=''; } const _cl=document.getElementById('new-brand-clinic-list'); if(_cl) _cl.innerHTML='';
                     if(window.wbcReset) wbcReset();
                     loadMyBrandStores();
                 } else { const d=await res.json(); showToast(d.error); }
@@ -12530,9 +12569,21 @@ pdfjsScript,
             window.rxDeletePreset = function(i){ const arr = getPresets(); arr.splice(i,1); savePresets(arr); _renderPhraseModal(); };
 
             /* ---------- 상점 생성: 취급 품목 체크리스트 ---------- */
+            // 🏥 거래 치과 행 추가/수집
+            window.addClinicRow = function(v){ v=v||{}; const list=document.getElementById('new-brand-clinic-list'); if(!list) return;
+                const row=document.createElement('div'); row.className='nb-clinic-row'; row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:8px;border:1px solid #eef2f7;border-radius:8px;background:#fafafa;';
+                const inp=(cls,ph,val,w)=>`<input type="text" class="${cls}" placeholder="${ph}" value="${(val||'').replace(/"/g,'&quot;')}" style="flex:${w};min-width:120px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;">`;
+                row.innerHTML = inp('nbc-name','치과 이름',v.name,'1 1 46%')+inp('nbc-phone','전화번호',v.phone,'1 1 46%')+inp('nbc-email','이메일(선택)',v.email,'1 1 46%')+inp('nbc-addr','주소(선택)',v.addr,'1 1 46%')
+                  +`<button type="button" onclick="this.parentNode.remove()" style="flex:0 0 auto;padding:6px 10px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;font-size:11px;cursor:pointer;">삭제</button>`;
+                list.appendChild(row);
+            };
+            window.collectClinics = function(){ const out=[]; document.querySelectorAll('#new-brand-clinic-list .nb-clinic-row').forEach(r=>{ const g=c=>((r.querySelector('.'+c)||{}).value||'').trim(); const name=g('nbc-name'),phone=g('nbc-phone'),email=g('nbc-email'),addr=g('nbc-addr'); if(name||phone||email||addr) out.push({name,phone,email,addr}); }); return out; };
+
             window.onNewBrandCategoryChange = function(){
                 const cat = (document.getElementById('new-brand-category')||{}).value || '';
                 const wrap = document.getElementById('new-brand-rx-wrap');
+                const cwrap = document.getElementById('new-brand-clinic-wrap');
+                if(cwrap){ cwrap.style.display = (cat==='dental_lab') ? 'block' : 'none'; if(cat==='dental_lab' && !cwrap.dataset.init){ cwrap.dataset.init='1'; addClinicRow(); } }
                 if(!wrap) return;
                 if(cat !== 'dental_lab'){ wrap.style.display = 'none'; return; }
                 wrap.style.display = 'block';

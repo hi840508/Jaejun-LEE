@@ -672,6 +672,7 @@ function initTables() {
         db.run(`ALTER TABLE stores ADD COLUMN admin_managed INTEGER DEFAULT 0`, () => {});
         // 🦷 [기공소] 보철 품목/수가 config(JSON) — 상세 의뢰서의 취급 품목·수가. 캡처: 분류/보철명/수가/폰틱수가, 탭(일반보철·임플란트/덴처/교정)
         db.run(`ALTER TABLE stores ADD COLUMN rx_items TEXT`, () => {});
+        db.run(`ALTER TABLE stores ADD COLUMN partner_clinics TEXT`, () => {});   // 🏥 기공소 거래 치과 정보(JSON, 홍보용·관리자 열람)
         db.run(`ALTER TABLE products ADD COLUMN rx_form INTEGER DEFAULT 0`, () => {});   // 1=기공소 의뢰서 작성용 기본 상품(가격 미정)
         // 🚀 [v6] order_orders 컬럼 추가 (구버전 DB 호환)
         db.run(`ALTER TABLE product_orders ADD COLUMN pdf_filled_data TEXT`, () => {});
@@ -2043,8 +2044,16 @@ app.post('/api/store/create', (req, res) => {
         const isLab = (category === 'dental_lab');
         let rxItems = null;
         if (isLab) { try { rxItems = Array.isArray(req.body.rxItems) && req.body.rxItems.length ? req.body.rxItems : _defaultRxItems(); } catch (_) { rxItems = _defaultRxItems(); } }
-        db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description, category, bizType, bizNo, rx_items) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`,
-            [storeId, req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || '', category, bizType, bizNo, rxItems ? JSON.stringify(rxItems) : null],
+        // 🏥 거래 치과 정보(홍보용) — 화이트리스트 필드만 정제 저장
+        let clinics = null;
+        if (isLab && Array.isArray(req.body.clinics) && req.body.clinics.length) {
+            clinics = req.body.clinics.slice(0, 200).map(c => ({
+                name: String((c && c.name) || '').slice(0, 100), phone: String((c && c.phone) || '').slice(0, 40),
+                email: String((c && c.email) || '').slice(0, 120), addr: String((c && c.addr) || '').slice(0, 200)
+            })).filter(c => c.name || c.phone || c.email || c.addr);
+        }
+        db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description, category, bizType, bizNo, rx_items, partner_clinics) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`,
+            [storeId, req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || '', category, bizType, bizNo, rxItems ? JSON.stringify(rxItems) : null, clinics ? JSON.stringify(clinics) : null],
             () => {
                 // 🦷 기공소 상점: '의뢰서 작성' 기본 상품 자동 등록(가격 미정=0, rx_form=1). 별도 주문서 없이 간편/상세 의뢰서로 주문.
                 if (isLab) {
@@ -2053,6 +2062,17 @@ app.post('/api/store/create', (req, res) => {
                 }
                 res.json({ success: true, storeId });
             });
+    });
+});
+
+// 🏥 [관리자] 기공소 상점의 거래 치과 정보 열람(홍보용). 관리자 전용.
+app.get('/api/admin/partner-clinics', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    db.all(`SELECT id, name AS storeName, owner, partner_clinics FROM stores WHERE category='dental_lab' AND partner_clinics IS NOT NULL AND partner_clinics != '' ORDER BY name`, [], (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        const out = []; let total = 0;
+        (rows || []).forEach(r => { let clinics = []; try { clinics = JSON.parse(r.partner_clinics) || []; } catch (_) {} if (clinics.length) { out.push({ storeId: r.id, storeName: r.storeName, owner: r.owner, clinics }); total += clinics.length; } });
+        res.json({ stores: out, totalStores: out.length, totalClinics: total });
     });
 });
 
