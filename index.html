@@ -901,11 +901,11 @@
                         <option value="individual">개인 (일반 회원)</option>
                         <option value="general">일반 상점 / 소매</option>
                         <option value="food">음식점 · 카페</option>
-                        <option value="dental_lab">치과 기공소 ※ 자격증 필요</option>
-                        <option value="dental_clinic">치과 병·의원 ※ 자격증 필요</option>
-                        <option value="medical">일반 병·의원 ※ 자격증 필요</option>
-                        <option value="pharmacy">약국 ※ 자격증 필요</option>
-                        <option value="medical_wholesale">의약 도·소매 ※ 자격증 필요</option>
+                        <option value="dental_lab">치과 기공소 ※ 면허번호 필요</option>
+                        <option value="dental_clinic">치과 병·의원 ※ 면허번호 필요</option>
+                        <option value="medical">일반 병·의원 ※ 면허번호 필요</option>
+                        <option value="pharmacy">약국 ※ 면허번호 필요</option>
+                        <option value="medical_wholesale">의약 도·소매 ※ 면허번호 필요</option>
                         <option value="fashion">패션 · 의류</option>
                         <option value="beauty">뷰티 · 미용</option>
                         <option value="education">교육 · 강의</option>
@@ -924,15 +924,14 @@
                         <option value="other">기타</option>
                     </select>
                 </div>
-                <!-- 🚀 [v8+] 규제 업종 선택 시에만 표시되는 자격증 업로드 영역 -->
+                <!-- 🚀 규제 업종 선택 시에만 표시되는 면허번호 입력 영역 -->
                 <div id="reg-license-zone" class="input-group" style="display:none;">
-                    <label>자격증 / 사업자 등록증 <span style="color:var(--danger);">*</span></label>
+                    <label>면허(자격) 번호 <span style="color:var(--danger);">*</span></label>
                     <div style="background:#fef9c3; border:1px solid #fde047; padding:10px 12px; border-radius:8px; font-size:11px; color:#713f12; margin-bottom:8px; line-height:1.5;">
-                        해당 업종은 <b>자격증(또는 사업자 등록증) 업로드</b> 후 Admin 승인이 완료되어야 서비스 이용이 가능합니다.
-                        가입 후 승인 대기 상태로 등록되며, 관리자가 자격증을 확인하여 승인합니다.
+                        해당 업종은 <b>면허(자격) 번호 입력</b> 후 Admin 승인이 완료되어야 서비스 이용이 가능합니다.
+                        가입 후 승인 대기 상태로 등록되며, 관리자가 면허 번호를 확인하여 승인합니다.
                     </div>
-                    <input type="file" id="reg-license-file" accept="image/*,application/pdf" onchange="onLicensePicked(event)">
-                    <div id="reg-license-preview" style="margin-top:8px;"></div>
+                    <input type="text" id="reg-license-no" placeholder="예: 치과의사/기공사 면허번호 또는 사업자등록번호" inputmode="numeric">
                 </div>
                 <div class="input-group"><label>이메일 <span style="color:var(--danger);">*</span> <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(비밀번호 분실 시 OTP 수신용)</span></label><input type="email" id="reg-email" placeholder="example@email.com"></div>
                 <div class="input-group"><label>휴대전화번호</label><input type="tel" id="reg-phone" placeholder="예: 010-1234-5678"></div>
@@ -1838,7 +1837,7 @@
         <div class="modal-content" style="max-width:720px; max-height:88vh; overflow-y:auto;">
             <div class="modal-header"><span>가입 승인 대기 회원</span><button class="close-btn-x" onclick="closeModal('admin-pending-modal')">&times;</button></div>
             <div style="font-size:12px; color:var(--text-sub); margin-bottom:12px; padding:10px; background:var(--warning-soft); border-radius:8px;">
-                의료·약무 관련 업종은 자격증 확인 후 승인해야 정상 이용이 가능합니다. 자격증을 확인하고 승인 또는 반려해 주세요.
+                의료·약무 관련 업종은 면허(자격) 번호 확인 후 승인해야 정상 이용이 가능합니다. 면허 번호를 확인하고 승인 또는 반려해 주세요.
             </div>
             <div id="admin-pending-list" style="display:flex; flex-direction:column; gap:12px;"></div>
         </div>
@@ -2713,12 +2712,14 @@
             const _termsEl = document.getElementById('reg-terms-agree');
             if(!_termsEl || !_termsEl.checked) return showToast("회원가입 동의서(서비스 이용약관)에 동의해 주세요. (필수)");
 
-            // 🚀 [v8+] 규제 업종은 자격증 필수
+            // 🚀 규제 업종은 면허(자격) 번호 필수
             const regulated = (window.REGULATED_TYPES || []).includes(business_type);
-            let license_doc = null;
+            let license_no = '';
             if(regulated) {
-                if(!window.__pendingLicenseDataUrl) return showToast("선택하신 업종은 자격증/사업자 등록증 업로드가 필수입니다.");
-                license_doc = window.__pendingLicenseDataUrl;
+                const _lnEl = document.getElementById('reg-license-no');
+                license_no = ((_lnEl && _lnEl.value) || '').trim();
+                if(!license_no) return showToast("선택하신 업종은 면허(자격) 번호 입력이 필수입니다.");
+                if(license_no.replace(/[^0-9A-Za-z]/g,'').length < 4) return showToast("면허(자격) 번호를 정확히 입력해 주세요.");
             }
 
             // 🚀 [v8+] 가입 직전 ID 중복 확인
@@ -2729,12 +2730,12 @@
             } catch(e){ /* 서버 다운 시 일단 진행 */ }
 
             try {
-                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, privacy_agreed: true, terms_agreed: true }) });
+                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone, email, shipping_address, business_type, license_no, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, privacy_agreed: true, terms_agreed: true }) });
                 const data = await res.json();
                 if(res.ok) {
                     if(data.needsApproval) {
                         // 승인 대기 메시지 후 로그인 폼으로 돌아감
-                        alert(`가입 신청이 접수되었습니다.\n\n업종 (${business_type}) 특성상 Admin 승인 후 서비스 이용이 가능합니다.\n관리자가 자격증을 검토한 뒤 승인하면 알림이 전달됩니다.`);
+                        alert(`가입 신청이 접수되었습니다.\n\n업종 (${business_type}) 특성상 Admin 승인 후 서비스 이용이 가능합니다.\n관리자가 면허(자격) 번호를 확인한 뒤 승인하면 알림이 전달됩니다.`);
                         // 로그인 폼으로 리셋
                         toggleLoginMode('login');
                         document.getElementById('login-name').value = name;
@@ -2773,31 +2774,14 @@
             if(!sel || !zone) return;
             const regulated = (window.REGULATED_TYPES || []).includes(sel.value);
             zone.style.display = regulated ? 'block' : 'none';
-            if(!regulated) { window.__pendingLicenseDataUrl = null; }
+            if(!regulated) { const _ln=document.getElementById('reg-license-no'); if(_ln) _ln.value=''; }
             // 🧾 사업자 정보(세금계산서 발행용) — 개인 외 모든 사업자 유형에서 표시
             const bizZone = document.getElementById('reg-biz-zone');
             if(bizZone) bizZone.style.display = (sel.value && sel.value !== 'individual') ? 'block' : 'none';
         };
 
-        // 🚀 [v8+] 자격증 파일 선택 → base64 변환 + 미리보기
-        window.onLicensePicked = function(event) {
-            const f = event.target.files[0];
-            if(!f) return;
-            if(f.size > 2 * 1024 * 1024) return showToast('2MB 이하 파일만 업로드 가능합니다.');
-            const r = new FileReader();
-            r.onload = (e) => {
-                window.__pendingLicenseDataUrl = e.target.result;
-                const prev = document.getElementById('reg-license-preview');
-                if(prev) {
-                    if(f.type.startsWith('image/')) {
-                        prev.innerHTML = `<img src="${e.target.result}" style="max-width:200px; max-height:140px; border-radius:6px; border:1px solid var(--border-color);"><div style="font-size:11px; color:var(--success); margin-top:4px;">✓ ${f.name} (${(f.size/1024).toFixed(0)}KB)</div>`;
-                    } else {
-                        prev.innerHTML = `<div style="padding:10px; background:#f4f4f5; border-radius:6px; font-size:12px;">📄 ${f.name} (${(f.size/1024).toFixed(0)}KB) <span style="color:var(--success); font-weight:bold;">✓ 업로드됨</span></div>`;
-                    }
-                }
-            };
-            r.readAsDataURL(f);
-        };
+        // (구) 자격증 파일 업로드 → 면허번호 입력 방식으로 대체됨. 레거시 호출 안전용 no-op.
+        window.onLicensePicked = function() {};
 
         // ★로그인 Alpha K 일원화★: 이 Alpha K 페이지가 Alpha K 앱 iframe 안에 있으면, 로그인/로그아웃 상태를 부모창에 알려
         //  앱(RC_USER)이 Alpha K 세션을 단일 원천으로 그대로 따라가게 한다.
@@ -9000,16 +8984,17 @@ pdfjsScript,
                 let h = '';
                 list.forEach(u => {
                     const safe = (s) => String(s||'').replace(/</g,'&lt;').replace(/'/g, "\\'");
-                    const lic = u.license_doc || '';
-                    let licPreview = '<div style="color:var(--danger); font-size:11px;">자격증 미첨부</div>';
-                    if(lic) {
-                        if(lic.startsWith('data:image/')) {
-                            licPreview = `<img src="${lic}" style="max-width:200px; max-height:140px; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src, '_blank')" title="클릭하여 새 창에서 보기">`;
-                        } else if(lic.startsWith('data:application/pdf')) {
-                            licPreview = `<a href="${lic}" target="_blank" style="font-size:12px; color:var(--primary);">자격증 PDF 열기 →</a>`;
-                        } else {
-                            licPreview = `<div style="font-size:11px; color:var(--text-sub);">파일 첨부됨</div>`;
-                        }
+                    const licNo = u.license_no || '';
+                    let licPreview;
+                    if(licNo) {
+                        licPreview = `<div style="font-size:11px; color:var(--text-sub); margin-bottom:3px;">면허(자격) 번호</div><div style="font-size:15px; font-weight:800; letter-spacing:.5px; color:var(--text-main); font-family:monospace; background:#f4f4f5; padding:8px 12px; border-radius:8px; user-select:all;">${safe(licNo)}</div>`;
+                    } else if(u.license_doc) {
+                        // 레거시(이미지로 가입한 기존 대기 회원) 호환
+                        licPreview = u.license_doc.startsWith('data:image/')
+                            ? `<img src="${u.license_doc}" style="max-width:200px; max-height:140px; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src, '_blank')">`
+                            : `<a href="${u.license_doc}" target="_blank" style="font-size:12px; color:var(--primary);">첨부 자격증 열기 →</a>`;
+                    } else {
+                        licPreview = '<div style="color:var(--danger); font-size:11px;">면허번호 미입력</div>';
                     }
                     h += `<div style="background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:14px; display:flex; gap:14px; flex-wrap:wrap;">
                         <div style="flex:1; min-width:200px;">

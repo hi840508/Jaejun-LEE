@@ -692,7 +692,8 @@ function initTables() {
         db.run(`ALTER TABLE users ADD COLUMN email TEXT`, () => {});
         db.run(`ALTER TABLE users ADD COLUMN business_type TEXT DEFAULT 'individual'`, () => {});
         // 🚀 [v8+] 자격증 + 승인 워크플로우
-        db.run(`ALTER TABLE users ADD COLUMN license_doc TEXT`, () => {});       // base64 자격증 이미지
+        db.run(`ALTER TABLE users ADD COLUMN license_doc TEXT`, () => {});       // (구) base64 자격증 이미지 — 미사용
+        db.run(`ALTER TABLE users ADD COLUMN license_no TEXT`, () => {});        // 면허(자격) 번호 — 이미지 업로드 대체
         db.run(`ALTER TABLE users ADD COLUMN approval_status TEXT DEFAULT 'approved'`, () => {});  // approved | pending | rejected
         db.run(`ALTER TABLE users ADD COLUMN approval_note TEXT`, () => {});      // 승인/거절 사유
         db.run(`ALTER TABLE users ADD COLUMN shipping_address TEXT`, () => {});
@@ -1187,7 +1188,8 @@ app.post('/api/auth/check-id', (req, res) => {
 app.post('/api/auth/logout', (req, res) => { revokeToken(req.headers['x-auth-token']); res.json({ success: true }); });
 
 app.post('/api/auth/register', (req, res) => {
-    const { name, password, realname, bank, account, phone, email, shipping_address, business_type, license_doc, privacy_agreed, terms_agreed } = req.body;
+    const { name, password, realname, bank, account, phone, email, shipping_address, business_type, privacy_agreed, terms_agreed } = req.body;
+    const license_no = String(req.body.license_no || '').trim();   // 면허(자격) 번호 — 이미지 업로드 대체
     // 🧾 세금계산서용 사업자 정보(선택 — 사업자는 발행 자동반영에 사용)
     const biz_no = _digits(req.body.biz_no || ''), biz_company = String(req.body.biz_company || ''), biz_ceo = String(req.body.biz_ceo || ''),
           biz_addr = String(req.body.biz_addr || ''), biz_industry = String(req.body.biz_industry || ''), biz_item = String(req.body.biz_item || ''),
@@ -1196,10 +1198,10 @@ app.post('/api/auth/register', (req, res) => {
     if(!privacy_agreed) return res.status(400).json({ error: '개인정보 수집·이용 동의가 필요합니다.' });
     // 📜 회원가입 동의서(서비스 이용약관) 동의(필수)
     if(!terms_agreed) return res.status(400).json({ error: '회원가입 동의서(서비스 이용약관) 동의가 필요합니다.' });
-    // 🚀 [v8+] 의료·약무 관련 업종은 자격증 필수 + Admin 승인 대기
+    // 🚀 의료·약무 관련 업종은 면허(자격) 번호 필수 + Admin 승인 대기
     const regulated = ['dental_lab', 'dental_clinic', 'medical', 'pharmacy', 'medical_wholesale'];
     const needsApproval = regulated.includes(business_type);
-    if(needsApproval && !license_doc) return res.status(400).json({ error: '해당 업종은 자격증 업로드가 필수입니다.' });
+    if(needsApproval && license_no.replace(/[^0-9A-Za-z]/g,'').length < 4) return res.status(400).json({ error: '해당 업종은 면허(자격) 번호 입력이 필수입니다.' });
     const approvalStatus = needsApproval ? 'pending' : 'approved';
     const privacyAgreedAt = new Date().toISOString();   // 동의 시각 기록(보관 근거)
     const termsAgreedAt = new Date().toISOString();      // 📜 이용약관 동의 시각
@@ -1207,8 +1209,8 @@ app.post('/api/auth/register', (req, res) => {
     // 💳 (선택) 카드 비밀번호 4자리 — 실 PG 대비 저장만(현재 미검증). 형식 안 맞으면 저장 안 함.
     const cardPwRaw = _digits(req.body.card_pw || ''); const cardPw = /^\d{4}$/.test(cardPwRaw) ? cardPwRaw : null;
     // ⛔ 가입 축하금(10,000원) 정책 폐지 — 모든 신규 계정은 잔액 0으로 시작.
-    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_doc, approval_status, privacy_agreed_at, terms_agreed_at, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, card_pw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, hashPassword(password), realname, bank, account, 0, phone || '', email || '', shipping_address || '', business_type || 'individual', license_doc || null, approvalStatus, privacyAgreedAt, termsAgreedAt, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, cardPw], (err) => {
+    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_no, approval_status, privacy_agreed_at, terms_agreed_at, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, card_pw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, hashPassword(password), realname, bank, account, 0, phone || '', email || '', shipping_address || '', business_type || 'individual', license_no || null, approvalStatus, privacyAgreedAt, termsAgreedAt, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, cardPw], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
         res.json({
             name, realname, bank, account,
@@ -1227,7 +1229,7 @@ app.post('/api/auth/register', (req, res) => {
 // 🚀 [v8+] Admin: 가입 승인 대기 회원 목록
 app.get('/api/admin/pending-users', (req, res) => {
     if(!requireAdmin(req,res)) return;
-    db.all(`SELECT name, realname, business_type, phone, email, license_doc, approval_status, approval_note FROM users WHERE approval_status = 'pending' ORDER BY name`, [], (err, rows) => {
+    db.all(`SELECT name, realname, business_type, phone, email, license_no, license_doc, approval_status, approval_note FROM users WHERE approval_status = 'pending' ORDER BY name`, [], (err, rows) => {
         if(err) return res.status(500).json({ error: err.message });
         res.json(rows || []);
     });
