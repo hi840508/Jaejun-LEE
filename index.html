@@ -2045,6 +2045,7 @@
                             <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">배송지</th>
                             <th style="padding:8px; text-align:left; border-bottom:1px solid var(--border-color);">은행/계좌</th>
                             <th style="padding:8px; text-align:right; border-bottom:1px solid var(--border-color);">잔액</th>
+                            <th style="padding:8px; text-align:center; border-bottom:1px solid var(--border-color);">업종</th>
                             <th style="padding:8px; text-align:center; border-bottom:1px solid var(--border-color);">관리</th>
                         </tr>
                     </thead>
@@ -4669,12 +4670,16 @@
         function renderAdminUsersTable(users) {
             const tbody = document.getElementById('admin-users-tbody');
             if(!users || users.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:var(--text-sub);">조회된 회원이 없습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:20px; color:var(--text-sub);">조회된 회원이 없습니다.</td></tr>';
                 return;
             }
+            const _BT = (window.BRAND_CATEGORIES||[]).reduce((m,c)=>{m[c.id]=c.label;return m;},{individual:'개인 (일반 회원)'});
+            const _BTOPTS = [['individual','개인 (일반 회원)']].concat((window.BRAND_CATEGORIES||[]).map(c=>[c.id,c.label]));
             let h = '';
             users.forEach(u => {
                 const esc = s => (s || '').toString().replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const bt = u.business_type || 'individual';
+                const opts = _BTOPTS.map(([v,l])=>`<option value="${v}"${v===bt?' selected':''}>${esc(l)}</option>`).join('');
                 h += `<tr style="border-bottom:1px solid var(--border-color);">
                     <td style="padding:6px 8px; font-weight:bold; color:var(--primary);">${esc(u.name)}</td>
                     <td style="padding:6px 8px; font-size:11px; color:${u.pwState==='해시'?'#16a34a':'#b45309'};">${esc(u.pwState||'-')}</td>
@@ -4684,6 +4689,7 @@
                     <td style="padding:6px 8px; font-size:11px; max-width:200px; word-break:break-all;">${esc(u.shipping_address) || '<span style="color:#cbd5e1;">-</span>'}</td>
                     <td style="padding:6px 8px; font-size:11px;">${esc(u.bank)} ${esc(u.account)}</td>
                     <td style="padding:6px 8px; text-align:right; font-weight:bold; color:var(--success);">${Number(u.balance||0).toLocaleString()}원</td>
+                    <td style="padding:6px 8px; text-align:center; white-space:nowrap;"><select onchange="adminSetBizType('${esc(u.name).replace(/'/g, "\\'")}', this.value)" style="font-size:11px; padding:3px 6px; border:1px solid var(--border-color); border-radius:6px; max-width:130px;">${opts}</select></td>
                     <td style="padding:6px 8px; text-align:center;"><button class="btn btn-outline" style="padding:4px 8px; font-size:10px;" onclick="adminResetUserPassword('${esc(u.name).replace(/'/g, "\\'")}')">🔓 비밀번호 재설정</button></td>
                 </tr>`;
             });
@@ -4702,6 +4708,17 @@
             renderAdminUsersTable(filtered);
             document.getElementById('admin-users-count').innerText = `검색 결과 ${filtered.length}명 / 전체 ${window.adminUsersData.length}명`;
         }
+
+        // 🏥 Admin: 회원 업종 변경(잘못 가입된 치과 등 정정). 치과 병·의원으로 바꾸면 기공소 상점이 노출됨.
+        window.adminSetBizType = async function(name, bt){
+            if(!isAdmin) return showToast("Admin 권한이 필요합니다.");
+            try{
+                const r=await fetch(`${API_URL}/api/admin/user-business-type`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,business_type:bt})});
+                const d=await r.json(); if(!r.ok){ showToast(d.error||'변경 실패'); return; }
+                if(window.adminUsersData){ const u=window.adminUsersData.find(x=>x.name===name); if(u) u.business_type=bt; }
+                showToast('업종 변경됨: '+name+(bt==='dental_clinic'?' → 치과 병·의원(기공소 열람 가능)':''));
+            }catch(e){ showToast('오류: '+(e.message||e)); }
+        };
 
         window.adminResetUserPassword = async function(targetName) {
             const newPwd = await window._sfPrompt(`[${targetName}] 회원의 새 비밀번호를 입력하세요. (4자 이상)\n(설정 후 본인이 직접 변경하도록 안내해 주세요.)`, '');

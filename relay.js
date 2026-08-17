@@ -1364,12 +1364,26 @@ app.post('/api/auth/login-with-otp', (req, res) => {
 app.post('/api/admin/all-users', (req, res) => {
     if(!requireAdmin(req,res)) return;
     // 🔐 비밀번호(해시)는 반환하지 않음 — 평문 덤프 취약점 제거. 복구는 admin/reset-password 사용.
-    db.all(`SELECT name, realname, bank, account, phone, email, shipping_address, balance,
+    db.all(`SELECT name, realname, bank, account, phone, email, shipping_address, balance, business_type, license_no,
             CASE WHEN password LIKE 'scrypt$%' THEN '해시' ELSE '평문(미로그인)' END as pwState,
             CASE WHEN profilePic IS NOT NULL AND profilePic != '' THEN '있음' ELSE '없음' END as hasPic
             FROM users ORDER BY name`, [], (err, rows) => {
         if(err) return res.status(500).json({ error: err.message });
         res.json(rows || []);
+    });
+});
+
+// 🏥 Admin: 회원 업종(business_type) 변경 — 잘못 가입된 업종 정정(예: 치과인데 일반 병·의원으로 가입 → 치과 병·의원)
+app.post('/api/admin/user-business-type', (req, res) => {
+    if(!requireAdmin(req,res)) return;
+    const name = String(req.body.name || '').trim();
+    const bt = String(req.body.business_type || '').trim();
+    const ALLOWED = ['individual','general','food','dental_lab','dental_clinic','medical','pharmacy','medical_wholesale','fashion','beauty','education','art','music','game','craft','construction','real_estate','auto','pet','sports','book','legal','finance','other'];
+    if(!name || !ALLOWED.includes(bt)) return res.status(400).json({ error: '잘못된 요청(이름/업종 확인).' });
+    db.run(`UPDATE users SET business_type = ? WHERE name = ?`, [bt, name], function(e){
+        if(e) return res.status(500).json({ error: e.message });
+        if(this.changes === 0) return res.status(404).json({ error: '회원을 찾을 수 없습니다.' });
+        res.json({ ok: true, name, business_type: bt });
     });
 });
 
