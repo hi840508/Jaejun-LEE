@@ -7167,40 +7167,60 @@
             return pc;
         }
         // 📷 화상통화 권한 안내 — earth는 웹/PWA라 Windows '앱 카메라 설정'엔 안 나옴 → 브라우저 권한으로 안내
-        window._showCamPermHelp = function(e){
+        // 🎥 카메라·마이크 권한 실패 안내 — 원탭 "권한 허용하기"(재요청) + 실패 시 자동 재개 + 모바일 OS별 안내.
+        //   retryFn: 성공 시 통화를 다시 시작할 함수(호출부에서 전달). 권한 프롬프트는 반드시 사용자 제스처(버튼)에서 재호출해야 뜸.
+        window.__camRetry = null;
+        window._camRetryNow = async function(){
+            rxCloseOverlay('cam-perm-help');
+            var inApp = !!window.rayApp;
+            try { if(inApp && window.rayApp && window.rayApp.requestMediaPermission){ window.rayApp.requestMediaPermission(); } }catch(_){}
+            var fn = window.__camRetry;
+            // 앱 네이티브 권한창이 뜬 뒤 재시도되도록 살짝 지연
+            setTimeout(function(){ try{ if(typeof fn==='function') fn(); }catch(_){} }, inApp ? 500 : 0);
+        };
+        window._showCamPermHelp = function(e, retryFn){
+            if(typeof retryFn==='function') window.__camRetry = retryFn;
             var noDev = e && (e.name==='NotFoundError' || e.name==='DevicesNotFoundError' || e.name==='OverconstrainedError');
             var busy = e && (e.name==='NotReadableError' || e.name==='AbortError' || e.name==='TrackStartError');
+            var denied = e && (e.name==='NotAllowedError' || e.name==='SecurityError' || e.name==='PermissionDeniedError');
             var inApp = !!window.rayApp;
+            var ua = navigator.userAgent||''; var isIOS = /iPhone|iPad|iPod/i.test(ua); var isAndroid = /Android/i.test(ua);
             if(busy){
-                try { overlay('cam-perm-help', '<div style="padding:20px 22px;"><h3 style="margin:0 0 12px;font-size:17px;font-weight:900;color:var(--primary);">📷 카메라 사용 중</h3><p style="margin:0 0 8px;line-height:1.7;">카메라·마이크를 <b>다른 창이 사용 중</b>입니다.</p><p style="font-size:13px;color:#334155;line-height:1.8;margin:0;">같은 계정을 <b>RAY 앱과 웹 브라우저에 동시에</b> 열어두면 한쪽만 카메라를 쓸 수 있습니다. <b>둘 중 하나(다른 창/탭)를 닫고</b> 다시 통화해 주세요. (원격도 동일 — 한 창만 사용)</p><div style="text-align:right;margin-top:14px;"><button class="btn" type="button" style="padding:8px 18px;background:var(--gradient-btn);color:#fff;" onclick="rxCloseOverlay(\'cam-perm-help\')">확인</button></div></div>', 460); }
+                try { overlay('cam-perm-help', '<div style="padding:20px 22px;"><h3 style="margin:0 0 12px;font-size:17px;font-weight:900;color:var(--primary);">📷 카메라 사용 중</h3><p style="margin:0 0 8px;line-height:1.7;">카메라·마이크를 <b>다른 창이 사용 중</b>입니다.</p><p style="font-size:13px;color:#334155;line-height:1.8;margin:0;">같은 계정을 <b>앱과 웹 브라우저에 동시에</b> 열어두면 한쪽만 카메라를 쓸 수 있습니다. <b>둘 중 하나(다른 창/탭)를 닫고</b> 다시 통화해 주세요.</p><div style="display:flex;gap:8px;margin-top:16px;"><button class="btn btn-outline" type="button" style="flex:1;padding:11px;" onclick="rxCloseOverlay(\'cam-perm-help\')">닫기</button><button class="btn" type="button" style="flex:2;padding:11px;background:var(--gradient-btn);color:#fff;font-weight:800;" onclick="_camRetryNow()">🔄 다시 시도</button></div></div>', 460); }
                 catch(_){ showToast('카메라를 다른 창(앱/브라우저)이 사용 중입니다. 한쪽을 닫고 다시 시도하세요.'); }
                 return;
             }
-            // 앱이면 브리지로 권한 요청 시도(앱이 지원 시)
-            // 앱이면 브리지로 권한 요청 시도(앱이 지원 시)
-            try { if(inApp && window.rayApp && window.rayApp.requestMediaPermission){ window.rayApp.requestMediaPermission(); } }catch(_){}
-            var body = noDev
-                ? '<p style="margin:0;">카메라/마이크 장치를 찾을 수 없습니다. 기기 연결을 확인한 뒤 다시 시도해 주세요.</p>'
-                : (inApp
-                    ? '<p style="margin:0 0 10px;">화상 통화를 하려면 <b>앱의 카메라·마이크 권한</b>이 필요합니다.</p>'
-                      + '<ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.9;color:#334155;">'
-                      + '<li><b>Windows 설정 → 개인정보 및 보안 → 카메라/마이크</b>에서 <b>"데스크톱 앱이 카메라에 액세스"</b>가 켜져 있는지 확인</li>'
-                      + '<li>그래도 안 되면 <b>RAY 앱을 최신 버전으로 업데이트</b>(앱 권한 허용 반영본)</li>'
-                      + '<li>임시로는 <b>브라우저(Chrome/Edge)에서 earth.rayaox.com 접속</b> 시 정상 동작합니다</li></ol>'
-                    : '<p style="margin:0 0 10px;">화상 통화를 하려면 <b>브라우저 카메라·마이크 권한</b>이 필요합니다.</p>'
-                      + '<ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.9;color:#334155;">'
-                      + '<li>주소창 오른쪽의 <b>🎥 카메라 아이콘</b>(또는 자물쇠 🔒)을 클릭</li>'
-                      + '<li><b>카메라·마이크: 허용</b> 선택</li>'
-                      + '<li>페이지 <b>새로고침(F5)</b> 후 다시 통화</li></ol>');
-            try { overlay('cam-perm-help', '<div style="padding:20px 22px;"><h3 style="margin:0 0 12px;font-size:17px;font-weight:900;color:var(--primary);">📷 카메라 권한 안내</h3>'+body+'<div style="text-align:right;margin-top:14px;"><button class="btn" type="button" style="padding:8px 18px;background:var(--gradient-btn);color:#fff;" onclick="rxCloseOverlay(\'cam-perm-help\')">확인</button></div></div>', 460); }
-            catch(_){ showToast('카메라·마이크 권한이 필요합니다. 브라우저 주소창의 카메라 아이콘에서 허용해 주세요.'); }
+            if(noDev){
+                try { overlay('cam-perm-help', '<div style="padding:20px 22px;"><h3 style="margin:0 0 12px;font-size:17px;font-weight:900;color:var(--primary);">📷 카메라를 찾을 수 없어요</h3><p style="margin:0;line-height:1.7;">카메라/마이크 장치를 찾을 수 없습니다. 다른 앱이 점유 중이거나 기기에 카메라가 없을 수 있어요.</p><div style="display:flex;gap:8px;margin-top:16px;"><button class="btn btn-outline" type="button" style="flex:1;padding:11px;" onclick="rxCloseOverlay(\'cam-perm-help\')">닫기</button><button class="btn" type="button" style="flex:2;padding:11px;background:var(--gradient-btn);color:#fff;font-weight:800;" onclick="_camRetryNow()">🔄 다시 시도</button></div></div>', 460); }
+                catch(_){ showToast('카메라 장치를 찾을 수 없습니다.'); }
+                return;
+            }
+            // 권한 거부/미허용 — 원탭 재요청 버튼 + (접이식) OS별 설정 안내
+            var osGuide = inApp
+                ? '<b>앱 설정에서 권한 허용</b><br>휴대폰 <b>설정 → 앱 → Alpha K → 권한 → 카메라·마이크 "허용"</b>으로 켠 뒤 다시 시도해 주세요.'
+                : isIOS
+                    ? '<b>iPhone/iPad (Safari)</b><br>① <b>설정</b> 앱 열기 → ② 아래로 내려 <b>Safari</b> 탭 → ③ <b>카메라</b>·<b>마이크</b>를 <b>"허용"</b>으로<br>또는 주소창 왼쪽 <b>「아A」 → 웹사이트 설정</b>에서 카메라·마이크 허용 후, 이 페이지로 돌아와 아래 <b>[권한 허용하고 통화]</b>를 누르세요.'
+                    : isAndroid
+                        ? '<b>Android (Chrome)</b><br>① 주소창 왼쪽 <b>자물쇠 🔒</b> 탭 → ② <b>권한</b> → ③ <b>카메라·마이크 "허용"</b><br>설정 후 아래 <b>[권한 허용하고 통화]</b>를 누르세요.'
+                        : '<b>PC (Chrome/Edge)</b><br>주소창 오른쪽 <b>🎥 카메라 아이콘</b>(또는 자물쇠 🔒) → <b>카메라·마이크: 허용</b> → 아래 버튼을 누르세요.';
+            var html = '<div style="padding:20px 22px;">'
+                + '<div style="font-size:40px;text-align:center;margin-bottom:6px;">📷</div>'
+                + '<h3 style="margin:0 0 8px;font-size:18px;font-weight:900;text-align:center;color:var(--primary);">카메라·마이크 권한이 필요해요</h3>'
+                + '<p style="margin:0 0 16px;line-height:1.7;text-align:center;color:#334155;font-size:13.5px;">아래 버튼을 누르면 권한 요청창이 떠요.<br>“허용”을 선택하면 바로 통화가 시작됩니다.</p>'
+                + '<button class="btn" type="button" style="width:100%;padding:15px;background:var(--gradient-btn);color:#fff;font-weight:900;font-size:16px;border-radius:12px;" onclick="_camRetryNow()">🎥 권한 허용하고 통화</button>'
+                + '<button type="button" id="cam-guide-toggle" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:none;color:#64748b;font-size:12.5px;cursor:pointer;text-decoration:underline;" onclick="var g=document.getElementById(\'cam-guide\'); if(g) g.style.display=(g.style.display===\'none\'?\'block\':\'none\');">권한 요청창이 안 뜨거나 계속 막히면 ▾</button>'
+                + '<div id="cam-guide" style="display:none;margin-top:8px;background:#f8fafc;border:1px solid var(--border-color);border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.9;color:#334155;">'+osGuide+'</div>'
+                + '<div style="text-align:center;margin-top:12px;"><button class="btn btn-outline" type="button" style="padding:8px 22px;" onclick="rxCloseOverlay(\'cam-perm-help\')">닫기</button></div>'
+                + '</div>';
+            try { overlay('cam-perm-help', html, 440); if(denied){ var g=document.getElementById('cam-guide'); if(g) g.style.display='block'; } }
+            catch(_){ showToast('카메라·마이크 권한이 필요합니다. 권한을 허용한 뒤 다시 통화해 주세요.'); }
         };
         window.startVideoChat = async function(){
             if(!activeChatFriend || !currentChatRoomId) return showToast("먼저 대화방을 여세요.");
             if(window._vc.active) return showToast("이미 통화 중입니다.");
             const peer = activeChatFriend, room = currentChatRoomId;
             let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
-            catch(e){ window._showCamPermHelp(e); return; }
+            catch(e){ window._showCamPermHelp(e, window.startVideoChat); return; }
             window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:true };
             _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
             const pc = _vcNewPc(peer, room); window._vc.pc = pc;
@@ -7269,10 +7289,11 @@
         };
         window.acceptVideoCall = async function(){
             const p = window._vcPendingOffer; if(!p) return;
-            const el = document.getElementById('vc-incoming'); if(el) el.remove();
             const peer = p.peer, room = p.room, d = p.d;
+            // ⚠️ 권한 실패 시 재시도 가능하도록, 성공 전에는 pending offer·수신 UI를 지우지 않는다.
             let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
-            catch(e){ window._vcPendingOffer = null; window._showCamPermHelp(e); return; }
+            catch(e){ window._showCamPermHelp(e, window.acceptVideoCall); return; }
+            const el = document.getElementById('vc-incoming'); if(el) el.remove();
             window._vcPendingOffer = null;
             window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:false };
             _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
