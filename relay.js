@@ -760,6 +760,7 @@ function initTables() {
             payload TEXT, paxbillResponse TEXT, created_at TEXT, updated_at TEXT
         )`, () => {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_vat_rate', '10')`, () => {});
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_fee_rate', '2.7')`, () => {});   // 💰 수수료율 2.7%(+VAT 10%=총 2.97%)
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_pay_fee_rate', '2.7')`, () => {});
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_sw_fee', '10000')`, () => {});
             // 💰 [정산] 제5조: Alpha K 거래 수수료 총 2.7%(VAT 별도) = 카드결제 2.4% + 거래 0.3%. 결제수수료=두 율의 합, 지급액=매출−결제수수료.
@@ -3481,28 +3482,30 @@ async function _postToPaxbill(pathKey, payload){
     if (!r.ok) throw new Error('팍스빌 API 오류: ' + ((data && (data.message||data.error||data.raw)) || ('HTTP ' + r.status)));
     return Object.assign({ ok:true, mock:false }, data || {});
 }
-// 정산 변수 조회(신규: 카드결제 수수료율 2.4% + 거래 수수료율 0.6%. SW월사용료·VAT 폐지)
+// 정산 변수 조회 — 수수료율 2.7% + VAT 10%(수수료의 10%=0.27%), 총 부담 2.97%.
 function _taxConfig(cb){
-    db.all(`SELECT key,value FROM settings WHERE key IN ('tax_card_fee_rate','tax_txn_fee_rate')`, [], (e, rows) => {
+    db.all(`SELECT key,value FROM settings WHERE key IN ('tax_fee_rate','tax_vat_rate','tax_card_fee_rate','tax_txn_fee_rate')`, [], (e, rows) => {
         const m = {}; (rows||[]).forEach(r => m[r.key] = r.value);
-        let cardFeeRate = parseFloat(m.tax_card_fee_rate); if (isNaN(cardFeeRate)) cardFeeRate = 2.4;
-        let txnFeeRate  = parseFloat(m.tax_txn_fee_rate);  if (isNaN(txnFeeRate))  txnFeeRate = 0.3;   // 제5조 2.7%=카드2.4+거래0.3
-        cb({ cardFeeRate, txnFeeRate, payFeeRate: cardFeeRate + txnFeeRate });
+        let feeRate = parseFloat(m.tax_fee_rate);
+        if (isNaN(feeRate)) { const c = parseFloat(m.tax_card_fee_rate), t = parseFloat(m.tax_txn_fee_rate); feeRate = (isNaN(c)?0:c) + (isNaN(t)?0:t); if (!feeRate) feeRate = 2.7; }   // 하위호환
+        let vatRate = parseFloat(m.tax_vat_rate); if (isNaN(vatRate)) vatRate = 10;
+        cb({ feeRate, vatRate, payFeeRate: feeRate * (1 + vatRate/100),
+             cardFeeRate: feeRate, txnFeeRate: 0 });   // 하위호환 필드
     });
 }
-// 매출 → 정산 내역 계산. 결제수수료 = (카드율+거래율)%, 지급액 = 매출 − 결제수수료. VAT·SW 없음.
-//  예) 매출 10000, 카드2.4+거래0.6=3% → 결제수수료 300, 지급액 9700. (수수료 300은 Admin 매출로 귀속)
+// 매출 → 정산 내역. 수수료(공급가)=매출×2.7%(원단위 버림), VAT=수수료×10%(원단위 버림), 총수수료=수수료+VAT(≈2.97%), 지급액=매출−총수수료.
+//  예) 매출 10,000 → 수수료 270, VAT 27, 총 297, 지급 9,703.
 function _settleCalc(salesTotal, cfg){
     salesTotal = _n(salesTotal);
-    // 🔧 수수료율은 소수(2.4/0.6)이므로 절대 반올림(_n) 금지 — 금액만 반올림. (예전 _n(2.4)=2, _n(0.6)=1 로 요율 왜곡)
-    let cardRate = parseFloat(cfg.cardFeeRate); if (isNaN(cardRate)) cardRate = 0;
-    let txnRate  = parseFloat(cfg.txnFeeRate);  if (isNaN(txnRate))  txnRate = 0;
-    const cardFee = Math.round(salesTotal * cardRate / 100);
-    const txnFee  = Math.round(salesTotal * txnRate / 100);
-    const payFee  = cardFee + txnFee;                    // 결제수수료(=Admin 수수료 수입)
-    const payout  = salesTotal - payFee;                 // 상점 지급액
-    // 하위호환 필드(commissionTotal/feeSubtotal=수수료, vatOnFees/swFee=0)
-    return { salesTotal, cardFee, txnFee, payFee, feeRate: cardRate + txnRate, payout, commissionTotal: payFee, feeSubtotal: payFee, vatOnFees: 0, swFee: 0 };
+    let feeRate = parseFloat(cfg && cfg.feeRate); if (isNaN(feeRate)) feeRate = 2.7;
+    let vatRate = parseFloat(cfg && cfg.vatRate); if (isNaN(vatRate)) vatRate = 10;
+    const fee = Math.floor(salesTotal * feeRate / 100);   // 수수료(공급가) — 원단위 이하 버림
+    const vat = Math.floor(fee * vatRate / 100);          // VAT — 원단위 이하 버림
+    const payFee = fee + vat;                             // 총 수수료(=Admin 수입, ≈2.97%)
+    const payout = salesTotal - payFee;                   // 상점 지급액
+    return { salesTotal, fee, vat, payFee, feeRate, vatRate, payout,
+        // 하위호환(세금계산서: 공급가액=fee, 세액=vat)
+        cardFee: fee, txnFee: vat, commissionTotal: fee, feeSubtotal: fee, vatOnFees: vat, swFee: 0 };
 }
 const _salesWhere = `t.productId IS NOT NULL AND IFNULL(t.refunded,0)=0 AND t.purchaseType IS NOT NULL AND t.purchaseType NOT IN ('refund','signup_bonus')`;
 
@@ -3512,7 +3515,7 @@ app.get('/api/tax/config/status', (req, res) => { res.json(_paxbillStatus()); })
 app.get('/api/tax/config', (req, res) => { _taxConfig(cfg => res.json(cfg)); });
 app.post('/api/tax/config', (req, res) => {
     if (!requireAdmin(req, res)) return;
-    const map = { tax_card_fee_rate: req.body.cardFeeRate, tax_txn_fee_rate: req.body.txnFeeRate };
+    const map = { tax_fee_rate: req.body.feeRate, tax_vat_rate: req.body.vatRate };
     const entries = Object.entries(map).filter(([k, v]) => v != null && v !== '');
     if (!entries.length) return _taxConfig(cfg => res.json({ success: true, config: cfg }));
     let n = 0; entries.forEach(([k, v]) => db.run(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [k, String(v)], () => { if (++n === entries.length) _taxConfig(cfg => res.json({ success: true, config: cfg })); }));
