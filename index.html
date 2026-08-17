@@ -1441,6 +1441,7 @@
                         <button class="btn btn-danger" style="padding:10px 16px; font-size:13px;" onclick="loadAdminUsers(); openModal('admin-users-modal');">전체 회원 정보 보기 (복구용)</button>
                         <button class="btn btn-warning" style="padding:10px 16px; font-size:13px;" onclick="loadPendingApprovals(); openModal('admin-pending-modal');">가입 승인 대기 <span id="admin-pending-badge" style="background:#fff; color:var(--danger); padding:2px 8px; border-radius:20px; font-size:10px; margin-left:4px; display:none;">0</span></button>
                         <button class="btn btn-outline" style="padding:10px 16px; font-size:13px;" onclick="openPartnerClinics()">🏥 기공소 거래 치과 정보</button>
+                        <button class="btn btn-outline" style="padding:10px 16px; font-size:13px;" onclick="openCategoryManage()">🗂 카테고리 노출 관리</button>
                         <span style="font-size:11px; color:#7f1d1d; align-self:center;">회원 비밀번호 분실 시 복구를 위한 Admin 전용 도구입니다.</span>
                     </div>
                 </div>
@@ -2587,6 +2588,9 @@
             // 🔗 외부공유 링크 진입(?claim=토큰) → 저장해두고 로그인 후 수령 처리(loginSuccess에서 __processClaim 호출)
             try { const _cl = new URLSearchParams(location.search).get('claim'); if(_cl){ window.__pendingClaim = _cl; try{ localStorage.setItem('earth_pending_claim', _cl); }catch(_){} try{ history.replaceState(null,'',location.pathname); }catch(_){} } } catch(_){}
 
+            // 🗂 오픈 카테고리 로드 → 가입/상점 카테고리 select 필터(치과 병의원·기공소 기본)
+            try{ if(window.loadOpenCategories) window.loadOpenCategories(); }catch(_){}
+
             const savedData = localStorage.getItem('earth_auto_login');
             if(savedData) loginSuccess(JSON.parse(savedData));
         };
@@ -3635,12 +3639,14 @@
             const list=ov.querySelector('#_cm-list');
             const addRow=(v)=>{ v=v||{}; const row=document.createElement('div'); row.className='_cm-row'; row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:8px;border:1px solid #eef2f7;border-radius:8px;background:#fafafa;';
                 const inp=(cls,ph,val)=>`<input type="text" class="${cls}" placeholder="${ph}" value="${esc(val)}" style="flex:1 1 46%;min-width:120px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;">`;
-                row.innerHTML=inp('c-name','치과 이름',v.name)+inp('c-phone','전화번호',v.phone)+inp('c-email','이메일(선택)',v.email)+inp('c-addr','주소(선택)',v.addr)+`<button type="button" onclick="this.parentNode.remove()" style="flex:0 0 auto;padding:6px 10px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;font-size:11px;cursor:pointer;">삭제</button>`;
+                row.innerHTML=inp('c-name','거래처명(치과) *',v.name)+inp('c-ceo','대표이름 *',v.ceo)+inp('c-phone','전화번호 *',v.phone)+inp('c-addr','주소 *',v.addr)+`<button type="button" onclick="this.parentNode.remove()" style="flex:0 0 auto;padding:6px 10px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;font-size:11px;cursor:pointer;">삭제</button>`;
                 list.appendChild(row); };
             ov.querySelector('#_cm-add').onclick=()=>addRow();
             try{ const r=await fetch(API_URL+'/api/store/'+encodeURIComponent(storeId)+'/clinics'); const d=await r.json(); const arr=(d&&d.clinics)||[]; if(arr.length) arr.forEach(addRow); else addRow(); }catch(_){ addRow(); }
             ov.querySelector('#_cm-save').onclick=async()=>{
-                const clinics=[]; list.querySelectorAll('._cm-row').forEach(r=>{ const g=c=>((r.querySelector('.'+c)||{}).value||'').trim(); const o={name:g('c-name'),phone:g('c-phone'),email:g('c-email'),addr:g('c-addr')}; if(o.name||o.phone||o.email||o.addr) clinics.push(o); });
+                const clinics=[]; list.querySelectorAll('._cm-row').forEach(r=>{ const g=c=>((r.querySelector('.'+c)||{}).value||'').trim(); const o={name:g('c-name'),ceo:g('c-ceo'),phone:g('c-phone'),addr:g('c-addr')}; if(o.name||o.ceo||o.phone||o.addr) clinics.push(o); });
+                if(!clinics.length) return showToast('거래 치과 정보를 1건 이상 입력해 주세요.');
+                if(clinics.find(c=>!c.name||!c.ceo||!c.phone||!c.addr)) return showToast('거래처명·대표이름·전화번호·주소를 모두 입력해 주세요.');
                 try{ const r=await fetch(API_URL+'/api/store/'+encodeURIComponent(storeId)+'/clinics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'저장 실패'); return; } showToast('거래 치과 '+d.count+'건 저장됨'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
             };
         };
@@ -3656,19 +3662,19 @@
             try{ const r=await fetch(API_URL+'/api/admin/partner-clinics'); if(!r.ok){ body.innerHTML='<div style="color:#b45309;">권한이 없거나 불러올 수 없습니다.</div>'; return; } data=await r.json(); }
             catch(e){ body.innerHTML='오류: '+(e.message||e); return; }
             // flatten
-            const rows=[]; (data.stores||[]).forEach(s=>(s.clinics||[]).forEach(c=>rows.push({store:s.storeName,owner:s.owner,name:c.name,phone:c.phone,email:c.email,addr:c.addr})));
+            const rows=[]; (data.stores||[]).forEach(s=>(s.clinics||[]).forEach(c=>rows.push({store:s.storeName,owner:s.owner,name:c.name,ceo:c.ceo||'',phone:c.phone,addr:c.addr,email:c.email||''})));
             const render=()=>{ const q=(ov.querySelector('#_pc-q').value||'').toLowerCase().trim();
-                const list=rows.filter(r=>!q||[r.store,r.name,r.phone,r.email,r.addr,r.owner].some(v=>String(v||'').toLowerCase().includes(q)));
+                const list=rows.filter(r=>!q||[r.store,r.name,r.ceo,r.phone,r.addr,r.owner].some(v=>String(v||'').toLowerCase().includes(q)));
                 body.innerHTML='<div style="font-size:12px;color:#64748b;margin-bottom:8px;">기공소 '+data.totalStores+'곳 · 거래 치과 '+data.totalClinics+'건'+(q?(' · 검색 '+list.length+'건'):'')+'</div>'
                   +'<div style="border:1px solid #eef2f7;border-radius:10px;overflow:hidden;">'
-                  +'<div style="display:flex;gap:8px;padding:8px 10px;font-size:11px;color:#94a3b8;font-weight:700;border-bottom:1px solid #f1f5f9;"><span style="flex:1.3;">치과</span><span style="flex:1;">전화</span><span style="flex:1.3;">이메일</span><span style="flex:1.6;">주소</span><span style="flex:1;">기공소</span></div>'
-                  +(list.length?list.map(r=>'<div style="display:flex;gap:8px;padding:8px 10px;font-size:12px;border-bottom:1px solid #f6f8fa;"><span style="flex:1.3;font-weight:600;">'+esc(r.name)+'</span><span style="flex:1;">'+esc(r.phone)+'</span><span style="flex:1.3;word-break:break-all;">'+esc(r.email)+'</span><span style="flex:1.6;">'+esc(r.addr)+'</span><span style="flex:1;color:#64748b;">'+esc(r.store)+'</span></div>').join(''):'<div style="padding:16px;text-align:center;color:#94a3b8;">등록된 거래 치과 정보가 없습니다.</div>')
+                  +'<div style="display:flex;gap:8px;padding:8px 10px;font-size:11px;color:#94a3b8;font-weight:700;border-bottom:1px solid #f1f5f9;"><span style="flex:1.3;">거래처(치과)</span><span style="flex:1;">대표이름</span><span style="flex:1;">전화</span><span style="flex:1.6;">주소</span><span style="flex:1;">기공소</span></div>'
+                  +(list.length?list.map(r=>'<div style="display:flex;gap:8px;padding:8px 10px;font-size:12px;border-bottom:1px solid #f6f8fa;"><span style="flex:1.3;font-weight:600;">'+esc(r.name)+'</span><span style="flex:1;">'+esc(r.ceo)+'</span><span style="flex:1;">'+esc(r.phone)+'</span><span style="flex:1.6;">'+esc(r.addr)+'</span><span style="flex:1;color:#64748b;">'+esc(r.store)+'</span></div>').join(''):'<div style="padding:16px;text-align:center;color:#94a3b8;">등록된 거래 치과 정보가 없습니다.</div>')
                   +'</div>';
             };
             render();
             ov.querySelector('#_pc-q').oninput=render;
-            ov.querySelector('#_pc-csv').onclick=()=>{ const q='"'; const hdr=['치과','전화','이메일','주소','기공소','기공소회원'];
-                const csv=[hdr.join(',')].concat(rows.map(r=>[r.name,r.phone,r.email,r.addr,r.store,r.owner].map(v=>q+String(v||'').replace(/"/g,'""')+q).join(','))).join('\r\n');
+            ov.querySelector('#_pc-csv').onclick=()=>{ const q='"'; const hdr=['거래처(치과)','대표이름','전화','주소','기공소','기공소회원'];
+                const csv=[hdr.join(',')].concat(rows.map(r=>[r.name,r.ceo,r.phone,r.addr,r.store,r.owner].map(v=>q+String(v||'').replace(/"/g,'""')+q).join(','))).join('\r\n');
                 const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='거래치과정보.csv'; document.body.appendChild(a); a.click(); a.remove(); };
         };
 
@@ -5720,10 +5726,35 @@
         window.REGULATED_TYPES = ['dental_lab', 'dental_clinic', 'medical', 'pharmacy', 'medical_wholesale'];
 
         // 🦷 치과 기공소(dental_lab) 상점은 '치과 병·의원(dental_clinic)' 회원에게만 노출. 관리자·상점 소유자 관리화면은 예외.
-        window.canSeeStoreCategory = function(cat){
-            try{ if(typeof isAdmin!=='undefined' && isAdmin) return true; }catch(_){}
-            if(cat === 'dental_lab') return !!(typeof currentUser!=='undefined' && currentUser && currentUser.business_type === 'dental_clinic');
-            return true;
+        // 🌐 모든 상점을 모든 회원에게 노출(이전 '치과기공소=치과병의원 전용' 제한 해제)
+        window.canSeeStoreCategory = function(cat){ return true; };
+
+        // 🗂 오픈 카테고리(가입 업체유형·상점 카테고리 노출 목록) — 서버 settings.open_categories 기준. 관리자가 제어.
+        window.OPEN_CATEGORIES = ['dental_clinic','dental_lab'];
+        window.ALL_SIGNUP_CATEGORIES = [{id:'individual',label:'개인 (일반 회원)'}].concat(window.BRAND_CATEGORIES||[]);
+        window.applyOpenCategories = function(){
+            ['reg-business-type','new-brand-category'].forEach(id=>{
+                const sel=document.getElementById(id); if(!sel) return;
+                Array.from(sel.options).forEach(o=>{ if(o.value===''){ return; } const ok=window.OPEN_CATEGORIES.includes(o.value); o.hidden=!ok; o.disabled=!ok; if(!ok && o.selected){ sel.value=''; } });
+            });
+        };
+        window.loadOpenCategories = async function(){
+            try{ const d=await (await fetch(API_URL+'/api/settings/open-categories')).json(); if(d&&Array.isArray(d.categories)&&d.categories.length) window.OPEN_CATEGORIES=d.categories; }catch(_){}
+            try{ window.applyOpenCategories(); }catch(_){}
+        };
+        // 🗂 [관리자] 카테고리 노출 관리 모달
+        window.openCategoryManage = function(){
+            if(!isAdmin) return showToast('Admin 권한이 필요합니다.');
+            const esc=s=>String(s||'').replace(/"/g,'&quot;');
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            const rows=(window.ALL_SIGNUP_CATEGORIES||[]).map(c=>{ const on=window.OPEN_CATEGORIES.includes(c.id); return `<label style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-bottom:1px solid #f1f5f9;font-size:13px;cursor:pointer;"><input type="checkbox" class="_cat-chk" data-id="${esc(c.id)}" ${on?'checked':''} style="width:17px;height:17px;"><span style="flex:1;">${esc(c.label)}</span><span style="font-size:10px;color:#94a3b8;">${esc(c.id)}</span></label>`; }).join('');
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:440px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="font-weight:800;font-size:16px;">🗂 카테고리 노출 관리</div><button id="_cat-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">체크한 업체유형/카테고리만 가입·상점 개설 시 노출됩니다. (기본: 치과 병의원·치과 기공소)</div><div style="border:1px solid #eef2f7;border-radius:10px;overflow:hidden;margin-bottom:14px;">'+rows+'</div><div style="display:flex;gap:8px;"><button id="_cat-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button><button id="_cat-save" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장</button></div></div>';
+            document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); }); ov.querySelector('#_cat-x').onclick=()=>ov.remove(); ov.querySelector('#_cat-cancel').onclick=()=>ov.remove();
+            ov.querySelector('#_cat-save').onclick=async()=>{
+                const cats=Array.from(ov.querySelectorAll('._cat-chk')).filter(x=>x.checked).map(x=>x.dataset.id);
+                if(!cats.length) return showToast('최소 1개 이상 선택하세요.');
+                try{ const r=await fetch(API_URL+'/api/admin/open-categories',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({categories:cats})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'저장 실패'); return; } window.OPEN_CATEGORIES=d.categories; window.applyOpenCategories(); showToast('카테고리 노출 설정 저장됨 ('+d.categories.length+'개)'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
+            };
         };
 
         // 🚀 [v8+] 업체 유형별 기본 표시 카테고리 매핑 (가입 시 자동 체크되는 카테고리)
@@ -5933,8 +5964,13 @@
             if(!bizNo) return showToast(bizType === 'individual' ? "주민등록번호를 입력해 주세요." : "사업자등록번호를 입력해 주세요.");
             // 🦷 치과 기공소: 체크된 취급 품목만 rxItems로 전송(없으면 백엔드가 기본 시드)
             const rxItems = (category === 'dental_lab' && typeof window.collectNewBrandRxItems === 'function') ? window.collectNewBrandRxItems() : null;
-            // 🏥 거래 치과 정보(홍보용, 관리자 열람)
+            // 🏥 거래 치과 정보(관리자 열람) — 기공소 상점은 최소 1건 필수(거래처명·대표이름·전화·주소 모두)
             const clinics = (category === 'dental_lab' && typeof window.collectClinics === 'function') ? window.collectClinics() : null;
+            if(category === 'dental_lab'){
+                if(!clinics || !clinics.length) return showToast("기존 거래 치과 정보를 1건 이상 등록해 주세요. (필수)");
+                const bad = clinics.find(c => !c.name || !c.ceo || !c.phone || !c.addr);
+                if(bad) return showToast("거래 치과의 거래처명·대표이름·전화번호·주소를 모두 입력해 주세요. (필수)");
+            }
             const toB64 = (file) => new Promise(res => { if(!file) return res(''); const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(file); });
             Promise.all([toB64(logoFile), toB64(bgFile)]).then(([logo, background]) => {
                 sendBrandStorePayload(storeName, logo, background, desc, category, bizType, bizNo, rxItems, clinics);
@@ -12636,11 +12672,11 @@ pdfjsScript,
             window.addClinicRow = function(v){ v=v||{}; const list=document.getElementById('new-brand-clinic-list'); if(!list) return;
                 const row=document.createElement('div'); row.className='nb-clinic-row'; row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:8px;border:1px solid #eef2f7;border-radius:8px;background:#fafafa;';
                 const inp=(cls,ph,val,w)=>`<input type="text" class="${cls}" placeholder="${ph}" value="${(val||'').replace(/"/g,'&quot;')}" style="flex:${w};min-width:120px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;">`;
-                row.innerHTML = inp('nbc-name','치과 이름',v.name,'1 1 46%')+inp('nbc-phone','전화번호',v.phone,'1 1 46%')+inp('nbc-email','이메일(선택)',v.email,'1 1 46%')+inp('nbc-addr','주소(선택)',v.addr,'1 1 46%')
+                row.innerHTML = inp('nbc-name','거래처명(치과) *',v.name,'1 1 46%')+inp('nbc-ceo','대표이름 *',v.ceo,'1 1 46%')+inp('nbc-phone','전화번호 *',v.phone,'1 1 46%')+inp('nbc-addr','주소 *',v.addr,'1 1 46%')
                   +`<button type="button" onclick="this.parentNode.remove()" style="flex:0 0 auto;padding:6px 10px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;font-size:11px;cursor:pointer;">삭제</button>`;
                 list.appendChild(row);
             };
-            window.collectClinics = function(){ const out=[]; document.querySelectorAll('#new-brand-clinic-list .nb-clinic-row').forEach(r=>{ const g=c=>((r.querySelector('.'+c)||{}).value||'').trim(); const name=g('nbc-name'),phone=g('nbc-phone'),email=g('nbc-email'),addr=g('nbc-addr'); if(name||phone||email||addr) out.push({name,phone,email,addr}); }); return out; };
+            window.collectClinics = function(){ const out=[]; document.querySelectorAll('#new-brand-clinic-list .nb-clinic-row').forEach(r=>{ const g=c=>((r.querySelector('.'+c)||{}).value||'').trim(); const name=g('nbc-name'),ceo=g('nbc-ceo'),phone=g('nbc-phone'),addr=g('nbc-addr'); if(name||ceo||phone||addr) out.push({name,ceo,phone,addr}); }); return out; };
 
             window.onNewBrandCategoryChange = function(){
                 const cat = (document.getElementById('new-brand-category')||{}).value || '';

@@ -742,6 +742,8 @@ function initTables() {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', 'mars')`, () => {});
             // 🔐 관리자 계정 허용목록(쉼표구분 로그인ID) — 예전 공유 비밀번호 'mars' 백도어를 대체하는 신원 기반 권한. 기본: 소유자 계정.
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_users', 'hi840508')`, () => {});
+            // 🗂 오픈 카테고리(가입 업체유형·상점 카테고리 노출 목록) — 기본: 치과 병의원 + 치과 기공소만. 관리자가 확장 가능.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('open_categories', 'dental_clinic,dental_lab')`, () => {});
             // 💳 [PG] 카드결제 모드 — 기본 mock(4자리 비번이면 승인). 실 PG 계약 후 'live'로 전환하면 _pgAuthorize의 live 분기만 구현하면 됨.
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('pg_mode', 'mock')`, () => {});
         });
@@ -1370,6 +1372,26 @@ app.post('/api/admin/all-users', (req, res) => {
             FROM users ORDER BY name`, [], (err, rows) => {
         if(err) return res.status(500).json({ error: err.message });
         res.json(rows || []);
+    });
+});
+
+// 🗂 오픈 카테고리 조회(공개) — 가입 업체유형·상점 카테고리 select 필터에 사용
+app.get('/api/settings/open-categories', (req, res) => {
+    db.get(`SELECT value FROM settings WHERE key='open_categories'`, [], (e, row) => {
+        const v = (row && row.value) || 'dental_clinic,dental_lab';
+        res.json({ categories: String(v).split(',').map(s => s.trim()).filter(Boolean) });
+    });
+});
+// 🗂 Admin: 오픈 카테고리 설정(어떤 업체유형/카테고리를 노출할지)
+app.post('/api/admin/open-categories', (req, res) => {
+    if(!requireAdmin(req,res)) return;
+    let cats = Array.isArray(req.body.categories) ? req.body.categories : [];
+    const ALLOWED = ['individual','general','food','dental_lab','dental_clinic','medical','pharmacy','medical_wholesale','fashion','beauty','education','art','music','game','craft','construction','real_estate','auto','pet','sports','book','legal','finance','other'];
+    cats = cats.map(c => String(c||'').trim()).filter(c => ALLOWED.includes(c));
+    if(!cats.length) cats = ['dental_clinic','dental_lab'];   // 최소 보장(빈 목록 방지)
+    db.run(`INSERT INTO settings (key, value) VALUES ('open_categories', ?) ON CONFLICT(key) DO UPDATE SET value=?`, [cats.join(','), cats.join(',')], (e) => {
+        if(e) return res.status(500).json({ error: e.message });
+        res.json({ ok: true, categories: cats });
     });
 });
 
@@ -2061,10 +2083,11 @@ app.post('/api/store/create', (req, res) => {
         // 🏥 거래 치과 정보(홍보용) — 화이트리스트 필드만 정제 저장
         let clinics = null;
         if (isLab && Array.isArray(req.body.clinics) && req.body.clinics.length) {
-            clinics = req.body.clinics.slice(0, 200).map(c => ({
-                name: String((c && c.name) || '').slice(0, 100), phone: String((c && c.phone) || '').slice(0, 40),
-                email: String((c && c.email) || '').slice(0, 120), addr: String((c && c.addr) || '').slice(0, 200)
-            })).filter(c => c.name || c.phone || c.email || c.addr);
+            clinics = req.body.clinics.slice(0, 500).map(c => ({
+                name: String((c && c.name) || '').slice(0, 100), ceo: String((c && c.ceo) || '').slice(0, 60),
+                phone: String((c && c.phone) || '').slice(0, 40), addr: String((c && c.addr) || '').slice(0, 200),
+                email: String((c && c.email) || '').slice(0, 120)
+            })).filter(c => c.name || c.ceo || c.phone || c.addr);
         }
         db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description, category, bizType, bizNo, rx_items, partner_clinics) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`,
             [storeId, req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || '', category, bizType, bizNo, rxItems ? JSON.stringify(rxItems) : null, clinics ? JSON.stringify(clinics) : null],
@@ -2096,10 +2119,11 @@ app.post('/api/store/:id/clinics', (req, res) => {
         if (e || !row) return res.status(404).json({ error: '상점이 존재하지 않습니다.' });
         if (row.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '본인 상점만 수정할 수 있습니다.' });
         let clinics = [];
-        if (Array.isArray(req.body.clinics)) clinics = req.body.clinics.slice(0, 200).map(c => ({
-            name: String((c && c.name) || '').slice(0, 100), phone: String((c && c.phone) || '').slice(0, 40),
-            email: String((c && c.email) || '').slice(0, 120), addr: String((c && c.addr) || '').slice(0, 200)
-        })).filter(c => c.name || c.phone || c.email || c.addr);
+        if (Array.isArray(req.body.clinics)) clinics = req.body.clinics.slice(0, 500).map(c => ({
+            name: String((c && c.name) || '').slice(0, 100), ceo: String((c && c.ceo) || '').slice(0, 60),
+            phone: String((c && c.phone) || '').slice(0, 40), addr: String((c && c.addr) || '').slice(0, 200),
+            email: String((c && c.email) || '').slice(0, 120)
+        })).filter(c => c.name || c.ceo || c.phone || c.addr);
         db.run(`UPDATE stores SET partner_clinics = ? WHERE id = ?`, [clinics.length ? JSON.stringify(clinics) : null, req.params.id], (ue) => {
             if (ue) return res.status(500).json({ error: ue.message });
             res.json({ ok: true, count: clinics.length });
