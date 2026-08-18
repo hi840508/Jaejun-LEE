@@ -403,6 +403,9 @@ app.get('/icon.svg', (req, res) => {
         '</svg>'
     );
 });
+// 📦 앱 현재 버전 — 업데이트 시 4번째 자리를 올린다(예: 0.0.0.1 → 0.0.0.2). 클라가 표기·New 뱃지에 사용.
+const APP_VERSION = '0.0.0.1';
+app.get('/api/app/version', (req, res) => { res.json({ version: APP_VERSION }); });
 // 🖥 서버 내장 설치형 PC 앱(Electron) 인스톨러 — agent/ 폴더에 두면 배포됨(git 미추적, reset 보존)
 app.get('/download/APP_Setup.exe', (req, res) => {
     // ☁️ R2 설정 시 R2 공개 URL로 리다이렉트(다운로드 전송비 무료). 없으면 로컬 서빙.
