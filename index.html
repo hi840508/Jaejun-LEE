@@ -2726,6 +2726,13 @@
             } catch(e){ showToast("서버 네트워크 장애"); }
         }
 
+        // 📍 거래 치과 등 반복 행의 주소칸에 채우기 — 버튼이 속한 행(.nb-clinic-row/._cm-row)의 주소 input에 입력.
+        window.openAddrSearchFor = function(btn, inputSelector){
+            if(typeof daum === 'undefined' || !daum.Postcode){ showToast('주소 검색을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'); return; }
+            var row = btn.closest('.nb-clinic-row, ._cm-row'); var input = row ? row.querySelector(inputSelector) : null;
+            if(!input){ return; }
+            new daum.Postcode({ oncomplete: function(data){ var addr = data.roadAddress || data.jibunAddress || data.address || ''; if(data.buildingName){ addr += ' (' + data.buildingName + ')'; } input.value = addr; input.focus(); }}).open();
+        };
         // 📍 주소 쉽게 찾기 — 다음(카카오) 우편번호 서비스. 선택 시 기본주소 채우고 상세주소 입력란 포커스.
         window.openAddrSearch = function(addrId, detailId){
             if(typeof daum === 'undefined' || !daum.Postcode){ showToast('주소 검색을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'); return; }
@@ -3681,7 +3688,9 @@
             const list=ov.querySelector('#_cm-list');
             const addRow=(v)=>{ v=v||{}; const row=document.createElement('div'); row.className='_cm-row'; row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:8px;border:1px solid #eef2f7;border-radius:8px;background:#fafafa;';
                 const inp=(cls,ph,val)=>`<input type="text" class="${cls}" placeholder="${ph}" value="${esc(val)}" style="flex:1 1 46%;min-width:120px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;">`;
-                row.innerHTML=inp('c-name','거래처명(치과) *',v.name)+inp('c-ceo','대표이름 *',v.ceo)+inp('c-phone','전화번호 *',v.phone)+inp('c-addr','주소 *',v.addr)+`<button type="button" onclick="this.parentNode.remove()" style="flex:0 0 auto;padding:6px 10px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;font-size:11px;cursor:pointer;">삭제</button>`;
+                row.innerHTML=inp('c-name','거래처명(치과) *',v.name)+inp('c-ceo','대표이름 *',v.ceo)+inp('c-phone','전화번호 *',v.phone)
+                  +'<span style="display:flex;flex:1 1 100%;gap:6px;"><input type="text" class="c-addr" placeholder="주소 *" value="'+esc(v.addr)+'" style="flex:1;min-width:120px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;"><button type="button" onclick="openAddrSearchFor(this,\'.c-addr\')" style="flex:none;padding:6px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:7px;font-size:11px;cursor:pointer;white-space:nowrap;">🔍 주소</button></span>'
+                  +`<button type="button" onclick="this.parentNode.remove()" style="flex:0 0 auto;padding:6px 10px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;font-size:11px;cursor:pointer;">삭제</button>`;
                 list.appendChild(row); };
             ov.querySelector('#_cm-add').onclick=()=>addRow();
             try{ const r=await fetch(API_URL+'/api/store/'+encodeURIComponent(storeId)+'/clinics'); const d=await r.json(); const arr=(d&&d.clinics)||[]; if(arr.length) arr.forEach(addRow); else addRow(); }catch(_){ addRow(); }
@@ -12749,7 +12758,8 @@ pdfjsScript,
             window.addClinicRow = function(v){ v=v||{}; const list=document.getElementById('new-brand-clinic-list'); if(!list) return;
                 const row=document.createElement('div'); row.className='nb-clinic-row'; row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:8px;border:1px solid #eef2f7;border-radius:8px;background:#fafafa;';
                 const inp=(cls,ph,val,w)=>`<input type="text" class="${cls}" placeholder="${ph}" value="${(val||'').replace(/"/g,'&quot;')}" style="flex:${w};min-width:120px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;">`;
-                row.innerHTML = inp('nbc-name','거래처명(치과) *',v.name,'1 1 46%')+inp('nbc-ceo','대표이름 *',v.ceo,'1 1 46%')+inp('nbc-phone','전화번호 *',v.phone,'1 1 46%')+inp('nbc-addr','주소 *',v.addr,'1 1 46%')
+                row.innerHTML = inp('nbc-name','거래처명(치과) *',v.name,'1 1 46%')+inp('nbc-ceo','대표이름 *',v.ceo,'1 1 46%')+inp('nbc-phone','전화번호 *',v.phone,'1 1 46%')
+                  +'<span style="display:flex;flex:1 1 100%;gap:6px;"><input type="text" class="nbc-addr" placeholder="주소 *" value="'+((v.addr||'').replace(/"/g,'&quot;'))+'" style="flex:1;min-width:120px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;"><button type="button" onclick="openAddrSearchFor(this,\'.nbc-addr\')" style="flex:none;padding:6px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:7px;font-size:11px;cursor:pointer;white-space:nowrap;">🔍 주소</button></span>'
                   +`<button type="button" onclick="this.parentNode.remove()" style="flex:0 0 auto;padding:6px 10px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;font-size:11px;cursor:pointer;">삭제</button>`;
                 list.appendChild(row);
             };
