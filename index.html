@@ -4280,13 +4280,18 @@
             try { if(window.rayApp && window.rayApp.link){ window.rayApp.link(data.token || window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', data.name); } } catch(_){}
             // 앱에서 실행 중이면 'PC 앱 다운로드' 메뉴 숨김(이미 앱)
             try { if(window.rayApp){ const _ad=document.getElementById('sb-app-download'); if(_ad) _ad.style.display='none'; } } catch(_){}
-            // 🔔 푸시 알림: 권한 있으면 자동 구독, 없으면 첫 로그인에 온보딩 모달로 안내(개인별 설명 불필요)
+            // 🔔 푸시 알림(카톡식 상시 알림): 앱이면 권한 자동 요청 후 구독, 브라우저는 권한 있으면 구독·없으면 온보딩
             try { setTimeout(function(){
                 try {
+                    const inApp = !!window.rayApp;
+                    if(inApp){ try{ if(window.rayApp.requestNotificationPermission) window.rayApp.requestNotificationPermission(); }catch(_){} }
                     if('Notification' in window){
                         if(Notification.permission === 'granted'){ if(window._earthSetupPush) window._earthSetupPush(); }
-                        else if(Notification.permission === 'default'){ if(window._earthNotifyOnboard) window._earthNotifyOnboard(false); }
-                    }
+                        else if(Notification.permission === 'default'){
+                            if(inApp){ try{ Notification.requestPermission().then(function(p){ if(p==='granted' && window._earthSetupPush) window._earthSetupPush(); }); }catch(_){ if(window._earthSetupPush) window._earthSetupPush(); } }
+                            else if(window._earthNotifyOnboard) window._earthNotifyOnboard(false);
+                        }
+                    } else if(inApp && window._earthSetupPush){ window._earthSetupPush(); }
                 } catch(_){}
                 if(window._earthClearBadge) window._earthClearBadge();
             }, 1500); } catch(_){}

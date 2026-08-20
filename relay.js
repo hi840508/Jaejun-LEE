@@ -2276,14 +2276,17 @@ app.post('/api/product/submit-order', (req, res) => {
             [productId, buyer, seller, bundle_html || '', memo || '', JSON.stringify(form_data || {}), pdf_filled_data || '', JSON.stringify(buyer_info || {}), ordStatus, amount || 0, date, method, pgApproval],
             function(err) {
                 if(err) return res.status(500).json({ error: err.message });
-                res.json({ success: true, orderId: this.lastID, payMethod: method, approvalNo: pgApproval, amount });
+                const orderId = this.lastID;
+                // 🔔 판매자에게 새 주문 푸시(앱이 꺼져 있어도 수신) — 주문 대화방으로 딥링크
+                try { sendPushToUser(seller, { title: '🛒 새 주문 요청', body: (buyer || '고객') + ' 님이 주문서를 보냈습니다.', data: { roomId: _orderRoomId(orderId) } }); } catch (_) {}
+                res.json({ success: true, orderId, payMethod: method, approvalNo: pgApproval, amount });
             });
     });
 });
 
 // 💬 [채팅 상태알림] 주문 상태가 바뀔 때 구매자·판매자 채팅방에 시스템 메시지 기록 + order_status 이벤트(카드 갱신용) 방출.
 function _orderRoomId(orderId) { return 'room_ord_' + orderId; }   // 💬 주문별 고유 대화방 id
-function _notifyOrderStatus(buyer, seller, orderId, status, msg) {
+function _notifyOrderStatus(buyer, seller, orderId, status, msg, actor) {
     try {
         const roomId = _orderRoomId(orderId);
         _setOrderRoom(roomId, buyer, seller);   // 참가자 캐시 보강(소켓 전송용)
@@ -2292,6 +2295,11 @@ function _notifyOrderStatus(buyer, seller, orderId, status, msg) {
             db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [roomId, msg, date, new Date().toISOString()], function() {
                 try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: this.lastID, date }); } catch (_) {}
             });
+            // 🔔 주문 상태 변경 푸시(앱 꺼져 있어도 수신) — 행위자(actor) 제외한 상대에게
+            try {
+                const clean = String(msg).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 70);
+                [buyer, seller].filter(u => u && u !== actor).forEach(u => sendPushToUser(u, { title: '🛒 주문 알림', body: clean, data: { roomId } }));
+            } catch (_) {}
         }
         try { _emitToRoomUsers(roomId, 'order_status', { orderId, status, buyer, seller }); } catch (_) {}   // 채팅 주문카드 실시간 갱신
     } catch (_) {}
@@ -2676,6 +2684,7 @@ app.post('/api/order/remake', (req, res) => {
                     const newId = this.lastID;
                     db.get(`SELECT p.name AS pname, s.id AS sid, s.name AS sname FROM products p LEFT JOIN stores s ON p.storeId = s.id WHERE p.id = ?`, [ord.productId], (e2, row) => {
                         _notifyOrderStatus(ord.buyer, ord.seller, newId, 'pending', `🔁 [${label} 요청] 구매자가 ${label}를 요청했습니다. 판매자가 금액을 확정·승인하면 결제 후 진행됩니다.`);
+                        try { sendPushToUser(ord.seller, { title: `🔁 ${label} 요청`, body: (ord.buyer || '고객') + ' 님이 재작업을 요청했습니다.', data: { roomId: _orderRoomId(newId) } }); } catch (_) {}
                         res.json({ success: true, orderId: newId, label, seller: ord.seller, storeId: (row && row.sid) || '', storeName: (row && row.sname) || '', productName: (row && row.pname) || label });
                     });
                 });
