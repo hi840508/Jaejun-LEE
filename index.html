@@ -1395,7 +1395,10 @@
                             <h3 style="font-size:18px; color:#1a1a1a; font-weight:900; margin-bottom:4px;">🛒 구매 목록</h3>
                             <div style="font-size:12px; color:#707070;">결제한 상품을 다시 열람 · 추가 주문 · 판매자 채팅으로 연결합니다.</div>
                         </div>
-                        <button class="btn btn-outline" style="padding:8px 14px; font-size:12px; display:none;" onclick="loadMyPurchases()">새로고침</button>
+                        <div id="my-purchases-summary" style="text-align:right; font-size:12px; color:#475569; white-space:nowrap;">
+                            <div>총 결제 <b id="mp-sum-count" style="color:#1a1a1a;">0</b>건</div>
+                            <div style="font-size:16px; font-weight:900; color:var(--primary);">합계 <span id="mp-sum-total">0</span>원</div>
+                        </div>
                     </div>
                 </div>
                 <!-- 🚀 대기 중 주문(승인 전) — 채팅을 닫아도 여기서 확인/취소 가능 -->
@@ -3926,9 +3929,10 @@
                 const devices=await R.list();
                 let cur={folders:[],files:[]}; try{ if(connected) cur=await R.listAt(path); }catch(_){}
 
+                // 루트 라벨은 실제 폴더명(예: Earth) 대신 항상 'Home'으로 표시
                 const crumb = path.length
-                    ? ('<span class="_sf-crumb" data-i="-1" style="cursor:pointer;">'+(_sfEsc(fname)||'공유폴더')+'</span>'+path.map((seg,i)=>' <span style="color:#c4c9d0;font-weight:500;">/</span> <span class="_sf-crumb" data-i="'+i+'" style="cursor:pointer;">'+_sfEsc(seg)+'</span>').join(''))
-                    : _sfEsc(fname||'공유폴더');
+                    ? ('<span class="_sf-crumb" data-i="-1" style="cursor:pointer;">Home</span>'+path.map((seg,i)=>' <span style="color:#c4c9d0;font-weight:500;">/</span> <span class="_sf-crumb" data-i="'+i+'" style="cursor:pointer;">'+_sfEsc(seg)+'</span>').join(''))
+                    : 'Home';
                 const head='<div style="flex:none;background:#fff;padding:11px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f0f1f3;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
                     +'<button id="_sf-back" class="_sf-ic" title="뒤로">'+_SFIC.back+'</button>'
                     +'<div style="flex:1;min-width:50px;font-size:16px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
@@ -6447,16 +6451,22 @@
             const mIn = document.getElementById('sales-report-month');
             let month = mIn && mIn.value;
             if(!month){ const d = new Date(); month = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); if(mIn) mIn.value = month; }
-            let sales=0, settled=0, waiting=0, cnt=0;
+            let sales=0, settled=0, waiting=0, cnt=0;          // 선택 월
+            let allSales=0, allCnt=0;                          // 전체 누적(월 무관)
             orders.forEach(o=>{
                 if(['cancelled','rejected','refunded','pending','awaiting_payment'].includes(o.status)) return;
+                const amt = Number(o.amount)||0;
+                allSales += amt; allCnt++;                     // 전체 합계
                 const m = (o.settle_month || (o.created_at||'').substring(0,7));
                 if(m !== month) return;
-                const amt = Number(o.amount)||0; sales += amt; cnt++;
+                sales += amt; cnt++;
                 if(o.settled) settled += amt; else waiting += amt;
             });
-            const card=(label,val,color)=>`<div style="flex:1;min-width:110px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:#64748b;">${label}</div><div style="font-size:16px;font-weight:900;color:${color};">${val.toLocaleString()}원</div></div>`;
-            el.innerHTML = card('매출 ('+cnt+'건)', sales, '#1e293b') + card('정산완료', settled, '#166534') + card('정산 대기', waiting, '#b45309');
+            const card=(label,val,color,strong)=>`<div style="flex:1;min-width:110px;background:${strong?'#eef2ff':'#f8fafc'};border:1px solid ${strong?'#c7d2fe':'#e2e8f0'};border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:#64748b;">${label}</div><div style="font-size:${strong?'18px':'16px'};font-weight:900;color:${color};">${val.toLocaleString()}원</div></div>`;
+            el.innerHTML = card('전체 매출 합계 ('+allCnt+'건)', allSales, '#4338ca', true)
+                + card(month+' 매출 ('+cnt+'건)', sales, '#1e293b')
+                + card('정산완료', settled, '#166534')
+                + card('정산 대기', waiting, '#b45309');
         };
         // 주문 목록 렌더(검색·상태 필터 적용)
         window.renderSalesOrders = function(){
@@ -12068,6 +12078,13 @@ pdfjsScript,
         function renderMyPurchases(purchases) {
             const list = document.getElementById('my-purchases-list');
             if(!list) return;
+            // 💰 총 결제 합계(환불/환불건 제외) — 상단 요약 배지
+            try{
+                const valid = (purchases||[]).filter(p => !p.refunded && p.purchaseType !== 'refund');
+                const total = valid.reduce((s,p)=> s + (Number(p.amount)||0), 0);
+                const cEl=document.getElementById('mp-sum-count'); if(cEl) cEl.textContent = valid.length.toLocaleString();
+                const tEl=document.getElementById('mp-sum-total'); if(tEl) tEl.textContent = total.toLocaleString();
+            }catch(_){}
             if(!purchases || purchases.length === 0) {
                 list.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--text-sub); font-size:13px;">🛒 아직 구매한 상품이 없습니다.<br><span style="font-size:11px;">"디지털 거래소"에서 상품을 둘러보세요!</span></div>`;
                 return;
