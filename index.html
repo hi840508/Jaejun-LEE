@@ -2860,12 +2860,50 @@
 
         // ★공유 카드 다운로드★: 부모(Alpha K 앱) iframe 안이면 앱에 위임 → 로컬 서버 있으면 Data탭에 반영, 없으면 단일 HTML 저장.
         //  독립 실행(부모 없음)이면 새 탭으로 통합뷰어 열기.
+        // 📁 폴더/저장 권한 — 기종별 자연스러운 워크플로 안내(+앱은 원탭 권한 요청).
+        window._isMobileDevice = function(){ const ua=navigator.userAgent||''; return /Android|iPhone|iPad|iPod/i.test(ua) || (/(Macintosh)/i.test(ua) && 'ontouchend' in document); };
+        // 앱 네이티브 저장 권한 원탭 요청(브리지가 있으면). 반환=요청 시도했는지.
+        window._appRequestStoragePerm = async function(){
+            try{ if(window.rayApp && window.rayApp.requestStoragePermission){ const r=window.rayApp.requestStoragePermission(); if(r&&r.then) await r; return true; } }catch(_){}
+            return false;
+        };
+        // 폴더 저장이 막혔을 때(권한/미지원) 기종별 친절 안내 모달. retryFn=권한 후 다시 시도할 함수(선택).
+        window._showFolderPermHelp = function(retryFn){
+            const inApp = !!window.rayApp;
+            const isMobile = window._isMobileDevice();
+            let m=document.getElementById('folder-perm-help'); if(!m){ m=document.createElement('div'); m.id='folder-perm-help'; document.body.appendChild(m); }
+            m.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            let title, body, primaryLabel, primaryAct, showPrimary=true;
+            if(inApp){
+                title='파일 저장 권한'; primaryLabel='🔓 권한 허용하고 계속';
+                body='받은 파일을 기기에 자동 저장하려면 <b>저장(파일) 권한</b>이 필요해요.<br>아래 버튼을 누르고 <b>"허용"</b>을 선택해 주세요.<br><span style="color:#888;">(안 나오면 휴대폰 <b>설정 → 앱 → Alpha K → 권한 → 저장/파일</b>에서 허용)</span>';
+                primaryAct=async function(){ await window._appRequestStoragePerm(); try{ if(typeof retryFn==='function') await retryFn(); }catch(_){} };
+            } else if(isMobile){
+                title='모바일 저장 안내'; primaryLabel='확인';
+                body='이 기기에서는 <b>폴더를 지정하지 않아도 됩니다.</b><br>받은 파일은 자동으로 <b>다운로드 폴더</b>에 저장돼요.<br><span style="color:#888;">폴더 지정·자동 정리 기능은 PC(크롬/엣지)에서 사용할 수 있어요.</span>';
+                primaryAct=function(){};
+            } else {
+                title='폴더 쓰기 권한'; primaryLabel='📂 다시 시도';
+                body='받은 파일을 저장할 폴더에 <b>쓰기 권한</b>이 필요해요.<br>버튼을 눌러 폴더를 선택하고 <b>"허용"</b>을 눌러 주세요.';
+                primaryAct=async function(){ try{ if(typeof retryFn==='function') await retryFn(); }catch(_){} };
+            }
+            m.innerHTML='<div style="background:#fff;border-radius:16px;max-width:360px;width:100%;padding:22px;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,.35);">'
+                +'<div style="font-size:42px;">📁</div>'
+                +'<div style="font-weight:800;font-size:17px;margin-top:8px;">'+title+'</div>'
+                +'<div style="font-size:13px;color:#555;margin-top:10px;line-height:1.7;text-align:left;">'+body+'</div>'
+                +(showPrimary?'<button id="fph-ok" style="width:100%;margin-top:16px;background:var(--gradient-btn);color:#fff;border:0;border-radius:10px;padding:13px;font-weight:800;font-size:14px;cursor:pointer;">'+primaryLabel+'</button>':'')
+                +'<button id="fph-close" style="width:100%;margin-top:8px;background:transparent;color:#888;border:0;padding:6px;font-size:12px;cursor:pointer;">닫기</button>'
+                +'</div>';
+            const close=function(){ try{ m.remove(); }catch(_){} };
+            const okB=document.getElementById('fph-ok'); if(okB) okB.onclick=async function(){ close(); try{ await primaryAct(); }catch(_){} };
+            document.getElementById('fph-close').onclick=close;
+        };
         // 💾 저장하기: 지정된 공유폴더에 자동 저장(창 이동 절대 금지). 순서: iframe부모 → 네이티브앱 브리지 → FSA 폴더 → blob 다운로드.
         window.rcDownloadShare = async function(url, name){
             // 1) iframe 임베드(앱) → 부모가 저장/등록 처리
             try { if (window.parent && window.parent !== window) { window.parent.postMessage({ type:'rc_dl_share', url:url, name:name }, '*'); showToast('📁 공유폴더에 저장 중…'); return; } } catch(e){}
-            // 2) 네이티브 앱(Alpha K Commerce Platform) 브리지 — 지정된 공유폴더에 저장
-            try { if (window.rayApp && window.rayApp.saveShared) { window.rayApp.saveShared(name, url); showToast('📁 공유폴더에 저장 요청됨'); return; } } catch(_){}
+            // 2) 네이티브 앱(Alpha K Commerce Platform) 브리지 — 저장 권한 원탭 확보 후 지정된 공유폴더에 저장
+            try { if (window.rayApp && window.rayApp.saveShared) { try{ if(window.rayApp.requestStoragePermission) await window._appRequestStoragePerm(); }catch(_){} window.rayApp.saveShared(name, url); showToast('📁 공유폴더에 저장 요청됨'); return; } } catch(_){}
             // 3) 데스크톱 웹: File System Access 공유폴더 저장(미지정 시 지정 게이트)
             try {
                 if (window.RCFolder && window.RCFolder.supported) {
@@ -3001,9 +3039,10 @@
             async function ensureAccess(){ if(!supported) return false; if(await isConnected()) return true; if(!chosen()) return false; return await _ensurePerm(true); }
 
             async function pick(){
-                if(!supported){ showToast('이 브라우저는 폴더 지정을 지원하지 않습니다. 데스크톱 Chrome/Edge를 사용하세요.'); return false; }
+                // 모바일/미지원: 폴더 지정 대신 기종별 자연스러운 워크플로 안내(앱=저장 권한 원탭, 브라우저=다운로드 저장)
+                if(!supported){ try{ window._showFolderPermHelp(); }catch(_){ showToast('모바일은 받은 파일이 다운로드 폴더에 저장됩니다.'); } return false; }
                 let h; try{ h=await window.showDirectoryPicker({ id:'rc-shared', mode:'readwrite', startIn:'documents' }); }catch(e){ return false; }
-                try{ const p=await h.requestPermission({mode:'readwrite'}); if(p!=='granted'){ showToast('폴더 쓰기 권한이 필요합니다.'); return false; } }catch(_){ return false; }
+                try{ const p=await h.requestPermission({mode:'readwrite'}); if(p!=='granted'){ try{ window._showFolderPermHelp(function(){ pick(); }); }catch(_){ showToast('폴더 쓰기 권한이 필요합니다.'); } return false; } }catch(_){ return false; }
                 _handle=h; try{ await _put(KEY,h); }catch(_){}
                 try{ localStorage.setItem('rc_folder_chosen','1'); }catch(_){}
                 await register();
@@ -3968,7 +4007,7 @@
                     if(act==='preview'){ if(!names.length) return showToast('미리볼 파일을 선택하세요.'); window.rcPreviewFolderFile(names[0], ''); return; }
                     if(act==='share'){ if(!names.length) return showToast('공유할 파일을 선택하세요.'); openShareRecipientPicker(names); return; }
                     if(act==='rename'){ if(names.length!==1) return showToast('이름변경할 파일 1개만 선택하세요.'); const old=names[0]; const nn=await _sfPrompt('새 이름', old); if(nn&&nn!==old){ if(await R.renameAt(path,old,nn,false)) render(); else showToast('이름변경 실패'); } return; }
-                    if(act==='delete'){ if(!names.length) return showToast('삭제할 파일을 선택하세요.'); if(!confirm(names.length+'개 파일을 삭제할까요? (실제 폴더에서 삭제)')) return; if(!(await R.ensureAccess())){ showToast('공유폴더 권한이 필요합니다.'); return; } window.__rcLastErr=''; let ok=0; for(const nm of names){ if(await R.removeAt(path,nm,false)) ok++; } showToast(ok?('🗑 삭제: '+ok+'개'):('삭제 실패: '+(window.__rcLastErr||'권한/폴더 확인'))); render(); return; }
+                    if(act==='delete'){ if(!names.length) return showToast('삭제할 파일을 선택하세요.'); if(!confirm(names.length+'개 파일을 삭제할까요? (실제 폴더에서 삭제)')) return; if(!(await R.ensureAccess())){ try{ window._showFolderPermHelp(function(){ if(R.pick) R.pick(); }); }catch(_){ showToast('공유폴더 권한이 필요합니다.'); } return; } window.__rcLastErr=''; let ok=0; for(const nm of names){ if(await R.removeAt(path,nm,false)) ok++; } showToast(ok?('🗑 삭제: '+ok+'개'):('삭제 실패: '+(window.__rcLastErr||'권한/폴더 확인'))); render(); return; }
                 }));
                 // 정렬/확대 + 섹션 접기
                 const sb2=ov.querySelector('#_sf-sort'); if(sb2) sb2.onclick=()=>{ flt.sort = flt.sort==='new'?'old':(flt.sort==='old'?'name':'new'); render(); };
@@ -3997,7 +4036,7 @@
                 // 현재 폴더로 드롭(OS 파일)
                 ov.addEventListener('dragover',(e)=>{ if(window.__rcDragFile) return; e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} ov.style.outline='3px dashed #2563eb'; ov.style.outlineOffset='-6px'; });
                 ov.addEventListener('dragleave',(e)=>{ if(e.target===ov) ov.style.outline=''; });
-                ov.addEventListener('drop', async(e)=>{ if(window.__rcDragFile){ ov.style.outline=''; return; } if(!(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)){ ov.style.outline=''; return; } e.preventDefault(); const fs=[].slice.call(e.dataTransfer.files); ov.style.outline=''; if(!(await R.ensureAccess())){ showToast('공유폴더 권한이 필요합니다.'); return; } let ok=0, err=''; for(const f of fs){ try{ await R.writeFileAt(path,f.name,f); ok++; }catch(e2){ err=(e2&&e2.message)||String(e2); } } showToast(ok?('📥 추가: '+ok+'개'):('추가 실패: '+(err||'권한/폴더 확인'))); render(); });
+                ov.addEventListener('drop', async(e)=>{ if(window.__rcDragFile){ ov.style.outline=''; return; } if(!(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)){ ov.style.outline=''; return; } e.preventDefault(); const fs=[].slice.call(e.dataTransfer.files); ov.style.outline=''; if(!(await R.ensureAccess())){ try{ window._showFolderPermHelp(function(){ if(R.pick) R.pick(); }); }catch(_){ showToast('공유폴더 권한이 필요합니다.'); } return; } let ok=0, err=''; for(const f of fs){ try{ await R.writeFileAt(path,f.name,f); ok++; }catch(e2){ err=(e2&&e2.message)||String(e2); } } showToast(ok?('📥 추가: '+ok+'개'):('추가 실패: '+(err||'권한/폴더 확인'))); render(); });
 
                 // 일괄 썸네일(현재 폴더, 로컬 파일)
                 (async()=>{ const pend=[].slice.call(ov.querySelectorAll('.rc-gf[data-here="1"]')).filter(el=>!el.querySelector('.rc-thumbbox img')); let i=0; const CONC=5; async function w(){ while(i<pend.length){ const el=pend[i++]; const box=el.querySelector('.rc-thumbbox'); if(!box) continue; const fn=el.getAttribute('data-fname'), mm=el.getAttribute('data-mime'); try{ const f=await R.getFileAt(path,fn); if(!f) continue; const t=await R.getThumb(f,mm,fn); if(t && !box.querySelector('img')){ const ic=box.querySelector('.rc-gf-icon'); if(ic) ic.style.display='none'; const isV=_sfType(mm,fn)==='video'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isV?_vov:'')); } }catch(_){} } } const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws); })();
@@ -4071,7 +4110,7 @@
                     }
                     if(d.kind==='selfsend'){
                         if(d.toDevice!==myDev() || d.fromDevice===myDev()) return;
-                        if(!(await window.RCFolder.ensureAccess())){ showToast('📥 나에게 보내기: 공유폴더 권한이 필요합니다(공유폴더 열어 허용).'); return; }
+                        if(!(await window.RCFolder.ensureAccess())){ try{ window._showFolderPermHelp(function(){ if(window.RCFolder.pick) window.RCFolder.pick(); }); }catch(_){ showToast('📥 나에게 보내기: 공유폴더 권한이 필요합니다.'); } return; }
                         showToast('📥 나에게 보내기 수신 중: '+d.name);
                         try{ const r=await fetch(d.url); const blob=await r.blob(); await window.RCFolder.writeFile(d.name, blob); showToast('✅ 이 기기 공유폴더에 저장됨: '+d.name); window.RCFolder.syncIndex(); }catch(e){ showToast('수신 실패: '+d.name); }
                         return;
