@@ -1450,6 +1450,9 @@ app.get('/api/friends/:userName', (req, res) => {
     db.all(`SELECT u.name, u.profilePic FROM friends f JOIN users u ON f.friendName = u.name WHERE f.userName = ?`, [req.params.userName], (err, rows) => res.json(rows || []));
 });
 
+// 🟢 현재 온라인(접속 중) 사용자 목록 — 친구 목록 로그인 상태 표시용
+app.get('/api/online', (req, res) => { res.json({ users: Array.from(ONLINE.keys()) }); });
+
 // 🧑‍🤝‍🧑 친구 삭제(양방향). 대화(chats)는 유지 → 재등록 시 이어짐.
 app.post('/api/friend/remove', (req, res) => {
     const userName = requireUser(req, res); if (!userName) return;   // 🔐 신원=토큰
@@ -3853,6 +3856,8 @@ function _roomParticipants(roomId) {
     return id.replace('room_msg_', '').split('_').filter(Boolean);
 }
 // 두 참가자의 개인 룸에만 이벤트 전송(예전 io.emit 전체 브로드캐스트 → 무관한 사용자에게까지 채팅 노출되던 문제 제거). 크로스룸 알림은 개인 룸으로 유지.
+// 🟢 온라인 사용자 추적(name → 접속 소켓 수)
+const ONLINE = new Map();
 function _emitToRoomUsers(roomId, event, payload) {
     const parts = _roomParticipants(roomId);
     if (parts.length) { let e = io; parts.forEach(u => { e = e.to('user:' + u); }); e.emit(event, payload); }
@@ -3866,6 +3871,22 @@ io.on('connection', (socket) => {
         socket.data.user = s ? s.name : null;
         if (socket.data.user) socket.join('user:' + socket.data.user);
     } catch (_) { socket.data.user = null; }
+    // 🟢 접속 상태(presence) — 사용자별 소켓 수 카운트. 0→1이면 온라인, 1→0이면 오프라인 브로드캐스트.
+    try {
+        const u = socket.data.user;
+        if (u) {
+            const n = (ONLINE.get(u) || 0) + 1; ONLINE.set(u, n);
+            if (n === 1) io.emit('presence', { user: u, online: true });
+        }
+    } catch (_) {}
+    socket.on('disconnect', () => {
+        try {
+            const u = socket.data.user; if (!u) return;
+            const n = (ONLINE.get(u) || 1) - 1;
+            if (n <= 0) { ONLINE.delete(u); io.emit('presence', { user: u, online: false }); }
+            else ONLINE.set(u, n);
+        } catch (_) {}
+    });
     socket.on('join_room', (roomId) => { socket.join(roomId); });
     // 🖥 원격제어 신호 중계 — 화면 프레임/입력 이벤트를 상대(수신자 개인 룸)에게만 전달.
     //    d = { to:'상대이름', roomId, kind:'frame'|'input'|'ctrl', ... }. 발신자는 토큰 신원으로 강제.

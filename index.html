@@ -1396,8 +1396,9 @@
                             <div style="font-size:12px; color:#707070;">결제한 상품을 다시 열람 · 추가 주문 · 판매자 채팅으로 연결합니다.</div>
                         </div>
                         <div id="my-purchases-summary" style="text-align:right; font-size:12px; color:#475569; white-space:nowrap;">
-                            <div>총 결제 <b id="mp-sum-count" style="color:#1a1a1a;">0</b>건</div>
-                            <div style="font-size:16px; font-weight:900; color:var(--primary);">합계 <span id="mp-sum-total">0</span>원</div>
+                            <div>상품 구매 <b id="mp-sum-count" style="color:#1a1a1a;">0</b>건</div>
+                            <div style="font-size:16px; font-weight:900; color:var(--primary);">구매 합계 <span id="mp-sum-total">0</span>원</div>
+                            <div style="font-size:10px; color:#94a3b8; font-weight:400;">※ 아래 지출 내역엔 송금·충전 등도 포함됩니다</div>
                         </div>
                     </div>
                 </div>
@@ -1614,12 +1615,12 @@
                 <div class="panel" style="padding:14px;">
                     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
                         <div class="input-group" style="width:170px;"><label>정산 월</label><input id="tax-month" type="month"></div>
-                        <button class="btn btn-secondary" style="padding:9px 16px;" onclick="loadSettlement()">정산 불러오기</button>
+                        <button class="btn btn-secondary" style="padding:9px 16px;" onclick="loadSettlement()">미정산 목록</button>
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;">
                             <thead><tr><th>거래처 (상호/실명·ID·브랜드·상품)</th><th>건수</th><th>매출</th><th>수수료(VAT포함)</th><th>지급액</th><th>구매확정 / 정산예정일</th><th>정산</th></tr></thead>
-                            <tbody id="settlement-body"><tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [정산 불러오기]를 누르세요.</td></tr></tbody>
+                            <tbody id="settlement-body"><tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [미정산 목록]을 누르세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -3939,7 +3940,7 @@
                     +(notSupported?'':'<button id="_sf-sort" class="_sf-txt">'+(flt.sort==='old'?'오래된순':flt.sort==='name'?'이름순':'최신순')+' '+_SFIC.chev+'</button>')
                     +(notSupported?'':'<button id="_sf-zout" class="_sf-ic" title="축소">'+_SFIC.minus+'</button>')
                     +(notSupported?'':'<button id="_sf-zin" class="_sf-ic" title="확대">'+_SFIC.plus+'</button>')
-                    +'<button id="_sf-mirror" class="_sf-txt" title="클라우드 미러 백업" style="color:#2563eb;">☁️ 미러 백업</button>'
+                    +'<button id="_sf-mirror" class="_sf-txt" title="클라우드 백업" style="color:#2563eb;">☁️ 클라우드</button>'
                     +'<button id="_sf-kebab" class="_sf-ic" title="더보기">'+_SFIC.kebab+'</button>'
                     +'</div>';
                 const typeChips=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(flt.type===t?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
@@ -4378,6 +4379,16 @@
             });
             // 🚀 실시간 친구 추가 알림 (별도 새로고침 없이 친구목록/대화방 즉시 갱신)
             socket.on('friend_added', handleFriendAdded);
+            // 🟢 친구 접속 상태(presence) 실시간 반영
+            socket.on('presence', d => {
+                try {
+                    if(!d || !d.user) return;
+                    if(!window._onlineUsers) window._onlineUsers = new Set();
+                    if(d.online) window._onlineUsers.add(d.user); else window._onlineUsers.delete(d.user);
+                    const v=document.getElementById('view-friend-list');
+                    if(v && v.classList.contains('active') && typeof loadFriendList==='function') loadFriendList();
+                } catch(_){}
+            });
             // 🚀 [v8+] 메시지 수정/삭제 실시간 반영
             socket.on('message_edited', handleMessageEdited);
             socket.on('message_deleted', handleMessageDeleted);
@@ -5107,10 +5118,10 @@
         function taxPrintInvoice(o){
             const sup=o.supplier||{}, rec=o.recipient||{};
             const bizFmt=s=>{ s=taxDigits(s); return s.length===10?(s.slice(0,3)+'-'+s.slice(3,5)+'-'+s.slice(5)):s; };
-            const w=window.open('','tax_pdf','width=840,height=1000'); if(!w){ showToast('팝업 차단을 해제하세요.'); return; }
             const mock=o.invoiceNo && String(o.invoiceNo).indexOf('MOCK')===0;
-            w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>세금계산서</title>'
-                +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;padding:26px;color:#111;}h1{text-align:center;font-size:22px;margin:0 0 4px;}.sub{text-align:center;color:#666;font-size:12px;margin-bottom:16px;}table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;}th,td{border:1px solid #333;padding:7px 9px;}th{background:#f1f5f9;}.r{text-align:right;}.amt{font-size:16px;font-weight:900;}.no{text-align:center;color:#666;font-size:11px;}@media print{.noprint{display:none;}}</style></head><body>'
+            // 📄 인쇄용 문서(iframe srcdoc) — 새 창(window.open) 금지: 앱(Electron/WebView)에서 팝업 차단·외부 브라우저로 새는 문제 회피
+            const doc='<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>세금계산서</title>'
+                +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;padding:26px;color:#111;}h1{text-align:center;font-size:22px;margin:0 0 4px;}.sub{text-align:center;color:#666;font-size:12px;margin-bottom:16px;}table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;}th,td{border:1px solid #333;padding:7px 9px;}th{background:#f1f5f9;}.r{text-align:right;}.amt{font-size:16px;font-weight:900;}.no{text-align:center;color:#666;font-size:11px;}</style></head><body>'
                 +'<h1>전자세금계산서</h1><div class="sub">'+(o.invoiceNo?('관리번호: '+taxEscH(o.invoiceNo)):'')+' · 작성일자 '+taxEscH(o.writeDate||o.month||'')+'</div>'
                 +'<table><tr><th style="width:15%;">구분</th><th>공급자</th><th>공급받는자</th></tr>'
                 +'<tr><th>상호</th><td>'+taxEscH(sup.name||'')+'</td><td>'+taxEscH(rec.name||'')+'</td></tr>'
@@ -5121,9 +5132,22 @@
                 +'<table><tr><th>품목</th><th class="r">공급가액</th><th class="r">세액</th><th class="r">합계</th></tr>'
                 +'<tr><td>'+taxEscH((o.month||'')+' 플랫폼 이용 수수료')+'</td><td class="r">'+taxFmt(o.supplyAmount)+'</td><td class="r">'+taxFmt(o.taxAmount)+'</td><td class="r amt">'+taxFmt(o.totalAmount)+'</td></tr></table>'
                 +'<p class="no">본 세금계산서는 Alpha K 정산 시스템에서 발행되었습니다.'+(mock?' (테스트 발행 · 국세청 미전송)':'')+'</p>'
-                +'<div class="noprint" style="text-align:center;margin-top:18px;"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;font-weight:700;background:#2563eb;color:#fff;border:0;border-radius:8px;cursor:pointer;">PDF로 저장 / 인쇄</button></div>'
-                +'</body></html>');
-            w.document.close();
+                +'</body></html>';
+            const ov=document.createElement('div'); ov.id='tax-pdf-ov';
+            ov.style.cssText='position:fixed;inset:0;z-index:100005;background:rgba(15,23,42,.65);display:flex;flex-direction:column;';
+            const bar=document.createElement('div');
+            bar.style.cssText='display:flex;gap:8px;align-items:center;padding:10px 14px;background:#111827;flex:none;';
+            bar.innerHTML='<span style="color:#fff;font-weight:800;margin-right:auto;font-size:14px;">🧾 세금계산서</span>'
+                +'<button id="_tpdf-print" style="padding:8px 16px;border:0;background:#2563eb;color:#fff;border-radius:8px;font-weight:800;cursor:pointer;">🖨 인쇄 / PDF 저장</button>'
+                +'<button id="_tpdf-x" style="padding:8px 12px;border:0;background:#374151;color:#fff;border-radius:8px;cursor:pointer;">닫기</button>';
+            const ifr=document.createElement('iframe');
+            ifr.style.cssText='flex:1 1 auto;border:0;background:#fff;width:100%;min-height:0;';
+            ov.appendChild(bar); ov.appendChild(ifr); document.body.appendChild(ov);
+            try{ ifr.srcdoc=doc; }catch(_){ try{ ifr.contentDocument.open(); ifr.contentDocument.write(doc); ifr.contentDocument.close(); }catch(__){} }
+            const close=function(){ try{ ov.remove(); }catch(_){} };
+            bar.querySelector('#_tpdf-x').onclick=close;
+            ov.addEventListener('click',function(e){ if(e.target===ov) close(); });
+            bar.querySelector('#_tpdf-print').onclick=function(){ try{ ifr.contentWindow.focus(); ifr.contentWindow.print(); }catch(e){ try{ window.print(); }catch(_){} } };
         }
 
         // ================= 🧾 전자세금계산서 발행 폼 (자비스/팍스빌 표준 레이아웃) =================
@@ -7423,6 +7447,21 @@
             // 앱 네이티브 권한창이 뜬 뒤 재시도되도록 살짝 지연
             setTimeout(function(){ try{ if(typeof fn==='function') fn(); }catch(_){} }, inApp ? 500 : 0);
         };
+        // 🎥 통화용 미디어 획득 — 마이크(이어폰) 없어도 영상만이라도, 카메라 없으면 음성만이라도 연결.
+        //  audio+video 동시 요청은 한쪽 장치라도 없으면 통째로 실패(NotFoundError) → "카메라 없음" 오분류를 방지.
+        window._getCallMedia = async function(){
+            const md = navigator.mediaDevices;
+            try { return await md.getUserMedia({ video:true, audio:true }); }
+            catch(e1){
+                // 마이크만 문제(이어폰 분리 등) → 영상만 연결
+                try { const s = await md.getUserMedia({ video:true, audio:false }); try{ showToast('🎤 마이크를 찾지 못해 영상만 연결합니다.'); }catch(_){} return s; }
+                catch(e2){
+                    // 카메라만 문제 → 음성만 연결
+                    try { const s = await md.getUserMedia({ video:false, audio:true }); try{ showToast('📷 카메라를 찾지 못해 음성만 연결합니다.'); }catch(_){} return s; }
+                    catch(e3){ throw e1; }   // 둘 다 실패 → 원래 에러로 안내
+                }
+            }
+        };
         window._showCamPermHelp = function(e, retryFn){
             if(typeof retryFn==='function') window.__camRetry = retryFn;
             var noDev = e && (e.name==='NotFoundError' || e.name==='DevicesNotFoundError' || e.name==='OverconstrainedError');
@@ -7464,7 +7503,7 @@
             if(!activeChatFriend || !currentChatRoomId) return showToast("먼저 대화방을 여세요.");
             if(window._vc.active) return showToast("이미 통화 중입니다.");
             const peer = activeChatFriend, room = currentChatRoomId;
-            let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
+            let local; try { local = await window._getCallMedia(); }
             catch(e){ window._showCamPermHelp(e, window.startVideoChat); return; }
             window._vc = { active:true, pc:null, local:local, peer:peer, room:room, caller:true };
             _vcUI(); const lv=document.getElementById('vc-local'); if(lv) lv.srcObject = local;
@@ -7536,7 +7575,7 @@
             const p = window._vcPendingOffer; if(!p) return;
             const peer = p.peer, room = p.room, d = p.d;
             // ⚠️ 권한 실패 시 재시도 가능하도록, 성공 전에는 pending offer·수신 UI를 지우지 않는다.
-            let local; try { local = await navigator.mediaDevices.getUserMedia({ video:true, audio:true }); }
+            let local; try { local = await window._getCallMedia(); }
             catch(e){ window._showCamPermHelp(e, window.acceptVideoCall); return; }
             const el = document.getElementById('vc-incoming'); if(el) el.remove();
             window._vcPendingOffer = null;
@@ -10656,9 +10695,13 @@ pdfjsScript,
 
         async function loadFriendList() {
             if(!currentUser) return; const res = await fetch(`${API_URL}/api/friends/${currentUser.name}`); const friends = await res.json() || [];
+            // 🟢 온라인 상태 최신화(초기/주기적)
+            try{ const ores = await fetch(`${API_URL}/api/online`); if(ores.ok){ const od = await ores.json(); window._onlineUsers = new Set(od.users||[]); } }catch(_){ if(!window._onlineUsers) window._onlineUsers = new Set(); }
+            const online = window._onlineUsers || new Set();
+            const dot = (on)=>`<span title="${on?'온라인':'오프라인'}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${on?'#22c55e':'#cbd5e1'};margin-left:6px;box-shadow:0 0 0 2px #fff;vertical-align:middle;"></span>`;
             const container = document.getElementById('friend-list-container'); container.innerHTML = '';
             if(currentUser.name !== '이재준') { container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('이재준')"><div class="profile-pic" style="background:#d6006e; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px;">🤖</div><div style="flex:1;"><b>고객센터</b><div style="font-size:11px; color:var(--text-sub);">사용법·불편사항 자동응답</div></div></div>`; }
-            friends.forEach(f => { const pic = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`; const safe=(f.name||'').replace(/'/g,"\\'"); container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${safe}')">${pic}<div style="flex:1;"><b>${f.name}</b></div><button onclick="event.stopPropagation(); removeFriend('${safe}')" title="친구 삭제" aria-label="친구 삭제" style="border:none;background:none;color:#cbd5e1;font-size:16px;cursor:pointer;padding:4px 8px;line-height:1;">✕</button></div>`; });
+            friends.forEach(f => { const pic = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`; const safe=(f.name||'').replace(/'/g,"\\'"); const on=online.has(f.name); container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${safe}')">${pic}<div style="flex:1;"><b>${f.name}</b>${dot(on)}<div style="font-size:11px; color:${on?'#16a34a':'var(--text-sub)'};">${on?'온라인':'오프라인'}</div></div><button onclick="event.stopPropagation(); removeFriend('${safe}')" title="친구 삭제" aria-label="친구 삭제" style="border:none;background:none;color:#cbd5e1;font-size:16px;cursor:pointer;padding:4px 8px;line-height:1;">✕</button></div>`; });
             updateTabBadge();
         }
         // 🧑‍🤝‍🧑 친구 삭제(재등록 가능) — 양방향 삭제. 대화 내용은 서버에 유지.
