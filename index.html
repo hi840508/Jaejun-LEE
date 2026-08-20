@@ -7783,9 +7783,14 @@
             try{ document.addEventListener('visibilitychange', refresh); window.addEventListener('focus', refresh); }catch(_){}
         })();
         // 🔔 알림 탭 → 해당 대화방 직접 열기 (roomId로 상대 유추)
-        window.openEarthRoom = function(roomId){
+        window.openEarthRoom = function(roomId, _try){
             try {
                 if(!roomId) return;
+                _try = _try || 0;
+                // 알림 탭 진입 시 로그인 완료 전이면 잠시 후 재시도
+                if(!currentUser){ if(_try<12) setTimeout(function(){ openEarthRoom(roomId, _try+1); }, 700); return; }
+                // 채팅 서랍 먼저 열기(닫혀 있으면 방을 열어도 안 보임)
+                try { const d=document.getElementById('messenger-drawer'); if(d && !d.classList.contains('open')) d.classList.add('open'); } catch(_){}
                 let partner = null;
                 if(window.__orderRoomStore && window.__orderRoomStore[roomId] && window.__orderRoomStore[roomId].partnerName){
                     partner = window.__orderRoomStore[roomId].partnerName;
@@ -7794,8 +7799,10 @@
                     partner = roomId.replace('room_msg_','').split('_').filter(function(n){ return n && n!==me; })[0];
                 }
                 if(partner && typeof openMessengerChat==='function'){ openMessengerChat(partner, roomId); return; }
-                // 상대 미확인(주문방 메타 미로드) → 목록 로드 후 재시도
-                if(typeof loadChatList==='function'){ loadChatList(); setTimeout(function(){ try{ const m=window.__orderRoomStore&&window.__orderRoomStore[roomId]; if(m&&m.partnerName && typeof openMessengerChat==='function') openMessengerChat(m.partnerName, roomId); }catch(_){} }, 900); }
+                // 상대 미확인(주문방 메타 미로드) → 목록 로드 후 재시도(최대 6회). 끝내 못 찾으면 채팅 목록이라도 표시.
+                if(typeof loadChatList==='function') loadChatList();
+                if(_try < 6){ setTimeout(function(){ openEarthRoom(roomId, _try+1); }, 700); }
+                else { try { if(typeof loadChatList==='function') loadChatList(); }catch(_){} }   // 끝내 못 찾으면 채팅 목록이라도 표시
             } catch(_){}
         };
         // 🔔 알림 온보딩 모달 — 첫 로그인 시 자동 표시. 원터치로 권한 허용 + 구독 + 소리 설정 안내.
