@@ -3656,9 +3656,15 @@ app.get('/api/admin/tax/settled', (req, res) => {
     if (!requireAdmin(req, res)) return;
     const month = String(req.query.month || '').slice(0, 7);
     const owner = String(req.query.owner || '').trim();
+    const from = String(req.query.from || '').slice(0, 10);   // 정산완료일 기간(YYYY-MM-DD)
+    const to = String(req.query.to || '').slice(0, 10);
     _taxConfig((cfg) => {
         let where = `o.settled=1 AND o.escrow_held>0`; const params = [];
-        if (month) { where += ` AND o.settle_month=?`; params.push(month); }
+        // 기간(from/to)이 있으면 정산완료일 기준, 없으면 월(settle_month) 기준
+        if (from || to) {
+            if (from) { where += ` AND date(o.settled_at) >= date(?)`; params.push(from); }
+            if (to) { where += ` AND date(o.settled_at) <= date(?)`; params.push(to); }
+        } else if (month) { where += ` AND o.settle_month=?`; params.push(month); }
         if (owner) { where += ` AND o.seller=?`; params.push(owner); }
         db.all(`SELECT o.seller, COUNT(*) cnt, SUM(o.escrow_held) salesTotal, MAX(o.settled_at) settledAt,
                     su.realname sellerRealname, su.biz_no su_bizno, su.biz_company su_company, su.biz_ceo su_ceo,

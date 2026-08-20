@@ -1395,9 +1395,9 @@
                             <div style="font-size:12px; color:#707070;">결제한 상품을 다시 열람 · 추가 주문 · 판매자 채팅으로 연결합니다.</div>
                         </div>
                         <div id="my-purchases-summary" style="text-align:right; font-size:12px; color:#475569; white-space:nowrap;">
-                            <div>상품 구매 <b id="mp-sum-count" style="color:#1a1a1a;">0</b>건</div>
-                            <div style="font-size:16px; font-weight:900; color:var(--primary);">구매 합계 <span id="mp-sum-total">0</span>원</div>
-                            <div style="font-size:10px; color:#94a3b8; font-weight:400;">※ 아래 지출 내역엔 송금·충전 등도 포함됩니다</div>
+                            <div>총 지출 <b id="mp-sum-count" style="color:#1a1a1a;">0</b>건</div>
+                            <div style="font-size:16px; font-weight:900; color:var(--primary);">지출 합계 <span id="mp-sum-total">0</span>원</div>
+                            <div style="font-size:10px; color:#94a3b8; font-weight:400;">구매·리메이크·송금·충전 등 전체 지출 합계</div>
                         </div>
                     </div>
                 </div>
@@ -1405,7 +1405,8 @@
                 <div id="my-pending-orders-wrap" style="display:none;"></div>
                 <div class="panel" style="padding:0; overflow:hidden;">
                     <div style="padding:10px 14px; background:#f8fafc; border-bottom:1px solid var(--border-color); display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                        <input type="text" id="my-purchases-search" placeholder="상품명 / 판매자 검색..." style="flex:1; min-width:200px; padding:8px 12px; border-radius:6px; border:1px solid var(--border-color); outline:none;" oninput="filterMyPurchases()">
+                        <input type="text" id="my-purchases-search" list="expense-targets" placeholder="상품명 / 판매자 / 거래 대상 검색..." style="flex:1; min-width:200px; padding:8px 12px; border-radius:6px; border:1px solid var(--border-color); outline:none;" oninput="filterMyPurchases()">
+                        <datalist id="expense-targets"></datalist>
                         <select id="my-purchases-filter" style="padding:8px 12px; border-radius:6px; border:1px solid var(--border-color);" onchange="filterMyPurchases()">
                             <option value="all">전체</option>
                             <option value="package">패키지만</option>
@@ -1579,7 +1580,7 @@
                             <div style="font-size:12px;color:#707070;line-height:1.6;">구매확정된 매출을 업체별로 정산 지급합니다. 세금계산서 발행은 사이드바 <b>운영·관리 → 세금계산서</b>에서 진행하세요.</div>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <button class="btn btn-secondary" style="padding:8px 14px;font-weight:800;" onclick="toggleStoreManage()">🏬 상점 관리</button>
+                            <button class="btn btn-secondary" style="padding:8px 14px;font-weight:800;" onclick="toggleStoreManage()">🏬 업체 관리</button>
                             <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goInvoice()">🧾 세금계산서</button>
                         </div>
                     </div>
@@ -1587,7 +1588,7 @@
                 <!-- 🏬 상점 관리 — Admin 통합관리(에스크로) 대상 상점 지정 -->
                 <div id="store-manage-panel" class="panel" style="padding:14px;display:none;">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-                        <h4 style="font-size:14px;font-weight:900;margin:0;">🏬 상점 관리 (Admin 통합관리 지정)</h4>
+                        <h4 style="font-size:14px;font-weight:900;margin:0;">🏬 업체 관리 (Admin 통합관리 지정)</h4>
                         <span onclick="toggleStoreManage()" style="cursor:pointer;font-size:20px;color:#94a3b8;">&times;</span>
                     </div>
                     <div style="font-size:11px;color:#94a3b8;line-height:1.6;margin-bottom:10px;">체크된 상점은 <b style="color:#2563eb;">Admin이 결제/매출을 통합관리(에스크로)</b>합니다. 구매대금은 Admin이 보관했다가 구매확정 후 정산으로 상점주에게 지급되며, 결제수수료는 Admin 매출로 귀속됩니다.</div>
@@ -1657,7 +1658,15 @@
                 <!-- 💰 정산완료 업체 — 세금계산서 발행 대상 (settled=1) -->
                 <div class="panel" style="padding:14px;">
                     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
-                        <div class="input-group" style="width:170px;"><label>발행 월</label><input id="inv-month" type="month"></div>
+                        <div class="input-group" style="width:130px;"><label>조회 방식</label>
+                            <select id="inv-range-mode" onchange="invToggleRangeMode()" style="width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;font-size:13px;background:#fff;">
+                                <option value="month">월별</option>
+                                <option value="range">기간별</option>
+                            </select>
+                        </div>
+                        <div class="input-group" id="inv-month-wrap" style="width:160px;"><label>발행 월</label><input id="inv-month" type="month"></div>
+                        <div class="input-group" id="inv-from-wrap" style="width:150px;display:none;"><label>시작일</label><input id="inv-from" type="date"></div>
+                        <div class="input-group" id="inv-to-wrap" style="width:150px;display:none;"><label>종료일</label><input id="inv-to" type="date"></div>
                         <button class="btn btn-secondary" style="padding:9px 16px;" onclick="loadSettledVendors()">발행 대상 불러오기</button>
                         <div style="flex:1;"></div>
                         <span id="settled-admin-revenue-badge" style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:#f0fdf4;color:#166534;">정산완료 Admin 수수료 매출: 0원</span>
@@ -4968,6 +4977,9 @@
         window.loadAdminInvoice=async function(){
             if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
             if(!taxG('inv-month')){ const d=new Date(); taxS('inv-month', d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); }
+            // 기간 기본값(이번 달 1일~오늘)
+            if(!taxG('inv-from') || !taxG('inv-to')){ const d=new Date(); const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'); if(!taxG('inv-from')) taxS('inv-from', y+'-'+m+'-01'); if(!taxG('inv-to')) taxS('inv-to', y+'-'+m+'-'+String(d.getDate()).padStart(2,'0')); }
+            if(typeof invToggleRangeMode==='function') invToggleRangeMode();
             await _loadTaxSupplierAndPill();
             loadSettledVendors(); loadTaxHistory();
         };
@@ -5400,15 +5412,28 @@
         window.taxSettled=[]; window.taxSettledAdminRevenue=0;
         function renderSettledAdminRevenue(){ const b=document.getElementById('settled-admin-revenue-badge'); if(b) b.textContent='정산완료 Admin 수수료 매출: '+taxFmt(window.taxSettledAdminRevenue)+'원'; }
         window.toggleAllSettled=function(cb){ document.querySelectorAll('.settled-vsel').forEach(x=>x.checked=cb.checked); };
+        // 세금계산서 발행 대상 조회방식 토글(월별/기간별)
+        window.invToggleRangeMode=function(){
+            const range=(taxG('inv-range-mode')==='range');
+            const mw=document.getElementById('inv-month-wrap'), fw=document.getElementById('inv-from-wrap'), tw=document.getElementById('inv-to-wrap');
+            if(mw) mw.style.display=range?'none':'block';
+            if(fw) fw.style.display=range?'block':'none';
+            if(tw) tw.style.display=range?'block':'none';
+        };
         window.loadSettledVendors=async function(){
             if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
-            const month=taxG('inv-month'); const body=document.getElementById('settled-body'); if(!body) return;
+            const body=document.getElementById('settled-body'); if(!body) return;
+            const range=(taxG('inv-range-mode')==='range');
+            let qs, periodLabel;
+            if(range){ const from=taxG('inv-from'), to=taxG('inv-to'); if(!from&&!to){ showToast('시작일 또는 종료일을 선택하세요.'); return; } qs='from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to); periodLabel=(from||'')+'~'+(to||''); }
+            else { const month=taxG('inv-month'); qs='month='+encodeURIComponent(month); periodLabel=month; }
+            window.__invPeriodLabel=periodLabel;
             body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             try{
-                const d=await fetch(`${API_URL}/api/admin/tax/settled?month=${encodeURIComponent(month)}`).then(r=>r.json());
+                const d=await fetch(`${API_URL}/api/admin/tax/settled?${qs}`).then(r=>r.json());
                 window.taxSettled=d.vendors||[];
                 window.taxSettledAdminRevenue=d.adminRevenue||0; renderSettledAdminRevenue();
-                if(!window.taxSettled.length){ body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 정산완료 매출이 없습니다.</td></tr>'; return; }
+                if(!window.taxSettled.length){ body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">해당 기간 정산완료 매출이 없습니다.</td></tr>'; return; }
                 body.innerHTML=window.taxSettled.map((v,i)=>`<tr>
                     <td style="text-align:center;"><input type="checkbox" class="settled-vsel" data-i="${i}"></td>
                     <td style="font-weight:700;min-width:180px;">
@@ -5424,26 +5449,31 @@
                 </tr>`).join('');
             }catch(e){ body.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
+        // 발행 기간(월별/기간별) — label(적요·batchMonth), writeDate(발행일), mm(품목 월칸)
+        function _invPeriod(){
+            if(taxG('inv-range-mode')==='range'){ const from=taxG('inv-from'), to=taxG('inv-to'); const label=(from||'')+'~'+(to||''); return { label, writeDate:(to||from||''), mm:(to||from||'').slice(5,7) }; }
+            const m=taxG('inv-month'); return { label:m, writeDate:(m?m+'-01':''), mm:(m||'').slice(5,7) };
+        }
         // 정산완료 업체 발행 버튼 → 폼 프리필 오픈
         window.issueSettledOne=function(i){
             const v=window.taxSettled[i]; if(!v) return;
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
-            const month=taxG('inv-month');
+            const P=_invPeriod();
             openTaxInvoiceForm({
                 supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'', ceoName:v.bizCeo||'', address:v.bizAddr||'', bizType:v.bizIndustry||'', bizClass:v.bizItem||'', email:v.taxEmail||'' }, seller:v.seller,
-                items:[{ month:(month||'').slice(5,7), name:month+' 플랫폼 이용 수수료', qty:1, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }],
-                writeDate:(month?month+'-01':''), batchMonth:month
+                items:[{ month:P.mm, name:P.label+' 플랫폼 이용 수수료', qty:1, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }],
+                writeDate:P.writeDate, batchMonth:P.label
             });
         };
         window.issueBulkSettled=async function(){
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const sel=Array.from(document.querySelectorAll('.settled-vsel:checked')).map(x=>window.taxSettled[Number(x.dataset.i)]).filter(Boolean);
             if(!sel.length){ showToast('발행할 업체를 선택하세요.'); return; }
-            const month=taxG('inv-month');
-            if(!confirm(`${sel.length}개 업체에 ${month} 플랫폼 이용 수수료 세금계산서를 일괄 발행합니다.`)) return;
-            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:month+' 플랫폼 이용 수수료'}, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }));
+            const P=_invPeriod();
+            if(!confirm(`${sel.length}개 업체에 [${P.label}] 플랫폼 이용 수수료 세금계산서를 일괄 발행합니다.`)) return;
+            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:P.label+' 플랫폼 이용 수수료'}, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }));
             try{
-                const r=await fetch(`${API_URL}/api/tax/issue-bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ supplier, vendors, writeDate:month+'-01', batchMonth:month })});
+                const r=await fetch(`${API_URL}/api/tax/issue-bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ supplier, vendors, writeDate:P.writeDate, batchMonth:P.label })});
                 const d=await r.json(); if(!r.ok) throw new Error(d.error||'실패');
                 showToast(`일괄 발행 완료: ${d.count}/${d.total}건`);
                 loadTaxHistory();
@@ -5451,12 +5481,12 @@
         };
         window.issueSettledAdminRevenueTax=function(){
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
-            const month=taxG('inv-month'); const rev=window.taxSettledAdminRevenue||0;
+            const P=_invPeriod(); const rev=window.taxSettledAdminRevenue||0;
             if(rev<=0){ showToast('발행할 정산완료 Admin 수수료 매출이 없습니다.'); return; }
             openTaxInvoiceForm({
                 supplier, recipient:supplier, seller:'(Admin)',
-                items:[{ month:(month||'').slice(5,7), name:month+' 거래/결제 수수료 매출(정산완료분)', qty:1, totalAmount:rev }],
-                writeDate:(month?month+'-01':''), batchMonth:month, invoiceType:'admin_revenue'
+                items:[{ month:P.mm, name:P.label+' 거래/결제 수수료 매출(정산완료분)', qty:1, totalAmount:rev }],
+                writeDate:P.writeDate, batchMonth:P.label, invoiceType:'admin_revenue'
             });
         };
 
@@ -6572,12 +6602,20 @@
                 const list = await fetch(`${API_URL}/api/transactions/${encodeURIComponent(currentUser.name)}`).then(r=>r.json());
                 const me = currentUser.name;
                 const exp = (list||[]).filter(h => (h.buyer===me && (h.type==='자산 구매' || h.makeKind)) || h.type==='송금 (출금)' || h.type==='환불 지급' || h.type==='출금' || h.purchaseType==='withdraw');
-                if(!exp.length){ body.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:18px; color:var(--text-sub);">지출 내역이 없습니다.</td></tr>'; return; }
                 const label=(h)=>{ if(h.makeKind==='리메이크')return '리메이크'; if(h.makeKind==='리페어')return '리페어'; if(h.type==='자산 구매')return '구매'; if(h.type==='송금 (출금)')return '송금'; if(h.type==='환불 지급')return '환불'; if(h.type==='출금'||h.purchaseType==='withdraw')return '출금'; return h.type||'지출'; };
-                body.innerHTML = exp.map(h=>{
+                // 💰 총 지출 합계·건수 → 상단 배지(구매 목록과 지출 내역 수치 일치)
+                const total = exp.reduce((s,h)=> s + (Number(h.amount)||0), 0);
+                const cEl=document.getElementById('mp-sum-count'); if(cEl) cEl.textContent = exp.length.toLocaleString();
+                const tEl=document.getElementById('mp-sum-total'); if(tEl) tEl.textContent = total.toLocaleString();
+                // 🔎 거래 대상 업체 자동완성(datalist)
+                try{ const dl=document.getElementById('expense-targets'); if(dl){ const seen={}; const opts=[]; exp.forEach(h=>{ const t=(h.storeName||h.seller||h.receiver||'').trim(); if(t && !seen[t]){ seen[t]=1; opts.push('<option value="'+t.replace(/"/g,'&quot;')+'">'); } }); dl.innerHTML=opts.join(''); } }catch(_){}
+                if(!exp.length){ body.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:18px; color:var(--text-sub);">지출 내역이 없습니다.</td></tr>'; return; }
+                const rows = exp.map(h=>{
                     const tgt = h.storeName || h.seller || h.receiver || '-';
-                    return `<tr style="border-top:1px solid #f1f5f9;"><td style="padding:8px 10px; white-space:nowrap;">${(h.date||'')}</td><td style="padding:8px 10px;">${label(h)}</td><td style="padding:8px 10px;">${String(tgt).replace(/</g,'&lt;')}</td><td style="padding:8px 10px; text-align:right; color:#dc2626; font-weight:700;">-${(Number(h.amount)||0).toLocaleString()}원</td></tr>`;
+                    const key = ((label(h))+' '+tgt).toLowerCase();
+                    return `<tr class="expense-row" data-target="${String(tgt).toLowerCase().replace(/"/g,'&quot;')}" data-key="${key.replace(/"/g,'&quot;')}" style="border-top:1px solid #f1f5f9;"><td style="padding:8px 10px; white-space:nowrap;">${(h.date||'')}</td><td style="padding:8px 10px;">${label(h)}</td><td style="padding:8px 10px;">${String(tgt).replace(/</g,'&lt;')}</td><td style="padding:8px 10px; text-align:right; color:#dc2626; font-weight:700;">-${(Number(h.amount)||0).toLocaleString()}원</td></tr>`;
                 }).join('');
+                body.innerHTML = rows + `<tr style="border-top:2px solid #e2e8f0; background:#fafafa;"><td colspan="3" style="padding:9px 10px; font-weight:800;">지출 합계 (${exp.length}건)</td><td style="padding:9px 10px; text-align:right; font-weight:900; color:#dc2626;">-${total.toLocaleString()}원</td></tr>`;
             } catch(e){ body.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:18px; color:var(--danger);">불러오기 실패</td></tr>'; }
         };
 
@@ -12132,13 +12170,7 @@ pdfjsScript,
         function renderMyPurchases(purchases) {
             const list = document.getElementById('my-purchases-list');
             if(!list) return;
-            // 💰 총 결제 합계(환불/환불건 제외) — 상단 요약 배지
-            try{
-                const valid = (purchases||[]).filter(p => !p.refunded && p.purchaseType !== 'refund');
-                const total = valid.reduce((s,p)=> s + (Number(p.amount)||0), 0);
-                const cEl=document.getElementById('mp-sum-count'); if(cEl) cEl.textContent = valid.length.toLocaleString();
-                const tEl=document.getElementById('mp-sum-total'); if(tEl) tEl.textContent = total.toLocaleString();
-            }catch(_){}
+            // 상단 합계 배지는 loadPurchaseExpenses(지출 내역 기준)가 채운다 — 여기선 계산하지 않음(수치 일원화)
             if(!purchases || purchases.length === 0) {
                 list.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--text-sub); font-size:13px;">🛒 아직 구매한 상품이 없습니다.<br><span style="font-size:11px;">"디지털 거래소"에서 상품을 둘러보세요!</span></div>`;
                 return;
@@ -12240,6 +12272,13 @@ pdfjsScript,
                 if(filter === 'refundable' && !isRefundable) show = false;
                 c.style.display = show ? 'flex' : 'none';
             });
+            // 💸 지출 내역 행도 같은 검색어로 필터(거래 대상/종류)
+            try{
+                document.querySelectorAll('.expense-row').forEach(function(r){
+                    const key = r.getAttribute('data-key') || '';
+                    r.style.display = (!q || key.includes(q)) ? '' : 'none';
+                });
+            }catch(_){}
         };
 
         // 🚀 [v5] 구매한 상품 → 자체완결 HTML 재생성 + 다운로드 (영수증 + 판매자 채팅 링크 포함)
