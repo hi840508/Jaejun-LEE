@@ -8052,6 +8052,9 @@
                     showToast((d.from||window._rc.peer) + " 님이 수락했습니다. 화면 연결 중…");
                 } else if(d.act === 'end'){
                     if(window._rc.active){ showToast("원격제어가 종료되었습니다."); window.stopRemoteControl(true); }
+                } else if(d.act === 'switch_screen'){
+                    // 🖥 제어측이 '다른 모니터 보기' 요청 → 피제어측(host)이 화면 전환
+                    if(window._rc && window._rc.role === 'host' && window._rc.active && window.rcHostSwitchScreen){ window.rcHostSwitchScreen(); }
                 }
             } else if(d.kind === 'rc_hostack'){
                 // 내 로컬 서버가 호스팅을 시작했다는 응답 — 도우미 생존 확인
@@ -8060,12 +8063,48 @@
             // kind:'input'은 브라우저가 아니라 내 로컬 서버(직결)가 직접 받아 주입하므로 여기서 처리하지 않음.
         };
 
+        // 🖥 [듀얼모니터] 피제어측(host): 공유 화면(모니터)을 다음 것으로 전환 → WebRTC 트랙 교체(재협상 불필요)
+        window.rcHostSwitchScreen = async function(){
+            if(!(window._rc && window._rc.active && window._rc.role === 'host') || !window._rcp || !window._rcp.pc){ showToast('화면 공유 중일 때만 전환할 수 있어요.'); return; }
+            try{
+                let newStream, picked;
+                if(window.rayApp && window.rayApp.listScreens && window.rayApp.setPreferredScreen){
+                    // 앱(Electron): 연결된 모니터 목록에서 다음 모니터로 순환
+                    const screens = await window.rayApp.listScreens();
+                    if(!screens || screens.length < 2){ showToast('연결된 모니터가 하나뿐입니다.'); return; }
+                    const curId = window.__rcScreenId || (screens[0] && screens[0].id);
+                    let idx = screens.findIndex(function(s){ return s.id === curId; }); idx = (idx + 1) % screens.length;
+                    picked = screens[idx];
+                    await window.rayApp.setPreferredScreen(picked.id);
+                    window.__rcScreenId = picked.id;
+                    newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
+                } else {
+                    // 일반 브라우저: OS 화면 선택기에서 다른 모니터 선택
+                    showToast('공유할 화면(모니터)을 선택해 주세요.');
+                    newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
+                }
+                const newTrack = newStream.getVideoTracks()[0];
+                const sender = window._rcp.pc.getSenders().find(function(s){ return s.track && s.track.kind === 'video'; });
+                if(sender && newTrack){ await sender.replaceTrack(newTrack); }
+                try{ if(window._rcHostStream) window._rcHostStream.getTracks().forEach(function(t){ t.stop(); }); }catch(_){}
+                window._rcHostStream = newStream;
+                if(newTrack) newTrack.addEventListener('ended', function(){ stopRemoteControl(false); });
+                showToast('🖥 화면을 전환했습니다' + (picked && picked.name ? (' — ' + picked.name) : '') + '.');
+            }catch(e){ showToast('화면 전환 취소/실패' + (e && e.name ? (' (' + e.name + ')') : '')); }
+        };
+        // 🖥 [듀얼모니터] 제어측(viewer): 상대에게 '다른 모니터 보기' 요청
+        window.rcRequestScreenSwitch = function(){
+            if(socket && socket.connected && window._rc && window._rc.peer){
+                socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'ctrl', act:'switch_screen' });
+                showToast('상대 PC에 화면(모니터) 전환을 요청했어요.');
+            }
+        };
         // 피제어측 상단 배너(채팅 화면 자체 — 단독 접속에서도 표시)
         function _rcShowHostBanner(txt){
             let b = document.getElementById('rc-host-banner');
             if(!b){ b = document.createElement('div'); b.id='rc-host-banner'; document.body.appendChild(b); }
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99991;background:#b91c1c;color:#fff;display:flex;align-items:center;justify-content:center;gap:14px;padding:8px 14px;font-weight:800;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.3);';
-            b.innerHTML = '<span id="rc-host-banner-txt">'+ (txt||'🖥 상대방이 내 화면을 원격제어 중입니다') +'</span> <button onclick="stopRemoteControl(false)" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">원격제어 종료</button>';
+            b.innerHTML = '<span id="rc-host-banner-txt">'+ (txt||'🖥 상대방이 내 화면을 원격제어 중입니다') +'</span> <button onclick="rcHostSwitchScreen()" title="공유 모니터 전환(듀얼 모니터)" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 12px;font-weight:800;cursor:pointer;">🖥 화면 전환</button> <button onclick="stopRemoteControl(false)" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">원격제어 종료</button>';
         }
         function _rcUpdateHostBanner(txt){ const t=document.getElementById('rc-host-banner-txt'); if(t) t.textContent = txt; }
         function _rcHideHostBanner(){ const b=document.getElementById('rc-host-banner'); if(b) b.remove(); }
@@ -8079,6 +8118,7 @@
                 '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
               + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🖥 ' + String(peer||'').replace(/</g,'&lt;') + ' 님의 화면 제어 중</span>'
               + '<span style="display:flex;gap:6px;flex:none;">'
+              + '<button onclick="rcRequestScreenSwitch()" title="상대 모니터 전환(듀얼 모니터)" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">🖥 화면</button>'
               + '<button onclick="_rcToggleKbd()" title="키보드" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">⌨</button>'
               + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">종료</button></span></div>'
               + '<div id="rc-view-stage" tabindex="0" style="flex:1;position:relative;overflow:hidden;background:#000;outline:none;cursor:crosshair;display:flex;align-items:center;justify-content:center;touch-action:none;">'
