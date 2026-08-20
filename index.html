@@ -1071,6 +1071,7 @@
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
                         <div class="yt-sb-title">내 페이지</div>
+                        <button class="yt-sb-item" onclick="switchTab('store-create')" data-tab="store-create"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-4h16l1 4M4 9v11h16V9"></path><line x1="12" y1="12" x2="12" y2="18"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg></span><span>상점 생성</span></button>
                         <button class="yt-sb-item" onclick="switchTab('my-store')" data-tab="my-store"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-4h16l1 4M4 9v11h16V9M9 9V5h6v4"></path></svg></span><span>내 상점</span></button>
                         <!-- 📦 주문 관리: 상점 개설자 전용(개설 안 하면 숨김) -->
                         <button class="yt-sb-item" id="sb-order-mgmt" style="display:none" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span><span>주문 관리</span></button>
@@ -1188,9 +1189,13 @@
                 </div>
             </div>
 
-            <div id="tab-my-store" class="tab-content">
-                <div class="grid-2col" style="align-items:stretch;">
-                    <div class="panel" style="padding:0; overflow:hidden; background:transparent; border:none; box-shadow:none; display:flex; flex-direction:column;">
+            <!-- 🏪 상점 생성 페이지 -->
+            <div id="tab-store-create" class="tab-content">
+                <div class="panel" style="padding:14px 16px;">
+                    <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">🏪 상점 생성</h3>
+                    <div style="font-size:12px;color:#707070;line-height:1.6;">새 상점을 만듭니다. 만든 상점의 편집·상품 등록·거래처 관리는 <b>내 상점</b>에서 하세요.</div>
+                </div>
+                <div class="panel" style="padding:0; overflow:hidden; background:transparent; border:none; box-shadow:none; display:flex; flex-direction:column; max-width:600px;">
                         <div id="wysiwyg-brand-card" style="background:#fff; border:1px solid var(--border-color); border-radius:16px; overflow:hidden; box-shadow:var(--shadow-soft); display:flex; flex-direction:column; flex:1;">
                             <div id="wbc-bg-zone" style="position:relative; width:100%; height:140px; background:#f4f4f5; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:0.2s; flex-shrink:0;" onclick="document.getElementById('new-brand-background').click()" title="클릭하여 배경 이미지 업로드">
                                 <input type="file" id="new-brand-background" accept="image/*" style="display:none;" onchange="wbcOnBgPicked(event)">
@@ -1263,14 +1268,26 @@
                             <button class="btn" style="width:calc(100% - 24px); margin:10px 12px 14px; padding:12px;" onclick="registerNewBrandStore()">상점 등록하기</button>
                         </div>
                     </div>
+                </div><!-- /tab-store-create -->
+
+                <!-- 🏪 내 상점(관리) 페이지 -->
+                <div id="tab-my-store" class="tab-content">
+                    <div class="panel" style="padding:14px 16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                            <div>
+                                <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">🏪 내 상점 (관리)</h3>
+                                <div style="font-size:12px;color:#707070;line-height:1.6;">내 상점 편집·상품 등록·거래처 관리. 새 상점은 <b>상점 생성</b>에서 만드세요.</div>
+                            </div>
+                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="switchTab('store-create')">＋ 상점 생성</button>
+                        </div>
+                    </div>
                     <div class="panel" style="padding:15px; display:flex; flex-direction:column;">
-                        <h4 style="margin-bottom:10px; font-size:14px;">내 브랜드 관리</h4>
+                        <h4 style="margin-bottom:10px; font-size:14px;">내 상점 관리</h4>
                         <div id="my-brands-list-zone" style="display:flex; flex-direction:column; gap:8px; flex:1; overflow-y:auto;"></div>
                     </div>
-                </div>
 
-                <div class="panel">
-                    <h4 style="font-size:14px; margin:0 0 15px 0;">상품 등록</h4>
+                    <div class="panel">
+                        <h4 style="font-size:14px; margin:0 0 15px 0;">상품 등록</h4>
 
                     <!-- 🚀 [v8+] STEP 1: 상점 선택 (필수) — 선택 전에는 나머지 폼 비활성화 -->
                     <div id="prod-step-store-select" style="background:#f4f4f5; border:2px solid #2a2a2a; border-radius:12px; padding:14px; margin-bottom:14px;">
@@ -2728,22 +2745,46 @@
             } catch(e){ showToast("서버 네트워크 장애"); }
         }
 
-        // 📍 거래 치과 등 반복 행의 주소칸에 채우기 — 버튼이 속한 행(.nb-clinic-row/._cm-row)의 주소 input에 입력.
+        // 📍 다음(카카오) 우편번호 — 앱/모바일 WebView에서 .open()은 팝업 차단되므로 반드시 embed(iframe) 방식으로 인페이지 모달에 삽입.
+        window._openDaumPostcode = function(onComplete){
+            if(typeof daum === 'undefined' || !daum.Postcode){ showToast('주소 검색을 불러오지 못했습니다. 인터넷 연결을 확인 후 잠시 뒤 다시 시도해 주세요.'); return; }
+            var ov = document.createElement('div');
+            ov.style.cssText = 'position:fixed;inset:0;z-index:100003;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:14px;';
+            var box = document.createElement('div');
+            box.style.cssText = 'background:#fff;border-radius:14px;width:min(430px,96vw);max-height:92vh;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4);display:flex;flex-direction:column;';
+            var hd = document.createElement('div');
+            hd.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-bottom:1px solid #eee;font-weight:800;font-size:14px;';
+            hd.innerHTML = '<span>🔍 주소 검색</span>';
+            var xb = document.createElement('button');
+            xb.type = 'button'; xb.textContent = '✕';
+            xb.style.cssText = 'border:0;background:transparent;font-size:18px;cursor:pointer;color:#888;line-height:1;';
+            hd.appendChild(xb);
+            var cont = document.createElement('div');
+            cont.style.cssText = 'flex:1;width:100%;min-height:440px;';
+            box.appendChild(hd); box.appendChild(cont); ov.appendChild(box); document.body.appendChild(ov);
+            var close = function(){ try{ ov.remove(); }catch(_){} };
+            xb.onclick = close;
+            ov.addEventListener('click', function(e){ if(e.target === ov) close(); });
+            try {
+                new daum.Postcode({
+                    oncomplete: function(data){ try{ onComplete(data); }catch(_){}; close(); },
+                    width: '100%', height: '100%'
+                }).embed(cont, { autoClose: false });
+            } catch(err){ close(); showToast('주소 검색을 열 수 없습니다: ' + (err && err.message || err)); }
+        };
+        function _daumAddr(data){ var addr = data.roadAddress || data.jibunAddress || data.address || ''; if(data.buildingName){ addr += ' (' + data.buildingName + ')'; } return addr; }
+        // 반복 행의 주소칸에 채우기 — 버튼이 속한 행(.nb-clinic-row/._cm-row)의 주소 input에 입력.
         window.openAddrSearchFor = function(btn, inputSelector){
-            if(typeof daum === 'undefined' || !daum.Postcode){ showToast('주소 검색을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'); return; }
             var row = btn.closest('.nb-clinic-row, ._cm-row'); var input = row ? row.querySelector(inputSelector) : null;
             if(!input){ return; }
-            new daum.Postcode({ oncomplete: function(data){ var addr = data.roadAddress || data.jibunAddress || data.address || ''; if(data.buildingName){ addr += ' (' + data.buildingName + ')'; } input.value = addr; input.focus(); }}).open();
+            window._openDaumPostcode(function(data){ input.value = _daumAddr(data); try{ input.focus(); }catch(_){} });
         };
-        // 📍 주소 쉽게 찾기 — 다음(카카오) 우편번호 서비스. 선택 시 기본주소 채우고 상세주소 입력란 포커스.
+        // 주소 쉽게 찾기 — 기본주소 채우고 상세주소 입력란 포커스.
         window.openAddrSearch = function(addrId, detailId){
-            if(typeof daum === 'undefined' || !daum.Postcode){ showToast('주소 검색을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'); return; }
-            new daum.Postcode({ oncomplete: function(data){
-                var addr = data.roadAddress || data.jibunAddress || data.address || '';
-                if(data.buildingName){ addr += ' (' + data.buildingName + ')'; }
-                var el = document.getElementById(addrId); if(el) el.value = addr;
-                var det = document.getElementById(detailId); if(det){ det.focus(); }
-            }}).open();
+            window._openDaumPostcode(function(data){
+                var el = document.getElementById(addrId); if(el) el.value = _daumAddr(data);
+                var det = document.getElementById(detailId); if(det){ try{ det.focus(); }catch(_){} }
+            });
         };
 
         async function registerUser() {
@@ -3724,7 +3765,7 @@
         window.openClinicManage = async function(storeId, storeName){
             const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;');
             const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
-            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:560px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="font-weight:800;font-size:16px;">🏥 거래 치과 관리</div><button id="_cm-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">'+esc(storeName||'')+' · 거래 치과 정보(홍보용, 관리자 열람)</div><div id="_cm-list"></div><button type="button" id="_cm-add" style="margin:2px 0 12px;padding:8px 12px;border:1px dashed #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">＋ 거래 치과 추가</button><div style="display:flex;gap:8px;"><button id="_cm-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button><button id="_cm-save" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장</button></div></div>';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:560px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="font-weight:800;font-size:16px;">🏥 거래처 관리</div><button id="_cm-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">'+esc(storeName||'')+' · 거래 치과 정보(홍보용, 관리자 열람)</div><div id="_cm-list"></div><button type="button" id="_cm-add" style="margin:2px 0 12px;padding:8px 12px;border:1px dashed #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">＋ 거래 치과 추가</button><div style="display:flex;gap:8px;"><button id="_cm-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button><button id="_cm-save" style="flex:2;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장</button></div></div>';
             document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); }); ov.querySelector('#_cm-x').onclick=()=>ov.remove(); ov.querySelector('#_cm-cancel').onclick=()=>ov.remove();
             const list=ov.querySelector('#_cm-list');
             const addRow=(v)=>{ v=v||{}; const row=document.createElement('div'); row.className='_cm-row'; row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:8px;border:1px solid #eef2f7;border-radius:8px;background:#fafafa;';
@@ -5427,6 +5468,7 @@
                 // 🚀 사이드바 즐겨찾기/카테고리 새로고침
                 try { renderSidebarFavs(); renderSidebarCategories(); renderMobileChips(); } catch(e){}
             }
+            if(id === 'store-create') { try{ if(window.applyOpenCategories) window.applyOpenCategories(); }catch(_){} }
             if(id === 'my-store') { loadMyStore(); loadMyBrandStores(); }
             if(id === 'sales-mgmt') { loadMySalesOrders(); }
             if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
@@ -6141,6 +6183,7 @@
                     const _cw=document.getElementById('new-brand-clinic-wrap'); if(_cw){ _cw.style.display='none'; _cw.dataset.init=''; } const _cl=document.getElementById('new-brand-clinic-list'); if(_cl) _cl.innerHTML='';
                     if(window.wbcReset) wbcReset();
                     loadMyBrandStores();
+                    try{ switchTab('my-store'); }catch(_){}   // 등록 후 내 상점(관리)로 이동
                 } else { const d=await res.json(); showToast(d.error); }
             } catch(e){}
         }
@@ -6255,7 +6298,7 @@
                                 <button class="btn" style="padding:6px 10px; font-size:11px;" onclick="enterBrandStoreById('${st.id}')">내 상점 입장</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:var(--primary); border-color:var(--primary);" onclick="editBrandFull('${st.id}')">✏️ 전체 편집</button>
                                 ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#7c3aed; border-color:#c4b5fd;" onclick="openRxItemsModal('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🦷 보철 품목·수가 관리</button>` : ''}
-                                ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#0e7490; border-color:#a5f3fc;" onclick="openClinicManage('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🏥 거래 치과 관리</button>` : ''}
+                                ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#0e7490; border-color:#a5f3fc;" onclick="openClinicManage('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🏥 거래처 관리</button>` : ''}
                                 <button class="btn btn-warning" style="padding:6px 10px; font-size:11px;" onclick="openPromoQR('${st.id}', '${st.name.replace(/'/g, "\\'")}')">홍보 QR</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="editStoreCategory('${st.id}', '${currentCat}')">카테고리 변경</button>
                                 <button class="btn btn-outline" style="padding:6px 10px; font-size:11px;" onclick="uploadStoreBackground('${st.id}')">배경 ${hasBg?'변경':'등록'}</button>
