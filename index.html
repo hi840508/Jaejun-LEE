@@ -601,6 +601,7 @@
         .kt-bubble.other { background:#ffffff; color:#1f2937; border-radius: 2px 16px 16px 16px; }
         .kt-bubble.me { background:#fee500; color:#1f2937; border-radius: 16px 2px 16px 16px; align-self:flex-end; }
         .kt-bubble.me.same-sender { border-radius:16px 16px 2px 16px; }
+        .kt-unread { color:#facc15; font-weight:800; font-size:11px; line-height:1; align-self:flex-end; margin:0 3px 2px 0; }
         .kt-bubble.other.same-sender { border-radius:16px 16px 16px 2px; }
 
         /* 시간 (말풍선 옆 아래) */
@@ -4390,6 +4391,15 @@
                     if(!(socket && socket.connected)) window._scheduleConnInd(8000);
                 }
             });
+            // 💬 카톡식 읽음: 상대가 내 메시지를 읽으면 '1' 제거
+            socket.on('room_read', d => {
+                try {
+                    if(!d || !d.roomId || d.reader === (currentUser && currentUser.name)) return;
+                    window.__peerLastRead = window.__peerLastRead || {};
+                    window.__peerLastRead[d.roomId] = Math.max(window.__peerLastRead[d.roomId]||0, d.lastReadId||0);
+                    if(d.roomId === currentChatRoomId && window._refreshUnreadMarks) window._refreshUnreadMarks();
+                } catch(_){}
+            });
             // 🚀 실시간 친구 추가 알림 (별도 새로고침 없이 친구목록/대화방 즉시 갱신)
             socket.on('friend_added', handleFriendAdded);
             // 🟢 친구 접속 상태(presence) 실시간 반영
@@ -5556,14 +5566,45 @@
         // 🔙 앱/브라우저 뒤로가기 → 이전 탭으로 전환(앱 종료 대신). 열린 모달/오버레이가 있으면 그것부터 닫음.
         (function _wireBackNav(){
             if(window.__popstateWired) return; window.__popstateWired=true;
+            // 앱/홈화면앱(TWA·PWA·Electron)에선 뒤로가기가 앱을 닫지 않고 '한 단계 뒤로' 동작하도록 가드 상태를 유지
+            var _isAppLike = function(){ try{ return !!window.rayApp || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone===true; }catch(_){ return false; } };
+            var _pushGuard = function(){ try{ history.pushState({ __back_guard:true }, ''); }catch(_){} };
+            var _lastBackAt = 0;
+            // 🔽 현재 열려 있는 '레이어'(오버레이/전체화면/채팅방/상점상세)를 하나 닫는다. 닫았으면 true.
+            function _closeTopLayer(){
+                try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; return true; } }catch(_){}                       // 공유폴더 전체화면
+                try{ var rcv=document.getElementById('rc-view-overlay'); if(rcv){ if(window.stopRemoteControl) window.stopRemoteControl(false); else rcv.remove(); return true; } }catch(_){}   // 원격제어 뷰어
+                try{ var hb=document.getElementById('rc-host-banner'); if(hb && window._rc && window._rc.active && window._rc.role==='host'){ if(window.stopRemoteControl) window.stopRemoteControl(false); return true; } }catch(_){}
+                try{ var vc=document.getElementById('vc-overlay'); if(vc && window._vc && window._vc.active){ if(window.hangupVideo) window.hangupVideo(); else if(window.endVideoChat) window.endVideoChat(); return true; } }catch(_){}   // 화상통화
+                try{ var pv=document.getElementById('chat-file-preview-modal'); if(pv && pv.classList.contains('active')){ pv.classList.remove('active'); return true; } }catch(_){}
+                try{ var om=document.querySelector('.modal-overlay.active, .modal.active'); if(om){ if(window.closeModal && om.id) closeModal(om.id); else om.classList.remove('active'); return true; } }catch(_){}   // 일반 모달
+                try{ var cr=document.getElementById('view-chat-room'); var dr=document.getElementById('messenger-drawer'); if(cr && cr.classList.contains('active') && dr && dr.classList.contains('open')){ var fl=document.getElementById('view-friend-list'); if(fl){ cr.classList.remove('active'); fl.classList.add('active'); if(typeof loadChatList==='function') loadChatList(); return true; } } }catch(_){}   // 채팅방 → 목록
+                try{ var dr2=document.getElementById('messenger-drawer'); if(dr2 && dr2.classList.contains('open')){ if(window.toggleMessengerDrawer) toggleMessengerDrawer(); return true; } }catch(_){}   // 채팅 서랍 닫기
+                try{ var inner=document.getElementById('brand-inner-wrap'); if(inner && inner.style.display!=='none' && inner.offsetParent!==null){ if(window.clearMarketFilter) clearMarketFilter(); return true; } }catch(_){}   // 상점 상세 → 쇼케이스
+                return false;
+            }
             window.addEventListener('popstate', function(e){
-                // 1) 열려 있는 오버레이/모달 먼저 닫기(뒤로가기 = 닫기)
-                try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; history.pushState({tab:(history.state&&history.state.tab)||'market'},''); return; } }catch(_){}
-                try{ var openM=document.querySelector('.modal-overlay.active, .modal.active'); if(openM){ /* 모달은 자체 닫기 버튼 유지 — 탭 전환만 */ } }catch(_){}
-                // 2) 이전 탭 복원
-                var t=(e.state&&e.state.tab)||'market';
-                try{ switchTab(t, true); }catch(_){}
+                var appLike = _isAppLike();
+                // 1) 열린 레이어부터 닫기(뒤로가기 = 닫기)
+                if(_closeTopLayer()){ if(appLike) _pushGuard(); return; }
+                // 2) 비-market 탭이면 홈(market)으로
+                var curActive = document.querySelector('.tab-content.active');
+                var curId = curActive ? (curActive.id||'').replace('tab-','') : 'market';
+                if(curId && curId !== 'market'){ try{ switchTab('market', true); }catch(_){} if(appLike) _pushGuard(); return; }
+                // 3) 최상위(홈) — 앱이면 '한 번 더' 확인 후 종료 허용, 브라우저면 그대로
+                if(appLike){
+                    var now=Date.now();
+                    if(now - _lastBackAt < 2000){ return; }   // 2초 내 재실행 → 가드 비움 = 실제 종료 허용
+                    _lastBackAt = now;
+                    try{ showToast('한 번 더 누르면 종료됩니다'); }catch(_){}
+                    _pushGuard();
+                } else {
+                    var t=(e.state && e.state.tab) || 'market';
+                    try{ switchTab(t, true); }catch(_){}
+                }
             });
+            // 앱/홈화면앱 최초 진입 시 가드 하나 확보(첫 화면에서도 뒤로가기가 잡히도록)
+            try{ if(_isAppLike()){ setTimeout(_pushGuard, 1200); } }catch(_){}
         })();
 
         // 🚀 [v7+] ============ YouTube 스타일 사이드바 동작 ============
@@ -10624,6 +10665,8 @@ pdfjsScript,
                     // 🔔 이 방 읽음 처리: 마지막 메시지 id 저장 → 다음 로그인/새로고침에 미읽음으로 안 뜸
                     if(_maxId) { try { localStorage.setItem('rc_read_' + currentChatRoomId, String(_maxId)); } catch(_){} }
                     unreadCounts[currentChatRoomId] = 0; updateTabBadge();
+                    // 💬 카톡식 읽음: 서버에 이 방을 읽었음 통지(상대 '1' 제거) + 상대 읽음상태 회신 받아 내 '1' 정리
+                    try { if(socket && socket.connected) socket.emit('read_room', { roomId: currentChatRoomId }); } catch(_){}
                 } finally { window.__chatBulkLoading = false; }
                 body.scrollTop = body.scrollHeight;
                 // 🤖 AI 상담원 방을 처음 열면(대화 없음) 환영 인사 + 이용 안내
@@ -11844,7 +11887,10 @@ pdfjsScript,
 
             if(isMe) {
                 const bubbleClass = sameAsLast ? 'kt-bubble me same-sender' : 'kt-bubble me';
-                chatBody.insertAdjacentHTML('beforeend', `<div class="kt-msg-line me${sameAsLast?' same-sender':''}" data-sender="${sender}"${idAttr}>${menuBtn}<div class="kt-time">${time}</div><div class="${bubbleClass}">${displayHtml}</div></div>`);
+                // 💬 카톡식 안읽음 '1' — 상대가 이 메시지 id까지 안 읽었으면 표시(읽으면 room_read로 제거)
+                const _peer = (window.__peerLastRead && window.__peerLastRead[currentChatRoomId]) || 0;
+                const unread = (msgId && msgId > _peer && isPlainText !== null) ? `<span class="kt-unread" data-u="${msgId}">1</span>` : '';
+                chatBody.insertAdjacentHTML('beforeend', `<div class="kt-msg-line me${sameAsLast?' same-sender':''}" data-sender="${sender}"${idAttr}>${menuBtn}${unread}<div class="kt-time">${time}</div><div class="${bubbleClass}">${displayHtml}</div></div>`);
             } else {
                 const showName = !sameAsLast;
                 // ⭐ senderPic은 이제 히스토리에 저장 안 함(null) → 방 참가자 아바타 캐시(__roomAvatars)에서 조회, 없으면 이니셜.
@@ -11860,6 +11906,13 @@ pdfjsScript,
             }
             if(!window.__chatBulkLoading) chatBody.scrollTop = chatBody.scrollHeight;
         }
+        // 💬 상대가 읽은 메시지의 '1' 제거(현재 방)
+        window._refreshUnreadMarks = function(){
+            try{
+                const peer = (window.__peerLastRead && window.__peerLastRead[currentChatRoomId]) || 0;
+                document.querySelectorAll('#main-chat-body .kt-msg-line.me .kt-unread').forEach(function(s){ const id=Number(s.getAttribute('data-u')||0); if(id && id<=peer) s.remove(); });
+            }catch(_){}
+        };
 
         // 🚀 [v8+] 메시지 수정/삭제 메뉴 (카카오톡식)
         window.openMsgMenu = function(e, msgId) {
@@ -12051,8 +12104,9 @@ pdfjsScript,
             if(data.roomId === currentChatRoomId) {
                 if(data.sender !== currentUser.name) {
                     appendMainMessage(data.sender, data.message, data.senderPic, null, data.id);
-                    // 🔔 열려있는 방이므로 읽음 처리(다음 로그인에 미읽음으로 안 뜨게)
+                    // 🔔 열려있는 방이므로 읽음 처리(다음 로그인에 미읽음으로 안 뜨게) + 상대에게 읽음 통지('1' 제거)
                     if(data.id) { try { localStorage.setItem('rc_read_' + data.roomId, String(data.id)); } catch(_){} }
+                    try { if(socket && socket.connected) socket.emit('read_room', { roomId: data.roomId }); } catch(_){}
                     // 현재 채팅방을 보고 있을 때도 진동+사운드 (현장감)
                     fireMobileNotification(data.sender, data.message);
                 } else if(data.id) {
@@ -12080,6 +12134,11 @@ pdfjsScript,
             // 텍스트 일치 확인 (특수 카드는 제외)
             const isPlainText = !/^\[(TRANSFER|VIDEO_INVITE|FILE_ATTACH|LOCKED_FILE|PRIVATE_ASSET|ORDER_|ITEM_SALE|SETTLE)/.test(message);
             line.setAttribute('data-msg-id', msgId);
+            // 💬 카톡식 안읽음 '1' — 낙관적 발신 버블에 서버 id가 붙는 시점에 부여(상대가 아직 안 읽었으면)
+            try{
+                const peer=(window.__peerLastRead && window.__peerLastRead[currentChatRoomId])||0;
+                if(msgId>peer && !line.querySelector('.kt-unread')){ const u=document.createElement('span'); u.className='kt-unread'; u.setAttribute('data-u', msgId); u.textContent='1'; const tm=line.querySelector('.kt-time'); if(tm) line.insertBefore(u, tm); else line.insertBefore(u, line.firstChild); }
+            }catch(_){}
             if(isPlainText && bubble && !line.querySelector('.kt-msg-menu-btn')) {
                 const btn = document.createElement('button');
                 btn.className = 'kt-msg-menu-btn';

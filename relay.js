@@ -779,6 +779,8 @@ function initTables() {
         });
         // 🔔 웹 푸시 구독 저장(카톡식 알림) — endpoint 당 1행, 사용자별 다기기 허용
         db.run(`CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, userName TEXT, sub TEXT, created TEXT)`);
+        // 💬 카톡식 읽음표시: 방·사용자별 마지막으로 읽은 메시지 id
+        db.run(`CREATE TABLE IF NOT EXISTS chat_reads (roomId TEXT, userName TEXT, lastReadId INTEGER, PRIMARY KEY(roomId, userName))`);
     });
 }
 initTables();
@@ -3904,6 +3906,23 @@ io.on('connection', (socket) => {
         } catch (_) {}
     });
     socket.on('join_room', (roomId) => { socket.join(roomId); });
+    // 💬 읽음 처리(카톡식 '1' 제거) — 방 진입/수신 시 호출. 내 lastReadId 갱신 + 상대에게 통지 + 상대의 lastRead 회신.
+    socket.on('read_room', (d) => {
+        const me = socket.data.user; if (!me || !d || !d.roomId) return;
+        const roomId = String(d.roomId);
+        db.get(`SELECT MAX(id) mx FROM chats WHERE roomId = ?`, [roomId], (e, r) => {
+            const mx = (r && r.mx) || 0;
+            db.run(`INSERT INTO chat_reads (roomId, userName, lastReadId) VALUES (?, ?, ?) ON CONFLICT(roomId, userName) DO UPDATE SET lastReadId = MAX(lastReadId, excluded.lastReadId)`, [roomId, me, mx], () => {
+                const others = _roomParticipants(roomId).filter(u => u && u !== me);
+                others.forEach(o => {
+                    try { io.to('user:' + o).emit('room_read', { roomId, reader: me, lastReadId: mx }); } catch (_) {}   // 상대 화면의 내 '1' 제거용
+                    db.get(`SELECT lastReadId FROM chat_reads WHERE roomId = ? AND userName = ?`, [roomId, o], (e2, rr) => {   // 내가 볼 상대 읽음 상태 회신
+                        try { io.to('user:' + me).emit('room_read', { roomId, reader: o, lastReadId: (rr && rr.lastReadId) || 0 }); } catch (_) {}
+                    });
+                });
+            });
+        });
+    });
     // 🖥 원격제어 신호 중계 — 화면 프레임/입력 이벤트를 상대(수신자 개인 룸)에게만 전달.
     //    d = { to:'상대이름', roomId, kind:'frame'|'input'|'ctrl', ... }. 발신자는 토큰 신원으로 강제.
     socket.on('rc_signal', (d) => {
