@@ -3893,6 +3893,9 @@
             refresh();
         };
 
+        // 공유폴더 갤러리 안내 버튼용 — 권한 재요청/폴더 지정 후 패널 재열기
+        window._sfReconnect = async function(){ try{ const ok = await window.RCFolder.ensureAccess(); if(ok){ try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){} openSharedFolderPanel(); } else { showToast('폴더 접근을 허용해 주세요.'); } }catch(_){ showToast('폴더 다시 연결 실패'); } };
+        window._sfPickNow = async function(){ try{ const ok = await window.RCFolder.pick(); if(ok){ try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){} openSharedFolderPanel(); } }catch(_){} };
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
             try{ await R.ensureAccess(); }catch(_){}
@@ -4006,7 +4009,12 @@
                 if(folderCards) sectionsHtml+='<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:8px 2px 6px;">폴더 <span style="color:#94a3b8;font-weight:600;">('+cur.folders.length+')</span></div><div class="_sf-secgrid" style="'+_secGridStyle+'">'+folderCards+'</div></div>';
                 order.forEach((k)=>{ const cards=groups[k].map(_card).join(''); sectionsHtml+='<div class="_sf-sec"><div class="_sf-sechead" style="display:flex;align-items:center;justify-content:space-between;font-weight:800;font-size:14px;color:#334155;padding:14px 2px 6px;cursor:pointer;user-select:none;"><span>'+_sfEsc(k)+' <span style="color:#94a3b8;font-weight:600;">('+groups[k].length+')</span></span><span class="_sf-chev" style="color:#94a3b8;transition:transform .15s;">▾</span></div><div class="_sf-secgrid" style="'+_secGridStyle+'">'+cards+'</div></div>'; });
                 const empty=(!cur.folders.length && !fileList.length);
-                const grid='<div id="_sf-grid" style="flex:1;overflow:auto;padding:12px 18px 40px;">'+(empty?('<div style="padding:56px 20px;text-align:center;color:#94a3b8;font-size:14px;">'+(connected?'이 폴더는 비어 있습니다. 파일을 끌어다 놓거나 새 폴더를 만들어 보세요.':'상단에서 공유폴더를 지정하세요.')+'</div>'):sectionsHtml)+'</div>';
+                var _emptyMsg;
+                if(connected){ _emptyMsg='이 폴더는 비어 있습니다. 파일을 끌어다 놓거나 새 폴더를 만들어 보세요.'; }
+                else if(notSupported){ _emptyMsg='📥 이 기기(모바일)는 받은 파일이 <b>다운로드 폴더</b>에 자동 저장됩니다.<br>별도 폴더 연결이 필요 없어요. (폴더 관리·자동정리는 PC 크롬/엣지에서)'; }
+                else if(R.chosen && R.chosen()){ _emptyMsg='<div style="margin-bottom:14px;">공유폴더 접근 권한을 다시 허용해 주세요.</div><button onclick="_sfReconnect()" style="padding:11px 20px;border:0;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">🔓 폴더 다시 연결</button>'; }
+                else { _emptyMsg='받은 파일을 저장할 폴더를 한 번만 지정하면, 이후 자동으로 저장·연결됩니다.<br><button onclick="_sfPickNow()" style="margin-top:14px;padding:11px 20px;border:0;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">📂 공유폴더 지정</button>'; }
+                const grid='<div id="_sf-grid" style="flex:1;overflow:auto;padding:12px 18px 40px;">'+(empty?('<div style="padding:56px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+_emptyMsg+'</div>'):sectionsHtml)+'</div>';
 
                 ov.innerHTML=head+filter+toolbar+grid;
 
@@ -4284,6 +4292,7 @@
         function loginSuccess(data) {
             currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
             try { if(window.RCFolder) window.RCFolder.onLogin(); } catch(_){}
+            try { if(window.__ensureBackGuard) setTimeout(window.__ensureBackGuard, 500); } catch(_){}   // 🔙 로그인 후 뒤로가기 가드 확보(앱 종료 방지)
             _postAuthToParent(data);   // ★Alpha K 일원화★ 부모 앱에 로그인 상태 통지(세션복원 포함 — 모든 로그인이 여기로 수렴)
             // 🖥 RAY 데스크톱 앱에서 실행 중이면 앱(메인)을 Alpha K에 연결 → 원격제어 '입력 주입' 활성화(설치형 앱 = 제어까지 가능)
             try { if(window.rayApp && window.rayApp.link){ window.rayApp.link(data.token || window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', data.name); } } catch(_){}
@@ -5567,7 +5576,10 @@
         (function _wireBackNav(){
             if(window.__popstateWired) return; window.__popstateWired=true;
             // 앱/홈화면앱(TWA·PWA·Electron)에선 뒤로가기가 앱을 닫지 않고 '한 단계 뒤로' 동작하도록 가드 상태를 유지
-            var _isAppLike = function(){ try{ return !!window.rayApp || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone===true; }catch(_){ return false; } };
+            var _isAppLike = function(){ try{ return !!window.rayApp
+                || (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches || window.matchMedia('(display-mode: minimal-ui)').matches))
+                || window.navigator.standalone===true
+                || (document.referrer||'').indexOf('android-app://')===0; }catch(_){ return false; } };
             var _pushGuard = function(){ try{ history.pushState({ __back_guard:true }, ''); }catch(_){} };
             var _lastBackAt = 0;
             // 🔽 현재 열려 있는 '레이어'(오버레이/전체화면/채팅방/상점상세)를 하나 닫는다. 닫았으면 true.
@@ -5603,8 +5615,10 @@
                     try{ switchTab(t, true); }catch(_){}
                 }
             });
-            // 앱/홈화면앱 최초 진입 시 가드 하나 확보(첫 화면에서도 뒤로가기가 잡히도록)
-            try{ if(_isAppLike()){ setTimeout(_pushGuard, 1200); } }catch(_){}
+            // 앱/홈화면앱 최초 진입 시 가드 확보(첫 화면에서도 뒤로가기가 앱을 닫지 않도록) — 즉시 + 지연 이중 확보
+            try{ if(_isAppLike()){ _pushGuard(); setTimeout(_pushGuard, 800); setTimeout(function(){ if(_isAppLike()) _pushGuard(); }, 2500); } }catch(_){}
+            // 로그인 완료 후에도 한 번 더(자동로그인 등으로 늦게 준비되는 경우 대비)
+            window.__ensureBackGuard = function(){ try{ if(_isAppLike()) _pushGuard(); }catch(_){} };
         })();
 
         // 🚀 [v7+] ============ YouTube 스타일 사이드바 동작 ============
@@ -8159,6 +8173,7 @@
                 '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
               + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🖥 ' + String(peer||'').replace(/</g,'&lt;') + ' 님의 화면 제어 중</span>'
               + '<span style="display:flex;gap:6px;flex:none;">'
+              + '<button id="rc-dbl-btn" onclick="_rcArmDbl()" title="다음 탭을 더블클릭으로(아이콘 실행)" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">🖱 더블클릭</button>'
               + '<button onclick="rcRequestScreenSwitch()" title="상대 모니터 전환(듀얼 모니터)" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">🖥 화면</button>'
               + '<button onclick="_rcToggleKbd()" title="키보드" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">⌨</button>'
               + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">종료</button></span></div>'
@@ -8181,6 +8196,9 @@
         function _rcFrac(e){ return _rcFracXY(e.clientX, e.clientY); }
         function _rcSendInput(evt){ if(socket && socket.connected && window._rc.peer) socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'input', evt:evt }); }
         window._rcToggleKbd = function(){ const k=document.getElementById('rc-view-kbd'); if(k){ try{ k.focus(); }catch(_){} } };
+        // 🖱 다음 한 번의 탭을 '더블클릭'으로 전송(모바일에서 아이콘 실행 편의) — 무장/해제 토글
+        window._rcArmDbl = function(){ window._rcDblArm = !window._rcDblArm; _rcUpdateDblBtn(); try{ if(window._rcDblArm) showToast('🖱 이제 화면을 한 번 탭하면 더블클릭됩니다'); }catch(_){} };
+        function _rcUpdateDblBtn(){ const b=document.getElementById('rc-dbl-btn'); if(b){ b.style.background = window._rcDblArm ? '#2563eb' : '#334155'; } }
         function _rcBindViewerInput(){
             const stage = document.getElementById('rc-view-stage'); if(!stage) return;
             let last = 0;
@@ -8191,24 +8209,41 @@
             stage.addEventListener('dblclick', function(e){ const p=_rcFrac(e); if(p) _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); });
             stage.addEventListener('contextmenu', function(e){ e.preventDefault(); const p=_rcFrac(e); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); });
             stage.addEventListener('wheel', function(e){ e.preventDefault(); _rcSendInput({t:'w',d:(e.deltaY<0?120:-120)}); }, {passive:false});
-            // ── 모바일(터치): 탭=클릭, 드래그=커서 이동, 롱프레스=우클릭, 더블탭=더블클릭 ──
-            let ts=0, tx=0, ty=0, tmoved=false, lpTimer=null, lastTap=0, tlast=0;
+            // ── 모바일(터치·태블릿식): 한손가락 탭=좌클릭, 두손가락 탭=우클릭, 두손가락 드래그=스크롤,
+            //    한손가락 드래그=커서 이동, 더블탭=더블클릭, 롱프레스=우클릭, [🖱더블클릭] 버튼 무장 시 다음 탭=더블클릭 ──
+            let ts=0, tx=0, ty=0, tmoved=false, lpTimer=null, lastTap=0, tlast=0, twoFinger=false, sy=0, scrollAcc=0;
             stage.addEventListener('touchstart', function(e){
+                if(e.touches.length >= 2){ // 두 손가락: 스크롤/우클릭 모드
+                    twoFinger=true; tmoved=false; ts=Date.now();
+                    sy=(e.touches[0].clientY + e.touches[1].clientY)/2; scrollAcc=0;
+                    if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; }
+                    return;
+                }
+                twoFinger=false;
                 if(!e.touches.length) return; const t=e.touches[0]; ts=Date.now(); tx=t.clientX; ty=t.clientY; tmoved=false;
                 if(lpTimer) clearTimeout(lpTimer);
                 lpTimer = setTimeout(function(){ const p=_rcFracXY(tx,ty); if(p){ tmoved=true; _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); if(navigator.vibrate) try{navigator.vibrate(20);}catch(_){}}}, 500); // 롱프레스=우클릭
             }, {passive:false});
             stage.addEventListener('touchmove', function(e){
-                if(!e.touches.length) return; e.preventDefault(); const t=e.touches[0];
-                if(Math.abs(t.clientX-tx)>6 || Math.abs(t.clientY-ty)>6){ tmoved=true; if(lpTimer){clearTimeout(lpTimer);lpTimer=null;} }
+                e.preventDefault();
+                if(twoFinger && e.touches.length>=2){ // 두 손가락 세로 이동 = 휠 스크롤
+                    const cy=(e.touches[0].clientY + e.touches[1].clientY)/2; const dy=cy - sy; sy=cy; scrollAcc+=dy;
+                    while(Math.abs(scrollAcc) >= 24){ const dir=scrollAcc>0?1:-1; _rcSendInput({t:'w', d: dir>0?-120:120}); scrollAcc-=dir*24; }
+                    tmoved=true; return;
+                }
+                if(!e.touches.length) return; const t=e.touches[0];
+                if(Math.abs(t.clientX-tx)>8 || Math.abs(t.clientY-ty)>8){ tmoved=true; if(lpTimer){clearTimeout(lpTimer);lpTimer=null;} }
                 const now=Date.now(); if(now-tlast<45) return; tlast=now;
                 const p=_rcFracXY(t.clientX,t.clientY); if(p) _rcSendInput({t:'m',fx:p.fx,fy:p.fy});
             }, {passive:false});
             stage.addEventListener('touchend', function(e){
                 if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; }
                 const dt=Date.now()-ts;
+                // 두 손가락 탭(이동 거의 없음) = 우클릭
+                if(twoFinger){ if(!tmoved && dt<400){ const p=_rcFracXY(tx||stage.clientWidth/2, ty||stage.clientHeight/2); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); } if(e.touches.length===0) twoFinger=false; return; }
                 if(!tmoved && dt<500){ const p=_rcFracXY(tx,ty); if(p){ const now=Date.now();
-                    if(now-lastTap<300){ _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); lastTap=0; } // 더블탭=더블클릭
+                    if(window._rcDblArm){ window._rcDblArm=false; _rcUpdateDblBtn(); _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); lastTap=0; }   // 🖱더블클릭 버튼 무장 → 원탭 더블클릭
+                    else if(now-lastTap<400){ _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); lastTap=0; }   // 더블탭=더블클릭(완화 400ms)
                     else { _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:0}); lastTap=now; } } }
             }, {passive:false});
             // ── 키보드(하드웨어 + 모바일 소프트키보드) ──
