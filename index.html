@@ -4293,6 +4293,18 @@
             currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
             try { if(window.RCFolder) window.RCFolder.onLogin(); } catch(_){}
             try { if(window.__ensureBackGuard) setTimeout(window.__ensureBackGuard, 500); } catch(_){}   // 🔙 로그인 후 뒤로가기 가드 확보(앱 종료 방지)
+            // 🔐 주기 세션 체크 — 다른 기기에서 로그인해 이 세션이 무효화되면(단일 세션) 자동 로그아웃
+            try {
+                if(window.__sessionPingTimer) clearInterval(window.__sessionPingTimer);
+                window.__sessionPingTimer = setInterval(function(){
+                    if(window.__loggingOut) return;
+                    const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
+                    if(!tk) return;
+                    fetch(API_URL + '/api/auth/ping', { headers:{ 'x-auth-token': tk } }).then(function(r){
+                        if(r.status === 401 && !window.__loggingOut){ window.__loggingOut = true; alert('다른 기기(브라우저)에서 로그인되어 이 기기는 로그아웃됩니다.'); if(typeof logout==='function') logout(); else { try{ localStorage.removeItem('earth_auto_login'); }catch(_){}; location.reload(); } }
+                    }).catch(function(){});
+                }, 25000);
+            } catch(_){}
             _postAuthToParent(data);   // ★Alpha K 일원화★ 부모 앱에 로그인 상태 통지(세션복원 포함 — 모든 로그인이 여기로 수렴)
             // 🖥 RAY 데스크톱 앱에서 실행 중이면 앱(메인)을 Alpha K에 연결 → 원격제어 '입력 주입' 활성화(설치형 앱 = 제어까지 가능)
             try { if(window.rayApp && window.rayApp.link){ window.rayApp.link(data.token || window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', data.name); } } catch(_){}
@@ -8177,6 +8189,8 @@
                 '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
               + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🖥 ' + String(peer||'').replace(/</g,'&lt;') + ' 님의 화면 제어 중</span>'
               + '<span style="display:flex;gap:6px;flex:none;">'
+              + '<button onclick="_rcZoomBtn(0.5)" title="확대" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;">🔍+</button>'
+              + '<button onclick="_rcZoomBtn(-0.5)" title="축소" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;">🔍−</button>'
               + '<button id="rc-dbl-btn" onclick="_rcArmDbl()" title="다음 탭을 더블클릭으로(아이콘 실행)" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">🖱 더블클릭</button>'
               + '<button onclick="rcRequestScreenSwitch()" title="상대 모니터 전환(듀얼 모니터)" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">🖥 화면</button>'
               + '<button onclick="_rcToggleKbd()" title="키보드" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">⌨</button>'
@@ -8185,6 +8199,7 @@
               + '<video id="rc-view-vid" autoplay playsinline muted draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;pointer-events:none;"></video>'
               + '<input id="rc-view-kbd" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="position:absolute;opacity:0;width:1px;height:1px;border:0;padding:0;left:-100px;" />'
               + '<div id="rc-view-wait" style="position:absolute;color:#9ca3af;font-size:13px;">상대 화면을 불러오는 중…</div></div>';
+            window._rcZoom=1; window._rcPanX=0; window._rcPanY=0; try{ _rcApplyXf(); }catch(_){}
             _rcBindViewerInput();
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}   // 임베드 시 채팅 패널을 넓혀 큰 화면 확보
             try { document.getElementById('rc-view-stage').focus(); } catch(_){}
@@ -8200,6 +8215,18 @@
         function _rcFrac(e){ return _rcFracXY(e.clientX, e.clientY); }
         function _rcSendInput(evt){ if(socket && socket.connected && window._rc.peer) socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'input', evt:evt }); }
         window._rcToggleKbd = function(){ const k=document.getElementById('rc-view-kbd'); if(k){ try{ k.focus(); }catch(_){} } };
+        // 🔍 원격 화면 줌/팬(팀뷰어식) — 비디오에 transform 적용. 좌표(_rcFracXY)는 변환 후 rect 기준이라 클릭 정확도 유지.
+        window._rcZoom = 1; window._rcPanX = 0; window._rcPanY = 0;
+        function _rcApplyXf(){ const v=document.getElementById('rc-view-vid'); if(v){ v.style.transformOrigin='center center'; v.style.transform='translate('+window._rcPanX+'px,'+window._rcPanY+'px) scale('+window._rcZoom+')'; } }
+        window._rcClampPan = function(){
+            const v=document.getElementById('rc-view-vid'), st=document.getElementById('rc-view-stage'); if(!v||!st) return;
+            const z=window._rcZoom; if(z<=1){ window._rcPanX=0; window._rcPanY=0; return; }
+            const vw=v.clientWidth*z, vh=v.clientHeight*z; const sw=st.clientWidth, sh=st.clientHeight;
+            const mx=Math.max(0,(vw-sw)/2), my=Math.max(0,(vh-sh)/2);
+            window._rcPanX=Math.max(-mx,Math.min(mx,window._rcPanX)); window._rcPanY=Math.max(-my,Math.min(my,window._rcPanY));
+        };
+        window._rcZoomBtn = function(delta){ window._rcZoom=Math.max(1,Math.min(5,(window._rcZoom||1)+delta)); if(window._rcZoom<=1){ window._rcPanX=0; window._rcPanY=0; } window._rcClampPan(); _rcApplyXf(); };
+        window._rcZoomReset = function(){ window._rcZoom=1; window._rcPanX=0; window._rcPanY=0; _rcApplyXf(); };
         // 🖱 다음 한 번의 탭을 '더블클릭'으로 전송(모바일에서 아이콘 실행 편의) — 무장/해제 토글
         window._rcArmDbl = function(){ window._rcDblArm = !window._rcDblArm; _rcUpdateDblBtn(); try{ if(window._rcDblArm) showToast('🖱 이제 화면을 한 번 탭하면 더블클릭됩니다'); }catch(_){} };
         function _rcUpdateDblBtn(){ const b=document.getElementById('rc-dbl-btn'); if(b){ b.style.background = window._rcDblArm ? '#2563eb' : '#334155'; } }
@@ -8213,29 +8240,34 @@
             stage.addEventListener('dblclick', function(e){ const p=_rcFrac(e); if(p) _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); });
             stage.addEventListener('contextmenu', function(e){ e.preventDefault(); const p=_rcFrac(e); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); });
             stage.addEventListener('wheel', function(e){ e.preventDefault(); _rcSendInput({t:'w',d:(e.deltaY<0?120:-120)}); }, {passive:false});
-            // ── 모바일(터치·태블릿식): 한손가락 탭=좌클릭, 두손가락 탭=우클릭, 두손가락 드래그=스크롤,
-            //    한손가락 드래그=커서 이동, 더블탭=더블클릭, 롱프레스=우클릭, [🖱더블클릭] 버튼 무장 시 다음 탭=더블클릭 ──
-            let ts=0, tx=0, ty=0, tmoved=false, lpTimer=null, lastTap=0, tlast=0, twoFinger=false, sy=0, scrollAcc=0;
+            // ── 모바일(터치·팀뷰어식): 한손가락 탭=좌클릭/드래그=커서, 두손가락=핀치 줌 + 팬(확대 이동),
+            //    더블탭=더블클릭, 롱프레스=우클릭, [🖱더블클릭] 무장 시 다음 탭=더블클릭 ──
+            let ts=0, tx=0, ty=0, tmoved=false, lpTimer=null, lastTap=0, tlast=0;
+            let twoFinger=false, pinchD0=0, pinchZ0=1, panCX=0, panCY=0, twoMoved=false;
+            function _dist(a,b){ return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
             stage.addEventListener('touchstart', function(e){
-                if(e.touches.length >= 2){ // 두 손가락: 스크롤/우클릭 모드
-                    twoFinger=true; tmoved=false; ts=Date.now();
-                    sy=(e.touches[0].clientY + e.touches[1].clientY)/2; scrollAcc=0;
+                if(e.touches.length >= 2){ // 두 손가락: 줌/팬
+                    twoFinger=true; twoMoved=false; ts=Date.now();
+                    pinchD0=_dist(e.touches[0], e.touches[1]); pinchZ0=window._rcZoom||1;
+                    panCX=(e.touches[0].clientX + e.touches[1].clientX)/2; panCY=(e.touches[0].clientY + e.touches[1].clientY)/2;
                     if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; }
                     return;
                 }
                 twoFinger=false;
                 if(!e.touches.length) return; const t=e.touches[0]; ts=Date.now(); tx=t.clientX; ty=t.clientY; tmoved=false;
-                // 태블릿식: 손가락을 댄 위치로 커서를 즉시 이동(터치 다운 시점)
+                // 태블릿식: 손가락을 댄 위치로 커서 즉시 이동
                 const p0=_rcFracXY(tx,ty); if(p0) _rcSendInput({t:'m',fx:p0.fx,fy:p0.fy});
                 if(lpTimer) clearTimeout(lpTimer);
                 lpTimer = setTimeout(function(){ const p=_rcFracXY(tx,ty); if(p){ tmoved=true; _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); if(navigator.vibrate) try{navigator.vibrate(20);}catch(_){}}}, 500); // 롱프레스=우클릭
             }, {passive:false});
             stage.addEventListener('touchmove', function(e){
                 e.preventDefault();
-                if(twoFinger && e.touches.length>=2){ // 두 손가락 세로 이동 = 휠 스크롤
-                    const cy=(e.touches[0].clientY + e.touches[1].clientY)/2; const dy=cy - sy; sy=cy; scrollAcc+=dy;
-                    while(Math.abs(scrollAcc) >= 24){ const dir=scrollAcc>0?1:-1; _rcSendInput({t:'w', d: dir>0?-120:120}); scrollAcc-=dir*24; }
-                    tmoved=true; return;
+                if(twoFinger && e.touches.length>=2){ // 핀치 줌 + 두 손가락 이동 = 팬
+                    const d=_dist(e.touches[0], e.touches[1]);
+                    const cx=(e.touches[0].clientX + e.touches[1].clientX)/2, cy=(e.touches[0].clientY + e.touches[1].clientY)/2;
+                    if(pinchD0>0){ let z=pinchZ0 * (d/pinchD0); z=Math.max(1,Math.min(5,z)); window._rcZoom=z; }
+                    window._rcPanX += (cx - panCX); window._rcPanY += (cy - panCY); panCX=cx; panCY=cy;
+                    twoMoved=true; window._rcClampPan(); _rcApplyXf(); return;
                 }
                 if(!e.touches.length) return; const t=e.touches[0];
                 if(Math.abs(t.clientX-tx)>8 || Math.abs(t.clientY-ty)>8){ tmoved=true; if(lpTimer){clearTimeout(lpTimer);lpTimer=null;} }
@@ -8245,8 +8277,10 @@
             stage.addEventListener('touchend', function(e){
                 if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; }
                 const dt=Date.now()-ts;
-                // 두 손가락 탭(이동 거의 없음) = 우클릭
-                if(twoFinger){ if(!tmoved && dt<400){ const p=_rcFracXY(tx||stage.clientWidth/2, ty||stage.clientHeight/2); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); } if(e.touches.length===0) twoFinger=false; return; }
+                if(twoFinger){ // 두 손가락 탭(줌/팬 안 함) = 우클릭
+                    if(!twoMoved && dt<400){ const p=_rcFracXY(tx||stage.clientWidth/2, ty||stage.clientHeight/2); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); }
+                    if(e.touches.length===0) twoFinger=false; return;
+                }
                 if(!tmoved && dt<500){ const p=_rcFracXY(tx,ty); if(p){ const now=Date.now();
                     if(window._rcDblArm){ window._rcDblArm=false; _rcUpdateDblBtn(); _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); lastTap=0; }   // 🖱더블클릭 버튼 무장 → 원탭 더블클릭
                     else if(now-lastTap<400){ _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); lastTap=0; }   // 더블탭=더블클릭(완화 400ms)

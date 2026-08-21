@@ -837,6 +837,8 @@ function authUser(req) {
     if (s.created && (Date.now() - Number(s.created)) > SESSION_TTL_MS) { revokeToken(String(t)); return null; }
     return s.name;
 }
+// 🔐 세션 유효성 핑 — 클라가 주기적으로 호출. 토큰이 무효(다른 기기 로그인으로 revoke)면 401 → 클라가 자동 로그아웃.
+app.get('/api/auth/ping', (req, res) => { const me = authUser(req); if (!me) return res.status(401).json({ ok: false }); res.json({ ok: true, name: me }); });
 // 자금/민감 엔드포인트 가드: 로그인 필수 + acting user 반환. bodyNameField가 있으면 본문 신원과 토큰 신원 불일치 시 거부.
 function requireUser(req, res) {
     const me = authUser(req);
