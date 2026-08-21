@@ -1000,27 +1000,44 @@ function backupDatabaseToR2(cb) {
     } catch (e) { console.error('💾 DB백업 오류:', e && e.message); cb(e); }
 }
 const DB_BACKUP_RETAIN_MS = 30 * 24 * 60 * 60 * 1000;   // 30일 보관
+const DB_BACKUP_KEEP_MAX = 14;   // 💾 최대 보관 개수(최근 14개) — 재시작·잦은 백업으로 용량 폭증 방지
 function pruneOldDbBackups() {
     if (!_r2) return;
     try {
         const { ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
         const cutoff = Date.now() - DB_BACKUP_RETAIN_MS;
         const rx = /^backup\/earth_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.sqlite\.gz$/;
-        let token, toDel = [];
+        let token, all = [];
         const run = () => _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, Prefix: 'backup/', ContinuationToken: token }))
             .then(out => {
                 (out.Contents || []).forEach(o => {
                     const m = rx.exec(o.Key || '');
-                    if (m) { const t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime(); if (t < cutoff) toDel.push({ Key: o.Key }); }
+                    if (m) { const t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime(); all.push({ Key: o.Key, t }); }
                 });
                 if (out.IsTruncated) { token = out.NextContinuationToken; return run(); }
+                // 1) 30일 초과분  2) 최근 DB_BACKUP_KEEP_MAX개만 남기고 나머지(개수 초과) 삭제
+                all.sort((a, b) => b.t - a.t);
+                const toDel = [];
+                all.forEach((o, idx) => { if (o.t < cutoff || idx >= DB_BACKUP_KEEP_MAX) toDel.push({ Key: o.Key }); });
                 for (let i = 0; i < toDel.length; i += 1000) _r2.client.send(new DeleteObjectsCommand({ Bucket: _r2.bucket, Delete: { Objects: toDel.slice(i, i + 1000) } })).catch(() => {});
-                if (toDel.length) console.log('💾 오래된 DB백업 삭제:', toDel.length, '개 (30일 초과)');
+                if (toDel.length) console.log('💾 오래된/초과 DB백업 삭제:', toDel.length, '개 (보관 최대 ' + DB_BACKUP_KEEP_MAX + '개·30일)');
             }).catch(e => console.warn('DB백업 정리:', e && e.message));
         run();
     } catch (e) {}
 }
-setTimeout(() => backupDatabaseToR2(), 2 * 60 * 1000);
+// 💾 부팅 백업 — 오늘자 백업이 이미 있으면 스킵(재시작 남발 시 백업 폭증 방지). 없으면 1회 생성.
+function bootBackupIfNeeded() {
+    if (!_r2) return;
+    try {
+        const { ListObjectsV2Command } = require('@aws-sdk/client-s3');
+        const d = new Date(); const pad = n => String(n).padStart(2, '0');
+        const today = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+        _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, Prefix: 'backup/earth_' + today }))
+            .then(out => { if (out.Contents && out.Contents.length) { console.log('💾 오늘자 DB백업 존재 — 부팅 백업 스킵'); pruneOldDbBackups(); } else backupDatabaseToR2(); })
+            .catch(() => backupDatabaseToR2());
+    } catch (e) { backupDatabaseToR2(); }
+}
+setTimeout(bootBackupIfNeeded, 2 * 60 * 1000);
 setInterval(() => backupDatabaseToR2(), 24 * 60 * 60 * 1000);
 
 // 관리자 수동 백업/조회/복원용 — index.html 관리자 화면에서 호출

@@ -1197,9 +1197,9 @@
                     <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">🏪 상점 생성</h3>
                     <div style="font-size:12px;color:#707070;line-height:1.6;">새 상점을 만듭니다. 만든 상점의 편집·상품 등록·거래처 관리는 <b>상점 관리</b>에서 하세요.</div>
                 </div>
-                <div class="panel" style="padding:0; overflow:hidden; background:transparent; border:none; box-shadow:none; display:flex; flex-direction:column; max-width:640px;">
+                <div class="panel" style="padding:0; overflow:hidden; background:transparent; border:none; box-shadow:none; display:flex; flex-direction:column;">
                         <div style="font-size:11px;color:#94a3b8;margin:0 2px 6px;">👁 아래 카드는 실제 상점 목록에 노출되는 모습 그대로입니다. 배경·로고를 눌러 이미지를 올리고, 상점명·소개를 입력하세요.</div>
-                        <div id="wysiwyg-brand-card" class="brand-showcase-card" style="width:100%; max-width:640px; cursor:default;">
+                        <div id="wysiwyg-brand-card" class="brand-showcase-card" style="width:100%; cursor:default;">
                             <!-- 실제 노출과 동일: 히어로 배경(16:9) + 오버레이(로고·상점명·소개) -->
                             <div class="brand-hero" id="wbc-bg-zone" style="cursor:pointer;" onclick="document.getElementById('new-brand-background').click()" title="클릭하여 배경(대문) 이미지 업로드">
                                 <input type="file" id="new-brand-background" accept="image/*" style="display:none;" onchange="wbcOnBgPicked(event)">
@@ -1252,7 +1252,7 @@
                                 <div class="acts"><button type="button" class="mini-btn enter" disabled style="opacity:0.7; cursor:default;">입장 →</button></div>
                             </div>
                         </div>
-                        <div style="max-width:640px; margin-top:2px;">
+                        <div style="margin-top:2px;">
                             <!-- 🧾 세금계산서용: 사업자=사업자등록번호 / 개인=주민등록번호 -->
                             <div style="display:flex; gap:8px; margin:6px 12px 0; flex-wrap:wrap;">
                                 <select id="new-brand-biztype" onchange="wbcToggleBizNo()" style="padding:8px 10px; border:1px solid var(--border-color); border-radius:8px; font-size:13px; background:#fff;">
@@ -5590,7 +5590,10 @@
                 // 🚀 사이드바 즐겨찾기/카테고리 새로고침
                 try { renderSidebarFavs(); renderSidebarCategories(); renderMobileChips(); } catch(e){}
             }
-            if(id === 'store-create') { try{ if(window.applyOpenCategories) window.applyOpenCategories(); }catch(_){} }
+            if(id === 'store-create') { try{ if(window.applyOpenCategories) window.applyOpenCategories(); }catch(_){}
+                // 🧾 사업자번호: 가입 시 입력한 회원정보 번호를 기본값으로(비어 있을 때만) — 수정 가능
+                try{ const bz=document.getElementById('new-brand-bizno'); const saved=(currentUser && (currentUser.biz_no||currentUser.bizNo||currentUser.license_no))||''; if(bz && !bz.value && saved) bz.value=saved; }catch(_){}
+            }
             if(id === 'my-store') { loadMyStore(); loadMyBrandStores(); }
             if(id === 'sales-mgmt') { loadMySalesOrders(); }
             if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
@@ -8212,21 +8215,22 @@
             let ov = document.getElementById('rc-view-overlay');
             if(!ov){ ov = document.createElement('div'); ov.id='rc-view-overlay'; document.body.appendChild(ov); }
             ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:#0b0b0f;display:flex;flex-direction:column;';
+            const _hbtn='background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;white-space:nowrap;flex:none;';
             ov.innerHTML =
-                '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;">'
-              + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🖥 ' + String(peer||'').replace(/</g,'&lt;') + ' 님의 화면 제어 중</span>'
-              + '<span style="display:flex;gap:6px;flex:none;">'
-              + '<button onclick="_rcZoomBtn(0.5)" title="확대" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;">🔍+</button>'
-              + '<button onclick="_rcZoomBtn(-0.5)" title="축소" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;">🔍−</button>'
-              + '<button id="rc-pan-btn" onclick="_rcTogglePan()" title="확대 후 한 손가락으로 화면 이동" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;">✋ 이동</button>'
-              + '<button id="rc-dbl-btn" onclick="_rcArmDbl()" title="다음 탭을 더블클릭으로(아이콘 실행)" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">🖱 더블클릭</button>'
-              + '<button onclick="rcRequestScreenSwitch()" title="상대 모니터 전환(듀얼 모니터)" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">🖥 화면</button>'
-              + '<button onclick="_rcToggleKbd()" title="키보드" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">⌨</button>'
-              + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">종료</button></span></div>'
+                '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;">'
+              + '<span style="flex:none;max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🖥 ' + String(peer||'').replace(/</g,'&lt;') + '</span>'
+              + '<span style="flex:1;min-width:4px;"></span>'
+              + '<button onclick="_rcZoomBtn(0.5)" title="확대" style="'+_hbtn+'">🔍+</button>'
+              + '<button onclick="_rcZoomBtn(-0.5)" title="축소" style="'+_hbtn+'">🔍−</button>'
+              + '<button id="rc-vk-btn" onclick="_rcToggleVKbd()" title="가상 키보드" style="'+_hbtn+'">⌨ 키보드</button>'
+              + '<button id="rc-pan-btn" onclick="_rcTogglePan()" title="확대 후 한 손가락으로 화면 이동" style="'+_hbtn+'">✋ 이동</button>'
+              + '<button id="rc-dbl-btn" onclick="_rcArmDbl()" title="다음 탭을 더블클릭으로(아이콘 실행)" style="'+_hbtn+'">🖱 더블클릭</button>'
+              + '<button onclick="rcRequestScreenSwitch()" title="상대 모니터 전환(듀얼 모니터)" style="'+_hbtn+'">🖥 화면</button>'
+              + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;white-space:nowrap;flex:none;">종료</button></div>'
               + '<div id="rc-view-stage" tabindex="0" style="flex:1;position:relative;overflow:hidden;background:#000;outline:none;cursor:crosshair;display:flex;align-items:center;justify-content:center;touch-action:none;">'
               + '<video id="rc-view-vid" autoplay playsinline muted draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;pointer-events:none;"></video>'
-              + '<input id="rc-view-kbd" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="position:absolute;opacity:0;width:1px;height:1px;border:0;padding:0;left:-100px;" />'
-              + '<div id="rc-view-wait" style="position:absolute;color:#9ca3af;font-size:13px;">상대 화면을 불러오는 중…</div></div>';
+              + '<div id="rc-view-wait" style="position:absolute;color:#9ca3af;font-size:13px;">상대 화면을 불러오는 중…</div></div>'
+              + '<div id="rc-vkbd" style="display:none;flex:none;background:#1e293b;padding:6px 6px 8px;"></div>';
             window._rcZoom=1; window._rcPanX=0; window._rcPanY=0; try{ _rcApplyXf(); }catch(_){}
             _rcBindViewerInput();
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}   // 임베드 시 채팅 패널을 넓혀 큰 화면 확보
@@ -8243,6 +8247,57 @@
         function _rcFrac(e){ return _rcFracXY(e.clientX, e.clientY); }
         function _rcSendInput(evt){ if(socket && socket.connected && window._rc.peer) socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'input', evt:evt }); }
         window._rcToggleKbd = function(){ const k=document.getElementById('rc-view-kbd'); if(k){ try{ k.focus(); }catch(_){} } };
+        // ⌨ 오름 내장 가상 키보드 — 소프트키보드/SendKeys 의존 없이 각 키를 host에 직접 전송(rc_signal k, SendKeys 토큰)
+        window._rcVKShift = false;
+        window._rcToggleVKbd = function(){
+            const box=document.getElementById('rc-vkbd'); if(!box) return;
+            const show = (box.style.display==='none');
+            box.style.display = show ? 'block' : 'none';
+            const b=document.getElementById('rc-vk-btn'); if(b) b.style.background = show ? '#2563eb' : '#334155';
+            if(show && !box.dataset.built){ _rcBuildVKbd(box); box.dataset.built='1'; }
+            try{ const st=document.getElementById('rc-view-stage'); if(st) st.style.flex = show ? '1' : '1'; }catch(_){}
+        };
+        function _rcVKSend(tok){ _rcSendInput({ t:'k', s: tok }); }
+        function _rcBuildVKbd(box){
+            // SendKeys 토큰: 일반 문자 그대로, 특수기호는 {..}로 이스케이프, Shift는 접두 +
+            const rows = [
+                ['1','2','3','4','5','6','7','8','9','0'],
+                ['q','w','e','r','t','y','u','i','o','p'],
+                ['a','s','d','f','g','h','j','k','l'],
+                ['z','x','c','v','b','n','m']
+            ];
+            const esc = function(c){ return /[{}()\[\]+^%~]/.test(c) ? ('{'+c+'}') : c; };
+            const keyBtn = (label, tok, flex, bg) => '<button class="rc-vk" data-tok="'+String(tok).replace(/"/g,'&quot;')+'" style="flex:'+(flex||'1')+';min-width:0;margin:2px;padding:9px 0;border:0;border-radius:7px;background:'+(bg||'#334155')+';color:#fff;font-size:14px;font-weight:700;cursor:pointer;">'+label+'</button>';
+            let h='';
+            rows.forEach(function(r){ h+='<div style="display:flex;">'+ r.map(function(c){ return keyBtn(c, c); }).join('') +'</div>'; });
+            // 하단 기능키 행
+            h += '<div style="display:flex;">'
+               + keyBtn('⇧ Shift','{SHIFT}','1.6','#475569')
+               + keyBtn('Tab','{TAB}','1.4','#475569')
+               + keyBtn('Space',' ','3')
+               + keyBtn('←','{BS}','1.4','#475569')
+               + keyBtn('Enter','{ENTER}','1.8','#2563eb')
+               + '</div>';
+            h += '<div style="display:flex;">'
+               + keyBtn('Esc','{ESC}','1.2','#475569')
+               + keyBtn(',',',') + keyBtn('.','.') + keyBtn('/','/') + keyBtn('-','-') + keyBtn('=','=')
+               + keyBtn('▲','{UP}','1','#475569') + keyBtn('▼','{DOWN}','1','#475569')
+               + keyBtn('◀','{LEFT}','1','#475569') + keyBtn('▶','{RIGHT}','1','#475569')
+               + '</div>';
+            box.innerHTML = h;
+            box.querySelectorAll('.rc-vk').forEach(function(btn){
+                btn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    let tok = btn.getAttribute('data-tok');
+                    if(tok === '{SHIFT}'){ window._rcVKShift = !window._rcVKShift; box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/.test(t)){ bb.textContent = window._rcVKShift ? t.toUpperCase() : t; } }); const sh=btn; sh.style.background = window._rcVKShift ? '#2563eb' : '#475569'; return; }
+                    // 한 글자 알파벳 + Shift → 대문자, Shift+기호는 미지원(기본)
+                    if(tok.length===1 && /[a-z]/i.test(tok)){ tok = window._rcVKShift ? ('+'+tok) : tok; }
+                    else if(tok.length===1){ tok = esc(tok); }
+                    _rcVKSend(tok);
+                    if(window._rcVKShift && !/\{SHIFT\}/.test(tok)){ window._rcVKShift=false; box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/.test(t)) bb.textContent=t; }); const sh=box.querySelector('[data-tok="{SHIFT}"]'); if(sh) sh.style.background='#475569'; }
+                });
+            });
+        }
         // 🔍 원격 화면 줌/팬(팀뷰어식) — 비디오에 transform 적용. 좌표(_rcFracXY)는 변환 후 rect 기준이라 클릭 정확도 유지.
         window._rcZoom = 1; window._rcPanX = 0; window._rcPanY = 0;
         function _rcApplyXf(){ const v=document.getElementById('rc-view-vid'); if(v){ v.style.transformOrigin='center center'; v.style.transform='translate('+window._rcPanX+'px,'+window._rcPanY+'px) scale('+window._rcZoom+')'; } }
