@@ -4352,9 +4352,13 @@
             isAdmin = !!(data && data.isAdmin);
             if(window.applyAdminUIState) applyAdminUIState(isAdmin);
 
+            // 🔐 기존 소켓이 있으면 정리(중복 연결 방지 — 다른 계정/재로그인 잔존 소켓 제거)
+            try { if(window.socket && window.socket.connected){ window.socket.removeAllListeners(); window.socket.disconnect(); } } catch(_){}
             // 🔐 소켓 핸드셰이크에 세션 토큰 전달 → 서버가 신원 바인딩 + 개인 룸 가입(스코프 전송 수신). 발신자 위조 차단.
             socket = io(API_URL, { transports: ['websocket', 'polling'], auth: { token: window.EARTH_TOKEN || localStorage.getItem('earth_token') || '' } });
             socket.on('receive_message', handleReceiveMessage);
+            // 🔐 단일 세션: 다른 기기에서 로그인되면 이 기기 자동 로그아웃
+            socket.on('force_logout', d => { try { if(window.__loggingOut) return; window.__loggingOut = true; alert((d && d.reason) || '다른 기기에서 로그인되어 로그아웃됩니다.'); if(typeof logout === 'function') logout(); else { try{ localStorage.removeItem('earth_auto_login'); }catch(_){}; location.reload(); } } catch(_){} });
             socket.on('rc_signal', d => { try { if(window._rcOnSignal) window._rcOnSignal(d); } catch(_){} });
             // 🚀 [v9] 재접속 처리 — 서버에 오프라인 큐가 없으므로 재연결 시 채팅목록/현재방 히스토리를 다시 동기화 + 대기 첨부 flush
             socket.on('connect', () => {
@@ -8221,6 +8225,8 @@
                 }
                 twoFinger=false;
                 if(!e.touches.length) return; const t=e.touches[0]; ts=Date.now(); tx=t.clientX; ty=t.clientY; tmoved=false;
+                // 태블릿식: 손가락을 댄 위치로 커서를 즉시 이동(터치 다운 시점)
+                const p0=_rcFracXY(tx,ty); if(p0) _rcSendInput({t:'m',fx:p0.fx,fy:p0.fy});
                 if(lpTimer) clearTimeout(lpTimer);
                 lpTimer = setTimeout(function(){ const p=_rcFracXY(tx,ty); if(p){ tmoved=true; _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); if(navigator.vibrate) try{navigator.vibrate(20);}catch(_){}}}, 500); // 롱프레스=우클릭
             }, {passive:false});

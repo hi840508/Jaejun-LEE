@@ -819,6 +819,14 @@ function issueToken(name) {
     return token;
 }
 function revokeToken(token) { if (token) { SESSIONS.delete(String(token)); db.run(`DELETE FROM sessions WHERE token = ?`, [String(token)], () => {}); } }
+// 🔐 단일 세션 강제(카톡식) — 새 로그인 시 이 계정의 기존 세션 모두 무효화 + 기존 소켓에 강제 로그아웃 통지.
+function _enforceSingleSession(name, keepToken) {
+    try {
+        for (const [t, s] of SESSIONS) { if (s && s.name === name && t !== keepToken) SESSIONS.delete(t); }
+        db.run(`DELETE FROM sessions WHERE name = ? AND token != ?`, [name, keepToken], () => {});
+        io.to('user:' + name).emit('force_logout', { reason: '다른 기기(브라우저)에서 로그인되어 이 기기는 로그아웃되었습니다.' });
+    } catch (_) {}
+}
 // 🔐 세션 유효기간 30일(길게 — 전원 로그아웃 방지). TTL 초과 세션은 무효화(created 없는 레거시 세션은 통과).
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 function authUser(req) {
@@ -1175,7 +1183,9 @@ app.post('/api/auth/verify', (req, res) => {
             if (verifyPassword(req.body.password, row.password)) {
                 rateLimitReset(req, 'login');
                 upgradePasswordIfLegacy(row.name, row.password, req.body.password);
-                res.json({ exists: true, user: Object.assign(stripPwd(row), { isAdmin: isAdminName(row.name) }), token: issueToken(row.name), mustChangePassword: !!row.force_pwd_change, isAdmin: isAdminName(row.name) });
+                const _tk = issueToken(row.name);
+                _enforceSingleSession(row.name, _tk);   // 🔐 기존 로그인 자동 로그아웃(단일 세션)
+                res.json({ exists: true, user: Object.assign(stripPwd(row), { isAdmin: isAdminName(row.name) }), token: _tk, mustChangePassword: !!row.force_pwd_change, isAdmin: isAdminName(row.name) });
             }
             else { rateLimitFail(req, 'login'); res.status(401).json({ exists: true, error: "비밀번호가 불일치합니다." }); }
         } else { rateLimitFail(req, 'login'); res.json({ exists: false }); }
