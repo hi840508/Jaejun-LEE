@@ -1197,9 +1197,9 @@
                     <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">🏪 상점 생성</h3>
                     <div style="font-size:12px;color:#707070;line-height:1.6;">새 상점을 만듭니다. 만든 상점의 편집·상품 등록·거래처 관리는 <b>상점 관리</b>에서 하세요.</div>
                 </div>
-                <div class="panel" style="padding:0; overflow:hidden; background:transparent; border:none; box-shadow:none; display:flex; flex-direction:column; max-width:600px;">
+                <div class="panel" style="padding:0; overflow:hidden; background:transparent; border:none; box-shadow:none; display:flex; flex-direction:column; max-width:640px;">
                         <div style="font-size:11px;color:#94a3b8;margin:0 2px 6px;">👁 아래 카드는 실제 상점 목록에 노출되는 모습 그대로입니다. 배경·로고를 눌러 이미지를 올리고, 상점명·소개를 입력하세요.</div>
-                        <div id="wysiwyg-brand-card" class="brand-showcase-card" style="max-width:520px; cursor:default;">
+                        <div id="wysiwyg-brand-card" class="brand-showcase-card" style="width:100%; max-width:640px; cursor:default;">
                             <!-- 실제 노출과 동일: 히어로 배경(16:9) + 오버레이(로고·상점명·소개) -->
                             <div class="brand-hero" id="wbc-bg-zone" style="cursor:pointer;" onclick="document.getElementById('new-brand-background').click()" title="클릭하여 배경(대문) 이미지 업로드">
                                 <input type="file" id="new-brand-background" accept="image/*" style="display:none;" onchange="wbcOnBgPicked(event)">
@@ -1252,7 +1252,7 @@
                                 <div class="acts"><button type="button" class="mini-btn enter" disabled style="opacity:0.7; cursor:default;">입장 →</button></div>
                             </div>
                         </div>
-                        <div style="max-width:520px; margin-top:2px;">
+                        <div style="max-width:640px; margin-top:2px;">
                             <!-- 🧾 세금계산서용: 사업자=사업자등록번호 / 개인=주민등록번호 -->
                             <div style="display:flex; gap:8px; margin:6px 12px 0; flex-wrap:wrap;">
                                 <select id="new-brand-biztype" onchange="wbcToggleBizNo()" style="padding:8px 10px; border:1px solid var(--border-color); border-radius:8px; font-size:13px; background:#fff;">
@@ -3856,6 +3856,15 @@
                     const order=[['backup','DB 백업'],['big','대용량 전송'],['att','채팅 첨부'],['app','앱 설치파일'],['mirror','미러 백업'],['etc','기타']];
                     usageHtml='<div style="background:#f8fafc;border-radius:12px;padding:14px;margin:10px 0 18px;"><div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:8px;"><span>☁️ R2 저장소</span><span>'+fmt(usage.total)+' / '+fmt(usage.freeLimit)+' 무료 ('+pct+'%)</span></div><div style="height:9px;background:#e2e8f0;border-radius:6px;overflow:hidden;margin-bottom:10px;"><div style="height:100%;width:'+pct+'%;background:'+(pct>=90?'#dc2626':pct>=70?'#f59e0b':'#2563eb')+';"></div></div>'
                       + order.filter(([k])=>g[k]).map(([k,lbl])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;"><span>'+lbl+'</span><span>'+fmt(g[k].bytes)+' · '+g[k].count+'개</span></div>').join('')
+                      + (function(){
+                          // 💰 Cloudflare R2 예상 비용 — 저장 $0.015/GB·월(무료 10GB 초과분), 전송(egress) 무료
+                          const GB=usage.total/(1024*1024*1024), freeGB=(usage.freeLimit||0)/(1024*1024*1024);
+                          const billGB=Math.max(0, GB-freeGB); const usd=billGB*0.015; const krw=Math.round(usd*1380);
+                          const within=billGB<=0;
+                          return '<div style="height:1px;background:#e2e8f0;margin:10px 0;"></div>'
+                            +'<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;"><span>💰 예상 월 저장 비용</span><span style="color:'+(within?'#166534':'#b45309')+';">'+(within?'$0.00 (무료 범위)':('$'+usd.toFixed(2)+' · 약 ₩'+krw.toLocaleString()))+'</span></div>'
+                            +'<div style="font-size:11px;color:#94a3b8;margin-top:5px;line-height:1.6;">· 사용량 '+GB.toFixed(2)+'GB / 무료 '+freeGB.toFixed(0)+'GB (초과분 '+billGB.toFixed(2)+'GB × $0.015)<br>· 다운로드(전송) 비용 <b>$0</b> (R2는 egress 무료) · API 작업요금 별도(소액)<br>· 실제 청구는 Cloudflare 대시보드 → R2 → 사용량에서 확인</div>';
+                        })()
                       + '</div>';
                 } else { usageHtml='<div style="font-size:12px;color:#94a3b8;margin:10px 0 18px;">저장소 사용량을 불러오지 못했습니다(R2 미설정일 수 있음).</div>'; }
                 let cloudHtml='';
@@ -6265,11 +6274,18 @@
             if(!f) return;
             const r = new FileReader();
             r.onload = (e) => {
-                const img = document.getElementById('wbc-bg-preview');
-                const ph = document.getElementById('wbc-bg-placeholder');
-                img.src = e.target.result;
-                img.style.display = 'block';
-                ph.style.display = 'none';
+                // 🖼 배경을 직접 넣고 확대/축소·이동·회전으로 맞춰 저장(편집기) — 적용 시 미리보기 카드에 반영
+                if(window.openBackgroundEditor){
+                    window.openBackgroundEditor(null, e.target.result, function(out){
+                        const img = document.getElementById('wbc-bg-preview'); const ph = document.getElementById('wbc-bg-placeholder');
+                        if(img){ img.src = out; img.style.display = 'block'; }
+                        if(ph) ph.style.display = 'none';
+                    });
+                } else {
+                    const img = document.getElementById('wbc-bg-preview'); const ph = document.getElementById('wbc-bg-placeholder');
+                    img.src = e.target.result; img.style.display = 'block'; ph.style.display = 'none';
+                }
+                try { event.target.value=''; } catch(_){}   // 같은 파일 재선택 가능
             };
             r.readAsDataURL(f);
         };
@@ -6350,8 +6366,9 @@
             fileInput.click();
         }
         // 🖼 대문 이미지 편집기 — 프레임(3:1)에 맞춰 확대/축소·좌우상하 이동·회전 후 캔버스로 구워 저장
-        window.openBackgroundEditor = function(storeId, dataUrl){
+        window.openBackgroundEditor = function(storeId, dataUrl, onApply){
             const OW = 1200, OH = 400;
+            window.__bgEdOnApply = (typeof onApply === 'function') ? onApply : null;
             let m = document.getElementById('bg-editor-modal'); if(!m){ m = document.createElement('div'); m.id='bg-editor-modal'; document.body.appendChild(m); }
             m.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:14px;';
             m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:680px;width:100%;padding:18px;box-shadow:0 24px 60px rgba(0,0,0,.4);">
@@ -6399,6 +6416,8 @@
                 const dw=s.w*sf, dh=s.h*sf; ctx.drawImage(img, -dw/2, -dh/2, dw, dh);
                 ctx.restore();
                 let out; try { out=cv.toDataURL('image/jpeg', 0.9); } catch(_){ out=st.dataUrl; }
+                // 🆕 상점 생성 등 콜백 모드: 서버 저장 대신 편집 결과(dataURL)를 콜백으로 전달
+                if(window.__bgEdOnApply){ try{ window.__bgEdOnApply(out); }catch(_){} window.__bgEdOnApply=null; const e=document.getElementById('bg-editor-modal'); if(e) e.remove(); return; }
                 try { await fetch(`${API_URL}/api/store/update`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:storeId, owner:currentUser.name, background:out})}); showToast('대문 이미지가 적용되었습니다.'); const e=document.getElementById('bg-editor-modal'); if(e) e.remove(); if(window.loadMyBrandStores) loadMyBrandStores(); } catch(err){ showToast('적용 실패: '+(err.message||err)); }
             };
             img.src=st.dataUrl;
@@ -8199,6 +8218,7 @@
               + '<span style="display:flex;gap:6px;flex:none;">'
               + '<button onclick="_rcZoomBtn(0.5)" title="확대" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;">🔍+</button>'
               + '<button onclick="_rcZoomBtn(-0.5)" title="축소" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;">🔍−</button>'
+              + '<button id="rc-pan-btn" onclick="_rcTogglePan()" title="확대 후 한 손가락으로 화면 이동" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;">✋ 이동</button>'
               + '<button id="rc-dbl-btn" onclick="_rcArmDbl()" title="다음 탭을 더블클릭으로(아이콘 실행)" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">🖱 더블클릭</button>'
               + '<button onclick="rcRequestScreenSwitch()" title="상대 모니터 전환(듀얼 모니터)" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">🖥 화면</button>'
               + '<button onclick="_rcToggleKbd()" title="키보드" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">⌨</button>'
@@ -8233,8 +8253,11 @@
             const mx=Math.max(0,(vw-sw)/2), my=Math.max(0,(vh-sh)/2);
             window._rcPanX=Math.max(-mx,Math.min(mx,window._rcPanX)); window._rcPanY=Math.max(-my,Math.min(my,window._rcPanY));
         };
-        window._rcZoomBtn = function(delta){ window._rcZoom=Math.max(1,Math.min(5,(window._rcZoom||1)+delta)); if(window._rcZoom<=1){ window._rcPanX=0; window._rcPanY=0; } window._rcClampPan(); _rcApplyXf(); };
-        window._rcZoomReset = function(){ window._rcZoom=1; window._rcPanX=0; window._rcPanY=0; _rcApplyXf(); };
+        window._rcZoomBtn = function(delta){ window._rcZoom=Math.max(1,Math.min(5,(window._rcZoom||1)+delta)); if(window._rcZoom<=1){ window._rcPanX=0; window._rcPanY=0; window._rcPanMode=false; _rcUpdatePanBtn(); } window._rcClampPan(); _rcApplyXf(); };
+        window._rcZoomReset = function(){ window._rcZoom=1; window._rcPanX=0; window._rcPanY=0; window._rcPanMode=false; _rcUpdatePanBtn(); _rcApplyXf(); };
+        // ✋ 화면 이동(팬) 모드 — 켜면 한 손가락 드래그로 확대 화면을 이동(마우스 제어 대신). 확대(z>1) 상태에서만 의미.
+        window._rcTogglePan = function(){ if((window._rcZoom||1)<=1){ try{ showToast('먼저 🔍+로 확대한 뒤 이동하세요.'); }catch(_){} return; } window._rcPanMode=!window._rcPanMode; _rcUpdatePanBtn(); try{ showToast(window._rcPanMode?'✋ 화면 이동 모드 — 한 손가락으로 끌어 이동하세요':'🖱 마우스 제어 모드'); }catch(_){} };
+        function _rcUpdatePanBtn(){ const b=document.getElementById('rc-pan-btn'); if(b) b.style.background = window._rcPanMode ? '#2563eb' : '#334155'; }
         // 🖱 다음 한 번의 탭을 '더블클릭'으로 전송(모바일에서 아이콘 실행 편의) — 무장/해제 토글
         window._rcArmDbl = function(){ window._rcDblArm = !window._rcDblArm; _rcUpdateDblBtn(); try{ if(window._rcDblArm) showToast('🖱 이제 화면을 한 번 탭하면 더블클릭됩니다'); }catch(_){} };
         function _rcUpdateDblBtn(){ const b=document.getElementById('rc-dbl-btn'); if(b){ b.style.background = window._rcDblArm ? '#2563eb' : '#334155'; } }
@@ -8278,6 +8301,12 @@
                     twoMoved=true; window._rcClampPan(); _rcApplyXf(); return;
                 }
                 if(!e.touches.length) return; const t=e.touches[0];
+                // ✋ 팬 모드(확대 상태): 한 손가락 드래그로 화면 이동(마우스 이동 대신)
+                if(window._rcPanMode && (window._rcZoom||1)>1){
+                    window._rcPanX += (t.clientX - tx); window._rcPanY += (t.clientY - ty);
+                    tx=t.clientX; ty=t.clientY; tmoved=true; if(lpTimer){clearTimeout(lpTimer);lpTimer=null;}
+                    window._rcClampPan(); _rcApplyXf(); return;
+                }
                 if(Math.abs(t.clientX-tx)>8 || Math.abs(t.clientY-ty)>8){ tmoved=true; if(lpTimer){clearTimeout(lpTimer);lpTimer=null;} }
                 const now=Date.now(); if(now-tlast<45) return; tlast=now;
                 const p=_rcFracXY(t.clientX,t.clientY); if(p) _rcSendInput({t:'m',fx:p.fx,fy:p.fy});

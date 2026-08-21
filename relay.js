@@ -74,7 +74,7 @@ let publicKey, privateKey;
     }
 })();
 
-app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
+app.get('/', (req, res) => { res.set('Cache-Control', 'no-cache, no-store, must-revalidate'); res.set('Pragma', 'no-cache'); res.set('Expires', '0'); res.sendFile(path.join(__dirname, 'index.html')); });
 
 // ===================== #10/#11: RAYCloud 외부 공유 링크(실제·14일 만료) + 이메일 발송 =====================
 let nodemailer = null;
