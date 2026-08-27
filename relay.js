@@ -2324,6 +2324,11 @@ app.post('/api/store/create', (req, res) => {
                 email: String((c && c.email) || '').slice(0, 120)
             })).filter(c => c.name || c.ceo || c.phone || c.addr);
         }
+        // 🦷 기공소는 거래처(거래 치과)가 최소 1곳 등록돼야 상점을 만들 수 있다.
+        //    빈 칸만 채운 항목은 위 filter 에서 걸러지므로, 정제 후 개수로 판단한다. 다른 카테고리는 해당 없음.
+        if (isLab && (!clinics || !clinics.length)) {
+            return res.status(400).json({ error: '기공소 상점은 거래처(거래 치과)를 1곳 이상 등록해야 개설할 수 있습니다.', needClinics: true });
+        }
         db.run(`INSERT INTO stores (id, name, owner, logo, status, background, description, category, bizType, bizNo, rx_items, partner_clinics) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`,
             [storeId, req.body.name, req.body.owner, req.body.logo, req.body.background || '', req.body.description || '', category, bizType, bizNo, rxItems ? JSON.stringify(rxItems) : null, clinics ? JSON.stringify(clinics) : null],
             () => {
