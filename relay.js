@@ -2357,7 +2357,7 @@ app.get('/api/store/:id/clinics', (req, res) => {
 // 🏥 상점 소유자(또는 관리자): 거래 치과 정보 저장(전체 교체)
 app.post('/api/store/:id/clinics', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
-    db.get(`SELECT owner FROM stores WHERE id = ?`, [req.params.id], (e, row) => {
+    db.get(`SELECT owner, category FROM stores WHERE id = ?`, [req.params.id], (e, row) => {
         if (e || !row) return res.status(404).json({ error: '상점이 존재하지 않습니다.' });
         if (row.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '본인 상점만 수정할 수 있습니다.' });
         let clinics = [];
@@ -2366,6 +2366,11 @@ app.post('/api/store/:id/clinics', (req, res) => {
             phone: String((c && c.phone) || '').slice(0, 40), addr: String((c && c.addr) || '').slice(0, 200),
             email: String((c && c.email) || '').slice(0, 120)
         })).filter(c => c.name || c.ceo || c.phone || c.addr);
+        // 🦷 기공소 상점은 거래처가 최소 1곳 유지돼야 한다(상점 개설 조건과 동일한 규칙).
+        //    빈 칸만 남긴 항목은 위 filter 에서 걸러지므로 정제 후 개수로 판단한다.
+        if (row.category === 'dental_lab' && !clinics.length) {
+            return res.status(400).json({ error: '기공소 상점은 거래처(거래 치과)를 최소 1곳 유지해야 합니다. 거래처를 모두 비울 수 없습니다.', needClinics: true });
+        }
         try { _autoFriendFromClinics(row && row.owner, clinics, function () {}); } catch (_) {}
         db.run(`UPDATE stores SET partner_clinics = ? WHERE id = ?`, [clinics.length ? JSON.stringify(clinics) : null, req.params.id], (ue) => {
             if (ue) return res.status(500).json({ error: ue.message });
@@ -2388,9 +2393,14 @@ app.get('/api/admin/partner-clinics', (req, res) => {
 // 🚀 상점 배경/소개/카테고리 업데이트
 app.post('/api/store/update', (req, res) => {
     const me = requireUser(req, res); if (!me) return;   // ★신원=토큰(본문 owner 무시)
-    db.get(`SELECT owner FROM stores WHERE id = ?`, [req.body.id], (err, row) => {
+    db.get(`SELECT owner, category, partner_clinics FROM stores WHERE id = ?`, [req.body.id], (err, row) => {
         if(!row) return res.status(404).json({ error: "상점이 존재하지 않습니다." });
         if(row.owner !== me && !isAdminName(me)) return res.status(403).json({ error: "본인 상점만 수정 가능합니다." });
+        // 🦷 거래처 0건인 상점을 기공소로 바꿔 개설 조건을 우회하는 것을 막는다.
+        if (req.body.category === 'dental_lab' && row.category !== 'dental_lab') {
+            let cur = []; try { cur = JSON.parse(row.partner_clinics || '[]') || []; } catch (_) { cur = []; }
+            if (!cur.length) return res.status(400).json({ error: '기공소로 전환하려면 거래처(거래 치과)를 1곳 이상 먼저 등록해야 합니다.', needClinics: true });
+        }
         const fields = []; const values = [];
         if(req.body.background !== undefined) { fields.push('background = ?'); values.push(req.body.background); }
         if(req.body.description !== undefined) { fields.push('description = ?'); values.push(req.body.description); }
