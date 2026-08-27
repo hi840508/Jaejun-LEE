@@ -644,6 +644,8 @@ function initTables() {
     db.serialize(() => {
         db.run(`CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, password TEXT, realname TEXT, bank TEXT, account TEXT, balance INTEGER, profilePic TEXT, phone TEXT, email TEXT, shipping_address TEXT, reset_otp TEXT, reset_otp_expiry INTEGER, reset_otp_used INTEGER DEFAULT 0, force_pwd_change INTEGER DEFAULT 0)`);
         db.run(`CREATE TABLE IF NOT EXISTS friends (userName TEXT, friendName TEXT, UNIQUE(userName, friendName))`);
+        // 🤝 친구 '신청 → 수락' (페이스북 방식). 수락되면 friends 로 옮기고 이 행은 지운다.
+        db.run(`CREATE TABLE IF NOT EXISTS friend_requests (fromName TEXT, toName TEXT, createdAt INTEGER, UNIQUE(fromName, toName))`);
         db.run(`CREATE TABLE IF NOT EXISTS stores (id TEXT PRIMARY KEY, name TEXT, owner TEXT, logo TEXT, status TEXT DEFAULT 'active', background TEXT, description TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, storeId TEXT, type TEXT, name TEXT, description TEXT, price_stream INTEGER DEFAULT 0, price_original INTEGER DEFAULT 0, stream_time INTEGER DEFAULT 0, stream_unit TEXT DEFAULT 'd', seller TEXT, thumbnail TEXT, encryptedPayload TEXT, compression_ratio INTEGER DEFAULT 0, block_hash TEXT, ecc_signature TEXT)`);
         db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT, seller TEXT, productId TEXT, productName TEXT, amount INTEGER, purchaseType TEXT, rawDate TEXT, date TEXT, refunded INTEGER DEFAULT 0)`);
@@ -1485,6 +1487,142 @@ app.post('/api/admin/reset-password', (req, res) => {
         });
 });
 
+// 🏥 상점의 '거래처' 정보와 일치하는 가입 회원을 찾아 자동으로 친구로 등록한다.
+//    잘못 엮이면 모르는 사람이 친구가 되므로, 확실한 단서(연락처·이메일)나
+//    '이름 + 주소'가 함께 맞을 때만 인정한다.
+function _digits(v) { return String(v || '').replace(/[^0-9]/g, ''); }
+function _normTxt(v) { return String(v || '').replace(/[\s\-().,]/g, '').toLowerCase(); }
+function _autoFriendFromClinics(owner, clinics, cb) {
+    cb = cb || function () {};
+    if (!owner || !Array.isArray(clinics) || !clinics.length) return cb(null, []);
+    db.all(`SELECT name, realname, phone, email, shipping_address FROM users`, [], (e, users) => {
+        if (e || !users) return cb(e, []);
+        db.all(`SELECT owner, name FROM stores`, [], (e2, stores) => {
+            const storeNames = {};   // 회원 → 그 회원이 운영하는 상점 이름들
+            (stores || []).forEach(st => { if (!st.owner) return; (storeNames[st.owner] = storeNames[st.owner] || []).push(_normTxt(st.name)); });
+            const matched = [];
+            clinics.forEach(c => {
+                const cPhone = _digits(c && c.phone), cEmail = String((c && c.email) || '').trim().toLowerCase();
+                const cName = _normTxt(c && c.name), cAddr = _normTxt(c && c.addr), cCeo = _normTxt(c && c.ceo);
+                for (const u of users) {
+                    if (!u.name || u.name === owner) continue;
+                    let hit = '';
+                    // 1) 연락처 일치 — 가장 확실
+                    if (!hit && cPhone.length >= 9 && _digits(u.phone) === cPhone) hit = 'phone';
+                    // 2) 이메일 일치
+                    if (!hit && cEmail && String(u.email || '').trim().toLowerCase() === cEmail) hit = 'email';
+                    // 3) 이름(상점명 또는 실명) + 주소가 함께 일치
+                    if (!hit && cName && cAddr) {
+                        const names = (storeNames[u.name] || []).concat([_normTxt(u.realname), _normTxt(u.name)]).filter(Boolean);
+                        const uAddr = _normTxt(u.shipping_address);
+                        const nameHit = names.some(n => n && (n === cName || (n.length >= 4 && cName.indexOf(n) >= 0) || (cName.length >= 4 && n.indexOf(cName) >= 0)));
+                        const addrHit = uAddr && cAddr && (uAddr.indexOf(cAddr.slice(0, 10)) >= 0 || cAddr.indexOf(uAddr.slice(0, 10)) >= 0);
+                        if (nameHit && addrHit) hit = 'name+addr';
+                    }
+                    // 4) 대표자명 + 연락처 뒷자리처럼 애매한 조합은 일부러 제외(오인 방지)
+                    if (hit) { matched.push({ user: u.name, by: hit, clinic: (c && c.name) || '' }); break; }
+                }
+            });
+            if (!matched.length) return cb(null, []);
+            let done = 0;
+            matched.forEach(m => {
+                _linkFriends(owner, m.user, () => { if (++done === matched.length) cb(null, matched); });
+            });
+            console.log('🤝 거래처 자동 친구:', owner, '→', matched.map(m => m.user + '(' + m.by + ')').join(', '));
+        });
+    });
+}
+
+// 🤝 실제로 친구를 맺는 공통 처리 — 주문·초대처럼 '이미 관계가 성립된' 흐름과 요청 수락이 함께 쓴다.
+function _linkFriends(a, b, cb) {
+    db.get(`SELECT name, profilePic FROM users WHERE name = ?`, [a], (e1, ra) => {
+        db.get(`SELECT name, profilePic FROM users WHERE name = ?`, [b], (e2, rb) => {
+            if (!ra || !rb) return cb(new Error('미존재 회원 식별자'));
+            db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [a, b], () => {
+                db.run(`INSERT OR IGNORE INTO friends (userName, friendName) VALUES (?, ?)`, [b, a], () => {
+                    db.run(`DELETE FROM friend_requests WHERE (fromName=? AND toName=?) OR (fromName=? AND toName=?)`, [a, b, b, a], () => {
+                        try { io.emit('friend_added', { a: a, b: b, aPic: (ra && ra.profilePic) || null, bPic: (rb && rb.profilePic) || null }); } catch (_) {}
+                        cb(null, { me: ra, partner: rb });
+                    });
+                });
+            });
+        });
+    });
+}
+// 🤝 친구 신청 — 바로 등록하지 않고 상대의 수락을 기다린다.
+app.post('/api/friend/request', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const to = String((req.body && req.body.friendName) || '').trim();
+    if (!to) return res.status(400).json({ error: '상대 ID가 필요합니다.' });
+    if (to === me) return res.status(400).json({ error: '본인 ID는 추가할 수 없습니다.' });
+    db.get(`SELECT name, profilePic FROM users WHERE name = ?`, [to], (e, row) => {
+        if (!row) return res.status(404).json({ error: '미존재 회원 식별자' });
+        db.get(`SELECT 1 AS ok FROM friends WHERE userName=? AND friendName=?`, [me, to], (e2, fr) => {
+            if (fr) return res.status(400).json({ error: '이미 친구입니다.', already: true });
+            // 상대가 이미 나에게 신청해 둔 상태면 → 서로 원한 것이므로 바로 성립시킨다.
+            db.get(`SELECT 1 AS ok FROM friend_requests WHERE fromName=? AND toName=?`, [to, me], (e3, rev) => {
+                if (rev) {
+                    return _linkFriends(me, to, (err, r) => {
+                        if (err) return res.status(500).json({ error: err.message });
+                        res.json({ success: true, accepted: true, partner: r.partner });
+                    });
+                }
+                db.run(`INSERT OR IGNORE INTO friend_requests (fromName, toName, createdAt) VALUES (?,?,?)`, [me, to, Date.now()], (ie) => {
+                    if (ie) return res.status(500).json({ error: ie.message });
+                    try { io.to(to).emit('friend_request', { from: me }); io.emit('friend_request_changed', { a: me, b: to }); } catch (_) {}
+                    try { sendPushToUser(to, { title: '친구 신청', body: me + ' 님이 친구를 신청했습니다.', url: '/' }); } catch (_) {}
+                    res.json({ success: true, requested: true });
+                });
+            });
+        });
+    });
+});
+// 받은/보낸 신청 목록
+app.get('/api/friend/requests', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.all(`SELECT r.fromName AS name, r.createdAt, u.profilePic, u.realname FROM friend_requests r LEFT JOIN users u ON u.name = r.fromName WHERE r.toName = ? ORDER BY r.createdAt DESC`, [me], (e, incoming) => {
+        db.all(`SELECT r.toName AS name, r.createdAt, u.profilePic, u.realname FROM friend_requests r LEFT JOIN users u ON u.name = r.toName WHERE r.fromName = ? ORDER BY r.createdAt DESC`, [me], (e2, outgoing) => {
+            res.json({ incoming: incoming || [], outgoing: outgoing || [] });
+        });
+    });
+});
+// 수락 → 친구 성립
+app.post('/api/friend/accept', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const from = String((req.body && req.body.fromName) || '').trim();
+    if (!from) return res.status(400).json({ error: '신청자 ID가 필요합니다.' });
+    db.get(`SELECT 1 AS ok FROM friend_requests WHERE fromName=? AND toName=?`, [from, me], (e, row) => {
+        if (!row) return res.status(404).json({ error: '해당 친구 신청이 없습니다.' });
+        _linkFriends(me, from, (err, r) => {
+            if (err) return res.status(500).json({ error: err.message });
+            try { sendPushToUser(from, { title: '친구 수락', body: me + ' 님이 친구 신청을 수락했습니다.', url: '/' }); } catch (_) {}
+            res.json({ success: true, partner: r.partner });
+        });
+    });
+});
+// 거절(받은 것) / 취소(보낸 것)
+app.post('/api/friend/reject', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const from = String((req.body && req.body.fromName) || '').trim();
+    db.run(`DELETE FROM friend_requests WHERE fromName=? AND toName=?`, [from, me], function (e) {
+        if (e) return res.status(500).json({ error: e.message });
+        try { io.emit('friend_request_changed', { a: from, b: me }); } catch (_) {}
+        res.json({ success: true, removed: this.changes });
+    });
+});
+app.post('/api/friend/cancel', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const to = String((req.body && req.body.toName) || '').trim();
+    db.run(`DELETE FROM friend_requests WHERE fromName=? AND toName=?`, [me, to], function (e) {
+        if (e) return res.status(500).json({ error: e.message });
+        try { io.emit('friend_request_changed', { a: me, b: to }); } catch (_) {}
+        res.json({ success: true, removed: this.changes });
+    });
+});
+
+// ⚠️ 아래 /api/friend/add 는 '이미 관계가 성립된' 자동 흐름 전용이다
+//    (주문 개설, 초대 수락, 상점 문의 등 — 대화방을 열려면 양측이 친구여야 한다).
+//    사용자가 직접 누르는 친구 추가는 위의 /api/friend/request 를 쓴다.
 app.post('/api/friend/add', (req, res) => {
     const userName = requireUser(req, res); if (!userName) return;   // 🔐 신원=토큰(본문 userName 무시)
     const { friendName } = req.body;
@@ -2194,6 +2332,8 @@ app.post('/api/store/create', (req, res) => {
                     db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, seller, rx_form) VALUES (?, ?, 'html_enc', ?, ?, 0, 0, ?, 1)`,
                         ['PRD_' + Date.now(), storeId, '의뢰서 작성 (간편/상세)', '치과 기공 의뢰서를 작성하여 주문합니다. 상세 의뢰서는 취급 품목 수가로 금액이 자동 산정됩니다.', req.body.owner], () => {});
                 }
+                // 🏥 거래처로 등록해 둔 곳 중 이미 가입한 회원이 있으면 자동으로 친구 연결
+                try { _autoFriendFromClinics(req.body.owner, clinics || [], function () {}); } catch (_) {}
                 res.json({ success: true, storeId });
             });
     });
@@ -2221,6 +2361,7 @@ app.post('/api/store/:id/clinics', (req, res) => {
             phone: String((c && c.phone) || '').slice(0, 40), addr: String((c && c.addr) || '').slice(0, 200),
             email: String((c && c.email) || '').slice(0, 120)
         })).filter(c => c.name || c.ceo || c.phone || c.addr);
+        try { _autoFriendFromClinics(row && row.owner, clinics, function () {}); } catch (_) {}
         db.run(`UPDATE stores SET partner_clinics = ? WHERE id = ?`, [clinics.length ? JSON.stringify(clinics) : null, req.params.id], (ue) => {
             if (ue) return res.status(500).json({ error: ue.message });
             res.json({ ok: true, count: clinics.length });

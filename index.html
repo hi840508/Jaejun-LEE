@@ -4496,6 +4496,14 @@
             });
             // 🚀 실시간 친구 추가 알림 (별도 새로고침 없이 친구목록/대화방 즉시 갱신)
             socket.on('friend_added', handleFriendAdded);
+            // 🤝 친구 신청 도착·취소·거절 시 목록 즉시 갱신
+            socket.on('friend_request', function(d){
+                try{ if(d && d.from) showToast('🤝 ' + d.from + ' 님이 친구를 신청했습니다.'); }catch(_){}
+                try{ loadFriendList(); }catch(_){}
+            });
+            socket.on('friend_request_changed', function(d){
+                try{ if(!currentUser) return; if(d && (d.a===currentUser.name || d.b===currentUser.name)) loadFriendList(); }catch(_){}
+            });
             // 🟢 친구 접속 상태(presence) 실시간 반영
             socket.on('presence', d => {
                 try {
@@ -11069,10 +11077,18 @@ pdfjsScript,
             setTimeout(() => { if(window.enterBrandStoreById) window.enterBrandStoreById(storeId); }, 200);
         };
 
+        // 🤝 친구는 '신청 → 상대 수락' 후에 등록된다(페이스북 방식).
+        //    상대가 이미 나에게 신청해 둔 상태였다면 서버가 바로 성립시켜 준다.
         window.addFriendByName = async function(friendName) {
             if(!friendName || friendName === currentUser.name) return;
-            const res = await fetch(`${API_URL}/api/friend/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName }) });
+            const res = await fetch(`${API_URL}/api/friend/request`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ friendName }) });
             const data = await res.json();
+            if(res.ok && data && data.requested){
+                showToast(`${friendName} 님에게 친구 신청을 보냈습니다. 상대가 수락하면 연결됩니다.`);
+                try{ document.getElementById('friend-search-input').value=''; const rl=document.getElementById('friend-search-results'); if(rl) rl.style.display='none'; }catch(_){}
+                try{ renderFriendRequests(); }catch(_){}
+                return;
+            }
             if(res.ok) {
                 showToast(`${friendName} 님이 친구로 등록되었습니다.`);
                 // 🚀 양측 대화방 즉시 개설 (시스템 메시지 1건)
@@ -11100,10 +11116,66 @@ pdfjsScript,
             const online = window._onlineUsers || new Set();
             const dot = (on)=>`<span title="${on?'온라인':'오프라인'}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${on?'#22c55e':'#cbd5e1'};margin-left:6px;box-shadow:0 0 0 2px #fff;vertical-align:middle;"></span>`;
             const container = document.getElementById('friend-list-container'); container.innerHTML = '';
+            try{ await renderFriendRequests(container); }catch(_){}
             if(currentUser.name !== '이재준') { container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('이재준')"><div class="profile-pic" style="background:#d6006e; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px;">🤖</div><div style="flex:1;"><b>고객센터</b><div style="font-size:11px; color:var(--text-sub);">사용법·불편사항 자동응답</div></div></div>`; }
             friends.forEach(f => { const pic = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`; const safe=(f.name||'').replace(/'/g,"\\'"); const on=online.has(f.name); container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${safe}')">${pic}<div style="flex:1;"><b>${f.name}</b>${dot(on)}<div style="font-size:11px; color:${on?'#16a34a':'var(--text-sub)'};">${on?'온라인':'오프라인'}</div></div><button onclick="event.stopPropagation(); removeFriend('${safe}')" title="친구 삭제" aria-label="친구 삭제" style="border:none;background:none;color:#cbd5e1;font-size:16px;cursor:pointer;padding:4px 8px;line-height:1;">✕</button></div>`; });
             updateTabBadge();
         }
+        // 🤝 받은/보낸 친구 신청 — 친구 목록 맨 위에 표시하고 수락·거절·취소를 처리한다.
+        window.renderFriendRequests = async function(container){
+            if(!currentUser) return;
+            container = container || document.getElementById('friend-list-container');
+            if(!container) return;
+            let d = { incoming:[], outgoing:[] };
+            try{ const r = await fetch(`${API_URL}/api/friend/requests`, { cache:'no-store' }); if(r.ok) d = await r.json(); }catch(_){ return; }
+            const old = container.querySelector('#friend-req-box'); if(old) old.remove();
+            const inc = d.incoming||[], out = d.outgoing||[];
+            if(!inc.length && !out.length){ try{ updateTabBadge(); }catch(_){} return; }
+            const esc = (t)=>String(t||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+            const pic = (p)=> p ? '<img class="profile-pic" src="'+esc(p)+'">' : '<div class="profile-pic"></div>';
+            let h = '<div id="friend-req-box" style="margin:0 0 10px;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">';
+            if(inc.length){
+                h += '<div style="padding:9px 12px;background:#eff6ff;font-weight:800;font-size:13px;color:#1d4ed8;">받은 친구 신청 '+inc.length+'</div>';
+                inc.forEach(function(f){
+                    h += '<div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-top:1px solid #f1f5f9;">'
+                       + pic(f.profilePic)
+                       + '<div style="flex:1;min-width:0;"><div style="font-weight:700;">'+esc(f.name)+'</div>'
+                       + (f.realname? '<div style="font-size:12px;color:#64748b;">'+esc(f.realname)+'</div>':'')+'</div>'
+                       + '<button onclick="acceptFriendRequest(\''+esc(f.name)+'\')" style="flex:none;padding:7px 13px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer;">수락</button>'
+                       + '<button onclick="rejectFriendRequest(\''+esc(f.name)+'\')" style="flex:none;padding:7px 11px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-weight:700;cursor:pointer;">거절</button>'
+                       + '</div>';
+                });
+            }
+            if(out.length){
+                h += '<div style="padding:9px 12px;background:#f8fafc;font-weight:700;font-size:12px;color:#64748b;border-top:1px solid #f1f5f9;">보낸 신청 '+out.length+' — 상대 수락 대기 중</div>';
+                out.forEach(function(f){
+                    h += '<div style="display:flex;align-items:center;gap:9px;padding:8px 12px;border-top:1px solid #f1f5f9;">'
+                       + pic(f.profilePic)
+                       + '<div style="flex:1;min-width:0;font-size:13px;color:#475569;">'+esc(f.name)+'</div>'
+                       + '<button onclick="cancelFriendRequest(\''+esc(f.name)+'\')" style="flex:none;padding:6px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;font-size:12px;cursor:pointer;">취소</button>'
+                       + '</div>';
+                });
+            }
+            h += '</div>';
+            container.insertAdjacentHTML('afterbegin', h);
+        };
+        window.acceptFriendRequest = async function(from){
+            try{
+                const r = await fetch(`${API_URL}/api/friend/accept`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ fromName: from }) });
+                const j = await r.json(); if(!r.ok) throw new Error(j.error||'수락 실패');
+                showToast(from + ' 님과 친구가 되었습니다.');
+                loadFriendList(); loadChatList();
+            }catch(e){ showToast(e.message||'수락 실패'); }
+        };
+        window.rejectFriendRequest = async function(from){
+            try{ await fetch(`${API_URL}/api/friend/reject`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ fromName: from }) }); }catch(_){}
+            showToast('친구 신청을 거절했습니다.'); loadFriendList();
+        };
+        window.cancelFriendRequest = async function(to){
+            try{ await fetch(`${API_URL}/api/friend/cancel`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ toName: to }) }); }catch(_){}
+            showToast('보낸 신청을 취소했습니다.'); loadFriendList();
+        };
+
         // 🧑‍🤝‍🧑 친구 삭제(재등록 가능) — 양방향 삭제. 대화 내용은 서버에 유지.
         window.removeFriend = async function(name){
             if(!name) return;
