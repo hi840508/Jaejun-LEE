@@ -527,7 +527,8 @@
         
         /* 🚀 카카오톡 스타일 채팅 UI */
         .chat-body { flex: 1; padding: 14px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; background: #abc1d1; position: relative; }
-        .chat-input-area { padding: 10px 8px 12px; border-top: 1px solid #d4dde5; display: flex; gap: 6px; align-items: center; background: #f4f6f8; flex-shrink: 0; }
+        /* 📱 안드로이드 제스처바/홈·뒤로가기 버튼에 입력창이 가리던 문제 — 하단 안전영역만큼 더 띄운다. */
+        .chat-input-area { padding: 10px 8px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid #d4dde5; display: flex; gap: 6px; align-items: center; background: #f4f6f8; flex-shrink: 0; }
         .chat-input-area input { flex: 1; padding: 11px 16px; border-radius: 22px; border: 1px solid #d4dde5; background: #ffffff; outline: none; color: #1f2937; font-size:14px; min-width: 0; }
         /* 🚀 채팅 입력바 아이콘 버튼은 모바일 터치 영역 강화 */
         .chat-input-area > button.btn-outline { width: 40px !important; height: 40px !important; }
@@ -3720,6 +3721,8 @@
                 const s=await window.RCMirror.status();
                 if(!s){ body.innerHTML='상태를 불러오지 못했습니다.'; return; }
                 if(!s.r2){ body.innerHTML='<div style="color:#b45309;">서버에 클라우드(R2)가 설정되어 있지 않아 미러 백업을 사용할 수 없습니다.</div>'; return; }
+                // ⏸ 관리자가 서비스를 중지한 상태 — 요금 안내·켜기 토글·백업 버튼을 통째로 감춘다(복원은 계속 가능).
+                if(s.serviceEnabled===false){ body.innerHTML='<div style="color:#b45309;font-weight:800;margin-bottom:8px;">클라우드 미러 백업이 현재 중지되어 있습니다.</div><div style="font-size:13px;color:#475569;line-height:1.7;">관리자 설정으로 새 백업이 잠시 멈춰 있습니다.<br>이미 백업된 파일의 목록·복원은 계속 사용할 수 있습니다.</div>'; return; }
                 const pct=s.quota? Math.min(100,Math.round(s.used/s.quota*100)):0;
                 body.innerHTML=
                   '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><label style="font-weight:700;">미러 백업 사용</label>'
@@ -3870,6 +3873,9 @@
                 let cloudHtml='';
                 if(cloud){
                     cloudHtml='<div style="height:1px;background:#eef2f7;margin:18px 0;"></div>'
+                      +'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:14px;">'
+                      +'<div><div style="font-weight:700;">☁️ 클라우드 미러 백업 서비스</div><div style="font-size:12px;color:#64748b;">끄면 회원의 새 백업·업로드가 중지됩니다(복원은 유지).</div></div>'
+                      +'<button id="_ao-mirflag" style="margin-left:auto;padding:8px 16px;border:none;border-radius:999px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569;white-space:nowrap;">불러오는 중…</button></div>'
                       +'<div style="font-weight:700;margin-bottom:4px;">👥 회원별 클라우드 사용</div>'
                       +'<div style="font-size:12px;color:#64748b;margin-bottom:10px;">미러 백업 사용량 · 구매 용량 (합계 미러 '+fmt(cloud.totalMirror)+' · 구매 '+fmt(cloud.totalPurchased)+')</div>'
                       +'<div style="display:flex;gap:6px;margin-bottom:8px;"><input id="_ao-cq" placeholder="회원 검색" style="flex:1;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;"><select id="_ao-cs" style="padding:8px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;"><option value="mirror">미러 많은순</option><option value="purchased">구매 많은순</option><option value="name">이름순</option></select></div>'
@@ -3889,6 +3895,22 @@
                   + usageHtml + cloudHtml;
                 body.querySelector('#_ao-bk').onclick=async()=>{ const msg=body.querySelector('#_ao-bkmsg'); msg.textContent='백업 중…'; try{ const r=await fetch(API_URL+'/api/admin/db-backup',{method:'POST'}); const d=await r.json(); if(!r.ok){ msg.style.color='#dc2626'; msg.textContent='실패: '+(d.error||''); return; } msg.style.color='#16a34a'; msg.textContent='✅ 백업 완료'; setTimeout(refresh,600); }catch(e){ msg.textContent='오류: '+(e.message||e); } };
                 body.querySelectorAll('._ao-dl').forEach(b=>{ b.onclick=async()=>{ try{ const r=await fetch(API_URL+'/api/admin/db-backup/download?key='+encodeURIComponent(b.dataset.k)); const d=await r.json(); if(!r.ok){ showToast(d.error||'다운로드 오류'); return; } const a=document.createElement('a'); a.href=d.url; a.download=b.dataset.k.split('/').pop(); document.body.appendChild(a); a.click(); a.remove(); }catch(e){ showToast('오류: '+(e.message||e)); } }; });
+                // ☁️ 미러 서비스 on/off 토글
+                (function(){
+                    const b=body.querySelector('#_ao-mirflag'); if(!b) return;
+                    const paint=(on)=>{ b.textContent = on?'사용 중 (끄기)':'중지됨 (켜기)';
+                        b.style.background = on?'#16a34a':'#e2e8f0'; b.style.color = on?'#fff':'#475569'; b.dataset.on = on?'1':'0'; };
+                    fetch(API_URL+'/api/admin/mirror-flag',{cache:'no-store'}).then(r=>r.json()).then(j=>paint(!!j.enabled)).catch(()=>{ b.textContent='조회 실패'; });
+                    b.onclick=async()=>{
+                        const next = b.dataset.on!=='1';
+                        if(!next){ const ok=await window._sfConfirm('클라우드 미러 백업을 중지할까요?\n\n· 회원의 새 백업/업로드가 막힙니다\n· 이미 백업된 파일의 목록·복원은 계속 가능합니다'); if(!ok) return; }
+                        const prev=b.textContent; b.textContent='적용 중…';
+                        try{ const r=await fetch(API_URL+'/api/admin/mirror-flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:next})});
+                             const j=await r.json(); if(!r.ok) throw new Error(j.error||'실패'); paint(!!j.enabled);
+                             showToast(j.enabled?'☁️ 미러 백업 사용으로 전환했습니다':'⏸ 미러 백업을 중지했습니다'); }
+                        catch(e){ b.textContent=prev; showToast('변경 실패: '+e.message); }
+                    };
+                })();
                 // 👥 회원별 사용 — 검색/정렬/정리
                 if(cloud){
                     const rowsEl=body.querySelector('#_ao-cloud-rows'); const qEl=body.querySelector('#_ao-cq'); const sEl=body.querySelector('#_ao-cs');
@@ -7883,11 +7905,13 @@
         };
         // Android: APK 사이드로드 다운로드(+'알 수 없는 앱' 안내). 미배포 시 PWA 설치로 폴백.
         window._installAndroidApk = async function(){
-            let hasApk = false;
-            try { const r = await fetch(API_URL + '/api/rc/version', { cache:'no-store' }); const j = await r.json(); hasApk = !!(j && j.apk); } catch(_){}
+            // 서버가 알려주는 주소를 그대로 쓴다(파일명이 바뀌어도 클라이언트 수정 불필요).
+            let hasApk = false, apkUrl = '/download/AlphaK.apk', apkVer = '';
+            try { const r = await fetch(API_URL + '/api/rc/version', { cache:'no-store' }); const j = await r.json();
+                  hasApk = !!(j && j.apk); if(j && j.apkUrl) apkUrl = j.apkUrl; if(j && j.apkVersion) apkVer = j.apkVersion; } catch(_){}
             if(hasApk){
                 alert('Alpha K 앱(APK) 설치:\n\n1) 확인을 누르면 Alpha K.apk 다운로드가 시작됩니다.\n2) 받은 파일을 열면 "알 수 없는 앱 설치" 경고가 나옵니다.\n3) "이 출처 허용"을 켜고 설치하세요.\n(스토어 밖 배포라 나오는 정상 경고입니다)');
-                try { window.location.href = API_URL + '/download/Alpha K.apk'; } catch(_){ window.open(API_URL + '/download/Alpha K.apk', '_blank'); }
+                try { window.location.href = API_URL + apkUrl; } catch(_){ window.open(API_URL + apkUrl, '_blank'); }
                 return;
             }
             if(window._deferredPWA){ try { window._deferredPWA.prompt(); window._deferredPWA.userChoice.finally(function(){ window._deferredPWA = null; }); } catch(_){} return; }
@@ -8230,7 +8254,7 @@
               + '<div id="rc-view-stage" tabindex="0" style="flex:1;position:relative;overflow:hidden;background:#000;outline:none;cursor:crosshair;display:flex;align-items:center;justify-content:center;touch-action:none;">'
               + '<video id="rc-view-vid" autoplay playsinline muted draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;pointer-events:none;"></video>'
               + '<div id="rc-view-wait" style="position:absolute;color:#9ca3af;font-size:13px;">상대 화면을 불러오는 중…</div></div>'
-              + '<div id="rc-vkbd" style="display:none;flex:none;background:#1e293b;padding:6px 6px 8px;"></div>';
+              + '<div id="rc-vkbd" style="display:none;flex:none;background:#1e293b;padding:6px 6px calc(8px + env(safe-area-inset-bottom, 0px));max-height:52vh;overflow:auto;touch-action:manipulation;"></div>';
             window._rcZoom=1; window._rcPanX=0; window._rcPanY=0; try{ _rcApplyXf(); }catch(_){}
             _rcBindViewerInput();
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}   // 임베드 시 채팅 패널을 넓혀 큰 화면 확보
@@ -8273,21 +8297,25 @@
             // 하단 기능키 행
             h += '<div style="display:flex;">'
                + keyBtn('⇧ Shift','{SHIFT}','1.6','#475569')
-               + keyBtn('Tab','{TAB}','1.4','#475569')
+               + keyBtn('한/영','{HANGUL}','1.6','#0ea5e9')
                + keyBtn('Space',' ','3')
                + keyBtn('←','{BS}','1.4','#475569')
                + keyBtn('Enter','{ENTER}','1.8','#2563eb')
                + '</div>';
             h += '<div style="display:flex;">'
                + keyBtn('Esc','{ESC}','1.2','#475569')
+               + keyBtn('Tab','{TAB}','1.2','#475569')
+               + keyBtn('한자','{HANJA}','1.2','#475569')
                + keyBtn(',',',') + keyBtn('.','.') + keyBtn('/','/') + keyBtn('-','-') + keyBtn('=','=')
                + keyBtn('▲','{UP}','1','#475569') + keyBtn('▼','{DOWN}','1','#475569')
                + keyBtn('◀','{LEFT}','1','#475569') + keyBtn('▶','{RIGHT}','1','#475569')
                + '</div>';
             box.innerHTML = h;
             box.querySelectorAll('.rc-vk').forEach(function(btn){
-                btn.addEventListener('click', function(e){
-                    e.preventDefault();
+                // 📱 모바일: click 은 스크롤 판정·지연으로 유실되기 쉬워 키가 "안 눌리는" 것처럼 보였다.
+                //    → 손가락이 닿는 즉시(pointerdown) 전송하고, 구형 브라우저만 touchstart/click 으로 폴백한다.
+                const _fire = function(e){
+                    e.preventDefault(); e.stopPropagation();
                     let tok = btn.getAttribute('data-tok');
                     if(tok === '{SHIFT}'){ window._rcVKShift = !window._rcVKShift; box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/.test(t)){ bb.textContent = window._rcVKShift ? t.toUpperCase() : t; } }); const sh=btn; sh.style.background = window._rcVKShift ? '#2563eb' : '#475569'; return; }
                     // 한 글자 알파벳 + Shift → 대문자, Shift+기호는 미지원(기본)
@@ -8295,7 +8323,12 @@
                     else if(tok.length===1){ tok = esc(tok); }
                     _rcVKSend(tok);
                     if(window._rcVKShift && !/\{SHIFT\}/.test(tok)){ window._rcVKShift=false; box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/.test(t)) bb.textContent=t; }); const sh=box.querySelector('[data-tok="{SHIFT}"]'); if(sh) sh.style.background='#475569'; }
-                });
+                };
+                if(window.PointerEvent){ btn.addEventListener('pointerdown', _fire); }
+                else { btn.addEventListener('touchstart', _fire, { passive:false }); btn.addEventListener('click', _fire); }
+                btn.style.touchAction = 'manipulation'; btn.style.userSelect = 'none';
+                // 눌린 느낌 — 모바일에서 반응 여부를 바로 알 수 있게
+                btn.addEventListener('pointerdown', function(){ btn.style.filter='brightness(1.6)'; setTimeout(function(){ btn.style.filter=''; }, 120); });
             });
         }
         // 🔍 원격 화면 줌/팬(팀뷰어식) — 비디오에 transform 적용. 좌표(_rcFracXY)는 변환 후 rect 기준이라 클릭 정확도 유지.

@@ -100,7 +100,8 @@ function _syncAppToR2() {
     if (!_r2) return;
     try {
         const { PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
-        [{ name: 'APP_Setup.exe', ct: 'application/octet-stream' }, { name: 'Alpha K.apk', ct: 'application/vnd.android.package-archive' }].forEach(fi => {
+        const _apk = _resolveApk();
+        [{ name: 'APP_Setup.exe', ct: 'application/octet-stream' }].concat(_apk ? [{ name: _apk.name, ct: 'application/vnd.android.package-archive' }] : []).forEach(fi => {
             const fp = path.join(RC_AGENT_DIR, fi.name);
             if (!fs.existsSync(fp)) return;
             const size = fs.statSync(fp).size;
@@ -415,13 +416,34 @@ app.get('/download/APP_Setup.exe', (req, res) => {
     if (!fs.existsSync(f)) return res.status(404).send('app not published yet');
     res.download(f, 'APP_Setup.exe');
 });
-// 📱 Android APK(사이드로드) — agent/Alpha K.apk 에 두면 배포됨. '알 수 없는 앱 허용' 후 설치.
-app.get('/download/Alpha K.apk', (req, res) => {
-    if (_r2) return res.redirect(302, _r2.publicBase + '/app/Alpha K.apk');
-    const f = path.join(RC_AGENT_DIR, 'Alpha K.apk');
-    if (!fs.existsSync(f)) return res.status(404).send('apk not published yet');
+// 📱 Android APK(사이드로드) — agent/ 에 두면 배포됨. '알 수 없는 앱 허용' 후 설치.
+//  ⚠️ 2026-08-27 수정 — 앱이 계속 '준비 중'으로만 보이던 원인 2가지를 함께 고침
+//    1) 이름 불일치: Earth→Alpha K 리브랜딩 후에도 실제 배포본은 Earth.apk 인데 코드는 'Alpha K.apk'만 찾아
+//       apk:false 로 보고됐다 → 어떤 이름으로 올려도 배포되도록 후보를 순서대로 해석한다.
+//    2) 경로의 공백: Express 는 인코딩된 원본 경로로 매칭하므로 라우트에 실제 공백이 있으면
+//       브라우저 요청(/download/Alpha%20K.apk)과 절대 매칭되지 않는다 → 공백 없는 주소를 정식으로 쓴다.
+const APK_CANDIDATES = ['Alpha K.apk', 'AlphaK.apk', 'Earth.apk'];
+function _resolveApk() {
+    for (const name of APK_CANDIDATES) {
+        const p = path.join(RC_AGENT_DIR, name);
+        if (fs.existsSync(p)) { const st = fs.statSync(p); return { name, path: p, size: st.size, mtime: st.mtimeMs }; }
+    }
+    return null;
+}
+// 배포 버전 — agent/apk-version.txt 가 있으면 그 값, 없으면 파일 시각으로 대체(항상 무언가는 보이게).
+function _apkVersion(f) {
+    try { const v = fs.readFileSync(path.join(RC_AGENT_DIR, 'apk-version.txt'), 'utf8').trim(); if (v) return v; } catch (_) {}
+    return f ? new Date(f.mtime).toISOString().slice(0, 16).replace(/[-:T]/g, '') : '';
+}
+const APK_URL = '/download/AlphaK.apk';   // 정식 주소(공백 없음)
+// 옛 주소도 계속 받아 준다 — 이미 배포된 안내문·링크가 깨지지 않도록.
+app.get([APK_URL, '/download/app.apk', '/download/Alpha%20K.apk', '/download/Earth.apk'], (req, res) => {
+    const f = _resolveApk();
+    if (!f) return res.status(404).send('apk not published yet');
+    // R2 로 보내면 다운로드 전송비가 무료다. 실제 올라가 있는 이름 그대로 보낸다.
+    if (_r2) return res.redirect(302, _r2.publicBase + '/app/' + encodeURIComponent(f.name));
     res.type('application/vnd.android.package-archive');
-    res.download(f, 'Alpha K.apk');
+    res.download(f.path, 'AlphaK.apk');
 });
 // TWA(APK) 도메인 검증용 — PWABuilder/Bubblewrap이 준 assetlinks.json 을 agent/assetlinks.json 로 올리면 제공됨
 app.get('/.well-known/assetlinks.json', (req, res) => {
@@ -504,7 +526,8 @@ function _pushPreview(msg) {
 }
 app.get('/api/rc/version', (req, res) => {
     let v = '0'; try { v = fs.readFileSync(path.join(RC_AGENT_DIR, 'version.txt'), 'utf8').trim(); } catch (_) {}
-    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe', apk: fs.existsSync(path.join(RC_AGENT_DIR, 'Alpha K.apk')), apkUrl: '/download/Alpha K.apk' });
+    const _apk = _resolveApk();
+    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe', apk: !!_apk, apkUrl: APK_URL, apkVersion: _apkVersion(_apk), apkSize: _apk ? _apk.size : 0 });
 });
 // 개인화 원클릭 설치 배치 — 로그인 필요. exe 자동 다운로드 + 페어링(장기 기기 토큰) + 자동시작.
 app.post('/api/rc/installer', (req, res) => {
@@ -750,6 +773,10 @@ function initTables() {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('open_categories', 'dental_clinic,dental_lab')`, () => {});
             // 💳 [PG] 카드결제 모드 — 기본 mock(4자리 비번이면 승인). 실 PG 계약 후 'live'로 전환하면 _pgAuthorize의 live 분기만 구현하면 됨.
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('pg_mode', 'mock')`, () => {});
+            // ☁️ 클라우드 미러 백업 서비스 on/off — 기본 '0'(중지). 관리자 화면에서 켜고 끈다.
+            //    중지 중에는 새 백업(켜기·업로드)만 막고, 이미 올라간 파일의 목록·복원은 계속 허용한다
+            //    (회원이 이미 맡긴 데이터를 못 꺼내는 상태를 만들지 않기 위함).
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('mirror_enabled', '0')`, () => {});
         });
 
         // 🧾 전자세금계산서 이력 + 정산 기본 변수(모두 settings로 변경 가능): VAT율 10%, 결제수수료율 2.7%, SW 월사용료 10000원
@@ -1869,12 +1896,41 @@ function _mirrorUsage(name, cb) {   // cb(err, {used, quota, purchased, enabled}
         });
     });
 }
+// ☁️ 미러 서비스 전역 스위치 — 관리자가 껐다 켠다. DB 값을 메모리에 캐시해 매 요청 조회를 피한다.
+let MIRROR_SERVICE_ON = false;
+function _loadMirrorFlag(cb) {
+    db.get(`SELECT value FROM settings WHERE key='mirror_enabled'`, [], (e, r) => {
+        MIRROR_SERVICE_ON = String((r && r.value) || '0') === '1';
+        if (cb) cb(MIRROR_SERVICE_ON);
+    });
+}
+setTimeout(() => _loadMirrorFlag(), 1500);
+// 새 백업을 만드는 지점에서만 쓴다(목록·복원은 중지 중에도 허용).
+function requireMirrorOn(req, res) {
+    if (MIRROR_SERVICE_ON) return true;
+    res.status(503).json({ error: '클라우드 미러 백업이 현재 중지되어 있습니다. (관리자 설정)', disabled: true });
+    return false;
+}
+// 🛠 Admin: 미러 서비스 on/off 조회·변경
+app.get('/api/admin/mirror-flag', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ enabled: MIRROR_SERVICE_ON });
+});
+app.post('/api/admin/mirror-flag', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const on = (req.body && (req.body.enabled === true || req.body.enabled === 1 || req.body.enabled === '1')) ? '1' : '0';
+    db.run(`INSERT INTO settings (key, value) VALUES ('mirror_enabled', ?) ON CONFLICT(key) DO UPDATE SET value=?`, [on, on], (e) => {
+        if (e) return res.status(500).json({ error: e.message });
+        _loadMirrorFlag(() => res.json({ ok: true, enabled: MIRROR_SERVICE_ON }));
+    });
+});
 app.get('/api/mirror/status', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
-    _mirrorUsage(name, (e, u) => { if (e) return res.status(500).json({ error: e.message }); res.json(Object.assign({ freeBytes: CLOUD_FREE_BYTES, pricePerGB: CLOUD_PRICE_PER_GB, r2: !!_r2 }, u)); });
+    _mirrorUsage(name, (e, u) => { if (e) return res.status(500).json({ error: e.message }); res.json(Object.assign({ freeBytes: CLOUD_FREE_BYTES, pricePerGB: CLOUD_PRICE_PER_GB, r2: !!_r2, serviceEnabled: MIRROR_SERVICE_ON }, u)); });
 });
 app.post('/api/mirror/enable', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
+    if (!requireMirrorOn(req, res)) return;
     const on = req.body.on ? 1 : 0;
     db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?, ?) ON CONFLICT(userName) DO UPDATE SET enabled = ?`, [name, on, on], (e) => {
         if (e) return res.status(500).json({ error: e.message });
@@ -1883,6 +1939,7 @@ app.post('/api/mirror/enable', (req, res) => {
 });
 app.post('/api/mirror/upload-url', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
+    if (!requireMirrorOn(req, res)) return;
     if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
     const rpath = String(req.body.rpath || ''); const size = Math.max(0, Math.floor(Number(req.body.size) || 0)); const mime = String(req.body.mime || 'application/octet-stream');
     if (!rpath) return res.status(400).json({ error: 'rpath 필요' });
@@ -1903,6 +1960,7 @@ app.post('/api/mirror/upload-url', (req, res) => {
 });
 app.post('/api/mirror/commit', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
+    if (!requireMirrorOn(req, res)) return;
     const rpath = String(req.body.rpath || ''); const key = String(req.body.key || '');
     const size = Math.max(0, Math.floor(Number(req.body.size) || 0)); const mime = String(req.body.mime || ''); const mtime = Math.floor(Number(req.body.mtime) || Date.now());
     if (!rpath || key !== _mirrorKey(name, rpath)) return res.status(400).json({ error: '잘못된 요청' });
