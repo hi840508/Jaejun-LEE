@@ -3971,12 +3971,35 @@
         //     공유폴더에서 만든 blob: URL 을 뷰어가 읽을 수 있다.
         //   · 왼쪽 DATA 서랍에 같은 폴더의 다른 영상을 띄워, 눌러서 계속 추가로 띄운다.
         // ==========================================================================
-        const RC_3D_RE = /\.(stl|ply|obj)$/i;
+        const RC_3D_RE = /\.(stl|ply|obj|glb|gltf|drc)$/i;
         const RC_IMG_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
         const RC_DCM_RE = /\.dcm$/i;
+        const RC_DOC_RE = /\.(pdf|html?|txt|md|rtf|docx?|xlsx?|pptx?|hwp|csv)$/i;
+        const RC_MEDIA_RE = /\.(mp4|webm|mov|m4v|mp3|wav|ogg|m4a)$/i;
         window.__rcViewerUrls = [];     // 열려 있는 동안 만든 blob URL (닫을 때 정리)
+        window.__rcBlobCache = null;    // 파일당 blob 을 한 번만 만든다(같은 파일을 두 번 만들면 메모리를 배로 먹는다)
 
         function _rcBlob(file){ const u = URL.createObjectURL(file); window.__rcViewerUrls.push(u); return u; }
+        // ⚠️ 안정성 핵심: 같은 파일에 blob 을 중복 생성하지 않는다.
+        //    (CT 수백 장을 초기 로드용 + DATA 서랍용으로 두 번 만들면 메모리가 2배가 되어
+        //     WebGL 컨텍스트 손실로 이어졌다.)
+        async function _rcBlobFor(R, pathArr, name){
+            const key = (pathArr||[]).join('/') + '|' + name;
+            if(window.__rcBlobCache && window.__rcBlobCache.has(key)) return window.__rcBlobCache.get(key);
+            let f = null; try{ f = await R.getFileAt(pathArr, name); }catch(_){ return null; }
+            if(!f) return null;
+            const u = _rcBlob(f);
+            if(window.__rcBlobCache) window.__rcBlobCache.set(key, u);
+            return u;
+        }
+        function _rcCatOf(n){
+            if(RC_DCM_RE.test(n)) return 'DICOM';
+            if(RC_3D_RE.test(n)) return '3D';
+            if(RC_IMG_RE.test(n)) return 'PICTURE';
+            if(RC_DOC_RE.test(n)) return 'DOCUMENT';
+            if(RC_MEDIA_RE.test(n)) return 'MEDIA';
+            return '';
+        }
 
         // 파일 하나를 뷰어 payload 로 만든다. DICOM 은 같은 폴더의 .dcm 전체를 한 시리즈로 보낸다.
         async function _rcPayloadFor(R, pathArr, fname, siblings){
@@ -3985,15 +4008,16 @@
                 const dcms = (siblings||[]).filter(n => RC_DCM_RE.test(n));
                 const list = dcms.length ? dcms.slice().sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})) : [fname];
                 const urls = [];
-                for(const n of list){
-                    try{ const f = await R.getFileAt(pathArr, n); if(f) urls.push(_rcBlob(f)); }catch(_){}
-                }
+                for(const n of list){ const u = await _rcBlobFor(R, pathArr, n); if(u) urls.push(u); }
                 if(!urls.length) return null;
                 return { type:'RAYCLOUD_LOAD_DICOM', urls: urls, name: (list.length>1 ? ('CT Series ('+list.length+')') : fname), date:'' };
             }
-            const file = await R.getFileAt(pathArr, fname);
-            if(!file) return null;
-            const url = _rcBlob(file);
+            const url = await _rcBlobFor(R, pathArr, fname);
+            if(!url) return null;
+            // 📄 PDF·문서, 🎬 동영상·오디오 → 뷰어의 파일 뷰어(iframe)로 연다.
+            if(RC_DOC_RE.test(lower) || RC_MEDIA_RE.test(lower)){
+                return { type:'RAYCLOUD_LOAD_IMAGE', url:url, name:fname };
+            }
             if(RC_3D_RE.test(lower)){
                 // 같은 이름의 텍스처(jpg/png)가 옆에 있으면 함께 보낸다(페이스·컬러 스캔)
                 const base = String(fname).replace(/\.[^.]+$/,'').toLowerCase();
@@ -4001,7 +4025,7 @@
                 for(const n of (siblings||[])){
                     if(n === fname || !RC_IMG_RE.test(n)) continue;
                     if(String(n).replace(/\.[^.]+$/,'').toLowerCase() !== base) continue;
-                    try{ const tf = await R.getFileAt(pathArr, n); if(tf){ texUrls.push(_rcBlob(tf)); texNames.push(n); } }catch(_){}
+                    const tu = await _rcBlobFor(R, pathArr, n); if(tu){ texUrls.push(tu); texNames.push(n); }
                 }
                 return { type:'RAYCLOUD_LOAD_MESH', urls:[url], names:[fname], texUrls:texUrls, texNames:texNames };
             }
@@ -4018,15 +4042,20 @@
             if(!ready){ showToast('실시간 뷰어가 아직 서버에 배포되지 않았습니다.'); return; }
 
             const lower = String(fname||'').toLowerCase();
-            if(!(RC_DCM_RE.test(lower) || RC_3D_RE.test(lower) || RC_IMG_RE.test(lower))){
-                showToast('실시간 뷰어로 열 수 있는 영상이 아닙니다.'); return;
-            }
+            if(!_rcCatOf(lower)){ showToast('실시간 뷰어로 열 수 없는 형식입니다.'); return; }
+            window.__rcBlobCache = new Map();   // 이번 세션의 blob 캐시(파일당 1개)
             // 같은 폴더 파일 목록(서랍 + 시리즈 묶음용)
             let siblings = [];
             try{ const cur = await R.listAt(pathArr) || {}; siblings = (cur.files||[]).map(f => (typeof f==='string'? f : (f&&f.fname)||(f&&f.name)||'')).filter(Boolean); }catch(_){}
             if(!siblings.length) siblings = [fname];
 
-            let ov = document.getElementById('rc-live-viewer'); if(ov) ov.remove();
+            let ov = document.getElementById('rc-live-viewer');
+            if(ov){   // 이전 뷰어가 열려 있으면 WebGL 컨텍스트부터 반납시키고 제거(컨텍스트 누적 방지)
+                try{ const of2 = ov.querySelector('#_lv-frame'); if(of2) of2.src='about:blank'; }catch(_){}
+                try{ (window.__rcViewerUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){} }); }catch(_){}
+                window.__rcViewerUrls=[]; window.__rcBlobCache=null;
+                try{ ov.remove(); }catch(_){}
+            }
             ov = document.createElement('div'); ov.id = 'rc-live-viewer';
             // ⚠️ z-index 는 채팅 서랍(4001)보다 낮게 둔다. 높으면 뷰어가 채팅을 덮어 대화를 못 한다.
             ov.style.cssText = 'position:fixed;inset:0;z-index:3900;background:#0b0b0f;display:flex;flex-direction:column;';
@@ -4045,8 +4074,14 @@
             const title = ov.querySelector('#_lv-title');
             title.textContent = (pathArr && pathArr.length ? pathArr.join(' / ') + ' / ' : '') + fname;
 
-            const cleanup = ()=>{ try{ (window.__rcViewerUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){} }); }catch(_){} window.__rcViewerUrls=[]; };
-            ov.querySelector('#_lv-close').onclick = ()=>{ try{ ov.remove(); }catch(_){} cleanup(); };
+            // 닫을 때: iframe 을 먼저 비워 WebGL 컨텍스트를 즉시 반납하고(안 그러면 다음에 열 때
+            // 컨텍스트가 쌓여 'WebGL 컨텍스트 손실'이 난다), 그 다음 blob 을 모두 회수한다.
+            const cleanup = ()=>{
+                try{ const f2 = ov.querySelector('#_lv-frame'); if(f2) f2.src = 'about:blank'; }catch(_){}
+                try{ (window.__rcViewerUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){} }); }catch(_){}
+                window.__rcViewerUrls=[]; window.__rcBlobCache=null;
+            };
+            ov.querySelector('#_lv-close').onclick = ()=>{ cleanup(); setTimeout(()=>{ try{ ov.remove(); }catch(_){} }, 60); };
             // 💬 채팅은 우측 하단 말풍선 버튼으로 연다(뷰어 z-index 3900 < 채팅 4001 이라 위로 열림).
 
             // 뷰어 준비(CBCT_READY) 전에는 보내둔 payload 를 모아 두었다가 준비되면 한 번에 보낸다.
@@ -4070,24 +4105,24 @@
             // 🗂 이 폴더의 영상 목록을 뷰어 '내장 DATA 서랍'에 넘긴다.
             //    (예전엔 좌측에 별도 목록을 그렸으나 뷰어 자체 DATA 서랍과 기능이 겹쳐 없앴다.)
             (async function sendManifest(){
-                const openable = siblings.filter(n => RC_DCM_RE.test(n) || RC_3D_RE.test(n) || RC_IMG_RE.test(n));
+                const openable = siblings.filter(n => !!_rcCatOf(n));
                 if(!openable.length) return;
                 const items = [];
                 const dcms = openable.filter(n => RC_DCM_RE.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
                 if(dcms.length){
+                    // 초기 로드에서 이미 만든 blob 을 그대로 재사용한다(중복 생성 금지).
                     const urls = [];
-                    for(const n of dcms){ try{ const f = await R.getFileAt(pathArr, n); if(f) urls.push(_rcBlob(f)); }catch(_){} }
-                    if(urls.length) items.push({ name: (dcms.length>1 ? ('CT 시리즈 ('+dcms.length+'장)') : dcms[0]), cat:'2D', date:'', thumb:'',
+                    for(const n of dcms){ const u = await _rcBlobFor(R, pathArr, n); if(u) urls.push(u); }
+                    if(urls.length) items.push({ name:(dcms.length>1 ? ('CT 시리즈 ('+dcms.length+'장)') : dcms[0]), cat:'2D', date:'', thumb:'',
                         payload:{ type:'RAYCLOUD_LOAD_DICOM', urls: urls, name:(dcms.length>1?('CT Series ('+dcms.length+')'):dcms[0]) } });
                 }
                 for(const n of openable){
-                    if(RC_DCM_RE.test(n)) continue;
-                    try{
-                        const f = await R.getFileAt(pathArr, n); if(!f) continue;
-                        const u = _rcBlob(f);
-                        if(RC_3D_RE.test(n)) items.push({ name:n, cat:'3D', date:'', thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } });
-                        else items.push({ name:n, cat:'PICTURE', date:'', thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } });
-                    }catch(_){}
+                    const cat = _rcCatOf(n);
+                    if(cat === 'DICOM') continue;
+                    const u = await _rcBlobFor(R, pathArr, n); if(!u) continue;
+                    if(cat === '3D') items.push({ name:n, cat:'3D', date:'', thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } });
+                    else if(cat === 'PICTURE') items.push({ name:n, cat:'PICTURE', date:'', thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } });
+                    else items.push({ name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:'', thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', url:u, name:n } });
                 }
                 if(items.length) post({ type:'RAYCLOUD_MANIFEST', items: items });
             })();
