@@ -4028,16 +4028,16 @@
 
             let ov = document.getElementById('rc-live-viewer'); if(ov) ov.remove();
             ov = document.createElement('div'); ov.id = 'rc-live-viewer';
-            ov.style.cssText = 'position:fixed;inset:0;z-index:99991;background:#0b0b0f;display:flex;flex-direction:column;';
+            // ⚠️ z-index 는 채팅 서랍(4001)보다 낮게 둔다. 높으면 뷰어가 채팅을 덮어 대화를 못 한다.
+            ov.style.cssText = 'position:fixed;inset:0;z-index:3900;background:#0b0b0f;display:flex;flex-direction:column;';
             ov.innerHTML =
                 '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#111;color:#fff;flex:none;">'
-              + '<button id="_lv-drawer" title="DATA 서랍" style="flex:none;background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;">🗂 DATA</button>'
               + '<b id="_lv-title" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;"></b>'
               + '<span id="_lv-stat" style="flex:none;font-size:12px;color:#94a3b8;">불러오는 중…</span>'
+              + '<button id="_lv-chat" title="채팅 열기" style="flex:none;background:#2563eb;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;">💬 채팅</button>'
               + '<button id="_lv-close" style="flex:none;background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">닫기</button>'
               + '</div>'
               + '<div style="flex:1;position:relative;display:flex;min-height:0;">'
-              + '<div id="_lv-list" style="width:216px;flex:none;background:#0f172a;color:#e2e8f0;overflow:auto;border-right:1px solid #1e293b;display:none;"></div>'
               + '<iframe id="_lv-frame" src="/cbct_suite.html" style="flex:1;border:0;width:100%;height:100%;background:#000;" allow="fullscreen"></iframe>'
               + '</div>';
             document.body.appendChild(ov);
@@ -4048,6 +4048,8 @@
 
             const cleanup = ()=>{ try{ (window.__rcViewerUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){} }); }catch(_){} window.__rcViewerUrls=[]; };
             ov.querySelector('#_lv-close').onclick = ()=>{ try{ ov.remove(); }catch(_){} cleanup(); };
+            // 💬 뷰어를 보면서 바로 대화 — 채팅 서랍이 뷰어 위로 열린다.
+            ov.querySelector('#_lv-chat').onclick = ()=>{ try{ toggleMessengerDrawer(); }catch(_){ showToast('채팅을 열 수 없습니다.'); } };
 
             // 뷰어 준비(CBCT_READY) 전에는 보내둔 payload 를 모아 두었다가 준비되면 한 번에 보낸다.
             let viewerReady = false; const queue = [];
@@ -4067,31 +4069,30 @@
             try{ post(await _rcPayloadFor(R, pathArr, fname, siblings)); }
             catch(e){ stat.textContent = '열기 실패'; showToast('열지 못했습니다: ' + (e.message||e)); }
 
-            // 🗂 DATA 서랍 — 같은 폴더의 영상 목록. 누르면 뷰어에 추가로 띄운다.
-            const listEl = ov.querySelector('#_lv-list');
-            const openable = siblings.filter(n => RC_DCM_RE.test(n) || RC_3D_RE.test(n) || RC_IMG_RE.test(n));
-            const seenDcm = { done:false };
-            const rows = [];
-            openable.forEach(n=>{
-                if(RC_DCM_RE.test(n)){ if(seenDcm.done) return; seenDcm.done = true;
-                    const cnt = openable.filter(x=>RC_DCM_RE.test(x)).length;
-                    rows.push({ label:'🩻 CT/DICOM 시리즈 (' + cnt + '장)', file:n }); return; }
-                rows.push({ label: (RC_3D_RE.test(n) ? '🧊 ' : '🖼 ') + n, file:n });
-            });
-            const esc = t=>String(t||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-            listEl.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#94a3b8;border-bottom:1px solid #1e293b;">이 폴더의 영상 — 눌러서 함께 보기</div>'
-                + rows.map((r,i)=>'<button data-i="'+i+'" style="display:block;width:100%;text-align:left;padding:10px 12px;background:none;border:0;border-bottom:1px solid #1e293b;color:#e2e8f0;font-size:12.5px;cursor:pointer;">'+esc(r.label)+'</button>').join('');
-            listEl.querySelectorAll('button[data-i]').forEach(b=>{
-                b.onclick = async ()=>{
-                    const r = rows[Number(b.getAttribute('data-i'))]; if(!r) return;
-                    b.style.opacity = '.5'; stat.textContent = '추가하는 중…';
-                    try{ post(await _rcPayloadFor(R, pathArr, r.file, siblings)); title.textContent += '  +  ' + r.file; }
-                    catch(e){ showToast('추가 실패: ' + (e.message||e)); }
-                    b.style.opacity = '1'; stat.textContent = '';
-                };
-            });
-            ov.querySelector('#_lv-drawer').onclick = ()=>{ listEl.style.display = (listEl.style.display==='none' ? 'block' : 'none'); };
-            if(rows.length > 1) listEl.style.display = 'block';
+            // 🗂 이 폴더의 영상 목록을 뷰어 '내장 DATA 서랍'에 넘긴다.
+            //    (예전엔 좌측에 별도 목록을 그렸으나 뷰어 자체 DATA 서랍과 기능이 겹쳐 없앴다.)
+            (async function sendManifest(){
+                const openable = siblings.filter(n => RC_DCM_RE.test(n) || RC_3D_RE.test(n) || RC_IMG_RE.test(n));
+                if(!openable.length) return;
+                const items = [];
+                const dcms = openable.filter(n => RC_DCM_RE.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+                if(dcms.length){
+                    const urls = [];
+                    for(const n of dcms){ try{ const f = await R.getFileAt(pathArr, n); if(f) urls.push(_rcBlob(f)); }catch(_){} }
+                    if(urls.length) items.push({ name: (dcms.length>1 ? ('CT 시리즈 ('+dcms.length+'장)') : dcms[0]), cat:'2D', date:'', thumb:'',
+                        payload:{ type:'RAYCLOUD_LOAD_DICOM', urls: urls, name:(dcms.length>1?('CT Series ('+dcms.length+')'):dcms[0]) } });
+                }
+                for(const n of openable){
+                    if(RC_DCM_RE.test(n)) continue;
+                    try{
+                        const f = await R.getFileAt(pathArr, n); if(!f) continue;
+                        const u = _rcBlob(f);
+                        if(RC_3D_RE.test(n)) items.push({ name:n, cat:'3D', date:'', thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } });
+                        else items.push({ name:n, cat:'PICTURE', date:'', thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } });
+                    }catch(_){}
+                }
+                if(items.length) post({ type:'RAYCLOUD_MANIFEST', items: items });
+            })();
         };
 
         async function openSharedFolderPanel(){
