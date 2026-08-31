@@ -3992,6 +3992,16 @@
             if(window.__rcBlobCache) window.__rcBlobCache.set(key, u);
             return u;
         }
+        // 동시 실행 개수를 제한한 map — 파일 읽기를 병렬화하되 한꺼번에 몰리지 않게 한다.
+        async function _rcMapLimit(arr, limit, fn){
+            const out = new Array(arr.length); let i = 0;
+            const workers = new Array(Math.min(limit, arr.length)).fill(0).map(async ()=>{
+                while(true){ const k = i++; if(k >= arr.length) return;
+                    try{ out[k] = await fn(arr[k], k); }catch(_){ out[k] = null; } }
+            });
+            await Promise.all(workers);
+            return out;
+        }
         function _rcCatOf(n){
             if(RC_DCM_RE.test(n)) return 'DICOM';
             if(RC_3D_RE.test(n)) return '3D';
@@ -4008,7 +4018,9 @@
                 const dcms = (siblings||[]).filter(n => RC_DCM_RE.test(n));
                 const list = dcms.length ? dcms.slice().sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})) : [fname];
                 const urls = [];
-                for(const n of list){ const u = await _rcBlobFor(R, pathArr, n); if(u) urls.push(u); }
+                // 순차로 읽으면 슬라이스 수만큼 왕복이 쌓여 매우 느리다 → 6개씩 병렬로 읽는다.
+                const got = await _rcMapLimit(list, 6, n => _rcBlobFor(R, pathArr, n));
+                got.forEach(u => { if(u) urls.push(u); });
                 if(!urls.length) return null;
                 return { type:'RAYCLOUD_LOAD_DICOM', urls: urls, name: (list.length>1 ? ('CT Series ('+list.length+')') : fname), date:'' };
             }
@@ -4059,29 +4071,51 @@
             ov = document.createElement('div'); ov.id = 'rc-live-viewer';
             // ⚠️ z-index 는 채팅 서랍(4001)보다 낮게 둔다. 높으면 뷰어가 채팅을 덮어 대화를 못 한다.
             ov.style.cssText = 'position:fixed;inset:0;z-index:3900;background:#0b0b0f;display:flex;flex-direction:column;';
+            // 헤더 줄을 두지 않는다 — 파일명만 적힌 줄은 이 화면에서 쓸모가 없고 세로 공간만 먹는다.
+            //   닫기 버튼은 뷰어 자체 툴바(저장하기가 있는 줄) 맨 오른쪽에 끼워 넣는다.
             ov.innerHTML =
-                '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#111;color:#fff;flex:none;">'
-              + '<b id="_lv-title" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;"></b>'
-              + '<span id="_lv-stat" style="flex:none;font-size:12px;color:#94a3b8;">불러오는 중…</span>'
-              + '<button id="_lv-close" style="flex:none;background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">닫기</button>'
-              + '</div>'
-              + '<div style="flex:1;position:relative;display:flex;min-height:0;">'
-              + '<iframe id="_lv-frame" src="/cbct_suite.html" style="flex:1;border:0;width:100%;height:100%;background:#000;" allow="fullscreen"></iframe>'
-              + '</div>';
+                '<iframe id="_lv-frame" src="/cbct_suite.html" style="flex:1;border:0;width:100%;height:100%;background:#000;" allow="fullscreen"></iframe>'
+              + '<div id="_lv-stat" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#cbd5e1;background:rgba(15,23,42,.85);padding:10px 18px;border-radius:10px;font-size:13px;pointer-events:none;">불러오는 중…</div>';
             document.body.appendChild(ov);
             const fr = ov.querySelector('#_lv-frame');
             const stat = ov.querySelector('#_lv-stat');
-            const title = ov.querySelector('#_lv-title');
-            title.textContent = (pathArr && pathArr.length ? pathArr.join(' / ') + ' / ' : '') + fname;
+            const title = { set textContent(v){}, get textContent(){ return ''; } };   // 옛 호출부 호환(제목 표시 없음)
 
             // 닫을 때: iframe 을 먼저 비워 WebGL 컨텍스트를 즉시 반납하고(안 그러면 다음에 열 때
             // 컨텍스트가 쌓여 'WebGL 컨텍스트 손실'이 난다), 그 다음 blob 을 모두 회수한다.
+            // ⚠️ 순서가 중요하다. iframe 을 먼저 비우면 뷰어가 'WebGL 컨텍스트 손실' 경고를 띄우는데,
+            //    그게 화면에 그대로 보였다. 그래서 ① 화면에서 감추고 ② 컨텍스트를 반납하고 ③ 제거한다.
             const cleanup = ()=>{
+                try{ ov.style.display = 'none'; }catch(_){}
                 try{ const f2 = ov.querySelector('#_lv-frame'); if(f2) f2.src = 'about:blank'; }catch(_){}
                 try{ (window.__rcViewerUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){} }); }catch(_){}
                 window.__rcViewerUrls=[]; window.__rcBlobCache=null;
+                setTimeout(()=>{ try{ ov.remove(); }catch(_){} }, 80);
             };
-            ov.querySelector('#_lv-close').onclick = ()=>{ cleanup(); setTimeout(()=>{ try{ ov.remove(); }catch(_){} }, 60); };
+            window._lvClose = cleanup;
+            // 🔻 뷰어 툴바(저장하기 줄) 맨 오른쪽에 닫기 버튼을 끼워 넣는다.
+            //    같은 출처로 서빙하므로 iframe 내부 DOM 에 접근할 수 있다. 실패하면 떠 있는 닫기 버튼으로 대체.
+            function _lvInjectClose(){
+                try{
+                    const doc = fr.contentDocument; if(!doc) return false;
+                    if(doc.getElementById('_lv-close-in')) return true;
+                    const anchor = doc.getElementById('btn-save') || doc.getElementById('btn-report');
+                    if(!anchor || !anchor.parentElement) return false;
+                    const b = doc.createElement('button');
+                    b.id = '_lv-close-in'; b.textContent = '닫기'; b.title = '실시간 뷰어 닫기';
+                    b.style.cssText = 'margin-left:auto;background:#ef4444;color:#fff;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;';
+                    b.onclick = function(){ try{ window.parent._lvClose(); }catch(_){} };
+                    anchor.parentElement.appendChild(b);
+                    return true;
+                }catch(_){ return false; }
+            }
+            function _lvFallbackClose(){
+                if(ov.querySelector('#_lv-close-fb')) return;
+                const b = document.createElement('button');
+                b.id = '_lv-close-fb'; b.textContent = '닫기';
+                b.style.cssText = 'position:absolute;top:10px;right:12px;z-index:5;background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;';
+                b.onclick = cleanup; ov.appendChild(b);
+            }
             // 💬 채팅은 우측 하단 말풍선 버튼으로 연다(뷰어 z-index 3900 < 채팅 4001 이라 위로 열림).
 
             // 뷰어 준비(CBCT_READY) 전에는 보내둔 payload 를 모아 두었다가 준비되면 한 번에 보낸다.
@@ -4089,18 +4123,23 @@
             const post = (p)=>{ if(!p) return; if(viewerReady){ try{ fr.contentWindow.postMessage(p, '*'); }catch(_){} } else queue.push(p); };
             const onMsg = (ev)=>{
                 if(!ev.data || ev.data.type !== 'CBCT_READY') return;
-                viewerReady = true; stat.textContent = '';
+                viewerReady = true; try{ stat.style.display = 'none'; }catch(_){}
                 while(queue.length){ try{ fr.contentWindow.postMessage(queue.shift(), '*'); }catch(_){} }
             };
             window.addEventListener('message', onMsg);
             const _origRemove = ov.remove.bind(ov);
             ov.remove = function(){ window.removeEventListener('message', onMsg); _origRemove(); };
             // 뷰어가 READY 를 안 보내는 구버전 대비 — 로드 후 일정 시간이 지나면 전송 시작
-            fr.addEventListener('load', ()=>{ setTimeout(()=>{ if(!viewerReady){ viewerReady = true; stat.textContent=''; while(queue.length){ try{ fr.contentWindow.postMessage(queue.shift(),'*'); }catch(_){} } } }, 2500); });
+            fr.addEventListener('load', ()=>{
+                // 툴바가 그려질 때까지 몇 번 더 시도하고, 끝내 안 되면 떠 있는 닫기 버튼을 쓴다.
+                let tries = 0;
+                const t = setInterval(()=>{ if(_lvInjectClose() || ++tries > 20){ clearInterval(t); if(tries > 20) _lvFallbackClose(); } }, 250);
+                setTimeout(()=>{ if(!viewerReady){ viewerReady = true; try{ stat.style.display='none'; }catch(_){} while(queue.length){ try{ fr.contentWindow.postMessage(queue.shift(),'*'); }catch(_){} } } }, 2500);
+            });
 
             // 첫 파일 전송
             try{ post(await _rcPayloadFor(R, pathArr, fname, siblings)); }
-            catch(e){ stat.textContent = '열기 실패'; showToast('열지 못했습니다: ' + (e.message||e)); }
+            catch(e){ try{ stat.textContent = '열기 실패'; }catch(_){} showToast('열지 못했습니다: ' + (e.message||e)); }
 
             // 🗂 이 폴더의 영상 목록을 뷰어 '내장 DATA 서랍'에 넘긴다.
             //    (예전엔 좌측에 별도 목록을 그렸으나 뷰어 자체 DATA 서랍과 기능이 겹쳐 없앴다.)
@@ -4112,7 +4151,8 @@
                 if(dcms.length){
                     // 초기 로드에서 이미 만든 blob 을 그대로 재사용한다(중복 생성 금지).
                     const urls = [];
-                    for(const n of dcms){ const u = await _rcBlobFor(R, pathArr, n); if(u) urls.push(u); }
+                    const gotd = await _rcMapLimit(dcms, 6, n => _rcBlobFor(R, pathArr, n));
+                    gotd.forEach(u => { if(u) urls.push(u); });
                     if(urls.length) items.push({ name:(dcms.length>1 ? ('CT 시리즈 ('+dcms.length+'장)') : dcms[0]), cat:'2D', date:'', thumb:'',
                         payload:{ type:'RAYCLOUD_LOAD_DICOM', urls: urls, name:(dcms.length>1?('CT Series ('+dcms.length+')'):dcms[0]) } });
                 }
