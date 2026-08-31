@@ -1069,6 +1069,8 @@
                         <button class="yt-sb-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"></rect><path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path><path d="M2 10h20"></path></svg></span><span>내 지갑</span></button>
                         <!-- 📁 공유폴더: 받은 파일 자동저장 폴더 지정 + 내 기기 목록 (내 지갑 바로 밑) -->
                         <button class="yt-sb-item" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>공유폴더</span></button>
+                        <!-- 🧑‍⚕️ 환자별 폴더(옵션): 공유폴더를 환자 단위로 모아 보고, 통합 뷰어로 넘긴다 -->
+                        <button class="yt-sb-item" onclick="openPatientFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="tx">환자별 폴더</span></button>
                     </div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
@@ -3965,6 +3967,151 @@
         // 공유폴더 갤러리 안내 버튼용 — 권한 재요청/폴더 지정 후 패널 재열기
         window._sfReconnect = async function(){ try{ const ok = await window.RCFolder.ensureAccess(); if(ok){ try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){} openSharedFolderPanel(); } else { showToast('폴더 접근을 허용해 주세요.'); } }catch(_){ showToast('폴더 다시 연결 실패'); } };
         window._sfPickNow = async function(){ try{ const ok = await window.RCFolder.pick(); if(ok){ try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){} openSharedFolderPanel(); } }catch(_){} };
+        // ==========================================================================
+        // 🧑‍⚕️ 환자별 폴더 (옵션) — 공유폴더의 최상위 폴더를 '환자'로 보고 모아 관리한다.
+        //   · 기존 공유폴더 탐색기 화면은 그대로 두고, 별도 화면으로만 추가한다(옵션).
+        //   · 폴더 조작은 이미 있는 RCFolder(listAt/mkdirAt/getFileAt)를 그대로 쓴다.
+        //   · '통합 뷰어로 열기' = 그 환자 폴더의 파일을 로컬 통합뷰어(RAYOne)로 넘겨 한 화면에서 본다.
+        //     로컬 서버는 옵션이므로, 없으면 설치 안내를 띄운다.
+        // ==========================================================================
+        const RC_LOCAL_VIEWER = 'http://localhost:3000';
+        const RC_STD_MOD = ['CT','Panorama','CEPH','Intraoral','Periapical','IOS','Face','Files'];
+        // 로컬 통합뷰어(RAYOne)가 이 PC에 설치돼 있는지. https 페이지라도 크롬/엣지는 localhost 를 허용한다.
+        window.rcLocalViewerAlive = async function(){
+            try{
+                const c = new AbortController(); const t = setTimeout(()=>c.abort(), 1500);
+                const r = await fetch(RC_LOCAL_VIEWER + '/api/health', { cache:'no-store', signal: c.signal });
+                clearTimeout(t);
+                if(!r.ok) return false;
+                const j = await r.json();
+                return !!(j && j.service === 'raycloud-local');
+            }catch(_){ return false; }
+        };
+        window.openPatientFolderPanel = async function(){
+            const R = window.RCFolder;
+            if(!R || !R.supported){ try{ window._showFolderPermHelp(); }catch(_){ showToast('이 브라우저는 폴더 기능을 지원하지 않습니다.'); } return; }
+            if(!R.chosen()){ const ok = await R.pick(); if(!ok) return; }
+            else { try{ await R.ensureAccess(); }catch(_){} }
+
+            let ov = document.getElementById('rc-patient-page');
+            if(ov) ov.remove();
+            ov = document.createElement('div'); ov.id = 'rc-patient-page';
+            ov.style.cssText = 'position:fixed;top:56px;left:0;right:0;bottom:0;z-index:96;background:#f6f7f9;color:#1f2937;display:flex;flex-direction:column;overflow:hidden;';
+            document.body.appendChild(ov);
+            const close = ()=>{ try{ ov.remove(); }catch(_){} };
+
+            const esc = t => String(t||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+            let viewerAlive = await window.rcLocalViewerAlive();
+
+            async function patients(){
+                let r = { folders:[], files:[] };
+                try{ r = await R.listAt([]) || r; }catch(_){}
+                return (r.folders||[]).map(f => (typeof f === 'string' ? f : (f && f.name) || '')).filter(Boolean);
+            }
+            // 환자 폴더 안의 파일을 모달리티별로 모은다(하위 번호 폴더까지 1단계 더 훑음)
+            async function collect(pname){
+                const out = [];
+                let lv1 = { folders:[], files:[] };
+                try{ lv1 = await R.listAt([pname]) || lv1; }catch(_){}
+                const asName = f => (typeof f === 'string' ? f : (f && f.name) || '');
+                (lv1.files||[]).forEach(f => { const n = asName(f); if(n) out.push({ path:[pname], name:n, modality:'Files' }); });
+                for(const d of (lv1.folders||[])){
+                    const dn = asName(d); if(!dn) continue;
+                    const mod = RC_STD_MOD.find(m => m.toLowerCase() === dn.toLowerCase()) || 'Files';
+                    let lv2 = { folders:[], files:[] };
+                    try{ lv2 = await R.listAt([pname, dn]) || lv2; }catch(_){}
+                    (lv2.files||[]).forEach(f => { const n = asName(f); if(n) out.push({ path:[pname, dn], name:n, modality:mod }); });
+                    for(const sd of (lv2.folders||[])){
+                        const sn = asName(sd); if(!sn) continue;
+                        let lv3 = { folders:[], files:[] };
+                        try{ lv3 = await R.listAt([pname, dn, sn]) || lv3; }catch(_){}
+                        (lv3.files||[]).forEach(f => { const n = asName(f); if(n) out.push({ path:[pname, dn, sn], name:n, modality:mod }); });
+                    }
+                }
+                return out;
+            }
+
+            window._rcAddPatientFolder = async function(){
+                const nm = await window._sfPrompt('새 환자 이름(폴더명)을 입력하세요', '');
+                if(nm === null) return;
+                const name = String(nm).trim(); if(!name) return;
+                try{
+                    const ok = await R.mkdirAt([], name);
+                    if(!ok) return showToast('환자 폴더를 만들지 못했습니다.');
+                    for(const m of RC_STD_MOD){ try{ await R.mkdirAt([name], m); }catch(_){} }
+                    showToast('✅ 환자 폴더 생성: ' + name);
+                    render();
+                }catch(e){ showToast('생성 실패: ' + (e.message||e)); }
+            };
+            window._rcOpenPatientInExplorer = function(pname){
+                close();
+                try{ openSharedFolderPanel().then(function(){ setTimeout(function(){ try{ window.__sfPath = [pname]; const ov2=document.getElementById('rc-folder-page'); if(ov2){ const ev=new CustomEvent('sf-goto',{detail:[pname]}); ov2.dispatchEvent(ev); } }catch(_){} }, 400); }); }catch(_){}
+            };
+            // 🖥 통합 뷰어로 열기 — 환자 폴더의 파일을 로컬 통합뷰어에 넘기고 새 탭으로 연다.
+            window._rcOpenPatientInViewer = async function(pname, btn){
+                if(!(await window.rcLocalViewerAlive())){
+                    alert('통합 뷰어(RAYOne 로컬 서버)가 이 PC에 없습니다.\n\n· 통합 뷰어를 설치하면 여러 데이터를 한 화면에서 볼 수 있습니다\n· 설치 후 이 버튼을 다시 누르세요');
+                    return;
+                }
+                const files = await collect(pname);
+                if(!files.length) return showToast('이 환자 폴더에 파일이 없습니다.');
+                if(btn){ btn.disabled = true; btn.textContent = '보내는 중… 0/' + files.length; }
+                const batch = 'pf_' + Date.now();
+                let done = 0, failed = 0;
+                for(const f of files){
+                    try{
+                        const file = await R.getFileAt(f.path, f.name);
+                        if(!file){ failed++; continue; }
+                        const fd = new FormData(); fd.append('file', file, f.name);
+                        const res = await fetch(RC_LOCAL_VIEWER + '/api/upload', {
+                            method:'POST', body: fd,
+                            headers: { 'x-patient-name': encodeURIComponent(pname), 'x-target-modality': encodeURIComponent(f.modality), 'x-batch-id': batch }
+                        });
+                        if(!res.ok) failed++;
+                    }catch(_){ failed++; }
+                    done++;
+                    if(btn) btn.textContent = '보내는 중… ' + done + '/' + files.length;
+                }
+                if(btn){ btn.disabled = false; btn.textContent = '🖥 통합 뷰어로 열기'; }
+                if(failed) showToast('일부 파일을 보내지 못했습니다 (' + failed + '/' + files.length + ')');
+                try{ window.open(RC_LOCAL_VIEWER + '/', '_blank'); }catch(_){ location.href = RC_LOCAL_VIEWER + '/'; }
+            };
+
+            async function render(){
+                const list = await patients();
+                const rootName = await R.folderName();
+                const head = '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-bottom:1px solid #e5e7eb;flex:none;">'
+                    + '<b style="font-size:15px;">🧑‍⚕️ 환자별 폴더</b>'
+                    + '<span style="font-size:12px;color:#64748b;">' + esc(rootName || '') + '</span>'
+                    + '<span style="flex:1;"></span>'
+                    + '<button onclick="_rcAddPatientFolder()" style="padding:8px 14px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer;">＋ 환자 추가</button>'
+                    + '<button onclick="document.getElementById(\'rc-patient-page\').remove()" style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:9px;background:#fff;color:#475569;font-weight:700;cursor:pointer;">닫기</button>'
+                    + '</div>';
+                const note = viewerAlive
+                    ? '<div style="padding:8px 16px;font-size:12px;color:#166534;background:#f0fdf4;border-bottom:1px solid #dcfce7;">🖥 통합 뷰어가 이 PC에서 실행 중입니다 — 환자 데이터를 한 화면에서 볼 수 있습니다.</div>'
+                    : '<div style="padding:8px 16px;font-size:12px;color:#92400e;background:#fffbeb;border-bottom:1px solid #fde68a;">🖥 통합 뷰어(로컬)가 없어 "통합 뷰어로 열기"는 설치 후 사용할 수 있습니다. 폴더 관리는 그대로 됩니다.</div>';
+                let body;
+                if(!list.length){
+                    body = '<div style="padding:60px 20px;text-align:center;color:#94a3b8;">'
+                         + '<div style="font-size:40px;margin-bottom:10px;">🗂</div>'
+                         + '<div style="font-weight:700;color:#475569;margin-bottom:6px;">아직 환자 폴더가 없습니다</div>'
+                         + '<div style="font-size:13px;">위의 <b>＋ 환자 추가</b>로 환자 폴더를 만들면, 받은 데이터를 환자별로 모을 수 있습니다.</div></div>';
+                } else {
+                    body = '<div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;overflow:auto;">'
+                        + list.map(function(p){
+                            return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;">'
+                                 + '<div style="display:flex;align-items:center;gap:9px;"><span style="font-size:22px;">🧑‍⚕️</span><b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(p) + '</b></div>'
+                                 + '<div style="display:flex;gap:6px;">'
+                                 + '<button onclick="_rcOpenPatientInViewer(\'' + esc(p).replace(/'/g,"\\'") + '\', this)" style="flex:1;padding:9px;border:0;border-radius:9px;background:#0f172a;color:#fff;font-weight:800;cursor:pointer;font-size:12.5px;">🖥 통합 뷰어로 열기</button>'
+                                 + '<button onclick="_rcOpenPatientInExplorer(\'' + esc(p).replace(/'/g,"\\'") + '\')" style="flex:none;padding:9px 12px;border:1px solid #e5e7eb;border-radius:9px;background:#f8fafc;color:#475569;font-weight:700;cursor:pointer;font-size:12.5px;">폴더</button>'
+                                 + '</div></div>';
+                        }).join('') + '</div>';
+                }
+                ov.innerHTML = head + note + body;
+            }
+            render();
+        };
+
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
             try{ await R.ensureAccess(); }catch(_){}
