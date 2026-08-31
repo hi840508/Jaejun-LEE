@@ -4086,11 +4086,20 @@
             // ⚠️ 순서가 중요하다. iframe 을 먼저 비우면 뷰어가 'WebGL 컨텍스트 손실' 경고를 띄우는데,
             //    그게 화면에 그대로 보였다. 그래서 ① 화면에서 감추고 ② 컨텍스트를 반납하고 ③ 제거한다.
             const cleanup = ()=>{
-                try{ ov.style.display = 'none'; }catch(_){}
-                try{ const f2 = ov.querySelector('#_lv-frame'); if(f2) f2.src = 'about:blank'; }catch(_){}
-                try{ (window.__rcViewerUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){} }); }catch(_){}
-                window.__rcViewerUrls=[]; window.__rcBlobCache=null;
-                setTimeout(()=>{ try{ ov.remove(); }catch(_){} }, 80);
+                if(ov.__lvClosing) return; ov.__lvClosing = true;
+                // ① 화면을 '즉시' 감추고 상호작용을 끊는다(사용자 체감상 바로 닫힘)
+                try{ ov.style.display = 'none'; ov.style.pointerEvents = 'none'; }catch(_){}
+                // ②-먼저 뷰어에 정리 신호를 보내 애니메이션 루프·영상 재생을 멈추게 한다(언로드 부담 감소)
+                try{ const f0 = ov.querySelector('#_lv-frame'); if(f0 && f0.contentWindow) f0.contentWindow.postMessage({ type:'lv_cleanup' }, '*'); }catch(_){}
+                // ③ 무거운 iframe 언로드(WebGL/대용량 메모리 해제)는 '화면이 먼저 다시 그려진 뒤' 다음 프레임에서 수행 → 멈춤 체감 제거
+                const heavy = ()=>{
+                    try{ const f2 = ov.querySelector('#_lv-frame'); if(f2) f2.src = 'about:blank'; }catch(_){}
+                    try{ (window.__rcViewerUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){} }); }catch(_){}
+                    window.__rcViewerUrls=[]; window.__rcBlobCache=null;
+                    setTimeout(()=>{ try{ ov.remove(); }catch(_){} }, 50);
+                };
+                if(window.requestAnimationFrame){ requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(heavy,0))); }
+                else setTimeout(heavy, 30);
             };
             window._lvClose = cleanup;
             // 🔻 뷰어 툴바(저장하기 줄) 맨 오른쪽에 닫기 버튼을 끼워 넣는다.
