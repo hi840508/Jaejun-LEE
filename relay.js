@@ -356,6 +356,34 @@ app.get('/lib/three/:name', (req, res) => {
     const url = _THREE_LIBS[req.params.name]; if (!url) return res.status(404).end();
     _serveLib(res, req.params.name, url);
 });
+// 🖥 실시간 뷰어(cbct_suite) 정적 서빙 — 공유폴더에서 더블클릭하면 이 뷰어가 같은 출처로 열린다.
+//    같은 출처여야 blob: URL 로 넘긴 파일을 뷰어가 읽을 수 있다(교차 출처면 못 읽음).
+const VIEWER_DIR = path.join(RC_AGENT_DIR, 'viewer');
+const VIEWER_ASSETS = {
+    'cbct_suite.html': 'text/html; charset=utf-8',
+    'ict_face.js': 'application/javascript; charset=utf-8',
+    'ict_facemesh.js': 'application/javascript; charset=utf-8',
+    'ict_teeth.js': 'application/javascript; charset=utf-8'
+};
+function _serveViewerAsset(res, name) {
+    const ct = VIEWER_ASSETS[name];
+    if (!ct) return res.status(404).end();
+    const p = path.join(VIEWER_DIR, name);
+    if (!fs.existsSync(p)) return res.status(404).send('viewer not published yet');
+    res.type(ct);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    fs.createReadStream(p).pipe(res);
+}
+app.get('/cbct_suite.html', (req, res) => _serveViewerAsset(res, 'cbct_suite.html'));
+app.get('/ict_face.js', (req, res) => _serveViewerAsset(res, 'ict_face.js'));
+app.get('/ict_facemesh.js', (req, res) => _serveViewerAsset(res, 'ict_facemesh.js'));
+app.get('/ict_teeth.js', (req, res) => _serveViewerAsset(res, 'ict_teeth.js'));
+// 뷰어가 배포돼 있는지 클라이언트가 확인용
+app.get('/api/viewer/status', (req, res) => {
+    const missing = Object.keys(VIEWER_ASSETS).filter(n => !fs.existsSync(path.join(VIEWER_DIR, n)));
+    res.json({ ready: missing.length === 0, missing: missing, url: '/cbct_suite.html' });
+});
+
 app.get('/sw.js', (req, res) => {
     res.type('application/javascript').send(
         "self.addEventListener('install',e=>self.skipWaiting());\n" +
