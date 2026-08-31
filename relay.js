@@ -371,7 +371,7 @@ function _serveViewerAsset(res, name) {
     const p = path.join(VIEWER_DIR, name);
     if (!fs.existsSync(p)) return res.status(404).send('viewer not published yet');
     res.type(ct);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');   // 뷰어 수정이 즉시 반영되도록(같은 출처, 오버헤드 작음)
     fs.createReadStream(p).pipe(res);
 }
 app.get('/cbct_suite.html', (req, res) => _serveViewerAsset(res, 'cbct_suite.html'));
