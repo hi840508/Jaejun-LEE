@@ -2661,7 +2661,15 @@
             try{ if(window.loadOpenCategories) window.loadOpenCategories(); }catch(_){}
 
             const savedData = localStorage.getItem('earth_auto_login');
-            if(savedData) loginSuccess(JSON.parse(savedData));
+            // 🔧 자동로그인 방어 — JSON 파싱/초기화 예외로 로그인 화면이 먹통 되지 않도록. 손상 시 캐시 정리 후 로그인 폼 노출.
+            if(savedData){
+                try { loginSuccess(JSON.parse(savedData)); }
+                catch(e){
+                    try{ if(window.__earthDiag) __earthDiag('auto-login failed: '+(e.message||e), true); }catch(_){}
+                    try{ localStorage.removeItem('earth_auto_login'); }catch(_){}
+                    try{ const ls=document.getElementById('login-section'); if(ls) ls.style.display='block'; const lw=document.getElementById('login-wrap'); if(lw) lw.style.display='block'; }catch(_){}
+                }
+            }
         };
 
         function showToast(msg) { const t = document.getElementById('toast'); t.innerText = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
@@ -2976,9 +2984,9 @@
             // 3) 데스크톱 웹: File System Access 공유폴더 저장(미지정 시 지정 게이트)
             try {
                 if (window.RCFolder && window.RCFolder.supported) {
+                    // 🔧 폴더 미지정/권한 실효여도 저장이 조용히 취소되지 않게 — 폴더 저장이 안 되면 아래 blob 다운로드로 폴백
                     const ok = await window.RCFolder.requireFolder();
-                    if (!ok) return;   // 게이트에서 '나중에' → 중단
-                    if (await window.RCFolder.isConnected()) {
+                    if (ok && await window.RCFolder.isConnected()) {
                         try {
                             showToast('⬇️ 공유폴더로 저장 중…');
                             const resp = await fetch(url); const blob = await resp.blob();
@@ -4652,7 +4660,8 @@
             try { if(window.socket && window.socket.connected){ window.socket.removeAllListeners(); window.socket.disconnect(); } } catch(_){}
             // 🔐 소켓 핸드셰이크에 세션 토큰 전달 → 서버가 신원 바인딩 + 개인 룸 가입(스코프 전송 수신). 발신자 위조 차단.
             socket = io(API_URL, { transports: ['websocket', 'polling'], auth: { token: window.EARTH_TOKEN || localStorage.getItem('earth_token') || '' } });
-            socket.on('receive_message', handleReceiveMessage);
+            // 🔧 핸들러를 안전 래핑 — 핸들러 미정의/예외가 소켓 등록·이후 로그인 초기화를 중단시키지 않도록
+            socket.on('receive_message', d => { try { if(typeof handleReceiveMessage==='function') handleReceiveMessage(d); } catch(e){ try{ if(window.__earthDiag) __earthDiag('receive_message: '+(e.message||e), true); }catch(_){} } });
             // 🔐 단일 세션: 다른 기기에서 로그인되면 이 기기 자동 로그아웃
             socket.on('force_logout', d => { try { if(window.__loggingOut) return; window.__loggingOut = true; alert((d && d.reason) || '다른 기기에서 로그인되어 로그아웃됩니다.'); if(typeof logout === 'function') logout(); else { try{ localStorage.removeItem('earth_auto_login'); }catch(_){}; location.reload(); } } catch(_){} });
             socket.on('rc_signal', d => { try { if(window._rcOnSignal) window._rcOnSignal(d); } catch(_){} });
@@ -4777,7 +4786,12 @@
                 const parts = redeemData.split('|'); if(parts.length === 3) executeRedeemDirect(parts[0], parts[1], parts[2]); window.history.replaceState({}, document.title, window.location.pathname);
             }
             
-            updateUserBalance(); switchTab('market'); loadFriendList(); loadChatList();
+            // 🔧 로그인 마무리 — 각 단계 독립 실행(한 곳이 실패해도 나머지·특히 활성 탭 표시가 멈추지 않도록)
+            try { switchTab('market'); } catch(e){ try{ if(window.__earthDiag) __earthDiag('login switchTab: '+(e.message||e), true); }catch(_){}
+                try{ const m=document.getElementById('tab-market'); if(m) m.classList.add('active'); }catch(_){} }   // 최후의 보루: 빈 화면 방지
+            try { updateUserBalance(); } catch(e){ try{ if(window.__earthDiag) __earthDiag('login updateUserBalance: '+(e.message||e), true); }catch(_){} }
+            try { loadFriendList(); } catch(e){ try{ if(window.__earthDiag) __earthDiag('login loadFriendList: '+(e.message||e), true); }catch(_){} }
+            try { loadChatList(); } catch(e){ try{ if(window.__earthDiag) __earthDiag('login loadChatList: '+(e.message||e), true); }catch(_){} }
             // 📦 주문 관리 메뉴 노출용으로 상점 목록만 로드(첫 화면은 항상 홈 유지)
             try { if(typeof loadMyBrandStores==='function') loadMyBrandStores(); } catch(_){}
             // 🚀 [v7] 사이드바 초기 렌더
@@ -5898,7 +5912,7 @@
                 try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; return true; } }catch(_){}                       // 공유폴더 전체화면
                 try{ var rcv=document.getElementById('rc-view-overlay'); if(rcv){ if(window.stopRemoteControl) window.stopRemoteControl(false); else rcv.remove(); return true; } }catch(_){}   // 원격제어 뷰어
                 try{ var hb=document.getElementById('rc-host-banner'); if(hb && window._rc && window._rc.active && window._rc.role==='host'){ if(window.stopRemoteControl) window.stopRemoteControl(false); return true; } }catch(_){}
-                try{ var vc=document.getElementById('vc-overlay'); if(vc && window._vc && window._vc.active){ if(window.hangupVideo) window.hangupVideo(); else if(window.endVideoChat) window.endVideoChat(); return true; } }catch(_){}   // 화상통화
+                try{ var vc=document.getElementById('vc-overlay'); if(vc && window._vc && window._vc.active){ if(window.stopVideoChat) window.stopVideoChat(); else if(window.hangupVideo) window.hangupVideo(); else { try{ vc.remove(); }catch(_){}; try{ window._vc.active=false; }catch(_){} } return true; } }catch(_){}   // 화상통화
                 try{ var pv=document.getElementById('chat-file-preview-modal'); if(pv && pv.classList.contains('active')){ pv.classList.remove('active'); return true; } }catch(_){}
                 try{ var om=document.querySelector('.modal-overlay.active, .modal.active'); if(om){ if(window.closeModal && om.id) closeModal(om.id); else om.classList.remove('active'); return true; } }catch(_){}   // 일반 모달
                 try{ var cr=document.getElementById('view-chat-room'); var dr=document.getElementById('messenger-drawer'); if(cr && cr.classList.contains('active') && dr && dr.classList.contains('open')){ var fl=document.getElementById('view-friend-list'); if(fl){ cr.classList.remove('active'); fl.classList.add('active'); if(typeof loadChatList==='function') loadChatList(); return true; } } }catch(_){}   // 채팅방 → 목록
@@ -8190,16 +8204,28 @@
         window._earthSetupPush = async function(){
             try {
                 if(!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-                const reg = await navigator.serviceWorker.ready;
+                // 🔧 SW ready 무한대기 방지(iOS/프라이빗 등에서 pending) — 6초 타임아웃
+                const reg = await Promise.race([ navigator.serviceWorker.ready, new Promise((_,rej)=>setTimeout(()=>rej(new Error('sw-ready-timeout')), 6000)) ]);
+                if(!reg || !reg.pushManager) return;
                 if(Notification.permission === 'denied') return;
                 if(Notification.permission !== 'granted'){ const p = await Notification.requestPermission(); if(p !== 'granted') return; }
                 const vr = await fetch(API_URL + '/api/push/vapid'); const vj = await vr.json();
                 if(!vj || !vj.publicKey) return;
+                const wantKey = _urlB64ToU8(vj.publicKey);
                 let sub = await reg.pushManager.getSubscription();
-                if(!sub){ sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:_urlB64ToU8(vj.publicKey) }); }
+                // 🔧 VAPID 키 회전 대응 — 기존 구독이 현재 서버 키와 다르면 해지 후 재구독(안 하면 알림 영영 안 옴)
+                if(sub){
+                    try{
+                        const cur = new Uint8Array(sub.options && sub.options.applicationServerKey ? sub.options.applicationServerKey : []);
+                        let same = cur.length===wantKey.length; if(same){ for(let i=0;i<cur.length;i++){ if(cur[i]!==wantKey[i]){ same=false; break; } } }
+                        if(!same){ try{ await sub.unsubscribe(); }catch(_){} sub=null; }
+                    }catch(_){ /* 키 비교 불가 시 그대로 사용 */ }
+                }
+                if(!sub){ sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:wantKey }); }
                 const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
-                await fetch(API_URL + '/api/push/subscribe', { method:'POST', headers:{'Content-Type':'application/json','x-auth-token':tk}, body: JSON.stringify({ sub: sub }) });
-            } catch(e){ /* 조용히 무시 */ }
+                const r = await fetch(API_URL + '/api/push/subscribe', { method:'POST', headers:{'Content-Type':'application/json','x-auth-token':tk}, body: JSON.stringify({ sub: sub }) });
+                if(!r.ok){ try{ if(window.__earthDiag) __earthDiag('push subscribe HTTP '+r.status, true); }catch(_){} }
+            } catch(e){ try{ if(window.__earthDiag) __earthDiag('push setup: '+(e && e.message || e), true); }catch(_){} }
         };
         // 🔔 간헐적 알림 누락 방지 — 앱/탭이 다시 보일 때 푸시 구독 갱신(절전/만료 후 재구독) + 채팅목록 재동기화
         (function _pushKeepAlive(){
