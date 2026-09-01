@@ -8635,9 +8635,8 @@
                     e.preventDefault(); e.stopPropagation();
                     let tok = btn.getAttribute('data-tok');
                     if(tok === '{SHIFT}'){ window._rcVKShift = !window._rcVKShift; box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/.test(t)){ bb.textContent = window._rcVKShift ? t.toUpperCase() : t; } }); const sh=btn; sh.style.background = window._rcVKShift ? '#2563eb' : '#475569'; return; }
-                    // 한 글자 알파벳 + Shift → 대문자, Shift+기호는 미지원(기본)
-                    if(tok.length===1 && /[a-z]/i.test(tok)){ tok = window._rcVKShift ? ('+'+tok) : tok; }
-                    else if(tok.length===1){ tok = esc(tok); }
+                    // host가 유니코드 입력(SendInput) — Shift는 대문자를 '직접' 보낸다(SendKeys '+' 방식 아님). 기호/한글은 그대로.
+                    if(tok.length===1 && /[a-z]/i.test(tok)){ tok = window._rcVKShift ? tok.toUpperCase() : tok; }
                     _rcVKSend(tok);
                     if(window._rcVKShift && !/\{SHIFT\}/.test(tok)){ window._rcVKShift=false; box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/.test(t)) bb.textContent=t; }); const sh=box.querySelector('[data-tok="{SHIFT}"]'); if(sh) sh.style.background='#475569'; }
                 };
@@ -8745,17 +8744,19 @@
                 });
             }
         }
-        function _rcEscKeys(s){ return String(s).replace(/[{}()\[\]+^%~]/g, function(c){ return '{'+c+'}'; }); }
+        // host(SendInput 유니코드)와 통일 — 문자는 그대로(이스케이프 없음), 특수키/Ctrl조합은 토큰.
+        function _rcEscKeys(s){ return String(s); }
         function _rcKeyToken(e){
-            const map = {'Enter':'{ENTER}','Backspace':'{BS}','Tab':'{TAB}','Escape':'{ESC}','Delete':'{DEL}','Home':'{HOME}','End':'{END}','PageUp':'{PGUP}','PageDown':'{PGDN}','ArrowUp':'{UP}','ArrowDown':'{DOWN}','ArrowLeft':'{LEFT}','ArrowRight':'{RIGHT}',' ':' '};
-            const esc = function(s){ return s.replace(/[{}()\[\]+^%~]/g, function(c){ return '{'+c+'}'; }); };
-            let base;
-            if(map[e.key] !== undefined) base = map[e.key];
-            else if(e.key && e.key.length === 1) base = esc(e.key);
-            else return null;
-            let pre = '';
-            if(e.ctrlKey) pre += '^'; if(e.altKey) pre += '%'; if(e.shiftKey && e.key.length !== 1) pre += '+';
-            return pre + base;
+            const map = {'Enter':'{ENTER}','Backspace':'{BS}','Tab':'{TAB}','Escape':'{ESC}','Delete':'{DEL}','Home':'{HOME}','End':'{END}','PageUp':'{PGUP}','PageDown':'{PGDN}','ArrowUp':'{UP}','ArrowDown':'{DOWN}','ArrowLeft':'{LEFT}','ArrowRight':'{RIGHT}','HangulMode':'{HANGUL}','Hangul':'{HANGUL}',' ':' '};
+            // Ctrl 조합(복사/붙여넣기/전체선택/실행취소 등)은 전용 토큰으로 — 원격 PC에 정확히 전달
+            if(e.ctrlKey && e.key && e.key.length===1){
+                const k=e.key.toLowerCase();
+                const cmap={a:'{CTRLA}',c:'{CTRLC}',v:'{CTRLV}',x:'{CTRLX}',z:'{CTRLZ}'};
+                if(cmap[k]) return cmap[k];
+            }
+            if(map[e.key] !== undefined) return map[e.key];
+            if(e.key && e.key.length === 1) return e.key;   // 유니코드 문자 그대로(한글/영문/기호)
+            return null;
         }
 
         // 부모(RAYCloud)에서 오는 메시지: 프레임 릴레이(B) / 입력 릴레이(A) / 종료
