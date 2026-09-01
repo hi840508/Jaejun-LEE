@@ -8514,13 +8514,18 @@
                     // 앱(Electron): 모니터 인덱스 순환(화면 소스·입력 좌표가 같은 인덱스로 매칭됨)
                     const screens = await window.rayApp.listScreens();
                     if(!screens || screens.length < 2){ showToast('연결된 모니터가 하나뿐입니다.'); return; }
+                    // 실제 캡처 소스가 1개뿐이면(미러링/드라이버 문제) 전환 불가 — 원인을 명확히 안내
+                    if(screens[0] && screens[0].sourceCount === 1){
+                        showToast('⚠ 이 PC는 화면 소스가 1개만 감지돼 전환할 수 없어요. (모니터 복제 해제→확장 모드, 그래픽 드라이버 확인)');
+                        return;
+                    }
                     let idx = (window.__rcScreenIdx == null ? 0 : window.__rcScreenIdx);
                     idx = (idx + 1) % screens.length;
                     picked = screens[idx];
-                    await window.rayApp.setPreferredScreen(idx);   // 인덱스 전달
+                    const setRes = await window.rayApp.setPreferredScreen(idx);   // 인덱스 전달 → 소스·좌표를 함께 확정
                     window.__rcScreenIdx = idx;
-                    // geo 재계산이 반영될 짧은 여유 후 화면 재캡처
-                    await new Promise(function(r){ setTimeout(r, 250); });
+                    // 소스 확정(geo 포함)이 반영될 짧은 여유 후 화면 재캡처
+                    await new Promise(function(r){ setTimeout(r, 300); });
                     newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
                 } else {
                     // 일반 브라우저: OS 화면 선택기에서 다른 모니터 선택
@@ -8528,11 +8533,13 @@
                     newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
                 }
                 const newTrack = newStream.getVideoTracks()[0];
-                const sender = window._rcp.pc.getSenders().find(function(s){ return s.track && s.track.kind === 'video'; });
-                if(sender && newTrack){ await sender.replaceTrack(newTrack); }
+                if(!newTrack){ showToast('화면 전환 실패: 새 화면 소스를 가져오지 못했습니다.'); try{ newStream.getTracks().forEach(function(t){ t.stop(); }); }catch(_){} return; }
+                const sender = (window._rcp.pc.getSenders()||[]).find(function(s){ return s.track && s.track.kind === 'video'; });
+                if(!sender){ showToast('화면 전환 실패: 전송 트랙을 찾지 못했습니다.'); try{ newTrack.stop(); }catch(_){} return; }
+                await sender.replaceTrack(newTrack);
                 try{ if(window._rcHostStream) window._rcHostStream.getTracks().forEach(function(t){ t.stop(); }); }catch(_){}
                 window._rcHostStream = newStream;
-                if(newTrack) newTrack.addEventListener('ended', function(){ stopRemoteControl(false); });
+                newTrack.addEventListener('ended', function(){ stopRemoteControl(false); });
                 showToast('🖥 화면을 전환했습니다' + (picked && picked.name ? (' — ' + picked.name) : '') + '.');
             }catch(e){ showToast('화면 전환 취소/실패' + (e && e.name ? (' (' + e.name + ')') : '')); }
         };
