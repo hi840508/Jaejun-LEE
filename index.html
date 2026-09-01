@@ -8524,9 +8524,24 @@
                     picked = screens[idx];
                     const setRes = await window.rayApp.setPreferredScreen(idx);   // 인덱스 전달 → 소스·좌표를 함께 확정
                     window.__rcScreenIdx = idx;
-                    // 소스 확정(geo 포함)이 반영될 짧은 여유 후 화면 재캡처
-                    await new Promise(function(r){ setTimeout(r, 300); });
-                    newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
+                    // ★ getDisplayMedia 재호출은 Electron에서 기존 소스를 재사용해 전환이 안 되는 경우가 있어,
+                    //   확정된 소스 id로 그 모니터를 '직접' 캡처한다(chromeMediaSourceId) → 확실히 전환됨.
+                    const srcId = setRes && setRes.sourceId;
+                    if(srcId){
+                        try{
+                            newStream = await navigator.mediaDevices.getUserMedia({
+                                audio:false,
+                                video:{ mandatory:{ chromeMediaSource:'desktop', chromeMediaSourceId: srcId, maxWidth:1920, maxHeight:1200, maxFrameRate:12 } }
+                            });
+                        }catch(err){
+                            // 폴백: getDisplayMedia(핸들러가 pendingSourceId 사용)
+                            await new Promise(function(r){ setTimeout(r, 250); });
+                            newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
+                        }
+                    } else {
+                        await new Promise(function(r){ setTimeout(r, 250); });
+                        newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
+                    }
                 } else {
                     // 일반 브라우저: OS 화면 선택기에서 다른 모니터 선택
                     showToast('공유할 화면(모니터)을 선택해 주세요.');
