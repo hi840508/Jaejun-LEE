@@ -8495,8 +8495,17 @@
                 } else if(d.act === 'end'){
                     if(window._rc.active){ showToast("원격제어가 종료되었습니다."); window.stopRemoteControl(true); }
                 } else if(d.act === 'switch_screen'){
-                    // 🖥 제어측이 '다른 모니터 보기' 요청 → 피제어측(host)이 화면 전환
+                    // 🖥 제어측이 '다른 모니터 보기' 요청 → 피제어측(host)이 화면 전환(단순 순환 — 호환용)
                     if(window._rc && window._rc.role === 'host' && window._rc.active && window.rcHostSwitchScreen){ window.rcHostSwitchScreen(); }
+                } else if(d.act === 'list_screens'){
+                    // 🖥 [팀뷰어급] 제어측이 '모니터 목록' 요청 → host가 썸네일 목록을 만들어 회신
+                    if(window._rc && window._rc.role === 'host' && window._rc.active && window.rcHostSendScreenList){ window.rcHostSendScreenList(); }
+                } else if(d.act === 'screens'){
+                    // 🖥 제어측(viewer): host가 보낸 모니터 목록을 선택 UI로 표시
+                    if(window._rcShowScreenPicker){ window._rcShowScreenPicker(d.list || []); }
+                } else if(d.act === 'pick_screen'){
+                    // 🖥 host: 제어측이 고른 소스로 전환
+                    if(window._rc && window._rc.role === 'host' && window._rc.active && window.rcHostPickSource){ window.rcHostPickSource(d.sourceId); }
                 }
             } else if(d.kind === 'rc_hostack'){
                 // 내 로컬 서버가 호스팅을 시작했다는 응답 — 도우미 생존 확인
@@ -8547,23 +8556,114 @@
                     showToast('공유할 화면(모니터)을 선택해 주세요.');
                     newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
                 }
-                const newTrack = newStream.getVideoTracks()[0];
-                if(!newTrack){ showToast('화면 전환 실패: 새 화면 소스를 가져오지 못했습니다.'); try{ newStream.getTracks().forEach(function(t){ t.stop(); }); }catch(_){} return; }
-                const sender = (window._rcp.pc.getSenders()||[]).find(function(s){ return s.track && s.track.kind === 'video'; });
-                if(!sender){ showToast('화면 전환 실패: 전송 트랙을 찾지 못했습니다.'); try{ newTrack.stop(); }catch(_){} return; }
-                await sender.replaceTrack(newTrack);
-                try{ if(window._rcHostStream) window._rcHostStream.getTracks().forEach(function(t){ t.stop(); }); }catch(_){}
-                window._rcHostStream = newStream;
-                newTrack.addEventListener('ended', function(){ stopRemoteControl(false); });
-                showToast('🖥 화면을 전환했습니다' + (picked && picked.name ? (' — ' + picked.name) : '') + '.');
+                await window._rcApplyHostStream(newStream, picked && picked.name);
             }catch(e){ showToast('화면 전환 취소/실패' + (e && e.name ? (' (' + e.name + ')') : '')); }
         };
-        // 🖥 [듀얼모니터] 제어측(viewer): 상대에게 '다른 모니터 보기' 요청
+        // 🖥 공통: 새 스트림을 WebRTC 전송 트랙으로 교체(재협상 불필요)
+        window._rcApplyHostStream = async function(newStream, label){
+            const newTrack = newStream.getVideoTracks()[0];
+            if(!newTrack){ showToast('화면 전환 실패: 새 화면 소스를 가져오지 못했습니다.'); try{ newStream.getTracks().forEach(function(t){ t.stop(); }); }catch(_){} return false; }
+            const sender = (window._rcp && window._rcp.pc ? (window._rcp.pc.getSenders()||[]) : []).find(function(s){ return s.track && s.track.kind === 'video'; });
+            if(!sender){ showToast('화면 전환 실패: 전송 트랙을 찾지 못했습니다.'); try{ newTrack.stop(); }catch(_){} return false; }
+            await sender.replaceTrack(newTrack);
+            try{ if(window._rcHostStream) window._rcHostStream.getTracks().forEach(function(t){ t.stop(); }); }catch(_){}
+            window._rcHostStream = newStream;
+            newTrack.addEventListener('ended', function(){ stopRemoteControl(false); });
+            showToast('🖥 화면을 전환했습니다' + (label ? (' — ' + label) : '') + '.');
+            return true;
+        };
+        // 🖥 [팀뷰어급] host: 모니터 썸네일 목록을 만들어 제어측에 전송
+        window.rcHostSendScreenList = async function(){
+            try{
+                let list = [];
+                if(window.rayApp && window.rayApp.listScreenThumbs){ list = await window.rayApp.listScreenThumbs(); }
+                if((!list || !list.length) && window.rayApp && window.rayApp.listScreens){
+                    // 썸네일 미지원 구버전 앱 폴백: 이름만
+                    const s = await window.rayApp.listScreens();
+                    list = (s||[]).map(function(x){ return { index:x.index, sourceId:x.sourceId||null, name:x.name, thumb:'' }; });
+                }
+                if(socket && socket.connected && window._rc && window._rc.peer){
+                    socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'ctrl', act:'screens', list:list });
+                }
+            }catch(e){}
+        };
+        // 🖥 host: 제어측이 고른 소스 id로 그 모니터를 직접 캡처(chromeMediaSourceId) + 좌표(geo) 확정
+        window.rcHostPickSource = async function(sourceId){
+            if(!(window._rc && window._rc.active && window._rc.role === 'host') || !window._rcp || !window._rcp.pc){ return; }
+            try{
+                let newStream, label;
+                if(window.rayApp && window.rayApp.setSource && sourceId){
+                    const r = await window.rayApp.setSource(sourceId);   // 소스+좌표 함께 확정
+                    const sid = (r && r.sourceId) || sourceId;
+                    try{
+                        newStream = await navigator.mediaDevices.getUserMedia({
+                            audio:false,
+                            video:{ mandatory:{ chromeMediaSource:'desktop', chromeMediaSourceId: sid, maxWidth:1920, maxHeight:1200, maxFrameRate:12 } }
+                        });
+                    }catch(err){
+                        await new Promise(function(r2){ setTimeout(r2, 250); });
+                        newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
+                    }
+                } else {
+                    newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
+                }
+                await window._rcApplyHostStream(newStream, label);
+            }catch(e){ showToast('화면 전환 실패' + (e && e.name ? (' (' + e.name + ')') : '')); }
+        };
+        // 🖥 [듀얼모니터] 제어측(viewer): 상대에게 '다른 모니터 보기' 요청(순환 — 호환용)
         window.rcRequestScreenSwitch = function(){
             if(socket && socket.connected && window._rc && window._rc.peer){
                 socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'ctrl', act:'switch_screen' });
                 showToast('상대 PC에 화면(모니터) 전환을 요청했어요.');
             }
+        };
+        // 🖥 [팀뷰어급] 제어측(viewer): 상대 모니터 '목록'을 요청 → 선택 UI 표시
+        window.rcRequestScreenList = function(){
+            if(socket && socket.connected && window._rc && window._rc.peer){
+                socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'ctrl', act:'list_screens' });
+                showToast('상대 PC의 화면 목록을 불러오는 중…');
+            }
+        };
+        // 🖥 제어측: host가 보낸 모니터 목록을 썸네일 선택 UI로 표시
+        window._rcShowScreenPicker = function(list){
+            list = Array.isArray(list) ? list : [];
+            let ov = document.getElementById('rc-screen-picker');
+            if(ov) ov.remove();
+            ov = document.createElement('div'); ov.id = 'rc-screen-picker';
+            ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.72);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+            if(!list.length){
+                ov.innerHTML = '<div style="background:#111827;color:#fff;border-radius:14px;padding:22px 20px;max-width:340px;text-align:center;">'
+                  + '<div style="font-weight:800;font-size:15px;margin-bottom:8px;">공유 가능한 화면이 없어요</div>'
+                  + '<div style="font-size:13px;color:#cbd5e1;line-height:1.5;">상대 PC가 앱(최신)으로 접속했는지, 모니터가 확장 모드인지 확인해 주세요.</div>'
+                  + '<button onclick="document.getElementById(\'rc-screen-picker\').remove()" style="margin-top:14px;background:#334155;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer;">닫기</button></div>';
+                document.body.appendChild(ov); return;
+            }
+            let cards = list.map(function(s){
+                const nm = String(s.name||'화면').replace(/</g,'&lt;');
+                const thumb = s.thumb
+                    ? '<img src="'+s.thumb+'" style="width:100%;height:130px;object-fit:cover;background:#000;display:block;" draggable="false">'
+                    : '<div style="width:100%;height:130px;background:#0b1220;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:34px;">🖥</div>';
+                return '<button class="rc-scr-card" data-sid="'+String(s.sourceId||'').replace(/"/g,'&quot;')+'" '
+                     + 'style="border:2px solid #1f2937;border-radius:12px;overflow:hidden;background:#0b1220;cursor:pointer;padding:0;width:260px;max-width:44vw;text-align:left;transition:border-color .15s;">'
+                     + thumb
+                     + '<div style="padding:9px 11px;color:#e5e7eb;font-weight:700;font-size:13px;">'+nm+'</div></button>';
+            }).join('');
+            ov.innerHTML = '<div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:14px;">공유할 화면을 선택하세요</div>'
+                + '<div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;max-width:920px;max-height:70vh;overflow:auto;padding:4px;">' + cards + '</div>'
+                + '<button onclick="document.getElementById(\'rc-screen-picker\').remove()" style="margin-top:16px;background:#334155;color:#fff;border:0;border-radius:8px;padding:9px 20px;font-weight:700;cursor:pointer;">취소</button>';
+            document.body.appendChild(ov);
+            ov.querySelectorAll('.rc-scr-card').forEach(function(btn){
+                btn.addEventListener('mouseenter', function(){ btn.style.borderColor = '#d6006e'; });
+                btn.addEventListener('mouseleave', function(){ btn.style.borderColor = '#1f2937'; });
+                btn.addEventListener('click', function(){
+                    const sid = btn.getAttribute('data-sid');
+                    if(socket && socket.connected && window._rc && window._rc.peer){
+                        socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'ctrl', act:'pick_screen', sourceId: sid });
+                        showToast('선택한 화면으로 전환 중…');
+                    }
+                    ov.remove();
+                });
+            });
         };
         // 피제어측 상단 배너(채팅 화면 자체 — 단독 접속에서도 표시)
         function _rcShowHostBanner(txt){
@@ -8591,7 +8691,7 @@
               + '<button id="rc-vk-btn" onclick="_rcToggleVKbd()" title="가상 키보드" style="'+_hbtn+'">⌨ 키보드</button>'
               + '<button id="rc-pan-btn" onclick="_rcTogglePan()" title="확대 후 한 손가락으로 화면 이동" style="'+_hbtn+'">✋ 이동</button>'
               + '<button id="rc-dbl-btn" onclick="_rcArmDbl()" title="다음 탭을 더블클릭으로(아이콘 실행)" style="'+_hbtn+'">🖱 더블클릭</button>'
-              + '<button onclick="rcRequestScreenSwitch()" title="상대 모니터 전환(듀얼 모니터)" style="'+_hbtn+'">🖥 화면</button>'
+              + '<button onclick="rcRequestScreenList()" title="상대 모니터 선택(듀얼 모니터)" style="'+_hbtn+'">🖥 화면</button>'
               + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;white-space:nowrap;flex:none;">종료</button></div>'
               + '<div id="rc-view-stage" tabindex="0" style="flex:1;position:relative;overflow:hidden;background:#000;outline:none;cursor:crosshair;display:flex;align-items:center;justify-content:center;touch-action:none;">'
               + '<video id="rc-view-vid" autoplay playsinline muted draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;pointer-events:none;"></video>'
