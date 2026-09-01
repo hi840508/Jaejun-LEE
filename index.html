@@ -8511,14 +8511,16 @@
             try{
                 let newStream, picked;
                 if(window.rayApp && window.rayApp.listScreens && window.rayApp.setPreferredScreen){
-                    // 앱(Electron): 연결된 모니터 목록에서 다음 모니터로 순환
+                    // 앱(Electron): 모니터 인덱스 순환(화면 소스·입력 좌표가 같은 인덱스로 매칭됨)
                     const screens = await window.rayApp.listScreens();
                     if(!screens || screens.length < 2){ showToast('연결된 모니터가 하나뿐입니다.'); return; }
-                    const curId = window.__rcScreenId || (screens[0] && screens[0].id);
-                    let idx = screens.findIndex(function(s){ return s.id === curId; }); idx = (idx + 1) % screens.length;
+                    let idx = (window.__rcScreenIdx == null ? 0 : window.__rcScreenIdx);
+                    idx = (idx + 1) % screens.length;
                     picked = screens[idx];
-                    await window.rayApp.setPreferredScreen(picked.id);
-                    window.__rcScreenId = picked.id;
+                    await window.rayApp.setPreferredScreen(idx);   // 인덱스 전달
+                    window.__rcScreenIdx = idx;
+                    // geo 재계산이 반영될 짧은 여유 후 화면 재캡처
+                    await new Promise(function(r){ setTimeout(r, 250); });
                     newStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:10 }, audio:false });
                 } else {
                     // 일반 브라우저: OS 화면 선택기에서 다른 모니터 선택
@@ -8545,7 +8547,8 @@
         function _rcShowHostBanner(txt){
             let b = document.getElementById('rc-host-banner');
             if(!b){ b = document.createElement('div'); b.id='rc-host-banner'; document.body.appendChild(b); }
-            b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99991;background:#b91c1c;color:#fff;display:flex;align-items:center;justify-content:center;gap:14px;padding:8px 14px;font-weight:800;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.3);';
+            // 상단 '중앙 알약'형 — 전체 폭을 덮지 않아 우측의 채팅 X(닫기) 버튼을 가리지 않는다.
+            b.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99991;background:#b91c1c;color:#fff;display:flex;align-items:center;gap:10px;padding:8px 14px;font-weight:800;font-size:13px;border-radius:30px;box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:calc(100vw - 24px);flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;';
             b.innerHTML = '<span id="rc-host-banner-txt">'+ (txt||'🖥 상대방이 내 화면을 원격제어 중입니다') +'</span> <button onclick="rcHostSwitchScreen()" title="공유 모니터 전환(듀얼 모니터)" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 12px;font-weight:800;cursor:pointer;">🖥 화면 전환</button> <button onclick="stopRemoteControl(false)" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">원격제어 종료</button>';
         }
         function _rcUpdateHostBanner(txt){ const t=document.getElementById('rc-host-banner-txt'); if(t) t.textContent = txt; }
