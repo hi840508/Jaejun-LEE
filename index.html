@@ -8504,8 +8504,8 @@
                     // 🖥 제어측(viewer): host가 보낸 모니터 목록을 선택 UI로 표시
                     if(window._rcShowScreenPicker){ window._rcShowScreenPicker(d.list || []); }
                 } else if(d.act === 'pick_screen'){
-                    // 🖥 host: 제어측이 고른 소스로 전환
-                    if(window._rc && window._rc.role === 'host' && window._rc.active && window.rcHostPickSource){ window.rcHostPickSource(d.sourceId); }
+                    // 🖥 host: 제어측이 고른 모니터로 전환(index로 신선한 소스를 재확정 → stale id 방지)
+                    if(window._rc && window._rc.role === 'host' && window._rc.active && window.rcHostPickSource){ window.rcHostPickSource(d); }
                 }
             } else if(d.kind === 'rc_hostack'){
                 // 내 로컬 서버가 호스팅을 시작했다는 응답 — 도우미 생존 확인
@@ -8587,14 +8587,23 @@
                 }
             }catch(e){}
         };
-        // 🖥 host: 제어측이 고른 소스 id로 그 모니터를 직접 캡처(chromeMediaSourceId) + 좌표(geo) 확정
-        window.rcHostPickSource = async function(sourceId){
+        // 🖥 host: 제어측이 고른 모니터로 캡처 전환. index로 그 시점에 소스 id를 새로 확정(stale id 방지) + 좌표(geo) 정합.
+        window.rcHostPickSource = async function(pick){
             if(!(window._rc && window._rc.active && window._rc.role === 'host') || !window._rcp || !window._rcp.pc){ return; }
+            const idx = (pick && typeof pick.index === 'number') ? pick.index : null;
+            const fallbackSid = pick && pick.sourceId;
             try{
-                let newStream, label;
-                if(window.rayApp && window.rayApp.setSource && sourceId){
-                    const r = await window.rayApp.setSource(sourceId);   // 소스+좌표 함께 확정
-                    const sid = (r && r.sourceId) || sourceId;
+                let newStream, label = (pick && pick.name) || null;
+                let sid = null;
+                if(idx != null && window.rayApp && window.rayApp.setPreferredScreen){
+                    const r = await window.rayApp.setPreferredScreen(idx);   // 인덱스로 신선한 소스+좌표 확정
+                    window.__rcScreenIdx = idx;
+                    sid = (r && r.sourceId) || null;
+                } else if(fallbackSid && window.rayApp && window.rayApp.setSource){
+                    const r = await window.rayApp.setSource(fallbackSid);
+                    sid = (r && r.sourceId) || fallbackSid;
+                }
+                if(sid){
                     try{
                         newStream = await navigator.mediaDevices.getUserMedia({
                             audio:false,
@@ -8644,6 +8653,7 @@
                     ? '<img src="'+s.thumb+'" style="width:100%;height:130px;object-fit:cover;background:#000;display:block;" draggable="false">'
                     : '<div style="width:100%;height:130px;background:#0b1220;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:34px;">🖥</div>';
                 return '<button class="rc-scr-card" data-sid="'+String(s.sourceId||'').replace(/"/g,'&quot;')+'" '
+                     + 'data-idx="'+(typeof s.index==='number'?s.index:'')+'" data-name="'+nm.replace(/"/g,'&quot;')+'" '
                      + 'style="border:2px solid #1f2937;border-radius:12px;overflow:hidden;background:#0b1220;cursor:pointer;padding:0;width:260px;max-width:44vw;text-align:left;transition:border-color .15s;">'
                      + thumb
                      + '<div style="padding:9px 11px;color:#e5e7eb;font-weight:700;font-size:13px;">'+nm+'</div></button>';
@@ -8657,8 +8667,12 @@
                 btn.addEventListener('mouseleave', function(){ btn.style.borderColor = '#1f2937'; });
                 btn.addEventListener('click', function(){
                     const sid = btn.getAttribute('data-sid');
+                    const idxAttr = btn.getAttribute('data-idx');
+                    const nm = btn.getAttribute('data-name') || '';
+                    const payload = { to:window._rc.peer, roomId:window._rc.room, kind:'ctrl', act:'pick_screen', sourceId: sid, name: nm };
+                    if(idxAttr !== '' && idxAttr != null) payload.index = parseInt(idxAttr, 10);
                     if(socket && socket.connected && window._rc && window._rc.peer){
-                        socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'ctrl', act:'pick_screen', sourceId: sid });
+                        socket.emit('rc_signal', payload);
                         showToast('선택한 화면으로 전환 중…');
                     }
                     ov.remove();
