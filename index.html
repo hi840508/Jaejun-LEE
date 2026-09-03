@@ -1054,8 +1054,6 @@
                     <button class="yt-mobile-search-btn" onclick="openMobileSearch()" aria-label="검색">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     </button>
-                    <!-- 화면 키보드 버튼 (물리 키보드 없는 환경) -->
-                    <button onclick="openScreenKeyboard()" aria-label="가상 키보드" title="화면 키보드" style="background:none;border:none;cursor:pointer;padding:4px;font-size:20px;line-height:1;">⌨️</button>
                     <div style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 10px; border-radius:30px; background:#f0f0f0; transition:0.2s;" onclick="openProfileModal()">
                         <img id="my-profile-pic" class="profile-pic" style="width:24px; height:24px; border:none;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>">
                         <span style="font-weight: 600; color:var(--text-main); font-size:13px;" id="topbar-uname-wrap"><span id="display-name" style="color: var(--text-main);"></span></span>
@@ -6100,25 +6098,220 @@
             }, 200);
         };
 
-        // ⌨ 화면 키보드 호출 — 물리 키보드가 없는 치과 데스크톱 등에서 마우스/터치로 입력.
-        //   앱(Electron): Windows 화면 키보드(터치 키보드/osk) 실행. 웹/모바일: 입력창 포커스로 소프트키보드 유도.
+        // ⌨ 화면 키보드 — 앱/웹 공통 '자체' 온스크린 키보드. 두벌식 한글 조합기 내장(한/영 토글로 한글 직접 입력).
+        //   물리 키보드/OS IME가 없어도(치과 데스크톱 등) 마우스·터치만으로 한글/영문/기호 입력 가능.
+        //   마지막으로 포커스된 입력칸을 대상으로 삽입한다.
+        window._oskTarget = null;
+        document.addEventListener('focusin', function(e){
+            const t = e.target;
+            if(t && (t.tagName==='INPUT' || t.tagName==='TEXTAREA' || t.isContentEditable)){
+                // 우리 키보드 자체의 버튼은 대상에서 제외
+                if(t.closest && t.closest('#osk-panel')) return;
+                window._oskTarget = t;
+            }
+        });
+        // ── 두벌식 한글 오토마타: feed(자모)/backspace/flush → {back:지울글자수, add:추가문자열} 반환(로컬/원격 공용) ──
+        function _makeHangulIME(){
+            const CHO=['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+            const JUNG=['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ'];
+            const JONG=['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+            const CHO_OF={'ㄱ':0,'ㄲ':1,'ㄴ':2,'ㄷ':3,'ㄸ':4,'ㄹ':5,'ㅁ':6,'ㅂ':7,'ㅃ':8,'ㅅ':9,'ㅆ':10,'ㅇ':11,'ㅈ':12,'ㅉ':13,'ㅊ':14,'ㅋ':15,'ㅌ':16,'ㅍ':17,'ㅎ':18};
+            const JONG_OF={'ㄱ':1,'ㄲ':2,'ㄴ':4,'ㄷ':7,'ㄹ':8,'ㅁ':16,'ㅂ':17,'ㅅ':19,'ㅆ':20,'ㅇ':21,'ㅈ':22,'ㅊ':23,'ㅋ':24,'ㅌ':25,'ㅍ':26,'ㅎ':27};
+            const JUNG_OF={'ㅏ':0,'ㅐ':1,'ㅑ':2,'ㅒ':3,'ㅓ':4,'ㅔ':5,'ㅕ':6,'ㅖ':7,'ㅗ':8,'ㅛ':12,'ㅜ':13,'ㅠ':17,'ㅡ':18,'ㅣ':20};
+            const JUNG_COMBINE={ '8,0':9,'8,1':10,'8,20':11, '13,4':14,'13,5':15,'13,20':16, '18,20':19 }; // ㅗ+ㅏ=ㅘ 등
+            const JONG_COMBINE={ '1,19':3, '4,22':5,'4,27':6, '8,1':9,'8,16':10,'8,17':11,'8,19':12,'8,25':13,'8,26':14,'8,27':15, '17,19':18 };
+            const JONG_SPLIT={ 3:[1,'ㅅ'],5:[4,'ㅈ'],6:[4,'ㅎ'],9:[8,'ㄱ'],10:[8,'ㅁ'],11:[8,'ㅂ'],12:[8,'ㅅ'],13:[8,'ㅌ'],14:[8,'ㅍ'],15:[8,'ㅎ'],18:[17,'ㅅ'] };
+            let cho=-1, jung=-1, jong=0;   // jong: JONG index(0=없음)
+            let outLen=0;                   // 현재 조합 글자가 출력에 차지하는 길이(0/1)
+            function cur(){
+                if(cho>=0 && jung>=0){ return String.fromCharCode(0xAC00 + (cho*21 + jung)*28 + jong); }
+                if(cho>=0) return CHO[cho];
+                if(jung>=0) return JUNG[jung];
+                if(jong>0){ // 종성만 남은 비정상 케이스 방지
+                    for(const k in JONG_OF){ if(JONG_OF[k]===jong) return k; }
+                }
+                return '';
+            }
+            function reset(){ cho=-1; jung=-1; jong=0; outLen=0; }
+            function _diff(newAdd){ const back=outLen; outLen = newAdd.length; return { back:back, add:newAdd }; }
+            function isVowel(j){ return JUNG_OF[j]!==undefined; }
+            return {
+                // 자모 문자 입력
+                feed:function(j){
+                    if(isVowel(j)){
+                        const v=JUNG_OF[j];
+                        if(cho>=0 && jung<0 && jong===0){ jung=v; return _diff(cur()); }
+                        if(cho>=0 && jung>=0 && jong===0){
+                            const cc=JUNG_COMBINE[jung+','+v];
+                            if(cc!==undefined){ jung=cc; return _diff(cur()); }
+                            // 새 음절(초성 없는 모음)
+                            const commit=cur(); cho=-1; jung=v; jong=0; const comp=cur(); outLen=comp.length; return { back:0, add:commit+comp, _committed:commit.length };
+                        }
+                        if(jong>0){
+                            // 도깨비불: 종성(마지막 자음)을 다음 음절 초성으로
+                            let moveCho, keepJong;
+                            if(JONG_SPLIT[jong]){ keepJong=JONG_SPLIT[jong][0]; moveCho=JONG_SPLIT[jong][1]; }
+                            else { keepJong=0; for(const k in JONG_OF){ if(JONG_OF[k]===jong){ moveCho=k; break; } } }
+                            const savedJong=jong; jong=keepJong;
+                            const commit=cur();               // 종성 정리된 이전 음절(확정)
+                            cho=CHO_OF[moveCho]; jung=v; jong=0;
+                            const comp=cur(); outLen=comp.length;
+                            return { back:1, add:commit+comp }; // 이전 조합글자 1개 지우고 확정+새조합
+                        }
+                        // 조합 없음 → 모음 단독
+                        jung=v; cho=-1; jong=0; return _diff(cur());
+                    } else {
+                        // 자음
+                        const c=CHO_OF[j];
+                        if(cho<0 && jung<0){ cho=c; return _diff(cur()); }
+                        if(cho>=0 && jung<0){ // 자음 뒤 자음 → 이전 자음 확정, 새 초성
+                            const commit=cur(); cho=c; jung=-1; jong=0; const comp=cur(); outLen=comp.length; return { back:1, add:commit+comp };
+                        }
+                        if(cho>=0 && jung>=0){
+                            const jo=JONG_OF[j];
+                            if(jong===0 && jo!==undefined){ jong=jo; return _diff(cur()); }
+                            if(jong>0 && jo!==undefined){
+                                const cc=JONG_COMBINE[jong+','+jo];
+                                if(cc!==undefined){ jong=cc; return _diff(cur()); }
+                            }
+                            // 종성으로 못 붙임 → 이전 음절 확정, 새 초성
+                            const commit=cur(); cho=c; jung=-1; jong=0; const comp=cur(); outLen=comp.length; return { back:1, add:commit+comp };
+                        }
+                        cho=c; return _diff(cur());
+                    }
+                },
+                // 백스페이스: 조합 중이면 자모 단위로, 아니면 실제 삭제
+                back:function(){
+                    if(outLen>0){
+                        if(jong>0){ if(JONG_SPLIT[jong]){ jong=JONG_SPLIT[jong][0]; } else { jong=0; } }
+                        else if(jung>=0){
+                            // 복합모음 분해
+                            let split=null; for(const k in JUNG_COMBINE){ if(JUNG_COMBINE[k]===jung){ split=k.split(',').map(Number); break; } }
+                            if(split){ jung=split[0]; } else { jung=-1; }
+                        }
+                        else if(cho>=0){ cho=-1; }
+                        const comp=cur(); const back=outLen; outLen=comp.length; return { back:back, add:comp };
+                    }
+                    return { back:1, add:'' }; // 조합 아님 → 실제 1글자 삭제
+                },
+                // 조합 확정(스페이스/엔터/다른 키/포커스이동 시)
+                flush:function(){ reset(); return { back:0, add:'' }; },
+                composing:function(){ return outLen>0; }
+            };
+        }
+        window._makeHangulIME = _makeHangulIME;
+        window._oskJamoOf = function(ch){ return _oskJamo(ch); };
+
+        // 온스크린 키보드 상태
+        window._oskHan = false;         // 한글 모드
+        window._oskShift = false;
+        window._oskIME = null;          // 로컬 한글 오토마타
         window.openScreenKeyboard = function(){
+            let p = document.getElementById('osk-panel');
+            if(p){ p.remove(); return; }   // 토글: 열려있으면 닫기
+            window._oskIME = _makeHangulIME();
+            p = document.createElement('div'); p.id='osk-panel';
+            p.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:100050;background:#1e293b;box-shadow:0 -6px 24px rgba(0,0,0,.35);padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));user-select:none;touch-action:manipulation;';
+            document.body.appendChild(p);
+            _oskRender(p);
+        };
+        function _oskInsert(back, add){
+            const t = window._oskTarget;
+            if(!t){ try{ showToast('먼저 입력할 칸을 탭하세요.'); }catch(_){} return; }
             try{
-                if(window.rayApp && window.rayApp.showKeyboard){
-                    window.rayApp.showKeyboard().then(function(r){
-                        if(!r || !r.ok){ try{ showToast('화면 키보드를 열지 못했습니다. Windows 설정에서 화상 키보드를 확인해 주세요.'); }catch(_){} }
-                    }).catch(function(){ try{ showToast('화면 키보드를 열지 못했습니다.'); }catch(_){} });
-                    return;
+                if(t.isContentEditable){
+                    t.focus();
+                    for(let i=0;i<back;i++){ document.execCommand('delete',false); }
+                    if(add) document.execCommand('insertText',false,add);
+                } else {
+                    let s=(t.selectionStart==null?t.value.length:t.selectionStart);
+                    let e=(t.selectionEnd==null?s:t.selectionEnd);
+                    const start=Math.max(0,s-back);
+                    t.value = t.value.slice(0,start) + add + t.value.slice(e);
+                    const pos=start+add.length;
+                    try{ t.setSelectionRange(pos,pos); }catch(_){}
+                    t.dispatchEvent(new Event('input',{bubbles:true}));
                 }
             }catch(_){}
-            // 비-앱: 포커스된 입력이 없으면 통합검색창에 포커스 → 모바일 소프트키보드 표시
-            try{
-                var el = document.activeElement;
-                var isInput = el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
-                if(!isInput){ var s = document.getElementById('topbar-global-search'); if(s){ s.focus(); s.click(); } }
-                showToast('입력창을 탭하면 키보드가 나타납니다. (데스크톱은 앱에서 화면 키보드가 열립니다)');
-            }catch(_){}
-        };
+        }
+        function _oskSpecial(kind){
+            const t=window._oskTarget;
+            if(window._oskIME && window._oskIME.composing()){ window._oskIME.flush(); }
+            if(kind==='space'){ _oskInsert(0,' '); return; }
+            if(kind==='back'){
+                if(window._oskHan && window._oskIME){ const r=window._oskIME.back(); _oskInsert(r.back, r.add); }
+                else { _oskInsert(1,''); }
+                return;
+            }
+            if(kind==='enter'){
+                if(!t) return;
+                if(t.tagName==='TEXTAREA' || t.isContentEditable){ _oskInsert(0,'\n'); }
+                else { t.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,which:13,bubbles:true})); t.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',keyCode:13,which:13,bubbles:true})); }
+                return;
+            }
+        }
+        function _oskKey(ch){
+            // 한글 모드 + 알파벳이면 오토마타 통과
+            if(window._oskHan && window._oskIME){
+                const jamo=_oskJamo(ch);
+                if(jamo){ const r=window._oskIME.feed(jamo); _oskInsert(r.back, r.add); return; }
+            }
+            // 그 외: 조합 종료 후 문자 그대로
+            if(window._oskIME && window._oskIME.composing()){ window._oskIME.flush(); }
+            _oskInsert(0, ch);
+        }
+        // qwerty 문자 → 두벌식 자모(shift 반영)
+        function _oskJamo(ch){
+            const base={q:'ㅂ',w:'ㅈ',e:'ㄷ',r:'ㄱ',t:'ㅅ',y:'ㅛ',u:'ㅕ',i:'ㅑ',o:'ㅐ',p:'ㅔ',a:'ㅁ',s:'ㄴ',d:'ㅇ',f:'ㄹ',g:'ㅎ',h:'ㅗ',j:'ㅓ',k:'ㅏ',l:'ㅣ',z:'ㅋ',x:'ㅌ',c:'ㅊ',v:'ㅍ',b:'ㅠ',n:'ㅜ',m:'ㅡ'};
+            const shift={q:'ㅃ',w:'ㅉ',e:'ㄸ',r:'ㄲ',t:'ㅆ',o:'ㅒ',p:'ㅖ'};
+            const low=ch.toLowerCase();
+            if(/[A-Z]/.test(ch) && shift[low]) return shift[low];
+            return base[low]||null;
+        }
+        function _oskRender(p){
+            const han=window._oskHan, sh=window._oskShift;
+            const rowsEn=[['1','2','3','4','5','6','7','8','9','0'],['q','w','e','r','t','y','u','i','o','p'],['a','s','d','f','g','h','j','k','l'],['z','x','c','v','b','n','m']];
+            const label=function(c){
+                if(han){ const j=_oskJamo(sh?c.toUpperCase():c); if(j) return j; }
+                return sh && /[a-z]/.test(c) ? c.toUpperCase() : c;
+            };
+            const kb=function(txt,val,flex,bg){ return '<button data-k="'+String(val).replace(/"/g,'&quot;')+'" style="flex:'+(flex||1)+';min-width:0;margin:3px;padding:12px 0;border:0;border-radius:8px;background:'+(bg||'#334155')+';color:#fff;font-size:16px;font-weight:700;cursor:pointer;">'+txt+'</button>'; };
+            let h='<div style="display:flex;justify-content:flex-end;padding:0 3px 4px;">'
+                + '<span style="flex:1;color:#94a3b8;font-size:12px;font-weight:700;align-self:center;padding-left:6px;">⌨️ 화면 키보드'+(han?' · 한글':'' )+'</span>'
+                + kb('✕ 닫기','__close',1.4,'#475569')+'</div>';
+            rowsEn.forEach(function(r){ h+='<div style="display:flex;">'+ r.map(function(c){ return kb(label(c), 'CH:'+c); }).join('') +'</div>'; });
+            h+='<div style="display:flex;">'
+              + kb('⇧','__shift', 1.4, sh?'#2563eb':'#475569')
+              + kb(han?'한':'EN','__han',1.4, han?'#d6006e':'#0ea5e9')
+              + kb(',',' CH:,') + kb('.','CH:.')
+              + kb('Space',' ',3.2)
+              + kb('←','__back',1.6,'#475569')
+              + kb('Enter','__enter',2,'#2563eb')
+              + '</div>';
+            p.innerHTML=h;
+            p.querySelectorAll('button[data-k]').forEach(function(b){
+                // 포커스 뺏김 방지: mousedown/touchstart에서 처리하고 기본동작 차단
+                const fire=function(ev){
+                    ev.preventDefault(); ev.stopPropagation();
+                    const k=b.getAttribute('data-k');
+                    if(k==='__close'){ p.remove(); return; }
+                    if(k==='__shift'){ window._oskShift=!window._oskShift; _oskRender(p); return; }
+                    if(k==='__han'){ if(window._oskIME&&window._oskIME.composing())window._oskIME.flush(); window._oskHan=!window._oskHan; _oskRender(p); return; }
+                    if(k==='__back'){ _oskSpecial('back'); return; }
+                    if(k==='__enter'){ _oskSpecial('enter'); return; }
+                    if(k===' '){ _oskSpecial('space'); return; }
+                    if(k && k.indexOf('CH:')===0){
+                        let ch=k.slice(3);
+                        if(window._oskShift && /[a-z]/.test(ch)) ch=ch.toUpperCase();
+                        _oskKey(ch);
+                        if(window._oskShift){ window._oskShift=false; _oskRender(p); }
+                    }
+                    b.style.filter='brightness(1.5)'; setTimeout(function(){ b.style.filter=''; },100);
+                };
+                if(window.PointerEvent){ b.addEventListener('pointerdown', fire); }
+                else { b.addEventListener('touchstart', fire, {passive:false}); b.addEventListener('mousedown', fire); }
+            });
+        }
 
         // 🚀 ============ 장바구니 시스템 ============
         // 메모리 + sessionStorage 백업 (브라우저 닫으면 비워짐)
@@ -8761,6 +8954,12 @@
             try{ const st=document.getElementById('rc-view-stage'); if(st) st.style.flex = show ? '1' : '1'; }catch(_){}
         };
         function _rcVKSend(tok){ _rcSendInput({ t:'k', s: tok }); }
+        // 원격 한글: 로컬에서 조합한 뒤 완성 글자를 host에 문자로 전송({BS}로 조합글자 교체) → host IME 상태와 무관하게 한글 입력
+        window._rcHan = false; window._rcIME = null;
+        function _rcHostType(back, add){
+            for(let i=0;i<(back||0);i++){ _rcVKSend('{BS}'); }
+            if(add){ _rcVKSend(add); }
+        }
         function _rcBuildVKbd(box){
             // SendKeys 토큰: 일반 문자 그대로, 특수기호는 {..}로 이스케이프, Shift는 접두 +
             const rows = [
@@ -8797,7 +8996,33 @@
                     e.preventDefault(); e.stopPropagation();
                     let tok = btn.getAttribute('data-tok');
                     if(tok === '{SHIFT}'){ window._rcVKShift = !window._rcVKShift; box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/.test(t)){ bb.textContent = window._rcVKShift ? t.toUpperCase() : t; } }); const sh=btn; sh.style.background = window._rcVKShift ? '#2563eb' : '#475569'; return; }
-                    // host가 유니코드 입력(SendInput) — Shift는 대문자를 '직접' 보낸다(SendKeys '+' 방식 아님). 기호/한글은 그대로.
+                    // 🇰🇷 한/영: host IME를 건드리지 않고 '로컬 한글 조합' 모드를 켜고 끈다(가장 확실).
+                    if(tok === '{HANGUL}'){
+                        if(window._rcIME && window._rcIME.composing()) window._rcIME.flush();
+                        window._rcHan = !window._rcHan;
+                        if(window._rcHan && (!window._rcIME)) window._rcIME = window._makeHangulIME();
+                        if(window._rcHan && !window._rcIME) window._rcIME = window._makeHangulIME();
+                        // 버튼/글자 라벨 갱신
+                        const hb=btn; hb.style.background = window._rcHan ? '#d6006e' : '#0ea5e9'; hb.textContent = window._rcHan ? '한글' : '한/영';
+                        box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/i.test(t)){ const j=window._oskJamoOf(window._rcVKShift?t.toUpperCase():t); bb.textContent = (window._rcHan && j)? j : (window._rcVKShift? t.toUpperCase(): t); } });
+                        return;
+                    }
+                    // 한글 모드에서 알파벳 → 로컬 조합 후 완성 글자를 host에 전송
+                    if(window._rcHan && window._rcIME && tok.length===1 && /[a-z]/i.test(tok)){
+                        const ch = window._rcVKShift ? tok.toUpperCase() : tok;
+                        const jamo = window._oskJamoOf(ch);
+                        if(jamo){ const r=window._rcIME.feed(jamo); _rcHostType(r.back, r.add); }
+                        else { if(window._rcIME.composing()) window._rcIME.flush(); _rcVKSend(ch); }
+                        if(window._rcVKShift){ window._rcVKShift=false; box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/i.test(t)){ const j=window._oskJamoOf(t); bb.textContent = (window._rcHan && j)? j : t; } }); const sh=box.querySelector('[data-tok="{SHIFT}"]'); if(sh) sh.style.background='#475569'; }
+                        return;
+                    }
+                    // 백스페이스: 한글 조합 중이면 자모 단위로 host 화면과 동기화
+                    if(tok === '{BS}' && window._rcHan && window._rcIME && window._rcIME.composing()){
+                        const r=window._rcIME.back(); _rcHostType(r.back, r.add); return;
+                    }
+                    // 그 외 키: 조합 종료 후 토큰 그대로 전송
+                    if(window._rcIME && window._rcIME.composing()){ window._rcIME.flush(); }
+                    // host가 유니코드 입력(SendInput) — Shift는 대문자를 '직접' 보낸다(SendKeys '+' 방식 아님). 기호는 그대로.
                     if(tok.length===1 && /[a-z]/i.test(tok)){ tok = window._rcVKShift ? tok.toUpperCase() : tok; }
                     _rcVKSend(tok);
                     if(window._rcVKShift && !/\{SHIFT\}/.test(tok)){ window._rcVKShift=false; box.querySelectorAll('.rc-vk').forEach(function(bb){ const t=bb.getAttribute('data-tok'); if(t && t.length===1 && /[a-z]/.test(t)) bb.textContent=t; }); const sh=box.querySelector('[data-tok="{SHIFT}"]'); if(sh) sh.style.background='#475569'; }
