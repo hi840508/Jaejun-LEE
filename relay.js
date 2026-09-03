@@ -878,13 +878,12 @@ function issueToken(name) {
     return token;
 }
 function revokeToken(token) { if (token) { SESSIONS.delete(String(token)); db.run(`DELETE FROM sessions WHERE token = ?`, [String(token)], () => {}); } }
-// 🔐 단일 세션 강제(카톡식) — 새 로그인 시 이 계정의 기존 세션 모두 무효화 + 기존 소켓에 강제 로그아웃 통지.
+// 🔐 다기기 로그인 허용(비파괴) — 새 로그인이 기존 세션을 죽이지 않는다.
+//   (기존 '단일 세션 강제'는 알림 클릭·재진입 시 연쇄 로그아웃을 유발해 매우 불편 → 세션 유지 우선.)
+//   토큰은 각자 유효(TTL 30일)하며 정리는 명시적 로그아웃/만료로만. force_logout 미발송.
 function _enforceSingleSession(name, keepToken) {
-    try {
-        for (const [t, s] of SESSIONS) { if (s && s.name === name && t !== keepToken) SESSIONS.delete(t); }
-        db.run(`DELETE FROM sessions WHERE name = ? AND token != ?`, [name, keepToken], () => {});
-        io.to('user:' + name).emit('force_logout', { reason: '다른 기기(브라우저)에서 로그인되어 이 기기는 로그아웃되었습니다.' });
-    } catch (_) {}
+    // 의도적으로 아무 것도 하지 않음(다기기 동시 로그인 유지). 필요 시 정책을 여기서 재도입.
+    return;
 }
 // 🔐 세션 유효기간 30일(길게 — 전원 로그아웃 방지). TTL 초과 세션은 무효화(created 없는 레거시 세션은 통과).
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;

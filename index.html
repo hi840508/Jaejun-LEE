@@ -2672,7 +2672,9 @@
                 try { loginSuccess(JSON.parse(savedData)); }
                 catch(e){
                     try{ if(window.__earthDiag) __earthDiag('auto-login failed: '+(e.message||e), true); }catch(_){}
-                    try{ localStorage.removeItem('earth_auto_login'); }catch(_){}
+                    // ⚠️ 자동로그인 저장값은 '버리지 않는다' — 일시적 오류로 로그인이 풀리면 알림 재진입마다 재로그인 유도되어 불편.
+                    //    JSON이 정말 손상된 경우만(파싱 불가) 정리, 그 외엔 유지.
+                    try{ JSON.parse(savedData); }catch(_bad){ try{ localStorage.removeItem('earth_auto_login'); }catch(__){} }
                     try{ const ls=document.getElementById('login-section'); if(ls) ls.style.display='block'; const lw=document.getElementById('login-wrap'); if(lw) lw.style.display='block'; }catch(_){}
                 }
             }
@@ -4599,7 +4601,11 @@
                     const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
                     if(!tk) return;
                     fetch(API_URL + '/api/auth/ping', { headers:{ 'x-auth-token': tk } }).then(function(r){
-                        if(r.status === 401 && !window.__loggingOut){ window.__loggingOut = true; alert('다른 기기(브라우저)에서 로그인되어 이 기기는 로그아웃됩니다.'); if(typeof logout==='function') logout(); else { try{ localStorage.removeItem('earth_auto_login'); }catch(_){}; location.reload(); } }
+                        // 다기기 로그인 허용으로 전환됨 → 일시적 401로 즉시 로그아웃하지 않는다. 연속 2회 401일 때만 정리(실제 만료).
+                        if(r.status === 401){
+                            window.__pingFail = (window.__pingFail||0) + 1;
+                            if(window.__pingFail >= 2 && !window.__loggingOut){ window.__loggingOut = true; if(typeof logout==='function') logout(); else { try{ localStorage.removeItem('earth_auto_login'); }catch(_){}; location.reload(); } }
+                        } else { window.__pingFail = 0; }
                     }).catch(function(){});
                 }, 25000);
             } catch(_){}
@@ -4668,8 +4674,8 @@
             socket = io(API_URL, { transports: ['websocket', 'polling'], auth: { token: window.EARTH_TOKEN || localStorage.getItem('earth_token') || '' } });
             // 🔧 핸들러를 안전 래핑 — 핸들러 미정의/예외가 소켓 등록·이후 로그인 초기화를 중단시키지 않도록
             socket.on('receive_message', d => { try { if(typeof handleReceiveMessage==='function') handleReceiveMessage(d); } catch(e){ try{ if(window.__earthDiag) __earthDiag('receive_message: '+(e.message||e), true); }catch(_){} } });
-            // 🔐 단일 세션: 다른 기기에서 로그인되면 이 기기 자동 로그아웃
-            socket.on('force_logout', d => { try { if(window.__loggingOut) return; window.__loggingOut = true; alert((d && d.reason) || '다른 기기에서 로그인되어 로그아웃됩니다.'); if(typeof logout === 'function') logout(); else { try{ localStorage.removeItem('earth_auto_login'); }catch(_){}; location.reload(); } } catch(_){} });
+            // 🔐 다기기 로그인 허용 — force_logout이 오더라도 무시(로그인 상태 유지). 알림 재진입 등으로 세션이 풀리지 않게 한다.
+            socket.on('force_logout', function(){ /* no-op: 다기기 동시 로그인 유지 */ });
             socket.on('rc_signal', d => { try { if(window._rcOnSignal) window._rcOnSignal(d); } catch(_){} });
             // 🚀 [v9] 재접속 처리 — 서버에 오프라인 큐가 없으므로 재연결 시 채팅목록/현재방 히스토리를 다시 동기화 + 대기 첨부 flush
             socket.on('connect', () => {
@@ -8808,6 +8814,11 @@
                 } else if(d.act === 'pick_screen'){
                     // 🖥 host: 제어측이 고른 모니터로 전환(index로 신선한 소스를 재확정 → stale id 방지)
                     if(window._rc && window._rc.role === 'host' && window._rc.active && window.rcHostPickSource){ window.rcHostPickSource(d); }
+                } else if(d.act === 'kbd'){
+                    // ⌨ host: 제어측 요청으로 내 PC(Windows)에 화면 키보드를 띄운다(원격 화면에 나타나 제어측이 탭해 입력)
+                    if(window._rc && window._rc.role === 'host' && window._rc.active){
+                        try{ if(window.rayApp && window.rayApp.showKeyboard){ window.rayApp.showKeyboard(); } }catch(_){}
+                    }
                 }
             } else if(d.kind === 'rc_hostack'){
                 // 내 로컬 서버가 호스팅을 시작했다는 응답 — 도우미 생존 확인
@@ -9025,7 +9036,7 @@
               + '<span style="flex:1;min-width:4px;"></span>'
               + '<button onclick="_rcZoomBtn(0.5)" title="확대" style="'+_hbtn+'">🔍+</button>'
               + '<button onclick="_rcZoomBtn(-0.5)" title="축소" style="'+_hbtn+'">🔍−</button>'
-              + '<button id="rc-vk-btn" onclick="_rcToggleVKbd()" title="가상 키보드" style="'+_hbtn+'">⌨ 키보드</button>'
+              + '<button id="rc-vk-btn" onclick="_rcRequestHostKeyboard()" title="상대 PC에 화면 키보드 띄우기(한글 포함, 화면을 탭해 입력)" style="'+_hbtn+'">⌨ 키보드</button>'
               + '<button id="rc-pan-btn" onclick="_rcTogglePan()" title="확대 후 한 손가락으로 화면 이동" style="'+_hbtn+'">✋ 이동</button>'
               + '<button id="rc-dbl-btn" onclick="_rcArmDbl()" title="다음 탭을 더블클릭으로(아이콘 실행)" style="'+_hbtn+'">🖱 더블클릭</button>'
               + '<button onclick="rcRequestScreenList()" title="상대 모니터 선택(듀얼 모니터)" style="'+_hbtn+'">🖥 화면</button>'
@@ -9038,6 +9049,13 @@
             window._rcZoom=1; window._rcPanX=0; window._rcPanY=0; try{ _rcApplyXf(); }catch(_){}
             _rcBindViewerInput();
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}   // 임베드 시 채팅 패널을 넓혀 큰 화면 확보
+            // 💬 항상 보이는 플로팅 토글 — 채팅이 전체로 덮여도(가로모드 포함) 이 버튼으로 원격↔채팅 전환 가능(드로어보다 위)
+            try{
+                let fb=document.getElementById('rc-float-toggle');
+                if(!fb){ fb=document.createElement('button'); fb.id='rc-float-toggle'; document.body.appendChild(fb); }
+                fb.onclick=function(){ _rcToggleChatWhileRemote(); };
+                _rcUpdateFloatToggle();
+            }catch(_){}
             try { _rcLayoutViewer(); } catch(_){}   // 채팅 서랍이 열려 있으면 나란히 배치(원격 보며 채팅 입력)
             try { document.getElementById('rc-view-stage').focus(); } catch(_){}
         };
@@ -9059,15 +9077,23 @@
             }
             try{ setTimeout(function(){ _rcApplyXf(); }, 60); }catch(_){}   // 영상 크기 변화 반영(좌표 정확도 유지)
         };
-        window._rcToggleChatWhileRemote = function(){
+        function _rcUpdateFloatToggle(){
+            const fb=document.getElementById('rc-float-toggle'); if(!fb) return;
             const d=document.getElementById('messenger-drawer');
             const open = d && d.classList.contains('open');
+            // 채팅이 열려 있을 때만 표시(닫기 전용) — 드로어보다 위라 가로모드에서도 항상 눌러서 원격화면으로 돌아갈 수 있음
+            fb.textContent = '🖥 원격화면 보기';
+            fb.style.cssText = 'position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:100002;background:#111827;color:#fff;border:0;border-radius:24px;padding:10px 18px;font-weight:800;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.5);cursor:pointer;display:'+(open?'block':'none')+';';
+        }
+        window._rcToggleChatWhileRemote = function(){
+            const d=document.getElementById('messenger-drawer');
             try{ if(window.toggleMessengerDrawer) toggleMessengerDrawer(); }catch(_){}
-            // 토글 애니메이션(0.3s) 후 레이아웃 반영
-            setTimeout(function(){ _rcLayoutViewer(); const b=document.getElementById('rc-chat-btn'); if(b){ const nowOpen=d&&d.classList.contains('open'); b.style.background = nowOpen?'#2563eb':'#334155'; } }, 330);
+            // 토글 애니메이션(0.3s) 후 레이아웃/버튼 반영
+            setTimeout(function(){ _rcLayoutViewer(); _rcUpdateFloatToggle(); const b=document.getElementById('rc-chat-btn'); if(b){ const nowOpen=d&&d.classList.contains('open'); b.style.background = nowOpen?'#2563eb':'#334155'; } }, 330);
         };
         function _rcCloseViewer(){
             const ov = document.getElementById('rc-view-overlay'); if(ov) ov.remove();
+            try{ const fb=document.getElementById('rc-float-toggle'); if(fb) fb.remove(); }catch(_){}
             try{ const d=document.getElementById('messenger-drawer'); if(d){ d.style.zIndex=''; d.style.maxWidth=''; } }catch(_){}
         }
         function _rcFracXY(cx, cy){
@@ -9135,6 +9161,14 @@
             try{ showToast('키보드로 상대 PC에 입력합니다.'); }catch(_){}
         }
         function _rcVKSend(tok){ _rcSendInput({ t:'k', s: tok }); }
+        // ⌨ 상대 PC(host)에 Windows 화면 키보드를 띄운다 — 제어측은 원격 화면에 뜬 키보드를 '탭(클릭)'해서 입력.
+        //   host 자체 입력기로 처리되므로 한글도 절대 깨지지 않고, 내 모바일엔 키보드가 뜨지 않는다.
+        window._rcRequestHostKeyboard = function(){
+            if(socket && socket.connected && window._rc && window._rc.peer){
+                socket.emit('rc_signal', { to:window._rc.peer, roomId:window._rc.room, kind:'ctrl', act:'kbd' });
+                showToast('상대 PC에 화면 키보드를 띄웠어요. 원격 화면의 키보드를 탭해 입력하세요.');
+            }
+        };
         // 원격 한글: 로컬에서 조합한 뒤 완성 글자를 host에 문자로 전송({BS}로 조합글자 교체) → host IME 상태와 무관하게 한글 입력
         window._rcHan = false; window._rcIME = null; window._rcHanHostLen = 0;
         function _rcHostType(back, add){
