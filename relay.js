@@ -3464,7 +3464,7 @@ app.get('/api/chat/:roomId', (req, res) => {
         const before = req.query.before ? Number(req.query.before) : null;
         const where = before ? `roomId = ? AND id < ?` : `roomId = ?`;
         const params = before ? [roomId, before] : [roomId];
-        db.all(`SELECT * FROM (SELECT id, roomId, sender, senderPic, message, date FROM chats WHERE ${where} ORDER BY id DESC LIMIT ${lim}) ORDER BY id ASC`, params, (err, rows) => res.json(rows || []));
+        db.all(`SELECT * FROM (SELECT id, roomId, sender, senderPic, message, date, created_at FROM chats WHERE ${where} ORDER BY id DESC LIMIT ${lim}) ORDER BY id ASC`, params, (err, rows) => res.json(rows || []));
     };
     // 🔐 참가자만 열람. room_ord_는 chat_rooms의 buyer/seller, room_msg_는 roomId에 포함된 두 이름.
     if (isAdminName(me)) return _serve();

@@ -8324,8 +8324,13 @@
         // 수락자(B) = 피제어측: 내 화면을 공유하고 상대의 입력을 받는다.
         //   ★Alpha K 직결 방식★ — 부모(RAYCloud 앱)가 아니라 '내 로컬 서버(내 개인룸의 직결 서버)'에게
         //   호스팅을 지시한다. 따라서 RAYCloud 앱 창이 없어도(단독 채팅에서도) 로컬 서버만 떠 있으면 제어된다.
-        window.acceptRemoteControl = async function(){
+        window.acceptRemoteControl = async function(reqTs, btnEl){
             if(window._rc.active) return showToast("이미 원격제어가 진행 중입니다.");
+            // ⏱ 10분 지난(만료) 요청은 수락 불가 — 오래된 카드로 실수 연결 방지
+            if(reqTs && (Date.now() - reqTs) >= window.RC_REQ_TTL_MS){
+                try{ const card = btnEl && btnEl.closest ? btnEl.closest('.rc-req-card') : null; if(card) card.outerHTML = '<div class="kt-card-msg" style="max-width:280px;"><div style="background:#64748b;color:#fff;padding:12px 14px;"><b>🖥 원격제어 요청</b><div style="font-size:11px;opacity:.9;margin-top:2px;">만료된 요청입니다. 다시 요청해 주세요.</div></div></div>'; }catch(_){}
+                return showToast("만료된 원격제어 요청입니다. 상대에게 다시 요청해 주세요.");
+            }
             const peer = activeChatFriend, room = currentChatRoomId;
             if(!peer) return showToast("대화방을 먼저 여세요.");
             // 🖥 브라우저 화면 공유(설치·exe 불필요, 시간제한 없음). 사용자가 공유할 화면을 고른다.
@@ -11660,7 +11665,7 @@ pdfjsScript,
                     let _maxId = 0;
                     if(msgs && msgs.length>0) msgs.forEach(m => {
                         const tm = m.date ? (m.date.match(/\d{1,2}:\d{2}/) || [''])[0] : '';
-                        appendMainMessage(m.sender, m.message, m.senderPic, tm, m.id);
+                        appendMainMessage(m.sender, m.message, m.senderPic, tm, m.id, m.created_at);
                         if(m.id && m.id > _maxId) _maxId = m.id;
                     });
                     // 🔔 이 방 읽음 처리: 마지막 메시지 id 저장 → 다음 로그인/새로고침에 미읽음으로 안 뜸
@@ -11669,6 +11674,7 @@ pdfjsScript,
                     // 💬 카톡식 읽음: 서버에 이 방을 읽었음 통지(상대 '1' 제거) + 상대 읽음상태 회신 받아 내 '1' 정리
                     try { if(socket && socket.connected) socket.emit('read_room', { roomId: currentChatRoomId }); } catch(_){}
                 } finally { window.__chatBulkLoading = false; }
+                try{ window._rcSweepReqCards && window._rcSweepReqCards(); }catch(_){}   // ⏱ 오래된 원격요청 카드 즉시 만료
                 body.scrollTop = body.scrollHeight;
                 // 🤖 AI 상담원 방을 처음 열면(대화 없음) 환영 인사 + 이용 안내
                 if(activeChatFriend === '이재준' && (!msgs || msgs.length === 0) && window.AI_KB){ appendMainMessage('이재준', window.AI_KB[0].a, ''); }
@@ -12738,7 +12744,22 @@ pdfjsScript,
         // 🔐 채팅 일반 텍스트 XSS 방지용 이스케이프(특수 카드는 자체 이스케이프 유지)
         function _escChatText(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
         // 🚀 [v7] 채팅 파일 메시지 핸들러 (text registry)
-        function appendMainMessage(sender, text, picBase64, dateStr, msgId) {
+        window.RC_REQ_TTL_MS = 10 * 60 * 1000;   // 원격제어 요청 카드 유효시간(10분)
+        // ⏱ 10분 지난 원격제어 요청 카드를 자동으로 '만료' 표시(수락 버튼 제거). 주기 점검 + 채팅 로드 직후 호출.
+        window._rcSweepReqCards = function(){
+            try{
+                const now = Date.now();
+                document.querySelectorAll('.rc-req-card[data-reqts]').forEach(function(card){
+                    const ts = Number(card.getAttribute('data-reqts')) || 0;
+                    if(ts && (now - ts) >= window.RC_REQ_TTL_MS){
+                        card.classList.remove('rc-req-card'); card.removeAttribute('data-reqts');
+                        card.innerHTML = '<div style="background:#64748b;color:#fff;padding:12px 14px;"><b>🖥 원격제어 요청</b><div style="font-size:11px;opacity:.9;margin-top:2px;">만료된 요청입니다. 다시 요청해 주세요.</div></div>';
+                    }
+                });
+            }catch(_){}
+        };
+        if(!window.__rcSweepTimer){ window.__rcSweepTimer = setInterval(function(){ window._rcSweepReqCards(); }, 30000); }
+        function appendMainMessage(sender, text, picBase64, dateStr, msgId, createdAt) {
             const chatBody = document.getElementById('main-chat-body');
 
             // 🚀 시스템 안내 메시지 (친구 등록 등) - 카카오톡식 중앙 알림
@@ -12772,12 +12793,22 @@ pdfjsScript,
                         <div style="padding:10px 12px;"><button onclick="acceptVideoInvite('${(sender||'').replace(/'/g,"\\'")}')" style="width:100%;background:#16a34a;color:#fff;border:0;padding:10px;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;">📹 화상통화 수락</button></div>
                     </div>`;
             } else if(text.startsWith('[REMOTE_REQUEST]')) {
-                displayHtml = isMe
-                    ? `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;"><div style="font-size:12px;color:var(--text-sub);font-weight:600;">🖥 원격제어 요청을 보냈습니다.</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;">상대가 수락하면 원격 지원이 시작됩니다.</div></div>`
-                    : `<div class="kt-card-msg" style="max-width:280px;">
-                        <div style="background:#334155;color:#fff;padding:12px 14px;"><b>🖥 원격제어 요청</b><div style="font-size:11px;opacity:.9;margin-top:2px;">상대가 원격 지원을 요청했습니다.</div></div>
-                        <div style="padding:10px 12px;"><button onclick="acceptRemoteControl()" style="width:100%;background:var(--gradient-btn);color:#fff;border:0;padding:9px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;">수락하고 원격 지원 시작</button></div>
+                // ⏱ 요청 시각(없으면 지금=실시간 수신). 10분 지나면 카드 만료(수락 불가) + 자동 제거.
+                const reqTs = createdAt ? Date.parse(createdAt) : Date.now();
+                const age = Date.now() - (isNaN(reqTs) ? Date.now() : reqTs);
+                const expired = age >= window.RC_REQ_TTL_MS;
+                if(isMe){
+                    displayHtml = `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;"><div style="font-size:12px;color:var(--text-sub);font-weight:600;">🖥 원격제어 요청을 보냈습니다.</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;">상대가 수락하면 원격 지원이 시작됩니다.</div></div>`;
+                } else if(expired){
+                    displayHtml = `<div class="kt-card-msg" style="max-width:280px;"><div style="background:#64748b;color:#fff;padding:12px 14px;"><b>🖥 원격제어 요청</b><div style="font-size:11px;opacity:.9;margin-top:2px;">만료된 요청입니다. 다시 요청해 주세요.</div></div></div>`;
+                } else {
+                    const remain = Math.max(0, window.RC_REQ_TTL_MS - age);
+                    displayHtml = `<div class="kt-card-msg rc-req-card" data-reqts="${isNaN(reqTs)?Date.now():reqTs}" style="max-width:280px;">
+                        <div style="background:#334155;color:#fff;padding:12px 14px;"><b>🖥 원격제어 요청</b><div style="font-size:11px;opacity:.9;margin-top:2px;">상대가 원격 지원을 요청했습니다. (10분 내 유효)</div></div>
+                        <div style="padding:10px 12px;"><button onclick="acceptRemoteControl(${isNaN(reqTs)?Date.now():reqTs}, this)" style="width:100%;background:var(--gradient-btn);color:#fff;border:0;padding:9px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;">수락하고 원격 지원 시작</button></div>
                     </div>`;
+                    void remain;
+                }
             } else if(text.startsWith('[REMOTE_ACCEPT]')) {
                 displayHtml = `<div class="kt-card-msg" style="max-width:260px;padding:12px 14px;"><div style="font-size:12px;color:#166534;font-weight:700;">🖥 원격 지원 수락됨</div><div style="font-size:11px;color:#64748b;margin-top:4px;">원격 지원이 시작되었습니다. 상대가 이 화면을 제어합니다.</div></div>`;
             } else if(text.startsWith('[FILE_ATTACH]')) {
