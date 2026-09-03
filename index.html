@@ -9046,10 +9046,17 @@
             const ov=document.getElementById('rc-view-overlay'); if(!ov) return;
             const d=document.getElementById('messenger-drawer');
             const open = d && d.classList.contains('open');
-            if(open){ let w=380; try{ w=Math.round(d.getBoundingClientRect().width)||380; }catch(_){}; ov.style.right = w+'px'; }
-            else { ov.style.right = '0'; }
-            // 채팅 서랍을 뷰어 위로(입력 가능) — 원격 뷰어 동안만
+            // 채팅 서랍은 항상 뷰어 위로(입력 가능)
             try{ if(d){ d.style.zIndex = '99995'; } }catch(_){}
+            if(_rcIsMobile()){
+                // 📱 모바일: 뷰어는 항상 전체화면. 채팅은 '위에 전체로 덮어서' 껏다 켰다(반쪽 분할 안 함 → 세로/가로 모두 원격화면 잘 보임)
+                ov.style.left='0'; ov.style.right='0';
+                try{ if(d){ d.style.maxWidth='100vw'; } }catch(_){}   // 원격 중 모바일은 채팅을 전체화면으로
+            } else {
+                // 🖥 데스크톱: 채팅 서랍이 열려 있으면 그 폭만큼 비워 나란히
+                if(open){ let w=380; try{ w=Math.round(d.getBoundingClientRect().width)||380; }catch(_){}; ov.style.right = w+'px'; }
+                else { ov.style.right = '0'; }
+            }
             try{ setTimeout(function(){ _rcApplyXf(); }, 60); }catch(_){}   // 영상 크기 변화 반영(좌표 정확도 유지)
         };
         window._rcToggleChatWhileRemote = function(){
@@ -9061,7 +9068,7 @@
         };
         function _rcCloseViewer(){
             const ov = document.getElementById('rc-view-overlay'); if(ov) ov.remove();
-            try{ const d=document.getElementById('messenger-drawer'); if(d) d.style.zIndex=''; }catch(_){}
+            try{ const d=document.getElementById('messenger-drawer'); if(d){ d.style.zIndex=''; d.style.maxWidth=''; } }catch(_){}
         }
         function _rcFracXY(cx, cy){
             const v = document.getElementById('rc-view-vid'); if(!v || !v.videoWidth) return null;
@@ -9097,28 +9104,32 @@
                 ta.setAttribute('autocapitalize','off'); ta.setAttribute('autocomplete','off'); ta.setAttribute('autocorrect','off'); ta.setAttribute('spellcheck','false');
                 ta.style.cssText='position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;z-index:-1;border:0;padding:0;';
                 document.body.appendChild(ta);
-                ta.value=''; ta.__prev='';
+                ta.value=''; ta.__sent='';
+                // host에는 '확정 가능한' 부분만 보낸다 — 조합 중 마지막 '낱자(호환자모)'는 제외(완성되면 그때 전송).
+                //   완성 음절/영문/숫자/기호는 host IME가 재조합하지 않으므로 안전. 낱자만 host IME가 재조합해 깨진다.
+                const committable=function(v){
+                    if(v && v.length){ const x=v.charCodeAt(v.length-1); if(x>=0x3130 && x<=0x318F) return v.slice(0,-1); }  // 끝이 낱자면 보류
+                    return v;
+                };
                 const sendDiff=function(){
-                    const cur=ta.value; const prev=ta.__prev||'';
+                    const cur=committable(ta.value); const prev=ta.__sent||'';
                     let i=0; const n=Math.min(cur.length,prev.length);
                     while(i<n && cur[i]===prev[i]) i++;
                     const back=prev.length-i; const add=cur.slice(i);
                     if(back>0 || add){ _rcHostType(back, add); }
-                    ta.__prev=cur;
-                    // 값이 길어지면 조합에 영향 없도록 조합 아닐 때 초기화
-                    if(!ta.__composing && cur.length>120){ ta.value=''; ta.__prev=''; }
+                    ta.__sent=cur;
+                    if(!ta.__composing && ta.value.length>120){ ta.value=''; ta.__sent=''; }
                 };
-                // 모바일 시스템 IME는 완성 음절 단위로 값이 갱신되므로 실시간으로 diff 전송(완성 음절은 host에 그대로 안전).
                 ta.addEventListener('compositionstart', function(){ ta.__composing=true; });
                 ta.addEventListener('compositionend', function(){ ta.__composing=false; sendDiff(); });
                 ta.addEventListener('input', function(){ sendDiff(); });
                 ta.addEventListener('keydown', function(e){
-                    if(e.key==='Enter'){ e.preventDefault(); _rcVKSend('{ENTER}'); ta.value=''; ta.__prev=''; return; }
+                    if(e.key==='Enter'){ e.preventDefault(); _rcVKSend('{ENTER}'); ta.value=''; ta.__sent=''; return; }
                     if(e.key==='Backspace' && ta.value===''){ _rcVKSend('{BS}'); return; }
                 });
                 ta.addEventListener('blur', function(){ const bb=document.getElementById('rc-vk-btn'); if(bb) bb.style.background='#334155'; });
             }
-            ta.value=''; ta.__prev=''; ta.focus();
+            ta.value=''; ta.__sent=''; ta.focus();
             try{ ta.click(); }catch(_){}
             if(b) b.style.background='#2563eb';
             try{ showToast('키보드로 상대 PC에 입력합니다.'); }catch(_){}
