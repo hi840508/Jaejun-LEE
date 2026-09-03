@@ -1046,13 +1046,16 @@
                 </div>
                 <div class="yt-search-bar">
                     <input type="text" id="topbar-global-search" placeholder="통합 검색 (상품·상점·회원)" onkeyup="if(event.key==='Enter') doTopbarSearch()">
-                    <button onclick="doTopbarSearch()" aria-label="검색"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+                    <button onclick="doTopbarSearch()" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+                    <button onclick="openScreenKeyboard()" aria-label="가상 키보드" title="화면 키보드 (물리 키보드 없이 입력)" style="border-radius:0 20px 20px 0; border-left:none; font-size:17px;">⌨️</button>
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <!-- 모바일 검색 버튼 (검색바가 안 보일 때만) -->
                     <button class="yt-mobile-search-btn" onclick="openMobileSearch()" aria-label="검색">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     </button>
+                    <!-- 화면 키보드 버튼 (물리 키보드 없는 환경) -->
+                    <button onclick="openScreenKeyboard()" aria-label="가상 키보드" title="화면 키보드" style="background:none;border:none;cursor:pointer;padding:4px;font-size:20px;line-height:1;">⌨️</button>
                     <div style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 10px; border-radius:30px; background:#f0f0f0; transition:0.2s;" onclick="openProfileModal()">
                         <img id="my-profile-pic" class="profile-pic" style="width:24px; height:24px; border:none;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>">
                         <span style="font-weight: 600; color:var(--text-main); font-size:13px;" id="topbar-uname-wrap"><span id="display-name" style="color: var(--text-main);"></span></span>
@@ -6095,6 +6098,26 @@
                 if(main) { main.value = q; }
                 if(window.performGlobalSearch) window.performGlobalSearch(true);
             }, 200);
+        };
+
+        // ⌨ 화면 키보드 호출 — 물리 키보드가 없는 치과 데스크톱 등에서 마우스/터치로 입력.
+        //   앱(Electron): Windows 화면 키보드(터치 키보드/osk) 실행. 웹/모바일: 입력창 포커스로 소프트키보드 유도.
+        window.openScreenKeyboard = function(){
+            try{
+                if(window.rayApp && window.rayApp.showKeyboard){
+                    window.rayApp.showKeyboard().then(function(r){
+                        if(!r || !r.ok){ try{ showToast('화면 키보드를 열지 못했습니다. Windows 설정에서 화상 키보드를 확인해 주세요.'); }catch(_){} }
+                    }).catch(function(){ try{ showToast('화면 키보드를 열지 못했습니다.'); }catch(_){} });
+                    return;
+                }
+            }catch(_){}
+            // 비-앱: 포커스된 입력이 없으면 통합검색창에 포커스 → 모바일 소프트키보드 표시
+            try{
+                var el = document.activeElement;
+                var isInput = el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
+                if(!isInput){ var s = document.getElementById('topbar-global-search'); if(s){ s.focus(); s.click(); } }
+                showToast('입력창을 탭하면 키보드가 나타납니다. (데스크톱은 앱에서 화면 키보드가 열립니다)');
+            }catch(_){}
         };
 
         // 🚀 ============ 장바구니 시스템 ============
