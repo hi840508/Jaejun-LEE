@@ -405,8 +405,10 @@ app.get('/sw.js', (req, res) => {
         "  e.notification.close();\n" +
         "  var rid=e.notification.data&&e.notification.data.roomId;\n" +
         "  e.waitUntil((async function(){\n" +
+        // 🔔 이미 열려있는 앱 창이 있으면 '리로드 없이' 포커스 + 대화방 열기 → 원격/로그인 세션 유지(튕김·재로그인 방지)
         "    var all=await self.clients.matchAll({type:'window',includeUncontrolled:true});\n" +
-        "    for(var i=0;i<all.length;i++){ var c=all[i]; try{ c.postMessage({type:'earth_open_room',roomId:rid}); }catch(_){} if('focus' in c) return c.focus(); }\n" +
+        "    if(all && all.length){ for(var i=0;i<all.length;i++){ try{ all[i].postMessage({type:'earth_open_room',roomId:rid}); }catch(_){} } var c=all[0]; try{ if('focus' in c) await c.focus(); }catch(_){} return; }\n" +
+        // 열린 창이 전혀 없을 때만 새로 열기(이 경우 자동로그인으로 복원)
         "    if(self.clients.openWindow) return self.clients.openWindow('/?openroom='+encodeURIComponent(rid||''));\n" +
         "  })());\n" +
         "});\n" +
