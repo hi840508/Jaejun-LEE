@@ -6208,7 +6208,11 @@
         window._oskHan = false;         // 한글 모드
         window._oskShift = false;
         window._oskIME = null;          // 로컬 한글 오토마타
-        function _oskClose(p){ try{ p.remove(); }catch(_){} try{ document.body.style.paddingBottom = window._oskPrevPad||''; }catch(_){} }
+        function _oskClose(p){
+            try{ p.remove(); }catch(_){}
+            try{ document.body.style.paddingBottom = window._oskPrevPad||''; }catch(_){}
+            try{ const d=document.getElementById('messenger-drawer'); if(d){ d.style.height=''; } }catch(_){}
+        }
         window.openScreenKeyboard = function(){
             // 📱 모바일: 카카오톡과 동일한 네이티브 키보드가 뜨도록 입력칸에 포커스(자체 키보드 미사용)
             if(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'') || (window.matchMedia && matchMedia('(pointer:coarse)').matches)){
@@ -6224,13 +6228,22 @@
             if(p){ _oskClose(p); return; }   // 토글: 열려있으면 닫기
             window._oskIME = _makeHangulIME();
             p = document.createElement('div'); p.id='osk-panel';
-            p.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:100050;background:#1e293b;box-shadow:0 -6px 24px rgba(0,0,0,.35);padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));user-select:none;touch-action:manipulation;max-height:56vh;overflow:auto;';
+            // 카톡풍 밝은 톤. 채팅 서랍이 열려있으면 그 폭/위치에 맞춰(채팅영역만 덮음), 아니면 하단 전체.
+            const drawer = document.getElementById('messenger-drawer');
+            const inDrawer = drawer && drawer.classList.contains('open');
+            let posCss = 'left:0;right:0;';
+            if(inDrawer){ try{ const r=drawer.getBoundingClientRect(); posCss = 'left:'+Math.round(r.left)+'px;width:'+Math.round(r.width)+'px;right:auto;'; }catch(_){} }
+            p.style.cssText='position:fixed;'+posCss+'bottom:0;z-index:100050;background:#bcc6d1;box-shadow:0 -4px 18px rgba(0,0,0,.2);padding:6px 5px calc(6px + env(safe-area-inset-bottom,0px));user-select:none;touch-action:manipulation;max-height:52vh;overflow:auto;';
             document.body.appendChild(p);
             _oskRender(p);
-            // 입력칸을 키보드가 가리지 않도록 하단 여백 확보 + 대상 스크롤
             try{
-                window._oskPrevPad = document.body.style.paddingBottom || '';
-                document.body.style.paddingBottom = (p.offsetHeight + 20) + 'px';
+                if(inDrawer){
+                    // 채팅 서랍 높이를 키보드만큼 줄여 입력창이 키보드 위에 항상 보이게(채팅영역 안 가림)
+                    drawer.style.height = 'calc(100vh - ' + (p.offsetHeight) + 'px)';
+                } else {
+                    window._oskPrevPad = document.body.style.paddingBottom || '';
+                    document.body.style.paddingBottom = (p.offsetHeight + 20) + 'px';
+                }
                 _oskScrollTarget();
             }catch(_){}
         };
@@ -6306,19 +6319,22 @@
                 if(han){ const j=_oskJamo(sh?c.toUpperCase():c); if(j) return j; }
                 return sh && /[a-z]/.test(c) ? c.toUpperCase() : c;
             };
-            const kb=function(txt,val,flex,bg){ return '<button data-k="'+String(val).replace(/"/g,'&quot;')+'" style="flex:'+(flex||1)+';min-width:0;margin:3px;padding:12px 0;border:0;border-radius:8px;background:'+(bg||'#334155')+';color:#fff;font-size:16px;font-weight:700;cursor:pointer;">'+txt+'</button>'; };
-            let h='<div style="display:flex;justify-content:flex-end;padding:0 3px 4px;">'
-                + '<span style="flex:1;color:#94a3b8;font-size:12px;font-weight:700;align-self:center;padding-left:6px;">⌨️ 화면 키보드'+(han?' · 한글':' · EN' )+'</span>'
-                + kb('✕ 닫기','__close',1.4,'#475569')+'</div>'
-                + '<div id="osk-preview" style="background:#0f172a;color:#e2e8f0;font-size:15px;font-weight:700;padding:9px 12px;border-radius:8px;margin:2px 2px 6px;min-height:20px;letter-spacing:.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">…▏</div>';
-            rowsEn.forEach(function(r){ h+='<div style="display:flex;">'+ r.map(function(c){ return kb(label(c), 'CH:'+c); }).join('') +'</div>'; });
+            // 카톡풍: 글자키=흰색/짙은글자, 기능키=회색, Enter=노랑, 한/영=강조
+            const _base='flex:1;min-width:0;margin:2.5px;padding:11px 0;border:0;border-radius:7px;font-size:16px;font-weight:600;cursor:pointer;box-shadow:0 1px 1px rgba(0,0,0,.18);';
+            const key=function(txt,val,flex){ return '<button data-k="'+String(val).replace(/"/g,'&quot;')+'" style="'+_base+'flex:'+(flex||1)+';background:#fff;color:#1f2937;">'+txt+'</button>'; };
+            const fn=function(txt,val,flex,bg,col){ return '<button data-k="'+String(val).replace(/"/g,'&quot;')+'" style="'+_base+'flex:'+(flex||1)+';background:'+(bg||'#9aa4b2')+';color:'+(col||'#fff')+';font-weight:700;">'+txt+'</button>'; };
+            let h='<div style="display:flex;align-items:center;padding:1px 4px 5px;">'
+                + '<span style="flex:1;color:#4b5563;font-size:12px;font-weight:700;">⌨️ 화면 키보드 · '+(han?'한글':'영문')+'</span>'
+                + fn('✕','__close',0,'#7b8794')+'</div>'
+                + '<div id="osk-preview" style="background:#fff;color:#111827;font-size:15px;font-weight:600;padding:8px 12px;border-radius:8px;margin:0 3px 6px;min-height:20px;letter-spacing:.3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;box-shadow:inset 0 0 0 1px #e5e7eb;">…▏</div>';
+            rowsEn.forEach(function(r){ h+='<div style="display:flex;">'+ r.map(function(c){ return key(label(c), 'CH:'+c); }).join('') +'</div>'; });
             h+='<div style="display:flex;">'
-              + kb('⇧','__shift', 1.4, sh?'#2563eb':'#475569')
-              + kb(han?'한':'EN','__han',1.4, han?'#d6006e':'#0ea5e9')
-              + kb(',',' CH:,') + kb('.','CH:.')
-              + kb('Space',' ',3.2)
-              + kb('←','__back',1.6,'#475569')
-              + kb('Enter','__enter',2,'#2563eb')
+              + fn('⇧','__shift', 1.4, sh?'#2563eb':'#9aa4b2')
+              + fn(han?'한':'A','__han',1.4, han?'#d6006e':'#5b6472')
+              + key(',','CH:,') + key('.','CH:.')
+              + key('space',' ',3.4)
+              + fn('⌫','__back',1.6,'#9aa4b2')
+              + fn('↵','__enter',2,'#fae100','#3a2e00')
               + '</div>';
             p.innerHTML=h;
             p.querySelectorAll('button[data-k]').forEach(function(b){
@@ -6338,7 +6354,7 @@
                         _oskKey(ch);
                         if(window._oskShift){ window._oskShift=false; _oskRender(p); }
                     }
-                    b.style.filter='brightness(1.5)'; setTimeout(function(){ b.style.filter=''; },100);
+                    b.style.filter='brightness(0.9)'; setTimeout(function(){ b.style.filter=''; },100);
                 };
                 if(window.PointerEvent){ b.addEventListener('pointerdown', fire); }
                 else { b.addEventListener('touchstart', fire, {passive:false}); b.addEventListener('mousedown', fire); }
@@ -9024,9 +9040,10 @@
                     // 값이 길어지면 조합에 영향 없도록 조합 아닐 때 초기화
                     if(!ta.__composing && cur.length>120){ ta.value=''; ta.__prev=''; }
                 };
+                // 조합 중(한글 낱자)에는 host로 보내지 않는다 — host IME가 재조합해 깨지므로. 조합이 끝나면(완성) 전송.
                 ta.addEventListener('compositionstart', function(){ ta.__composing=true; });
                 ta.addEventListener('compositionend', function(){ ta.__composing=false; sendDiff(); });
-                ta.addEventListener('input', function(){ sendDiff(); });
+                ta.addEventListener('input', function(){ if(!ta.__composing) sendDiff(); });
                 ta.addEventListener('keydown', function(e){
                     if(e.key==='Enter'){ e.preventDefault(); _rcVKSend('{ENTER}'); ta.value=''; ta.__prev=''; return; }
                     if(e.key==='Backspace' && ta.value===''){ _rcVKSend('{BS}'); return; }
@@ -9045,9 +9062,16 @@
             for(let i=0;i<(back||0);i++){ _rcVKSend('{BS}'); }
             if(add){ _rcVKSend(add); }
         }
-        // 원격 한글: host IME를 앱이 꺼주므로(ImeOff) 낱자 포함 실시간 조합을 그대로 host에 반영(카톡처럼 자연스러움).
+        function _isSyllable(ch){ if(!ch) return false; const x=ch.charCodeAt(0); return x>=0xAC00 && x<=0xD7A3; }
+        // 원격 한글: host에는 '완성된 음절'만 보낸다(조합 중 낱자를 보내면 host IME가 재조합해 글자가 깨짐).
+        //   조합 중 낱자는 뷰어 미리보기 바에만 표시 → host IME 상태와 무관하게 항상 정확한 한글 입력.
         function _rcApplyHan(r){
-            _rcHostType(r.back||0, r.add||'');
+            const committedSyll = String(r.committed||'').split('').filter(_isSyllable).join('');
+            const compSyll = _isSyllable(r.comp) ? r.comp : '';
+            const back = window._rcHanHostLen || 0;   // host에 떠있던 조합 음절 지우기
+            const add = committedSyll + compSyll;
+            window._rcHanHostLen = compSyll ? 1 : 0;
+            _rcHostType(back, add);
             _rcPreview(r.comp);
         }
         // 입력 미리보기 바 — '지금 무슨 글자가 조합/입력되는지' 보여준다
