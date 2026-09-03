@@ -6262,11 +6262,16 @@
             const t = window._oskTarget;
             if(!t){ try{ showToast('먼저 입력할 칸을 탭하세요.'); }catch(_){} return; }
             try{
-                if(t.isContentEditable){
-                    t.focus();
-                    for(let i=0;i<back;i++){ document.execCommand('delete',false); }
-                    if(add) document.execCommand('insertText',false,add);
-                } else {
+                t.focus();
+                // ★ execCommand로 삭제/삽입 → 브라우저 편집 모델·OS IME 조합상태와 협조(직접 .value 대입 시 IME와 충돌해 한글이 깨지던 문제 방지)
+                let ok=false;
+                try{
+                    if(back>0){ for(let i=0;i<back;i++){ document.execCommand('delete',false); } }
+                    if(add){ ok = document.execCommand('insertText', false, add); }
+                    else { ok = true; }
+                }catch(_){ ok=false; }
+                if(!ok && !t.isContentEditable){
+                    // 폴백: execCommand 미지원 입력 — 선택영역 기준으로 값 교체
                     let s=(t.selectionStart==null?t.value.length:t.selectionStart);
                     let e=(t.selectionEnd==null?s:t.selectionEnd);
                     const start=Math.max(0,s-back);
@@ -8372,6 +8377,16 @@
             const pic = document.getElementById('my-profile-pic').src;
             // 🌐 WebRTC P2P로 화면 송출 (릴레이 대역폭·비용 없음). 입력만 릴레이(초경량)로 받음.
             const pc = new RTCPeerConnection(VC_ICE); window._rcp = { pc: pc };
+            // 🔌 상대(제어측)가 나가거나 연결이 끊기면 자동 종료 → '계속 연결 중'으로 잘못 표시되는 문제 방지
+            pc.onconnectionstatechange = function(){
+                const s = pc.connectionState;
+                if(s === 'failed' || s === 'closed'){ if(window._rc && window._rc.active) stopRemoteControl(true); }
+                else if(s === 'disconnected'){ setTimeout(function(){ if(window._rc && window._rc.active && (pc.connectionState==='disconnected'||pc.connectionState==='failed'||pc.connectionState==='closed')) stopRemoteControl(true); }, 6000); }
+            };
+            pc.oniceconnectionstatechange = function(){
+                const s = pc.iceConnectionState;
+                if(s === 'failed' || s === 'closed'){ if(window._rc && window._rc.active) stopRemoteControl(true); }
+            };
             stream.getVideoTracks().forEach(function(t){ pc.addTrack(t, stream); });
             pc.onicecandidate = function(e){ if(e.candidate && socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtcsc', sub:'ice', cand:e.candidate }); };
             const track0 = stream.getVideoTracks()[0];
@@ -8960,10 +8975,23 @@
         // 피제어측 상단 배너(채팅 화면 자체 — 단독 접속에서도 표시)
         function _rcShowHostBanner(txt){
             let b = document.getElementById('rc-host-banner');
-            if(!b){ b = document.createElement('div'); b.id='rc-host-banner'; document.body.appendChild(b); }
-            // 상단 '중앙 알약'형 — 전체 폭을 덮지 않아 우측의 채팅 X(닫기) 버튼을 가리지 않는다.
-            b.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99991;background:#b91c1c;color:#fff;display:flex;align-items:center;gap:10px;padding:8px 14px;font-weight:800;font-size:13px;border-radius:30px;box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:calc(100vw - 24px);flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;';
-            b.innerHTML = '<span id="rc-host-banner-txt">'+ (txt||'🖥 상대방이 내 화면을 원격제어 중입니다') +'</span> <button onclick="rcHostSwitchScreen()" title="공유 모니터 전환(듀얼 모니터)" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 12px;font-weight:800;cursor:pointer;">🖥 화면 전환</button> <button onclick="stopRemoteControl(false)" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">원격제어 종료</button>';
+            if(!b){ b = document.createElement('div'); b.id='rc-host-banner'; }
+            const inner = '<span id="rc-host-banner-txt" style="flex:1;min-width:0;">'+ (txt||'🖥 상대방이 내 화면을 원격제어 중입니다') +'</span>'
+                + ' <button onclick="rcHostSwitchScreen()" title="공유 모니터 전환(듀얼 모니터)" style="background:#fff;color:#b91c1c;border:0;border-radius:7px;padding:5px 10px;font-weight:800;cursor:pointer;white-space:nowrap;">🖥 전환</button>'
+                + ' <button onclick="stopRemoteControl(false)" style="background:#fff;color:#b91c1c;border:0;border-radius:7px;padding:5px 12px;font-weight:800;cursor:pointer;white-space:nowrap;">종료</button>';
+            b.innerHTML = inner;
+            // 🖥 채팅 영역 안에 표시 → 통합검색/키보드 등 다른 것을 가리지 않는다.
+            const drawer = document.getElementById('messenger-drawer');
+            const chatRoom = document.getElementById('view-chat-room');
+            const inChat = drawer && drawer.classList.contains('open') && chatRoom;
+            if(inChat){
+                b.style.cssText = 'flex:none;background:#b91c1c;color:#fff;display:flex;align-items:center;gap:8px;padding:8px 10px;font-weight:800;font-size:12px;';
+                if(b.parentElement !== chatRoom || chatRoom.firstChild !== b){ chatRoom.insertBefore(b, chatRoom.firstChild); }
+            } else {
+                // 채팅이 닫혀 있으면 화면 우측 상단에 작게(중앙 검색·하단 키보드를 피함)
+                if(b.parentElement !== document.body) document.body.appendChild(b);
+                b.style.cssText = 'position:fixed;top:8px;right:12px;z-index:99991;background:#b91c1c;color:#fff;display:flex;align-items:center;gap:8px;padding:7px 12px;font-weight:800;font-size:12px;border-radius:24px;box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:min(92vw,420px);';
+            }
         }
         function _rcUpdateHostBanner(txt){ const t=document.getElementById('rc-host-banner-txt'); if(t) t.textContent = txt; }
         function _rcHideHostBanner(){ const b=document.getElementById('rc-host-banner'); if(b) b.remove(); }
