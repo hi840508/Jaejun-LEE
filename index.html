@@ -6210,6 +6210,16 @@
         window._oskIME = null;          // 로컬 한글 오토마타
         function _oskClose(p){ try{ p.remove(); }catch(_){} try{ document.body.style.paddingBottom = window._oskPrevPad||''; }catch(_){} }
         window.openScreenKeyboard = function(){
+            // 📱 모바일: 카카오톡과 동일한 네이티브 키보드가 뜨도록 입력칸에 포커스(자체 키보드 미사용)
+            if(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'') || (window.matchMedia && matchMedia('(pointer:coarse)').matches)){
+                try{
+                    let el=window._oskTarget || document.activeElement;
+                    const isInput = el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
+                    if(!isInput){ const s=document.getElementById('topbar-global-search'); if(s){ el=s; } }
+                    if(el && el.focus){ el.focus(); try{ el.click(); }catch(_){} }
+                }catch(_){}
+                return;
+            }
             let p = document.getElementById('osk-panel');
             if(p){ _oskClose(p); return; }   // 토글: 열려있으면 닫기
             window._oskIME = _makeHangulIME();
@@ -8831,10 +8841,16 @@
             if(!(window._rc && window._rc.active && window._rc.role === 'host') || !window._rcp || !window._rcp.pc){ return; }
             const idx = (pick && typeof pick.index === 'number') ? pick.index : null;
             const fallbackSid = pick && pick.sourceId;
+            const bounds = pick && pick.bounds;
             try{
                 let newStream, label = (pick && pick.name) || null;
                 let sid = null;
-                if(idx != null && window.rayApp && window.rayApp.setPreferredScreen){
+                if(fallbackSid && bounds && window.rayApp && window.rayApp.setSourceGeo){
+                    // ★ 가장 확실: 캡처 소스(sourceId)와 마우스 좌표(geo=bounds)를 '뷰어가 고른 동일 항목'으로 못박음
+                    const r = await window.rayApp.setSourceGeo(fallbackSid, bounds);
+                    sid = (r && r.sourceId) || fallbackSid;
+                    if(idx != null) window.__rcScreenIdx = idx;
+                } else if(idx != null && window.rayApp && window.rayApp.setPreferredScreen){
                     const r = await window.rayApp.setPreferredScreen(idx);   // 인덱스로 신선한 소스+좌표 확정
                     window.__rcScreenIdx = idx;
                     sid = (r && r.sourceId) || null;
@@ -8893,6 +8909,7 @@
                     : '<div style="width:100%;height:130px;background:#0b1220;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:34px;">🖥</div>';
                 return '<button class="rc-scr-card" data-sid="'+String(s.sourceId||'').replace(/"/g,'&quot;')+'" '
                      + 'data-idx="'+(typeof s.index==='number'?s.index:'')+'" data-name="'+nm.replace(/"/g,'&quot;')+'" '
+                     + 'data-bounds="'+(s.bounds?JSON.stringify(s.bounds).replace(/"/g,'&quot;'):'')+'" '
                      + 'style="border:2px solid #1f2937;border-radius:12px;overflow:hidden;background:#0b1220;cursor:pointer;padding:0;width:260px;max-width:44vw;text-align:left;transition:border-color .15s;">'
                      + thumb
                      + '<div style="padding:9px 11px;color:#e5e7eb;font-weight:700;font-size:13px;">'+nm+'</div></button>';
@@ -8910,6 +8927,7 @@
                     const nm = btn.getAttribute('data-name') || '';
                     const payload = { to:window._rc.peer, roomId:window._rc.room, kind:'ctrl', act:'pick_screen', sourceId: sid, name: nm };
                     if(idxAttr !== '' && idxAttr != null) payload.index = parseInt(idxAttr, 10);
+                    try{ const bs = btn.getAttribute('data-bounds'); if(bs) payload.bounds = JSON.parse(bs); }catch(_){}
                     if(socket && socket.connected && window._rc && window._rc.peer){
                         socket.emit('rc_signal', payload);
                         showToast('선택한 화면으로 전환 중…');
@@ -8968,7 +8986,10 @@
         window._rcToggleKbd = function(){ const k=document.getElementById('rc-view-kbd'); if(k){ try{ k.focus(); }catch(_){} } };
         // ⌨ 오름 내장 가상 키보드 — 소프트키보드/SendKeys 의존 없이 각 키를 host에 직접 전송(rc_signal k, SendKeys 토큰)
         window._rcVKShift = false;
+        function _rcIsMobile(){ return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'') || (window.matchMedia && matchMedia('(pointer:coarse)').matches); }
         window._rcToggleVKbd = function(){
+            // 📱 모바일: 카카오톡과 동일한 '네이티브' 키보드(시스템 IME)를 띄운다. 데스크톱: 자체 키보드.
+            if(_rcIsMobile()){ _rcToggleNativeKbd(); return; }
             const box=document.getElementById('rc-vkbd'); if(!box) return;
             const show = (box.style.display==='none');
             box.style.display = show ? 'block' : 'none';
@@ -8976,6 +8997,42 @@
             if(show && !box.dataset.built){ _rcBuildVKbd(box); box.dataset.built='1'; }
             try{ const st=document.getElementById('rc-view-stage'); if(st) st.style.flex = show ? '1' : '1'; }catch(_){}
         };
+        // 📱 원격 제어 시 모바일 네이티브 키보드 — 숨은 입력창에 포커스해 시스템 키보드를 띄우고,
+        //   입력 변화(한글 조합 포함)를 diff로 계산해 host에 그대로 전달(host IME는 앱이 꺼줌).
+        function _rcToggleNativeKbd(){
+            let ta=document.getElementById('rc-native-input');
+            const b=document.getElementById('rc-vk-btn');
+            if(ta && document.activeElement===ta){ ta.blur(); if(b) b.style.background='#334155'; return; }
+            if(!ta){
+                ta=document.createElement('textarea'); ta.id='rc-native-input';
+                ta.setAttribute('autocapitalize','off'); ta.setAttribute('autocomplete','off'); ta.setAttribute('autocorrect','off'); ta.setAttribute('spellcheck','false');
+                ta.style.cssText='position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;z-index:-1;border:0;padding:0;';
+                document.body.appendChild(ta);
+                ta.value=''; ta.__prev='';
+                const sendDiff=function(){
+                    const cur=ta.value; const prev=ta.__prev||'';
+                    let i=0; const n=Math.min(cur.length,prev.length);
+                    while(i<n && cur[i]===prev[i]) i++;
+                    const back=prev.length-i; const add=cur.slice(i);
+                    if(back>0 || add){ _rcHostType(back, add); }
+                    ta.__prev=cur;
+                    // 값이 길어지면 조합에 영향 없도록 조합 아닐 때 초기화
+                    if(!ta.__composing && cur.length>120){ ta.value=''; ta.__prev=''; }
+                };
+                ta.addEventListener('compositionstart', function(){ ta.__composing=true; });
+                ta.addEventListener('compositionend', function(){ ta.__composing=false; sendDiff(); });
+                ta.addEventListener('input', function(){ sendDiff(); });
+                ta.addEventListener('keydown', function(e){
+                    if(e.key==='Enter'){ e.preventDefault(); _rcVKSend('{ENTER}'); ta.value=''; ta.__prev=''; return; }
+                    if(e.key==='Backspace' && ta.value===''){ _rcVKSend('{BS}'); return; }
+                });
+                ta.addEventListener('blur', function(){ const bb=document.getElementById('rc-vk-btn'); if(bb) bb.style.background='#334155'; });
+            }
+            ta.value=''; ta.__prev=''; ta.focus();
+            try{ ta.click(); }catch(_){}
+            if(b) b.style.background='#2563eb';
+            try{ showToast('키보드로 상대 PC에 입력합니다.'); }catch(_){}
+        }
         function _rcVKSend(tok){ _rcSendInput({ t:'k', s: tok }); }
         // 원격 한글: 로컬에서 조합한 뒤 완성 글자를 host에 문자로 전송({BS}로 조합글자 교체) → host IME 상태와 무관하게 한글 입력
         window._rcHan = false; window._rcIME = null; window._rcHanHostLen = 0;
@@ -8983,16 +9040,10 @@
             for(let i=0;i<(back||0);i++){ _rcVKSend('{BS}'); }
             if(add){ _rcVKSend(add); }
         }
-        function _isSyllable(ch){ if(!ch) return false; const x=ch.charCodeAt(0); return x>=0xAC00 && x<=0xD7A3; }
-        // 원격 한글: host에는 '완성된 음절'만 보낸다(조합 중 낱자는 host IME가 재조합해 깨지므로). 낱자는 뷰어 미리보기에만.
+        // 원격 한글: host IME를 앱이 꺼주므로(ImeOff) 낱자 포함 실시간 조합을 그대로 host에 반영(카톡처럼 자연스러움).
         function _rcApplyHan(r){
-            const committedSyll = String(r.committed||'').split('').filter(_isSyllable).join('');
-            const compSyll = _isSyllable(r.comp) ? r.comp : '';
-            const back = window._rcHanHostLen || 0;      // host에 떠있던 조합 음절 지우기
-            const add = committedSyll + compSyll;
-            window._rcHanHostLen = compSyll ? 1 : 0;
-            _rcHostType(back, add);
-            _rcPreview(r.comp);                          // 조합 중 낱자 미리보기
+            _rcHostType(r.back||0, r.add||'');
+            _rcPreview(r.comp);
         }
         // 입력 미리보기 바 — '지금 무슨 글자가 조합/입력되는지' 보여준다
         function _rcPreview(comp){
