@@ -536,6 +536,10 @@
             .chat-input-area > button.btn-outline { width: 38px !important; height: 38px !important; font-size: 18px !important; }
             .chat-input-area input { padding: 10px 14px; font-size: 15px; }
         }
+        /* 📱 모바일은 입력창을 탭하면 시스템 키보드가 뜨므로 화면 키보드 버튼 불필요(자체 키보드 중복 방지) */
+        @media (max-width: 768px), (pointer: coarse) {
+            #chat-osk-btn { display: none !important; }
+        }
 
         /* 🚀 카톡 스타일 드래그 오버레이 (채팅창 위에 파일 드래그 시) */
         .chat-drag-overlay { position:absolute; inset:0; border-radius:0; background:rgba(254, 229, 0, 0.92); border:4px dashed #1f2937; display:none; align-items:center; justify-content:center; z-index:50; pointer-events:none; }
@@ -1882,7 +1886,7 @@
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block; margin:auto;"><path d="M21 12.79V13a8 8 0 1 1-15.95-1.59"/><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     </button>
                     <button class="btn btn-outline" style="border-radius:50%; width:36px; height:36px; padding:0; font-size:18px; flex-shrink:0;" onclick="toggleEmojiPicker()" title="이모지">😀</button>
-                    <button class="btn btn-outline" style="border-radius:50%; width:36px; height:36px; padding:0; font-size:17px; flex-shrink:0;" onmousedown="event.preventDefault();" onclick="openScreenKeyboardFor('main-chat-input')" title="화면 키보드">⌨️</button>
+                    <button id="chat-osk-btn" class="btn btn-outline" style="border-radius:50%; width:36px; height:36px; padding:0; font-size:17px; flex-shrink:0;" onmousedown="event.preventDefault();" onclick="openScreenKeyboardFor('main-chat-input')" title="화면 키보드">⌨️</button>
                     <input type="text" id="main-chat-input" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendMainMessage()">
                     <button class="btn" onclick="sendMainMessage()" style="padding:8px 15px; flex-shrink:0;">전송</button>
                 </div>
@@ -8370,6 +8374,9 @@
                 const _st = stream.getVideoTracks()[0] && stream.getVideoTracks()[0].getSettings ? stream.getVideoTracks()[0].getSettings() : {};
                 if(_st.displaySurface && _st.displaySurface !== 'monitor'){
                     showToast('⚠️ 창(또는 탭)만 공유 중입니다.\n원격 제어가 정확히 동작하려면 공유를 멈추고 "전체 화면"을 선택해 주세요.');
+                } else if(_st.width && _st.height && window.rayApp && window.rayApp.setGeoByResolution){
+                    // 🖥 브라우저로 '모니터'를 공유한 경우: 공유 해상도로 그 모니터를 찾아 좌표(geo) 정합 → 멀티모니터에서도 마우스 정확
+                    try{ window.rayApp.setGeoByResolution(Math.round(_st.width), Math.round(_st.height)); }catch(_){}
                 }
             }catch(_){}
             window._rc = { active:true, role:'host', peer:peer, room:room, agentAlive:false };
@@ -8726,10 +8733,20 @@
                 if(window.rayApp) return;                              // 이미 앱 안에서 실행 중
                 const standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
                 if(standalone) return;                                 // 홈 화면 앱(PWA)으로 실행 중
+                const host = location.host, path = location.pathname + location.search;
+                // 🔔 알림(?openroom=)으로 브라우저가 열린 경우: 앱이 있으면 '즉시' 앱으로 전환(로그인 상태로 그 대화방 표시).
+                //    앱이 없으면 browser_fallback_url로 웹에 그대로 머문다.
+                const _op = new URLSearchParams(location.search).get('openroom');
+                if(_op && sessionStorage.getItem('app_room_jumped') !== '1'){
+                    sessionStorage.setItem('app_room_jumped','1');
+                    const fb = encodeURIComponent(location.href);
+                    const intentRoom = 'intent://' + host + path + '#Intent;scheme=https;package=com.rayaox.earth.twa;S.browser_fallback_url=' + fb + ';end';
+                    try{ location.href = intentRoom; }catch(_){}
+                    return;   // 앱 열기 시도 — 앱 없으면 fallback으로 웹 유지
+                }
                 if(localStorage.getItem('app_open_optout') === '1') return;
                 if(sessionStorage.getItem('app_open_tried') === '1') return;
                 sessionStorage.setItem('app_open_tried','1');
-                const host = location.host, path = location.pathname + location.search;
                 const intent = 'intent://' + host + path + '#Intent;scheme=https;package=com.rayaox.earth.twa;end';
                 setTimeout(function(){
                     const ov = document.createElement('div');
@@ -9000,7 +9017,7 @@
         window._rcOpenViewer = function(peer){
             let ov = document.getElementById('rc-view-overlay');
             if(!ov){ ov = document.createElement('div'); ov.id='rc-view-overlay'; document.body.appendChild(ov); }
-            ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:#0b0b0f;display:flex;flex-direction:column;';
+            ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:99990;background:#0b0b0f;display:flex;flex-direction:column;';
             const _hbtn='background:#334155;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;white-space:nowrap;flex:none;';
             ov.innerHTML =
                 '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#111;color:#fff;font-weight:700;font-size:13px;flex:none;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;">'
@@ -9012,6 +9029,7 @@
               + '<button id="rc-pan-btn" onclick="_rcTogglePan()" title="확대 후 한 손가락으로 화면 이동" style="'+_hbtn+'">✋ 이동</button>'
               + '<button id="rc-dbl-btn" onclick="_rcArmDbl()" title="다음 탭을 더블클릭으로(아이콘 실행)" style="'+_hbtn+'">🖱 더블클릭</button>'
               + '<button onclick="rcRequestScreenList()" title="상대 모니터 선택(듀얼 모니터)" style="'+_hbtn+'">🖥 화면</button>'
+              + '<button id="rc-chat-btn" onclick="_rcToggleChatWhileRemote()" title="내 채팅 열기/닫기(원격 중에도 대화 입력)" style="'+_hbtn+'">💬 채팅</button>'
               + '<button onclick="stopRemoteControl(false)" style="background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;white-space:nowrap;flex:none;">종료</button></div>'
               + '<div id="rc-view-stage" tabindex="0" style="flex:1;position:relative;overflow:hidden;background:#000;outline:none;cursor:crosshair;display:flex;align-items:center;justify-content:center;touch-action:none;">'
               + '<video id="rc-view-vid" autoplay playsinline muted draggable="false" style="max-width:100%;max-height:100%;display:block;user-select:none;pointer-events:none;"></video>'
@@ -9020,9 +9038,31 @@
             window._rcZoom=1; window._rcPanX=0; window._rcPanY=0; try{ _rcApplyXf(); }catch(_){}
             _rcBindViewerInput();
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}   // 임베드 시 채팅 패널을 넓혀 큰 화면 확보
+            try { _rcLayoutViewer(); } catch(_){}   // 채팅 서랍이 열려 있으면 나란히 배치(원격 보며 채팅 입력)
             try { document.getElementById('rc-view-stage').focus(); } catch(_){}
         };
-        function _rcCloseViewer(){ const ov = document.getElementById('rc-view-overlay'); if(ov) ov.remove(); }
+        // 🖥 원격 뷰어를 채팅과 나란히 배치 — 채팅 서랍이 열려 있으면 그 폭만큼 뷰어를 비워 '원격 보면서 내 채팅 입력' 가능
+        window._rcLayoutViewer = function(){
+            const ov=document.getElementById('rc-view-overlay'); if(!ov) return;
+            const d=document.getElementById('messenger-drawer');
+            const open = d && d.classList.contains('open');
+            if(open){ let w=380; try{ w=Math.round(d.getBoundingClientRect().width)||380; }catch(_){}; ov.style.right = w+'px'; }
+            else { ov.style.right = '0'; }
+            // 채팅 서랍을 뷰어 위로(입력 가능) — 원격 뷰어 동안만
+            try{ if(d){ d.style.zIndex = '99995'; } }catch(_){}
+            try{ setTimeout(function(){ _rcApplyXf(); }, 60); }catch(_){}   // 영상 크기 변화 반영(좌표 정확도 유지)
+        };
+        window._rcToggleChatWhileRemote = function(){
+            const d=document.getElementById('messenger-drawer');
+            const open = d && d.classList.contains('open');
+            try{ if(window.toggleMessengerDrawer) toggleMessengerDrawer(); }catch(_){}
+            // 토글 애니메이션(0.3s) 후 레이아웃 반영
+            setTimeout(function(){ _rcLayoutViewer(); const b=document.getElementById('rc-chat-btn'); if(b){ const nowOpen=d&&d.classList.contains('open'); b.style.background = nowOpen?'#2563eb':'#334155'; } }, 330);
+        };
+        function _rcCloseViewer(){
+            const ov = document.getElementById('rc-view-overlay'); if(ov) ov.remove();
+            try{ const d=document.getElementById('messenger-drawer'); if(d) d.style.zIndex=''; }catch(_){}
+        }
         function _rcFracXY(cx, cy){
             const v = document.getElementById('rc-view-vid'); if(!v || !v.videoWidth) return null;
             const rct = v.getBoundingClientRect();
@@ -9068,10 +9108,10 @@
                     // 값이 길어지면 조합에 영향 없도록 조합 아닐 때 초기화
                     if(!ta.__composing && cur.length>120){ ta.value=''; ta.__prev=''; }
                 };
-                // 조합 중(한글 낱자)에는 host로 보내지 않는다 — host IME가 재조합해 깨지므로. 조합이 끝나면(완성) 전송.
+                // 모바일 시스템 IME는 완성 음절 단위로 값이 갱신되므로 실시간으로 diff 전송(완성 음절은 host에 그대로 안전).
                 ta.addEventListener('compositionstart', function(){ ta.__composing=true; });
                 ta.addEventListener('compositionend', function(){ ta.__composing=false; sendDiff(); });
-                ta.addEventListener('input', function(){ if(!ta.__composing) sendDiff(); });
+                ta.addEventListener('input', function(){ sendDiff(); });
                 ta.addEventListener('keydown', function(e){
                     if(e.key==='Enter'){ e.preventDefault(); _rcVKSend('{ENTER}'); ta.value=''; ta.__prev=''; return; }
                     if(e.key==='Backspace' && ta.value===''){ _rcVKSend('{BS}'); return; }
