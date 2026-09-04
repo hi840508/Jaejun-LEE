@@ -13399,11 +13399,36 @@ pdfjsScript,
         };
 
         // 글로벌 소켓 브로드캐스트 (실시간 친구 개설 연동)
+        // 🖥/📹 원격제어·화상통화 요청 — 어느 화면을 보고 있어도 눈에 띄게 알린다(푸시 구독 없어도 확실).
+        window._showIncomingReqAlert = function(kind, from, roomId){
+            try{
+                const isRemote = (kind==='remote');
+                let b=document.getElementById('rc-incoming-alert'); if(b) b.remove();
+                b=document.createElement('div'); b.id='rc-incoming-alert';
+                b.style.cssText='position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:100300;background:'+(isRemote?'#b91c1c':'#16a34a')+';color:#fff;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.45);font-weight:800;font-size:14px;max-width:min(94vw,440px);animation:rcAlertPop .25s ease;';
+                b.innerHTML='<span style="font-size:20px;flex:none;">'+(isRemote?'🖥':'📹')+'</span>'
+                    +'<span style="flex:1;line-height:1.35;">'+String(from||'상대')+' 님의 '+(isRemote?'원격제어 요청':'화상 통화 요청')+'<span style="display:block;font-weight:600;font-size:12px;opacity:.9;">탭하여 대화방에서 '+(isRemote?'수락':'받기')+'</span></span>'
+                    +'<button id="rc-inc-open" style="flex:none;background:#fff;color:'+(isRemote?'#b91c1c':'#16a34a')+';border:0;border-radius:9px;padding:8px 14px;font-weight:800;cursor:pointer;">열기</button>'
+                    +'<button id="rc-inc-x" style="flex:none;background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:9px;padding:8px 11px;font-weight:800;cursor:pointer;">✕</button>';
+                document.body.appendChild(b);
+                const go=function(){ try{ if(window.openEarthRoom && roomId) openEarthRoom(roomId); }catch(_){} try{ b.remove(); }catch(_){} };
+                b.querySelector('#rc-inc-open').onclick=go;
+                b.querySelector('#rc-inc-x').onclick=function(){ try{ b.remove(); }catch(_){} };
+                try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(_){}
+                if(!document.getElementById('rc-alert-kf')){ const st=document.createElement('style'); st.id='rc-alert-kf'; st.textContent='@keyframes rcAlertPop{from{opacity:0;transform:translateX(-50%) translateY(-10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}'; document.head.appendChild(st); }
+                setTimeout(function(){ try{ if(document.getElementById('rc-incoming-alert')===b) b.remove(); }catch(_){} }, 30000);
+            }catch(_){}
+        };
         function handleReceiveMessage(data) {
             // 시스템 메시지는 알림 없이 처리
             if(data.sender === '__system__') {
                 if(data.roomId === currentChatRoomId) appendMainMessage(data.sender, data.message, data.senderPic);
                 loadChatList(); return;
+            }
+            // 🖥/📹 요청 메시지 → 어느 방을 보고 있든 인앱 알림 배너(푸시 미도달 대비)
+            if(data.sender !== currentUser.name && typeof data.message==='string'){
+                if(data.message.indexOf('[REMOTE_REQUEST]')===0){ window._showIncomingReqAlert('remote', data.sender, data.roomId); }
+                else if(data.message.indexOf('[VIDEO_INVITE]')===0){ window._showIncomingReqAlert('video', data.sender, data.roomId); }
             }
             if(data.roomId === currentChatRoomId) {
                 if(data.sender !== currentUser.name) {
