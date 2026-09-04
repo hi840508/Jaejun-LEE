@@ -8126,11 +8126,52 @@
         window.toggleVcMic = function(){ const t=window._vc.local&&window._vc.local.getAudioTracks()[0]; if(!t) return; t.enabled=!t.enabled; const b=document.getElementById('vc-mic'); if(b){ b.innerHTML=t.enabled?VCICON.mic:VCICON.micOff; b.style.color=t.enabled?'#fff':'#ef4444'; } };
         window.toggleVcCam = function(){ const t=window._vc.local&&window._vc.local.getVideoTracks()[0]; if(!t) return; t.enabled=!t.enabled; const b=document.getElementById('vc-cam'); if(b){ b.innerHTML=t.enabled?VCICON.cam:VCICON.camOff; b.style.color=t.enabled?'#fff':'#ef4444'; } };
         window._vcUnlockAudio = function(){ const rv=document.getElementById('vc-remote'); if(rv){ rv.muted=false; try{ const p=rv.play(); if(p&&p.catch)p.catch(function(){}); }catch(_){} } const u=document.getElementById('vc-audio-unlock'); if(u) u.style.display='none'; };
+        // 🖥 화면 공유 소스 선택(앱) — 화면/창 썸네일 목록에서 고르게 한다. 취소 시 null.
+        window._pickShareSource = function(list){
+            return new Promise(function(resolve){
+                let ov=document.getElementById('vc-share-picker'); if(ov) ov.remove();
+                ov=document.createElement('div'); ov.id='vc-share-picker';
+                ov.style.cssText='position:fixed;inset:0;z-index:100200;background:rgba(0,0,0,.74);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+                const screens=list.filter(function(s){return s.type==='screen';});
+                const windows=list.filter(function(s){return s.type==='window';});
+                const card=function(s){ const nm=String(s.name||'창').replace(/</g,'&lt;');
+                    const thumb=s.thumb?('<img src="'+s.thumb+'" style="width:100%;height:120px;object-fit:cover;background:#000;display:block;" draggable="false">'):'<div style="width:100%;height:120px;background:#0b1220;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:30px;">'+(s.type==='screen'?'🖥':'🪟')+'</div>';
+                    return '<button class="vc-src" data-id="'+String(s.id).replace(/"/g,'&quot;')+'" style="border:2px solid #1f2937;border-radius:11px;overflow:hidden;background:#0b1220;cursor:pointer;padding:0;width:240px;max-width:42vw;text-align:left;">'+thumb+'<div style="padding:8px 10px;color:#e5e7eb;font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+nm+'</div></button>'; };
+                const grp=function(title,arr){ if(!arr.length) return ''; return '<div style="color:#94a3b8;font-size:12px;font-weight:700;margin:6px 2px;align-self:flex-start;">'+title+'</div><div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;">'+arr.map(card).join('')+'</div>'; };
+                ov.innerHTML='<div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:12px;">공유할 화면 또는 창 선택</div>'
+                    +'<div style="max-width:900px;max-height:74vh;overflow:auto;padding:4px;width:100%;display:flex;flex-direction:column;align-items:center;">'+grp('🖥 전체 화면',screens)+grp('🪟 창',windows)+'</div>'
+                    +'<button id="vc-src-cancel" style="margin-top:14px;background:#334155;color:#fff;border:0;border-radius:8px;padding:9px 20px;font-weight:700;cursor:pointer;">취소</button>';
+                document.body.appendChild(ov);
+                const done=function(id){ try{ ov.remove(); }catch(_){} resolve(id||null); };
+                ov.querySelector('#vc-src-cancel').addEventListener('click',function(){ done(null); });
+                ov.addEventListener('click',function(e){ if(e.target===ov) done(null); });
+                ov.querySelectorAll('.vc-src').forEach(function(b){
+                    b.addEventListener('mouseenter',function(){ b.style.borderColor='#d6006e'; });
+                    b.addEventListener('mouseleave',function(){ b.style.borderColor='#1f2937'; });
+                    b.addEventListener('click',function(){ done(b.getAttribute('data-id')); });
+                });
+            });
+        };
+        async function _acquireShareStream(){
+            // 앱(Electron): 화면/창 선택 UI → 고른 소스를 chromeMediaSourceId로 캡처
+            if(window.rayApp && window.rayApp.listShareSources){
+                let list=[]; try{ list=await window.rayApp.listShareSources(); }catch(_){}
+                if(list && list.length){
+                    const id=await window._pickShareSource(list);
+                    if(!id) throw new Error('cancel');
+                    return await navigator.mediaDevices.getUserMedia({ audio:false, video:{ mandatory:{ chromeMediaSource:'desktop', chromeMediaSourceId:id, maxWidth:1920, maxHeight:1080, maxFrameRate:15 } } });
+                }
+            }
+            // 브라우저: OS 기본 화면 선택기
+            if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('unsupported');
+            return await navigator.mediaDevices.getDisplayMedia({ video:true, audio:false });
+        }
         window.shareScreenInCall = async function(){
             if(!window._vc.active || !window._vc.pc) return showToast('통화 중에만 화면 공유가 가능합니다.');
-            if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return showToast('이 기기(모바일)는 브라우저 화면 공유를 지원하지 않습니다. PC에서 이용해 주세요.');
-            let ds; try { ds = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:false }); }
-            catch(e){ return showToast('화면 공유가 취소되었습니다.'); }
+            if(!(window.rayApp && window.rayApp.listShareSources) && (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia)) return showToast('이 기기(모바일)는 브라우저 화면 공유를 지원하지 않습니다. PC에서 이용해 주세요.');
+            let ds; try { ds = await _acquireShareStream(); }
+            catch(e){ return showToast(e && e.message==='unsupported' ? '이 기기는 화면 공유를 지원하지 않습니다.' : '화면 공유가 취소되었습니다.'); }
+            if(!ds) return;
             const screenTrack = ds.getVideoTracks()[0];
             const sender = window._vc.pc.getSenders().find(function(s){ return s.track && s.track.kind==='video'; });
             if(sender && screenTrack){ try { await sender.replaceTrack(screenTrack); } catch(_){} }
