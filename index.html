@@ -4745,7 +4745,14 @@
             // 묶음: 선택 파일들을 단일 HTML 묶음으로 변환해 1개로 전송
             showToast('묶음 파일 생성 중… ('+files.length+'개)');
             try{
-                const payloads=[]; for(const f of files){ const dataUrl=await _fileToDataURL(f); if(dataUrl) payloads.push({ filename:f.name, type:f.type||'', data:dataUrl, size:f.size }); }
+                const payloads=[];
+                for(const f of files){
+                    const dataUrl=await _fileToDataURL(f); if(!dataUrl) continue;
+                    const p={ filename:f.name, type:f.type||'', data:dataUrl, size:f.size };
+                    // 🩻 DICOM은 빌드 시점에 PNG로 디코드해 미리보기로 임베드(뷰어에 디코더 불필요·오프라인 OK). 원본 .dcm은 다운로드로 유지.
+                    if(/\.dcm$/i.test(f.name) || /dicom/i.test(f.type||'')){ try{ if(R.dicomImage){ const png=await R.dicomImage(f, 1400); if(png) p.preview=png; } }catch(_){} }
+                    payloads.push(p);
+                }
                 if(!payloads.length){ showToast('묶음 생성 실패(파일 읽기)'); return; }
                 const html=window.buildChatBundleHTML(payloads, { title: files.length+'개 파일 묶음', sender: currentUser.name });
                 const ts=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
@@ -9821,7 +9828,7 @@ pdfjsScript,
 '<script id="bundle-data" type="application/json">' + dataJson + '</scr' + 'ipt>',
 '<script>',
 '(function(){var data=JSON.parse(document.getElementById("bundle-data").textContent);var cards=document.getElementById("cards");function eh(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}function ea(s){return String(s||"").replace(/"/g,"&quot;");}',
-'data.files.forEach(function(f){var card=document.createElement("div");card.className="card";var kb=(f.size/1024).toFixed(0);var fn=(f.filename||"").toLowerCase();var img=/^image\\//.test(f.type)||/\\.(png|jpg|jpeg|gif|webp|bmp)$/.test(fn);var vid=/^video\\//.test(f.type)||/\\.(mp4|webm|mov)$/.test(fn);var aud=/^audio\\//.test(f.type)||/\\.(mp3|wav|ogg|m4a)$/.test(fn);var pdf=/pdf/i.test(f.type)||/\\.pdf$/.test(fn);var ic="\\uD83D\\uDCC4";if(img)ic="\\uD83D\\uDDBC";else if(vid)ic="\\uD83C\\uDFAC";else if(aud)ic="\\uD83C\\uDFB5";else if(pdf)ic="\\uD83D\\uDCD1";var h=\'<div class="card-head"><div class="card-icon">\'+ic+\'</div><div class="card-info"><div class="name">\'+eh(f.filename)+\'</div><div class="meta">\'+kb+\' KB · \'+eh(f.type||"파일")+\'</div></div></div>\';if(img)h+=\'<div class="preview"><img src="\'+f.data+\'"></div>\';else if(vid)h+=\'<div class="preview"><video src="\'+f.data+\'" controls></video></div>\';else if(aud)h+=\'<div class="preview"><audio src="\'+f.data+\'" controls></audio></div>\';else if(pdf)h+=\'<div class="preview"><iframe src="\'+f.data+\'"></iframe></div>\';h+=\'<div class="actions"><a class="btn" href="\'+f.data+\'" download="\'+ea(f.filename)+\'">다운로드</a></div>\';card.innerHTML=h;cards.appendChild(card);});})();',
+'data.files.forEach(function(f){var card=document.createElement("div");card.className="card";var kb=(f.size/1024).toFixed(0);var fn=(f.filename||"").toLowerCase();var img=/^image\\//.test(f.type)||/\\.(png|jpg|jpeg|gif|webp|bmp)$/.test(fn);var vid=/^video\\//.test(f.type)||/\\.(mp4|webm|mov)$/.test(fn);var aud=/^audio\\//.test(f.type)||/\\.(mp3|wav|ogg|m4a)$/.test(fn);var pdf=/pdf/i.test(f.type)||/\\.pdf$/.test(fn);var dcm=/dicom/i.test(f.type)||/\\.dcm$/.test(fn);var ic="\\uD83D\\uDCC4";if(img)ic="\\uD83D\\uDDBC";else if(vid)ic="\\uD83C\\uDFAC";else if(aud)ic="\\uD83C\\uDFB5";else if(pdf)ic="\\uD83D\\uDCD1";else if(dcm)ic="\\uD83E\\uDE7B";var h=\'<div class="card-head"><div class="card-icon">\'+ic+\'</div><div class="card-info"><div class="name">\'+eh(f.filename)+\'</div><div class="meta">\'+kb+\' KB · \'+eh(f.type||"파일")+\'</div></div></div>\';if(img)h+=\'<div class="preview"><img src="\'+f.data+\'"></div>\';else if(vid)h+=\'<div class="preview"><video src="\'+f.data+\'" controls></video></div>\';else if(aud)h+=\'<div class="preview"><audio src="\'+f.data+\'" controls></audio></div>\';else if(pdf)h+=\'<div class="preview"><iframe src="\'+f.data+\'"></iframe></div>\';else if(dcm&&f.preview)h+=\'<div class="preview"><img src="\'+f.preview+\'" style="max-width:100%;display:block;background:#000;"></div>\';else if(dcm)h+=\'<div class="preview" style="padding:22px;text-align:center;color:#94a3b8;font-size:12px;">DICOM 미리보기 없음 (다운로드로 열람)</div>\';h+=\'<div class="actions"><a class="btn" href="\'+f.data+\'" download="\'+ea(f.filename)+\'">다운로드</a></div>\';card.innerHTML=h;cards.appendChild(card);});})();',
 '</scr' + 'ipt></body></html>'
             ].join('\n');
         };
