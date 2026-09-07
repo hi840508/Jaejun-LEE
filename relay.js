@@ -625,10 +625,22 @@ app.post('/api/push/test', (req, res) => {
         });
     });
 });
-// 특정 사용자에게 푸시(오프라인일 때만 호출). title/body/data 전달 + 뱃지 증가.
+// 특정 사용자에게 푸시. 🔔 앱(FCM) 우선 — 네이티브 앱 토큰이 있으면 FCM만 보내고 웹푸시는 생략
+//   (둘 다 보내면 브라우저 웹푸시 알림을 탭할 때 크롬이 열려 앱 동기화가 어긋남 → 앱 우선).
 function sendPushToUser(name, payload) {
-    // 🔔 네이티브 앱(FCM)에도 동시 발송 — webpush 유무와 무관하게 시도(카톡식 다중 채널)
-    try { sendFcmToUser(name, payload); } catch (_) {}
+    if (!name) return;
+    db.all(`SELECT token FROM fcm_tokens WHERE userName = ?`, [name], (fe, frows) => {
+        const appN = (frows || []).length;
+        if (fcm && appN) {
+            try { sendFcmToUser(name, payload); } catch (_) {}
+            console.log('[push] →', name, '| 앱(FCM)', appN, '대 우선 — 웹푸시 생략');
+            return;
+        }
+        _webPushToUser(name, payload);
+    });
+}
+// 웹푸시(브라우저/PWA) — 앱 토큰이 없을 때만 호출됨. title/body/data 전달 + 뱃지 증가.
+function _webPushToUser(name, payload) {
     if (!webpush || !name) { console.log('[push] skip(webpush 없음 또는 대상없음):', name); return; }
     const badge = (pushBadge.get(name) || 0) + 1; pushBadge.set(name, badge);
     const body = JSON.stringify(Object.assign({ badge: badge }, payload));
