@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="color-scheme" content="light only">
     <meta name="supported-color-schemes" content="light">
     <title>Alpha K Commerce Platform</title>
@@ -510,7 +510,7 @@
         }
         .floating-badge { position: absolute; top: -2px; right: -2px; background: var(--notify); color: white; font-size: 11px; font-weight: bold; padding: 3px 7px; border-radius: 20px; border: 2px solid #fff; display: none; }
         
-        .messenger-drawer { position: fixed; top: 0; right: -420px; width: 100%; max-width: 380px; height: 100vh; background: #ffffff; box-shadow: -5px 0 25px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 4001; display: flex; flex-direction: column; border-left: 1px solid var(--border-color); }
+        .messenger-drawer { position: fixed; top: 0; right: -420px; width: 100%; max-width: 380px; height: 100vh; height: 100dvh; background: #ffffff; box-shadow: -5px 0 25px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 4001; display: flex; flex-direction: column; border-left: 1px solid var(--border-color); }
         .messenger-drawer.open { right: 0; }
         .drawer-header { padding: 15px 20px; background: #f8fafc; color: var(--text-main); font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
         
@@ -9014,8 +9014,10 @@
                 // 🔔 알림(?openroom=)으로 브라우저가 열린 경우: 앱이 있으면 '즉시' 앱으로 전환(로그인 상태로 그 대화방 표시).
                 //    앱이 없으면 browser_fallback_url로 웹에 그대로 머문다.
                 const _op = new URLSearchParams(location.search).get('openroom');
-                if(_op && sessionStorage.getItem('app_room_jumped') !== '1'){
-                    sessionStorage.setItem('app_room_jumped','1');
+                // 시간 기반 가드: 새 알림마다 앱 전환을 재시도하되, fallback 즉시 재진입(무한루프)은 4초로 막는다.
+                const _lastJump = Number(sessionStorage.getItem('app_room_jumped_at') || 0);
+                if(_op && (Date.now() - _lastJump > 4000)){
+                    sessionStorage.setItem('app_room_jumped_at', String(Date.now()));
                     const fb = encodeURIComponent(location.href);
                     const intentRoom = 'intent://' + host + path + '#Intent;scheme=https;package=com.rayaox.earth.twa;S.browser_fallback_url=' + fb + ';end';
                     try{ location.href = intentRoom; }catch(_){}
