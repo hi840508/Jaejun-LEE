@@ -8864,6 +8864,19 @@
                 }, true);
             }
         }catch(_){}
+        // 📲 [비-네이티브 폴백] 브라우저/구TWA에서도 하단 '업데이트' 버튼이 최신 네이티브 APK를 받도록
+        if(!window._alphakUpdate){
+            window._alphakUpdate = function(){ try{ showToast && showToast('최신 앱(APK)을 내려받습니다…'); }catch(_){} try{ location.href = API_URL + '/download/AlphaK.apk'; }catch(_){} };
+        }
+        // 🩺 구앱(TWA)/PWA 확인용 비콘 — 네이티브 브리지가 없는데 '앱처럼' 실행 중이면 서버로 1회 보고(구앱 사용 여부 진단)
+        try{
+            var _uaN = navigator.userAgent||'';
+            var _appish = (window.matchMedia && (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: minimal-ui)').matches)) || window.navigator.standalone===true || (document.referrer||'').indexOf('android-app://')===0;
+            if(!window.AndroidBridge && /Android/i.test(_uaN) && _appish && !window.__nnBeaconSent){
+                window.__nnBeaconSent = true;
+                setTimeout(function(){ try{ fetch(API_URL+'/api/fcm/beacon',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hasBridge:false,loggedIn:!!(window.EARTH_TOKEN||localStorage.getItem('earth_token')),ua:_uaN.slice(0,60)})}).catch(function(){}); }catch(_){} }, 2500);
+            }
+        }catch(_){}
         // 🔔 내 기기로 테스트 알림(발신자 제외 규칙 우회) — 알림 수신 여부 즉시 진단
         window._earthTestPush = async function(){
             try{
