@@ -496,6 +496,77 @@ try {
     console.log('🔔 web-push 준비 완료');
 } catch (e) { console.warn('⚠️ web-push 비활성:', e && e.message); }
 
+// ===================== 🔔 FCM(네이티브 앱 푸시, 카톡식) =====================
+// 안드로이드 네이티브 앱(Alpha K)용 Firebase Cloud Messaging 발송.
+//   자격증명: agent/serviceAccountKey.json (git 미추적) 또는 env GOOGLE_APPLICATION_CREDENTIALS.
+//   키가 없으면 조용히 비활성(웹푸시로 폴백) — 절대 프로세스를 죽이지 않는다.
+let fcm = null;
+try {
+    const admin = require('firebase-admin');
+    const cands = [
+        process.env.FCM_SERVICE_ACCOUNT || '',
+        path.join(RC_AGENT_DIR, 'serviceAccountKey.json'),
+        path.join(__dirname, 'serviceAccountKey.json'),
+        process.env.GOOGLE_APPLICATION_CREDENTIALS || ''
+    ].filter(Boolean);
+    const keyPath = cands.find(p => { try { return fs.existsSync(p); } catch (_) { return false; } });
+    if (!keyPath) throw new Error('serviceAccountKey.json 없음 (agent/ 에 배치 필요)');
+    const svc = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+    if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.cert(svc) });
+    fcm = admin.messaging();
+    console.log('🔔 FCM 준비 완료 (project:', svc.project_id + ')');
+} catch (e) { console.warn('⚠️ FCM 비활성:', e && e.message); }
+
+// 특정 사용자의 모든 네이티브 앱 기기로 FCM data 메시지 발송(오프라인 여부와 무관 — OS가 알림 표시).
+//   data-only 로 보내 앱이 항상 커스텀 알림을 만든다(포그라운드/백그라운드/종료 일관).
+function sendFcmToUser(name, payload) {
+    if (!fcm || !name) return;
+    db.all(`SELECT token FROM fcm_tokens WHERE userName = ?`, [name], (e, rows) => {
+        const tokens = (rows || []).map(r => r.token).filter(Boolean);
+        if (!tokens.length) return;
+        const roomId = (payload && payload.data && payload.data.roomId) ? String(payload.data.roomId) : '';
+        const data = {
+            title: String((payload && payload.title) || 'Alpha K'),
+            body: String((payload && payload.body) || ''),
+            roomId: roomId,
+            tag: roomId || 'alphak',
+            url: String((payload && payload.url) || '/')
+        };
+        tokens.forEach(tok => {
+            fcm.send({
+                token: tok,
+                data: data,
+                android: { priority: 'high' }
+            }).then(() => {
+                console.log('[fcm] ok', name, String(tok).slice(0, 18));
+            }).catch(err => {
+                const code = err && err.errorInfo && err.errorInfo.code;
+                console.log('[fcm] FAIL', name, code || (err && err.message));
+                if (code === 'messaging/registration-token-not-registered'
+                    || code === 'messaging/invalid-registration-token'
+                    || code === 'messaging/invalid-argument') {
+                    db.run(`DELETE FROM fcm_tokens WHERE token = ?`, [tok]);
+                }
+            });
+        });
+    });
+}
+
+// 앱이 로그인 후 FCM 토큰을 등록/갱신. (세션 인증 필수 — 남의 계정에 토큰 심기 방지)
+app.post('/api/fcm/register', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const token = req.body && req.body.token;
+    const platform = (req.body && req.body.platform) || 'android';
+    if (!token) return res.status(400).json({ error: 'no token' });
+    // 같은 토큰이 계정 이동했을 수 있으므로 token 을 PK로 upsert(소유자 교체)
+    db.run(`INSERT OR REPLACE INTO fcm_tokens (token, userName, platform, updated) VALUES (?, ?, ?, ?)`,
+        [token, me, platform, new Date().toISOString()], () => res.json({ ok: true, fcm: !!fcm }));
+});
+app.post('/api/fcm/unregister', (req, res) => {
+    const token = req.body && req.body.token; if (!token) return res.json({ ok: true });
+    db.run(`DELETE FROM fcm_tokens WHERE token = ?`, [token], () => res.json({ ok: true }));
+});
+
 app.get('/api/push/vapid', (req, res) => res.json({ publicKey: VAPID_PUB }));
 app.post('/api/push/subscribe', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
@@ -527,9 +598,15 @@ app.post('/api/push/clear-badge', (req, res) => {
 // 🔔 내 기기로 테스트 알림 — 발신자 제외 규칙을 우회해 '나 자신'에게 보낸다(기기 알림 수신 여부 진단용).
 app.post('/api/push/test', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
+    // 🔔 네이티브 앱(FCM)에도 테스트 발송(자기 자신)
+    try { sendFcmToUser(me, { title: '🔔 알림 테스트', body: '이 알림이 보이면 앱(FCM) 푸시가 정상입니다.', data: {} }); } catch (_) {}
     db.all(`SELECT endpoint, sub FROM push_subs WHERE userName = ?`, [me], (e, rows) => {
         const n = (rows || []).length;
-        if (!n) return res.json({ ok: false, subs: 0, reason: '이 계정에 등록된 푸시 구독이 없습니다(알림 권한 미허용).' });
+        if (!n) return db.get(`SELECT COUNT(*) c FROM fcm_tokens WHERE userName = ?`, [me], (e2, fr) => {
+            const fc = (fr && fr.c) || 0;
+            if (fc > 0) return res.json({ ok: true, subs: 0, fcm: fc, reason: '웹푸시 구독은 없지만 앱(FCM) ' + fc + '대로 발송했습니다.' });
+            return res.json({ ok: false, subs: 0, fcm: 0, reason: '이 계정에 등록된 푸시 구독이 없습니다(알림 권한 미허용).' });
+        });
         const body = JSON.stringify({ title: '🔔 알림 테스트', body: '이 알림이 보이면 이 기기의 푸시가 정상입니다.', data: {}, badge: 0 });
         let sent = 0, fail = 0, done = 0; const errs = [];
         rows.forEach(r => {
@@ -543,6 +620,8 @@ app.post('/api/push/test', (req, res) => {
 });
 // 특정 사용자에게 푸시(오프라인일 때만 호출). title/body/data 전달 + 뱃지 증가.
 function sendPushToUser(name, payload) {
+    // 🔔 네이티브 앱(FCM)에도 동시 발송 — webpush 유무와 무관하게 시도(카톡식 다중 채널)
+    try { sendFcmToUser(name, payload); } catch (_) {}
     if (!webpush || !name) { console.log('[push] skip(webpush 없음 또는 대상없음):', name); return; }
     const badge = (pushBadge.get(name) || 0) + 1; pushBadge.set(name, badge);
     const body = JSON.stringify(Object.assign({ badge: badge }, payload));
@@ -862,6 +941,8 @@ function initTables() {
         });
         // 🔔 웹 푸시 구독 저장(카톡식 알림) — endpoint 당 1행, 사용자별 다기기 허용
         db.run(`CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, userName TEXT, sub TEXT, created TEXT)`);
+        // 🔔 네이티브 앱(Alpha K) FCM 토큰 — token 당 1행, 사용자별 다기기 허용
+        db.run(`CREATE TABLE IF NOT EXISTS fcm_tokens (token TEXT PRIMARY KEY, userName TEXT, platform TEXT, updated TEXT)`);
         // 💬 카톡식 읽음표시: 방·사용자별 마지막으로 읽은 메시지 id
         db.run(`CREATE TABLE IF NOT EXISTS chat_reads (roomId TEXT, userName TEXT, lastReadId INTEGER, PRIMARY KEY(roomId, userName))`);
     });

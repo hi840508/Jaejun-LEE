@@ -2595,7 +2595,7 @@
         // 🔐 세션 토큰: 로그인 시 저장 → 모든 Alpha K API 요청에 x-auth-token 헤더 자동 첨부(자금 엔드포인트가 본문 신원 대신 토큰으로 사용자 판정 → 위조/탈취 차단).
         //  토큰은 서버 sessions 테이블에 영속되어 자동로그인/서버재시작 후에도 유효.
         window.EARTH_TOKEN = localStorage.getItem('earth_token') || '';
-        window.setEarthToken = function(tok){ window.EARTH_TOKEN = tok || ''; if(tok) localStorage.setItem('earth_token', tok); else localStorage.removeItem('earth_token'); };
+        window.setEarthToken = function(tok){ window.EARTH_TOKEN = tok || ''; if(tok) localStorage.setItem('earth_token', tok); else localStorage.removeItem('earth_token'); try{ if(tok && window.__alphakRegisterFcm){ window.__alphakFcmTries=0; window.__alphakRegisterFcm(); } }catch(_){} };
         (function(){
             const _origFetch = window.fetch.bind(window);
             window.fetch = function(input, opts){
@@ -8771,6 +8771,41 @@
         }
         // 🔔 네이티브 알림 클릭 시 해당 대화방 열기(Electron 앱)
         try{ if(window.rayApp && window.rayApp.onOpenRoom){ window.rayApp.onOpenRoom(function(roomId){ try{ if(window.rayApp.showWindow) window.rayApp.showWindow(); }catch(_){} try{ if(roomId && window.openEarthRoom) window.openEarthRoom(roomId); }catch(_){} }); } }catch(_){}
+        // 🔔 [네이티브 앱/Android FCM] 알림 탭 → 방 열기 훅 + FCM 토큰 서버 등록
+        try{
+            if(window.AndroidBridge){
+                // 네이티브 알림(FCM) 탭 시 호출 → 앱 내에서 해당 방 열기(새로고침 없이)
+                window.__alphakOpenRoom = function(roomId){ try{ if(roomId && window.openEarthRoom) window.openEarthRoom(roomId); }catch(_){} };
+                // FCM 토큰 등록(네이티브가 비동기로 토큰 준비 → 준비될 때까지 폴링, 로그인 후 재시도)
+                window.__alphakRegisterFcm = function(){
+                    try{
+                        var tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
+                        var fcmTok = ''; try{ fcmTok = window.AndroidBridge.getFcmToken()||''; }catch(_){}
+                        if(!tk || !fcmTok){ if((window.__alphakFcmTries=(window.__alphakFcmTries||0)+1) < 40) setTimeout(window.__alphakRegisterFcm, 1500); return; }
+                        if(window.__alphakFcmDone === fcmTok) return;   // 동일 토큰 중복 등록 방지
+                        fetch(API_URL + '/api/fcm/register', { method:'POST', headers:{'Content-Type':'application/json','x-auth-token':tk}, body: JSON.stringify({ token: fcmTok, platform:'android' }) })
+                            .then(function(r){ return r.json(); }).then(function(){ window.__alphakFcmDone = fcmTok; }).catch(function(){});
+                    }catch(_){}
+                };
+                window.addEventListener('alphak-native-ready', window.__alphakRegisterFcm);
+                setTimeout(window.__alphakRegisterFcm, 1500);
+                // ⬇️ 인앱 다운로드: blob:/data: 첨부는 WebView가 못 받으므로 base64로 변환해 네이티브 저장
+                document.addEventListener('click', function(ev){
+                    try{
+                        var a = ev.target && ev.target.closest ? ev.target.closest('a[download],a[href^="blob:"],a[href^="data:"]') : null;
+                        if(!a) return; var href = a.getAttribute('href')||'';
+                        if(href.indexOf('blob:')!==0 && href.indexOf('data:')!==0) return;   // http(s)는 DownloadManager가 처리
+                        ev.preventDefault();
+                        var name = a.getAttribute('download') || 'download';
+                        fetch(href).then(function(r){ return r.blob(); }).then(function(b){
+                            var fr = new FileReader();
+                            fr.onload = function(){ try{ var s=String(fr.result||''); var i=s.indexOf(','); var b64=i>=0?s.slice(i+1):s; window.AndroidBridge.saveBase64(name, b64, b.type||''); }catch(_){} };
+                            fr.readAsDataURL(b);
+                        }).catch(function(){ try{ window.AndroidBridge.toastMsg && window.AndroidBridge.toastMsg('다운로드 실패'); }catch(_){} });
+                    }catch(_){}
+                }, true);
+            }
+        }catch(_){}
         // 🔔 내 기기로 테스트 알림(발신자 제외 규칙 우회) — 알림 수신 여부 즉시 진단
         window._earthTestPush = async function(){
             try{
