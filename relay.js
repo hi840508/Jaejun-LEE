@@ -2552,6 +2552,8 @@ app.post('/api/product/submit-order', (req, res) => {
             function(err) {
                 if(err) return res.status(500).json({ error: err.message });
                 const orderId = this.lastID;
+                // 💬 주문 묶음 HTML에 '항시 대화방 버튼(FAB)' 주입 — orderId가 있어야 room_ord_ 를 심을 수 있어 저장 후 처리.
+                try { const fab = _orderChatFab(orderId); if (fab) db.run(`UPDATE product_orders SET bundle_html = COALESCE(bundle_html,'') || ? WHERE id = ?`, [fab, orderId], () => {}); } catch (_) {}
                 // 🔔 판매자에게 새 주문 푸시(앱이 꺼져 있어도 수신) — 주문 대화방으로 딥링크
                 try { sendPushToUser(seller, { title: '🛒 새 주문 요청', body: (buyer || '고객') + ' 님이 주문서를 보냈습니다.', data: { roomId: _orderRoomId(orderId) } }); } catch (_) {}
                 res.json({ success: true, orderId, payMethod: method, approvalNo: pgApproval, amount });
@@ -2561,6 +2563,17 @@ app.post('/api/product/submit-order', (req, res) => {
 
 // 💬 [채팅 상태알림] 주문 상태가 바뀔 때 구매자·판매자 채팅방에 시스템 메시지 기록 + order_status 이벤트(카드 갱신용) 방출.
 function _orderRoomId(orderId) { return 'room_ord_' + orderId; }   // 💬 주문별 고유 대화방 id
+// 💬 주문 묶음 HTML에 넣는 '항시 대화방 버튼(FAB)' — 동일 아이콘·배치. 거래완료로 나간 대화방이면 "나간 대화방" 표시.
+const PUBLIC_URL = 'https://earth.rayaox.com';
+function _orderChatFab(orderId) {
+    const rid = 'room_ord_' + orderId;
+    const url = PUBLIC_URL + '/?openroom=' + encodeURIComponent(rid);
+    const st = PUBLIC_URL + '/api/chat/room-left?roomId=' + encodeURIComponent(rid);
+    return '\n<a href="' + url + '" target="_blank" id="fabChatBtn" title="대화방 열기" style="position:fixed;right:20px;bottom:20px;z-index:99999;width:58px;height:58px;border-radius:50%;background:#d6006e;box-shadow:0 8px 24px rgba(214,0,110,.45);display:flex;align-items:center;justify-content:center;text-decoration:none;">'
+        + '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>'
+        + '<span id="fabChatLeft" style="display:none;position:absolute;inset:0;border-radius:50%;background:rgba(30,41,59,.9);color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center;text-align:center;line-height:1.2;">나간<br>대화방</span></a>'
+        + '<scr' + 'ipt>(function(){try{var f=document.getElementById("fabChatBtn");if(!f)return;fetch("' + st + '").then(function(r){return r.json();}).then(function(j){if(j&&j.left){var lo=document.getElementById("fabChatLeft");if(lo)lo.style.display="flex";}}).catch(function(){});}catch(e){}})();</scr' + 'ipt>';
+}
 function _notifyOrderStatus(buyer, seller, orderId, status, msg, actor) {
     try {
         const roomId = _orderRoomId(orderId);
@@ -3457,6 +3470,24 @@ app.post('/api/store/rx-items', (req, res) => {
     });
 });
 // ⚡ 채팅 히스토리: 최근 N개만 반환(무제한 SELECT + base64 첨부 전송으로 인한 로딩 지연 해결). before 커서로 이전 대화 더보기.
+// 💬 대화방 '나간(완료)' 상태 — 주문 묶음 HTML의 대화방 버튼이 "나간 대화방"을 표시할 때 사용(거래완료=ended/확정/취소).
+app.get('/api/chat/room-left', (req, res) => {
+    const roomId = String(req.query.roomId || '');
+    res.setHeader('Access-Control-Allow-Origin', '*');   // 다운로드된 묶음 파일이 file://에서도 조회할 수 있게
+    if (!roomId) return res.json({ left: false });
+    if (roomId.startsWith('room_ord_')) {
+        const orderId = roomId.replace('room_ord_', '');
+        db.get(`SELECT ended FROM chat_rooms WHERE roomId = ?`, [roomId], (e, row) => {
+            if (row && row.ended) return res.json({ left: true });
+            db.get(`SELECT status FROM product_orders WHERE id = ?`, [orderId], (e2, o) => {
+                const st = o && o.status;
+                res.json({ left: (st === 'confirmed' || st === 'completed' || st === 'done' || st === 'cancelled' || st === 'refunded') });
+            });
+        });
+        return;
+    }
+    db.get(`SELECT ended FROM chat_rooms WHERE roomId = ?`, [roomId], (e, row) => res.json({ left: !!(row && row.ended) }));
+});
 app.get('/api/chat/:roomId', (req, res) => {
     const me = requireUser(req, res); if (!me) return;   // 🔐 로그인 필수
     const roomId = String(req.params.roomId);

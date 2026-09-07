@@ -3378,6 +3378,44 @@
                 } }catch(_){}
                 return files;
             }
+            // 🔎 통합 검색 — 모든 연결 폴더를 재귀로 훑어 파일명·하위폴더명·DICOM 헤더(환자/검사/시리즈/모달리티/날짜)까지 검색
+            const _metaCache=new Map();
+            async function _readDicomMeta(file){
+                try{ await _ensureCornerstone(); }catch(_){}
+                if(!window.dicomParser) return null;
+                try{
+                    const buf=new Uint8Array(await file.slice(0, 300*1024).arrayBuffer());
+                    const ds=window.dicomParser.parseDicom(buf, { untilTag:'x7fe00010' });   // 픽셀데이터 전까지만(부분버퍼 OK)
+                    const g=(t)=>{ try{ return (ds.string(t)||'').replace(/\^/g,' ').trim(); }catch(_){ return ''; } };
+                    return { patient:g('x00100010'), pid:g('x00100020'), study:g('x00081030'), series:g('x0008103e'), modality:g('x00080060'), date:g('x00080020') };
+                }catch(_){ return null; }
+            }
+            async function searchAll(query, onProg){
+                const q=String(query||'').toLowerCase().trim(); if(!q) return [];
+                const rs=await _loadRoots(); const results=[]; let scanned=0; const CAP=400;
+                for(const root of rs){
+                    const h=root.handle; if(!h) continue;
+                    try{ if((await h.queryPermission({mode:'read'}))!=='granted') await h.requestPermission({mode:'read'}); }catch(_){}
+                    async function walk(dir, pathArr){
+                        if(results.length>=CAP) return;
+                        let ents=[]; try{ for await (const e of dir.values()) ents.push(e); }catch(_){ return; }
+                        for(const ent of ents){
+                            if(results.length>=CAP) return;
+                            if(ent.kind==='directory'){ if(pathArr.length<8) await walk(ent, pathArr.concat([ent.name])); continue; }
+                            scanned++; if(onProg && (scanned&127)===0){ try{ onProg(scanned, results.length); }catch(_){} }
+                            const nm=ent.name; const pathStr=(pathArr.join('/')+'/'+nm).toLowerCase();
+                            let hit=pathStr.indexOf(q)>=0; let meta=null;
+                            if(!hit && /\.dcm$/i.test(nm)){
+                                try{ const f=await ent.getFile(); const key=nm+'|'+f.size; if(_metaCache.has(key)) meta=_metaCache.get(key); else { meta=await _readDicomMeta(f); _metaCache.set(key, meta); } }catch(_){}
+                                if(meta){ const blob=[meta.patient,meta.pid,meta.study,meta.series,meta.modality,meta.date].join(' ').toLowerCase(); if(blob.indexOf(q)>=0) hit=true; }
+                            }
+                            if(hit){ let mt=0,sz=0; try{ const f=await ent.getFile(); mt=f.lastModified||0; sz=f.size; }catch(_){} results.push({ rootId:root.id, rootName:root.name, path:pathArr.slice(), fname:nm, mime:_mimeByExt(nm), mtime:mt, size:sz, meta:meta }); }
+                        }
+                    }
+                    try{ await walk(h, []); }catch(_){}
+                }
+                return results;
+            }
             let _syncTimer=null;
             function _scheduleSync(){ if(_syncTimer) clearTimeout(_syncTimer); _syncTimer=setTimeout(()=>{ try{ syncIndex(); }catch(_){} }, 1500); }
             async function syncIndex(){
@@ -3500,7 +3538,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll };
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
@@ -3700,6 +3738,39 @@
         window._sfPrompt = function(titleTxt, def){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;'; ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="font-weight:800;font-size:15px;margin-bottom:12px;">'+_sfEsc(titleTxt||'')+'</div><input id="_sfp-in" style="width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;box-sizing:border-box;" value="'+_sfEsc(def||'')+'"><div style="display:flex;gap:8px;margin-top:14px;"><button id="_sfp-c" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_sfp-ok" style="flex:1;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">확인</button></div></div>'; document.body.appendChild(ov); const inp=ov.querySelector('#_sfp-in'); setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(_){} },40); const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); }; ov.querySelector('#_sfp-c').onclick=()=>done(null); ov.querySelector('#_sfp-ok').onclick=()=>done(inp.value); inp.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); done(inp.value); } else if(e.key==='Escape'){ done(null); } }); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(null); }); }); };
         // 🔒 확인 모달(Electron confirm() 비활성 대응) → Promise<bool>
         window._sfConfirm = function(titleTxt, okLabel){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;'; ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="font-weight:700;font-size:14px;line-height:1.5;margin-bottom:16px;white-space:pre-line;">'+_sfEsc(titleTxt||'')+'</div><div style="display:flex;gap:8px;"><button id="_sfc-c" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_sfc-ok" style="flex:1;padding:11px;border:none;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">'+_sfEsc(okLabel||'확인')+'</button></div></div>'; document.body.appendChild(ov); const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); }; ov.querySelector('#_sfc-c').onclick=()=>done(false); ov.querySelector('#_sfc-ok').onclick=()=>done(true); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(false); }); document.addEventListener('keydown',function _k(e){ if(e.key==='Escape'){ document.removeEventListener('keydown',_k); done(false); } }); }); };
+        // 🔎 통합 검색 결과 모달 — 모든 연결 폴더/하위폴더/DICOM 헤더를 검색해 결과를 리스트로 보여주고, 클릭 시 그 폴더로 이동+미리보기
+        window._sfDeepSearch = async function(q){
+            q=String(q||'').trim(); if(!q) return;
+            const R=window.RCFolder; if(!R||!R.searchAll){ showToast('이 기기는 통합검색을 지원하지 않습니다.'); return; }
+            let ov=document.getElementById('_sf-search-ov'); if(ov) ov.remove();
+            ov=document.createElement('div'); ov.id='_sf-search-ov';
+            ov.style.cssText='position:fixed;inset:0;z-index:100400;background:rgba(8,12,18,.62);display:flex;align-items:center;justify-content:center;padding:16px;';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:660px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4);">'
+                +'<div style="padding:14px 16px;border-bottom:1px solid #eef2f5;display:flex;align-items:center;gap:10px;"><b style="font-size:15px;">🔎 통합 검색</b><span style="color:#64748b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%;">"'+_sfEsc(q)+'"</span><button id="_sfs-x" style="margin-left:auto;border:0;background:#f1f5f9;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:15px;">✕</button></div>'
+                +'<div id="_sfs-body" style="flex:1;overflow:auto;padding:8px 10px;font-size:13px;color:#475569;">검색 중… <span id="_sfs-prog"></span></div></div>';
+            document.body.appendChild(ov);
+            ov.querySelector('#_sfs-x').onclick=()=>ov.remove();
+            ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
+            const body=ov.querySelector('#_sfs-body'), prog=ov.querySelector('#_sfs-prog');
+            let res=[]; try{ res=await R.searchAll(q, (sc,fo)=>{ if(prog) prog.textContent='('+fo+'건 · '+sc+'개 확인)'; }); }catch(_){}
+            if(!document.body.contains(ov)) return;   // 이미 닫힘
+            if(!res.length){ body.innerHTML='<div style="text-align:center;padding:36px;color:#94a3b8;">일치하는 항목이 없습니다.<br><span style="font-size:11px;">(파일명·폴더명·DICOM 환자/검사/시리즈/모달리티)</span></div>'; return; }
+            const rows=res.map((r,i)=>{
+                const folder=(r.path&&r.path.length)?r.path.join(' / '):'(루트)';
+                const metaLine=r.meta?[r.meta.patient&&('환자 '+r.meta.patient), r.meta.modality, r.meta.study, r.meta.series].filter(Boolean).join(' · '):'';
+                return '<button class="_sfs-row" data-i="'+i+'" style="display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #f1f5f9;background:#fff;cursor:pointer;padding:11px 8px;">'
+                    +'<div style="font-weight:700;color:#0f172a;word-break:break-all;">'+_sfEsc(r.fname)+'</div>'
+                    +'<div style="font-size:11px;color:#94a3b8;margin-top:2px;">📁 '+_sfEsc(r.rootName)+(folder!=='(루트)'?(' / '+_sfEsc(folder)):'')+'</div>'
+                    +(metaLine?('<div style="font-size:11px;color:#0e7490;margin-top:2px;">🩻 '+_sfEsc(metaLine)+'</div>'):'')
+                    +'</button>';
+            }).join('');
+            body.innerHTML='<div style="color:#64748b;padding:4px 6px 8px;">'+res.length+'건'+(res.length>=400?'+ (상한 400)':'')+'</div>'+rows;
+            body.querySelectorAll('._sfs-row').forEach(btn=>btn.addEventListener('click',async()=>{
+                const r=res[Number(btn.getAttribute('data-i'))]; if(!r) return; ov.remove();
+                try{ if(R.setActiveRoot) await R.setActiveRoot(r.rootId); }catch(_){}
+                try{ if(window._sfGotoPath) await window._sfGotoPath(r.path.slice(), r.fname); }catch(_){}
+            }));
+        };
 
         // 🔒💰 전송 잠금 옵션 모달 — 금액/암호(둘 다 선택). 비우면 기존처럼 바로 전송. 취소=전송 중단(null).
         window._askLockOptions = function(count){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -4061,6 +4132,15 @@
             if(RC_DCM_RE.test(lower)){
                 const dcms = (siblings||[]).filter(n => RC_DCM_RE.test(n));
                 const list = dcms.length ? dcms.slice().sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})) : [fname];
+                // 🩻 단일 DICOM / 파노라마(1장) → 3D 볼륨 불가 → 2D 이미지로 디코드해 표시(실시간 뷰어에서 열림)
+                if(list.length === 1){
+                    try{
+                        const f = await R.getFileAt(pathArr, list[0]);
+                        if(f && R.dicomImage){ const durl = await R.dicomImage(f, 2400); if(durl) return { type:'RAYCLOUD_LOAD_2D', url:durl, name:list[0] }; }
+                    }catch(_){}
+                    const u = await _rcBlobFor(R, pathArr, list[0]); if(u) return { type:'RAYCLOUD_LOAD_DICOM', urls:[u], name:list[0] };
+                    return null;
+                }
                 const urls = [];
                 // 순차로 읽으면 슬라이스 수만큼 왕복이 쌓여 매우 느리다 → 6개씩 병렬로 읽는다.
                 const got = await _rcMapLimit(list, 6, n => _rcBlobFor(R, pathArr, n));
@@ -4232,6 +4312,8 @@
             const _vov='<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;">▶</span>';
             let path=[]; window.__sfPath=path;
             let flt={q:'',type:'all',period:'all',from:'',to:'',sort:'new',zoom:150};
+            // 🔎 통합 검색 결과에서 특정 폴더로 이동(+선택 파일 미리보기)
+            window._sfGotoPath = async function(p, fn){ try{ path = Array.isArray(p)?p.slice():[]; window.__sfPath=path; await render(); if(fn){ setTimeout(function(){ try{ window.rcPreviewFolderFile(fn, ''); }catch(_){} }, 120); } }catch(_){} };
 
             if(!document.getElementById('_sf-style')){ const st=document.createElement('style'); st.id='_sf-style'; st.textContent=[
  "#rc-folder-page{font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;color:#1f2937;}",
@@ -4292,7 +4374,8 @@
                 const periodChips=[['all','전체'],['today','오늘'],['7','7일'],['30','30일']].map(p=>'<button class="_sf-pchip" data-period="'+p[0]+'" style="'+CHIP+(flt.period===p[0]?CHIPON:'')+'">'+p[1]+'</button>').join('');
                 const typeChipsPill=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(flt.type===t?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
                 const filter=(notSupported?'':'<div style="flex:none;background:#fff;padding:8px 14px 10px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f0f1f3;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
-                    +'<input id="_sf-q" value="'+_sfEsc(flt.q)+'" placeholder="이름 검색" style="flex:1;min-width:120px;padding:8px 12px;border:1px solid #ededf0;border-radius:9px;font-size:13px;outline:none;background:#f7f8fa;">'
+                    +'<input id="_sf-q" value="'+_sfEsc(flt.q)+'" placeholder="이름·폴더·환자(DICOM) 통합검색 — Enter" style="flex:1;min-width:120px;padding:8px 12px;border:1px solid #ededf0;border-radius:9px;font-size:13px;outline:none;background:#f7f8fa;">'
+                    +'<button id="_sf-deepsearch" title="모든 폴더·하위폴더·DICOM 헤더 통합검색" style="flex:none;padding:8px 12px;border:1px solid #d6006e;background:#fde7f1;color:#b0005a;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">🔎 통합검색</button>'
                     +typeChipsPill
                     +' <input type="date" id="_sf-from" value="'+_sfEsc(flt.from)+'" style="padding:6px 8px;border:1px solid #ededf0;border-radius:9px;font-size:12px;">'
                     +'<input type="date" id="_sf-to" value="'+_sfEsc(flt.to)+'" style="padding:6px 8px;border:1px solid #ededf0;border-radius:9px;font-size:12px;">'
@@ -4456,7 +4539,11 @@
                     ov.querySelectorAll('.rc-gfd').forEach(el=>{ const nm=(el.getAttribute('data-name')||'').toLowerCase(); el.style.display=(flt.q && nm.indexOf(flt.q)<0)?'none':''; });
                     const ve=ov.querySelector('#_sf-vis'); if(ve) ve.textContent='· 파일 '+vis+'/'+fileList.length;
                 };
-                const qi=ov.querySelector('#_sf-q'); if(qi) qi.addEventListener('input',()=>{ flt.q=(qi.value||'').toLowerCase().trim(); applyFilter(); });
+                const qi=ov.querySelector('#_sf-q'); if(qi){ qi.addEventListener('input',()=>{ flt.q=(qi.value||'').toLowerCase().trim(); applyFilter(); });
+                    // Enter = 통합 검색(모든 폴더·하위폴더·DICOM 헤더)
+                    qi.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); const q=(qi.value||'').trim(); if(q){ window._sfDeepSearch(q); } } });
+                }
+                const dsBtn=ov.querySelector('#_sf-deepsearch'); if(dsBtn) dsBtn.addEventListener('click',()=>{ const q=((ov.querySelector('#_sf-q')||{}).value||'').trim(); if(q) window._sfDeepSearch(q); else showToast('검색어를 입력한 뒤 눌러 주세요.'); });
                 ov.querySelectorAll('._sf-tchip').forEach(c=>c.addEventListener('click',()=>{ flt.type=c.getAttribute('data-type'); ov.querySelectorAll('._sf-tchip').forEach(x=>x.style.cssText=CHIP+(x.getAttribute('data-type')===flt.type?CHIPON:'')); applyFilter(); }));
                 ov.querySelectorAll('._sf-pchip').forEach(c=>c.addEventListener('click',()=>{ flt.period=c.getAttribute('data-period'); ov.querySelectorAll('._sf-pchip').forEach(x=>x.style.cssText=CHIP+(x.getAttribute('data-period')===flt.period?CHIPON:'')); applyFilter(); }));
                 const fi=ov.querySelector('#_sf-from'), ti=ov.querySelector('#_sf-to'); if(fi) fi.addEventListener('change',()=>{ flt.from=fi.value; applyFilter(); }); if(ti) ti.addEventListener('change',()=>{ flt.to=ti.value; applyFilter(); });
