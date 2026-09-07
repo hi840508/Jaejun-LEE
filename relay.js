@@ -465,6 +465,10 @@ function _apkVersion(f) {
     try { const v = fs.readFileSync(path.join(RC_AGENT_DIR, 'apk-version.txt'), 'utf8').trim(); if (v) return v; } catch (_) {}
     return f ? new Date(f.mtime).toISOString().slice(0, 16).replace(/[-:T]/g, '') : '';
 }
+// 앱 최신 versionCode — agent/apk-versioncode.txt (배포 시 기록). 앱이 자기 versionCode와 비교해 '업데이트 있음' 표시.
+function _apkVersionCode() {
+    try { return parseInt(fs.readFileSync(path.join(RC_AGENT_DIR, 'apk-versioncode.txt'), 'utf8').trim(), 10) || 0; } catch (_) { return 0; }
+}
 const APK_URL = '/download/AlphaK.apk';   // 정식 주소(공백 없음)
 // 옛 주소도 계속 받아 준다 — 이미 배포된 안내문·링크가 깨지지 않도록.
 app.get([APK_URL, '/download/app.apk', '/download/Alpha%20K.apk', '/download/Earth.apk'], (req, res) => {
@@ -567,6 +571,12 @@ app.post('/api/fcm/register', (req, res) => {
 app.post('/api/fcm/diag', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     console.log('[fcm-diag]', me, '|', String((req.body && req.body.reason) || '').slice(0, 80));
+    res.json({ ok: true });
+});
+// 🩺 앱 상태 비콘(인증 불필요 — 로그인 전 상태도 진단). 앱이 열릴 때 브리지/로그인/토큰 유무를 서버 로그로 보고.
+app.post('/api/fcm/beacon', (req, res) => {
+    const b = req.body || {};
+    console.log('[fcm-beacon] bridge:' + !!b.hasBridge + ' login:' + !!b.loggedIn + ' token:' + !!b.hasToken + '(' + (b.tokLen || 0) + ') ver:' + (b.vc || '?') + ' ua:' + String(b.ua || '').slice(0, 55));
     res.json({ ok: true });
 });
 app.post('/api/fcm/unregister', (req, res) => {
@@ -679,7 +689,7 @@ function _pushPreview(msg) {
 app.get('/api/rc/version', (req, res) => {
     let v = '0'; try { v = fs.readFileSync(path.join(RC_AGENT_DIR, 'version.txt'), 'utf8').trim(); } catch (_) {}
     const _apk = _resolveApk();
-    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe', apk: !!_apk, apkUrl: APK_URL, apkVersion: _apkVersion(_apk), apkSize: _apk ? _apk.size : 0 });
+    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe', apk: !!_apk, apkUrl: APK_URL, apkVersion: _apkVersion(_apk), apkVersionCode: _apkVersionCode(), apkSize: _apk ? _apk.size : 0 });
 });
 // 개인화 원클릭 설치 배치 — 로그인 필요. exe 자동 다운로드 + 페어링(장기 기기 토큰) + 자동시작.
 app.post('/api/rc/installer', (req, res) => {
