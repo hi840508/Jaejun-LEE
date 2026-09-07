@@ -3099,7 +3099,30 @@
             async function _rm(k){ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).delete(k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }
 
             const supported = (typeof window.showDirectoryPicker === 'function');
-            let _handle=null;
+            let _handle=null;               // 현재 '활성' 루트 핸들(기존 경로 메서드 호환)
+            let _roots=null;                // 📁 다중 공유폴더: [{id,name,handle}]
+            const KEY_LIST='shared_list';
+            function _newRootId(){ return 'root_'+Math.random().toString(36).slice(2,9)+Date.now().toString(36); }
+            async function _loadRoots(){
+                if(_roots) return _roots;
+                _roots=[];
+                try{ const arr=await _get(KEY_LIST); if(Array.isArray(arr)) _roots=arr.filter(x=>x&&x.handle).map(x=>({ id:x.id||_newRootId(), name:x.name||(x.handle&&x.handle.name)||'폴더', handle:x.handle })); }catch(_){}
+                if(!_roots.length){ try{ const legacy=await _get(KEY); if(legacy){ _roots=[{ id:_newRootId(), name:legacy.name||'폴더', handle:legacy }]; await _saveRoots(); } }catch(_){} }
+                return _roots;
+            }
+            async function _saveRoots(){ try{ await _put(KEY_LIST, (_roots||[]).map(r=>({ id:r.id, name:r.name, handle:r.handle }))); }catch(_){} }
+            function _activeId(){ try{ return localStorage.getItem('rc_active_root')||''; }catch(_){ return ''; } }
+            function _setActiveId(id){ try{ localStorage.setItem('rc_active_root', id||''); }catch(_){} }
+            async function _activeRoot(){ const rs=await _loadRoots(); if(!rs.length) return null; const r=rs.find(x=>x.id===_activeId())||rs[0]; _setActiveId(r.id); return r; }
+            async function listRoots(){ const rs=await _loadRoots(); const aid=_activeId(); return rs.map(r=>({ id:r.id, name:r.name, active:(r.id===aid) })); }
+            async function setActiveRoot(id){ const rs=await _loadRoots(); const r=rs.find(x=>x.id===id); if(!r) return false; _setActiveId(r.id); _handle=r.handle; try{ await _put(KEY, r.handle); }catch(_){} return true; }
+            async function removeRoot(id){
+                let rs=await _loadRoots(); rs=rs.filter(x=>x.id!==id); _roots=rs; await _saveRoots();
+                if(!rs.length){ try{ await _rm(KEY); }catch(_){} try{ localStorage.removeItem('rc_folder_chosen'); }catch(_){} _handle=null; }
+                else { const cur=rs.find(x=>x.id===_activeId())||rs[0]; _setActiveId(cur.id); _handle=cur.handle; try{ await _put(KEY, cur.handle); }catch(_){} }
+                try{ await register(); }catch(_){}
+                return true;
+            }
 
             function deviceId(){ let id=localStorage.getItem('rc_device_id'); if(!id){ id='dev_'+Math.random().toString(36).slice(2,10)+Date.now().toString(36); localStorage.setItem('rc_device_id',id); } return id; }
             function deviceName(){
@@ -3114,7 +3137,7 @@
             }
             function setDeviceName(n){ if(n){ localStorage.setItem('rc_device_name', String(n).slice(0,40)); } }
 
-            async function _loadHandle(){ if(_handle) return _handle; if(!supported) return null; try{ _handle=(await _get(KEY))||null; }catch(_){ _handle=null; } return _handle; }
+            async function _loadHandle(){ if(!supported) return null; const r=await _activeRoot(); _handle=r?r.handle:null; return _handle; }
             async function _ensurePerm(rw){ const h=await _loadHandle(); if(!h) return false; const opts={mode: rw?'readwrite':'read'}; try{ let p=await h.queryPermission(opts); if(p==='granted') return true; p=await h.requestPermission(opts); return p==='granted'; }catch(_){ return false; } }
             async function folderName(){ const h=await _loadHandle(); return h? h.name : ''; }
             async function isConnected(){ if(!supported) return false; const h=await _loadHandle(); if(!h) return false; try{ return (await h.queryPermission({mode:'readwrite'}))==='granted'; }catch(_){ return false; } }
@@ -3126,16 +3149,21 @@
             async function pick(){
                 // 모바일/미지원: 폴더 지정 대신 기종별 자연스러운 워크플로 안내(앱=저장 권한 원탭, 브라우저=다운로드 저장)
                 if(!supported){ try{ window._showFolderPermHelp(); }catch(_){ showToast('모바일은 받은 파일이 다운로드 폴더에 저장됩니다.'); } return false; }
-                let h; try{ h=await window.showDirectoryPicker({ id:'rc-shared', mode:'readwrite', startIn:'documents' }); }catch(e){ return false; }
+                let h; try{ h=await window.showDirectoryPicker({ id:'rc-shared-'+Date.now(), mode:'readwrite', startIn:'documents' }); }catch(e){ return false; }
                 try{ const p=await h.requestPermission({mode:'readwrite'}); if(p!=='granted'){ try{ window._showFolderPermHelp(function(){ pick(); }); }catch(_){ showToast('폴더 쓰기 권한이 필요합니다.'); } return false; } }catch(_){ return false; }
+                // 📁 여러 폴더 '추가' — 기존 폴더를 대체하지 않고 목록에 더한다(중복은 건너뜀).
+                const rs=await _loadRoots();
+                for(const r of rs){ try{ if(r.handle && r.handle.isSameEntry && await r.handle.isSameEntry(h)){ _setActiveId(r.id); _handle=h; try{ await _put(KEY,h); }catch(_){} showToast('이미 추가된 폴더입니다: '+h.name); return true; } }catch(_){} }
+                const nr={ id:_newRootId(), name:h.name, handle:h }; rs.push(nr); await _saveRoots();
                 _handle=h; try{ await _put(KEY,h); }catch(_){}
+                _setActiveId(nr.id);
                 try{ localStorage.setItem('rc_folder_chosen','1'); }catch(_){}
                 await register();
                 try{ await syncIndex(); }catch(_){}
-                showToast('✅ 공유폴더 연결됨: '+h.name);
+                showToast('✅ 공유폴더 추가됨: '+h.name+' (총 '+rs.length+'개)');
                 return true;
             }
-            async function disconnect(){ _handle=null; try{ await _rm(KEY); }catch(_){} try{ localStorage.removeItem('rc_folder_chosen'); }catch(_){} await register(); }
+            async function disconnect(){ _handle=null; _roots=[]; try{ await _put(KEY_LIST, []); }catch(_){} try{ await _rm(KEY); }catch(_){} try{ localStorage.removeItem('rc_folder_chosen'); localStorage.removeItem('rc_active_root'); }catch(_){} await register(); }
 
             async function writeFile(name, blob){
                 if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음');
@@ -3472,7 +3500,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick };
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
@@ -4236,6 +4264,7 @@
                 window.__sfPath=path;
                 const selected=new Set();
                 const fname=connected?await R.folderName():'';
+                const roots = (connected && R.listRoots) ? await R.listRoots() : [];
                 const devices=await R.list();
                 let cur={folders:[],files:[]}; try{ if(connected) cur=await R.listAt(path); }catch(_){}
 
@@ -4252,6 +4281,13 @@
                     +'<button id="_sf-mirror" class="_sf-txt" title="클라우드 백업" style="color:#2563eb;">☁️ 클라우드</button>'
                     +'<button id="_sf-kebab" class="_sf-ic" title="더보기">'+_SFIC.kebab+'</button>'
                     +'</div>';
+                // 📁 다중 공유폴더 칩 행 — 연결된 폴더를 전환/추가/제거(한 곳에서 여러 폴더의 데이터를 본다)
+                const rootsRow = (notSupported || !connected) ? '' :
+                    ('<div id="_sf-roots" style="flex:none;background:#fff;padding:7px 14px 9px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f0f1f3;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
+                    + '<span style="font-size:11px;color:#94a3b8;font-weight:800;flex:none;">공유폴더</span>'
+                    + roots.map(r=>'<span class="_sf-root" data-id="'+r.id+'" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 10px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid '+(r.active?'#d6006e':'#e2e8f0')+';background:'+(r.active?'#fde7f1':'#fff')+';color:'+(r.active?'#b0005a':'#334155')+';white-space:nowrap;">📁 '+_sfEsc(r.name)+'<b class="_sf-root-x" data-id="'+r.id+'" title="이 폴더 목록에서 제거" style="color:#b6bdc7;font-weight:900;font-size:14px;line-height:1;padding:0 2px;">×</b></span>').join('')
+                    + '<button id="_sf-addroot" style="flex:none;padding:5px 11px;border-radius:20px;border:1px dashed #cbd5e1;background:#fff;color:#2563eb;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">＋ 폴더 추가</button>'
+                    + '</div>');
                 const typeChips=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(flt.type===t?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
                 const periodChips=[['all','전체'],['today','오늘'],['7','7일'],['30','30일']].map(p=>'<button class="_sf-pchip" data-period="'+p[0]+'" style="'+CHIP+(flt.period===p[0]?CHIPON:'')+'">'+p[1]+'</button>').join('');
                 const typeChipsPill=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(flt.type===t?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
@@ -4313,7 +4349,7 @@
                 else { _emptyMsg='받은 파일을 저장할 폴더를 한 번만 지정하면, 이후 자동으로 저장·연결됩니다.<br><button onclick="_sfPickNow()" style="margin-top:14px;padding:11px 20px;border:0;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">📂 공유폴더 지정</button>'; }
                 const grid='<div id="_sf-grid" style="flex:1;overflow:auto;padding:12px 18px 40px;">'+(empty?('<div style="padding:56px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+_emptyMsg+'</div>'):sectionsHtml)+'</div>';
 
-                ov.innerHTML=head+filter+toolbar+grid;
+                ov.innerHTML=head+rootsRow+filter+toolbar+grid;
 
                 // 닫기·메뉴는 상단바(캡처 영역)의 표준 햄버거/로고로 통일 — X 버튼 제거. switchTab이 공유폴더를 닫고 전환.
                 const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } };
@@ -4328,7 +4364,15 @@
                 // 새 폴더 / 업로드 / 폴더 변경 / 연결 해제 → 케밥 메뉴
                 const doNewFolder=async()=>{ const nm=await _sfPrompt('새 폴더 이름',''); if(!nm) return; if(await R.mkdirAt(path,nm)) render(); else showToast('폴더 생성 실패'); };
                 const doUpload=()=>{ const inp=document.createElement('input'); inp.type='file'; inp.multiple=true; inp.style.display='none'; document.body.appendChild(inp); inp.onchange=async()=>{ const fs=[].slice.call(inp.files||[]); let ok=0; for(const f of fs){ try{ await R.writeFileAt(path,f.name,f); ok++; }catch(_){} } try{ inp.remove(); }catch(_){} showToast('업로드: '+ok+'개'); render(); }; inp.click(); };
-                const kb=ov.querySelector('#_sf-kebab'); if(kb) kb.onclick=(e)=>{ const items=[]; if(connected){ items.push({label:'📁 새 폴더',fn:doNewFolder}); items.push({label:'⬆ 업로드',fn:doUpload}); items.push({label:'📂 폴더 변경',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); items.push({label:'🔌 연결 해제',danger:true,fn:async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요? (폴더의 실제 파일은 삭제되지 않습니다)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } }}); } else { items.push({label:'📂 공유폴더 지정',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); } const r=kb.getBoundingClientRect(); ctxMenu(r.right-180, r.bottom+4, items); };
+                const kb=ov.querySelector('#_sf-kebab'); if(kb) kb.onclick=(e)=>{ const items=[]; if(connected){ items.push({label:'📁 새 폴더',fn:doNewFolder}); items.push({label:'⬆ 업로드',fn:doUpload}); items.push({label:'➕ 공유폴더 추가',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); items.push({label:'🔌 전체 연결 해제',danger:true,fn:async()=>{ if(confirm('이 기기의 공유폴더 연결을 모두 해제할까요? (폴더의 실제 파일은 삭제되지 않습니다)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } }}); } else { items.push({label:'📂 공유폴더 지정',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); } const r=kb.getBoundingClientRect(); ctxMenu(r.right-180, r.bottom+4, items); };
+                // 📁 다중 공유폴더 칩: 전환 / 제거 / 추가
+                ov.querySelectorAll('._sf-root').forEach(el=>{ const id=el.getAttribute('data-id');
+                    el.addEventListener('click',async(e)=>{ if(e.target && e.target.closest && e.target.closest('._sf-root-x')) return; try{ if(R.setActiveRoot) await R.setActiveRoot(id); }catch(_){} path=[]; render(); });
+                });
+                ov.querySelectorAll('._sf-root-x').forEach(el=>{ const id=el.getAttribute('data-id');
+                    el.addEventListener('click',async(e)=>{ e.stopPropagation(); e.preventDefault(); if(!confirm('이 공유폴더를 목록에서 제거할까요? (폴더의 실제 파일은 삭제되지 않습니다)')) return; try{ if(R.removeRoot) await R.removeRoot(id); }catch(_){} path=[]; render(); });
+                });
+                const addRootBtn=ov.querySelector('#_sf-addroot'); if(addRootBtn) addRootBtn.addEventListener('click',async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } });
 
                 const selbar=ov.querySelector('#_sf-selbar');
                 const updCnt=()=>{ const c=ov.querySelector('#_sf-cnt'); if(c) c.textContent=selected.size+'개 선택'; if(selbar) selbar.style.display=selected.size>0?'flex':'none'; };
@@ -10016,6 +10060,11 @@ pdfjsScript,
                     '</div>',
                     '<div class="container" id="productsContainer"></div>',
                     '<div class="footer-chat"><a href="#" class="footer-chat-btn" id="bottomChatBtn">' + creatorSafe + ' 님과 채팅</a></div>',
+                    // 💬 항시 보이는 대화방 버튼(동일 아이콘·배치) — 스크롤과 무관하게 언제든 대화방을 연다
+                    '<a href="#" id="fabChatBtn" target="_blank" title="대화방 열기" style="position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:99999;width:58px;height:58px;border-radius:50%;background:#d6006e;box-shadow:0 8px 24px rgba(214,0,110,.45);display:flex;align-items:center;justify-content:center;text-decoration:none;">',
+                    '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>',
+                    '<span id="fabChatLeft" style="display:none;position:absolute;inset:0;border-radius:50%;background:rgba(30,41,59,.86);color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center;text-align:center;line-height:1.2;">나간<br>대화방</span>',
+                    '</a>',
                     '<scr' + 'ipt id="bundleData" type="application/json">',
                     bundleData,
                     '</scr' + 'ipt>',
@@ -10028,6 +10077,9 @@ pdfjsScript,
                     '  document.getElementById("topChatBtn").target = "_blank";',
                     '  document.getElementById("bottomChatBtn").href = data.chatInviteLink;',
                     '  document.getElementById("bottomChatBtn").target = "_blank";',
+                    '  var fab=document.getElementById("fabChatBtn"); if(fab){ fab.href=data.chatInviteLink; }',
+                    // 💬 거래 대화방이 지정돼 있고 이미 나간(left) 상태면 FAB에 "나간 대화방" 표시
+                    '  try{ if(fab && data.roomId && data.statusUrl){ fetch(data.statusUrl+"?roomId="+encodeURIComponent(data.roomId)).then(function(r){return r.json();}).then(function(j){ if(j && j.left){ var lo=document.getElementById("fabChatLeft"); if(lo) lo.style.display="flex"; } }).catch(function(){}); } }catch(e){}',
                     '  function renderMain(box, content, filename) {',
                     '    if(!content) { box.innerHTML = "<div class=\\"fallback\\"><div class=\\"icon\\">❌</div>데이터 없음</div>"; return; }',
                     '    var head = content.split(",")[0] || "";',
