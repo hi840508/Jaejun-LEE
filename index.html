@@ -8776,18 +8776,37 @@
             if(window.AndroidBridge){
                 // 네이티브 알림(FCM) 탭 시 호출 → 앱 내에서 해당 방 열기(새로고침 없이)
                 window.__alphakOpenRoom = function(roomId){ try{ if(roomId && window.openEarthRoom) window.openEarthRoom(roomId); }catch(_){} };
-                // FCM 토큰 등록(네이티브가 비동기로 토큰 준비 → 준비될 때까지 폴링, 로그인 후 재시도)
+                // 네이티브가 토큰 준비되면 직접 밀어넣음(폴링보다 확실). 로그인 전이면 저장만 → 로그인 후 등록.
+                window.__alphakSetFcmToken = function(tok){ try{ if(tok){ window.__alphakFcmToken = String(tok); window.__alphakRegisterFcm(); } }catch(_){} };
+                // 네이티브가 토큰 획득 실패를 알려주면 서버 로그로 진단(기기 Play서비스 문제 vs 등록경로 문제 구분)
+                window.__alphakFcmFail = function(reason){ try{ var tk=window.EARTH_TOKEN||localStorage.getItem('earth_token')||''; if(!tk) return; fetch(API_URL+'/api/fcm/diag',{method:'POST',headers:{'Content-Type':'application/json','x-auth-token':tk},body:JSON.stringify({reason:String(reason||'')})}).catch(function(){}); }catch(_){} };
+                // FCM 토큰 등록(토큰: 네이티브 push값 우선, 없으면 브리지 폴링. 로그인 후 재시도)
                 window.__alphakRegisterFcm = function(){
                     try{
                         var tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
-                        var fcmTok = ''; try{ fcmTok = window.AndroidBridge.getFcmToken()||''; }catch(_){}
-                        if(!tk || !fcmTok){ if((window.__alphakFcmTries=(window.__alphakFcmTries||0)+1) < 40) setTimeout(window.__alphakRegisterFcm, 1500); return; }
+                        var fcmTok = window.__alphakFcmToken || ''; if(!fcmTok){ try{ fcmTok = window.AndroidBridge.getFcmToken()||''; }catch(_){} }
+                        if(!tk || !fcmTok){ if((window.__alphakFcmTries=(window.__alphakFcmTries||0)+1) < 60) setTimeout(window.__alphakRegisterFcm, 1500); else if(tk) window.__alphakFcmFail('no-token-after-retries'); return; }
                         if(window.__alphakFcmDone === fcmTok) return;   // 동일 토큰 중복 등록 방지
                         fetch(API_URL + '/api/fcm/register', { method:'POST', headers:{'Content-Type':'application/json','x-auth-token':tk}, body: JSON.stringify({ token: fcmTok, platform:'android' }) })
                             .then(function(r){ return r.json(); }).then(function(){ window.__alphakFcmDone = fcmTok; }).catch(function(){});
                     }catch(_){}
                 };
+                // 📲 앱 복귀(onResume)/포그라운드 시 — 소켓 재접속 + 대화목록 즉시 갱신(WebView 실시간 끊김 방지의 핵심)
+                window.__alphakOnResume = function(){
+                    try{
+                        if(window.socket){ try{ if(!window.socket.connected) window.socket.connect(); }catch(_){} }
+                        if(typeof loadChatList === 'function') loadChatList();
+                        try{ window.__alphakRegisterFcm(); }catch(_){}
+                    }catch(_){}
+                };
+                // 🛟 안전망: 앱 화면이 보일 때 20초마다 목록 갱신(소켓이 불안정해도 새 메시지/방이 뜨도록). 소켓 정상이면 거의 무해.
+                if(!window.__alphakPoll){
+                    window.__alphakPoll = setInterval(function(){
+                        try{ if(document.visibilityState==='visible' && currentUser && typeof loadChatList==='function') loadChatList(); }catch(_){}
+                    }, 20000);
+                }
                 window.addEventListener('alphak-native-ready', window.__alphakRegisterFcm);
+                document.addEventListener('visibilitychange', function(){ try{ if(document.visibilityState==='visible') window.__alphakOnResume(); }catch(_){} });
                 setTimeout(window.__alphakRegisterFcm, 1500);
                 // ⬇️ 인앱 다운로드: blob:/data: 첨부는 WebView가 못 받으므로 base64로 변환해 네이티브 저장
                 document.addEventListener('click', function(ev){

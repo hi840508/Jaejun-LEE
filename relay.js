@@ -558,9 +558,16 @@ app.post('/api/fcm/register', (req, res) => {
     const token = req.body && req.body.token;
     const platform = (req.body && req.body.platform) || 'android';
     if (!token) return res.status(400).json({ error: 'no token' });
+    console.log('[fcm-reg]', me, platform, String(token).slice(0, 18), '| FCM활성:', !!fcm);
     // 같은 토큰이 계정 이동했을 수 있으므로 token 을 PK로 upsert(소유자 교체)
     db.run(`INSERT OR REPLACE INTO fcm_tokens (token, userName, platform, updated) VALUES (?, ?, ?, ?)`,
         [token, me, platform, new Date().toISOString()], () => res.json({ ok: true, fcm: !!fcm }));
+});
+// 🩺 앱 FCM 진단 로그(토큰 획득 실패 등) — 기기 문제 vs 등록경로 문제 구분용
+app.post('/api/fcm/diag', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    console.log('[fcm-diag]', me, '|', String((req.body && req.body.reason) || '').slice(0, 80));
+    res.json({ ok: true });
 });
 app.post('/api/fcm/unregister', (req, res) => {
     const token = req.body && req.body.token; if (!token) return res.json({ ok: true });
