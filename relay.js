@@ -101,13 +101,17 @@ function _syncAppToR2() {
     try {
         const { PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
         const _apk = _resolveApk();
+        const _crypto = require('crypto');
         [{ name: 'APP_Setup.exe', ct: 'application/octet-stream' }].concat(_apk ? [{ name: _apk.name, ct: 'application/vnd.android.package-archive' }] : []).forEach(fi => {
             const fp = path.join(RC_AGENT_DIR, fi.name);
             if (!fs.existsSync(fp)) return;
-            const size = fs.statSync(fp).size;
+            const buf = fs.readFileSync(fp);
+            const size = buf.length;
+            // ⚠️ 크기가 같아도 내용이 바뀔 수 있다(예: 앱 버전업이 동일 크기) → 내용 해시(ETag=MD5)로 비교해 다르면 업로드.
+            const md5 = _crypto.createHash('md5').update(buf).digest('hex');
             _r2.client.send(new HeadObjectCommand({ Bucket: _r2.bucket, Key: 'app/' + fi.name }))
-                .then(h => { if (Number(h.ContentLength) !== size) throw new Error('diff'); })
-                .catch(() => { _r2.client.send(new PutObjectCommand({ Bucket: _r2.bucket, Key: 'app/' + fi.name, Body: fs.readFileSync(fp), ContentType: fi.ct })).then(() => console.log('☁️ 앱 파일 R2 업로드:', fi.name, size)).catch(e => console.warn('앱 R2 업로드 실패', fi.name, e && e.message)); });
+                .then(h => { const etag = String(h.ETag || '').replace(/"/g, '').toLowerCase(); if (etag !== md5) throw new Error('diff'); })
+                .catch(() => { _r2.client.send(new PutObjectCommand({ Bucket: _r2.bucket, Key: 'app/' + fi.name, Body: buf, ContentType: fi.ct })).then(() => console.log('☁️ 앱 파일 R2 업로드:', fi.name, size, md5.slice(0, 8))).catch(e => console.warn('앱 R2 업로드 실패', fi.name, e && e.message)); });
         });
     } catch (e) { console.warn('_syncAppToR2:', e && e.message); }
 }
