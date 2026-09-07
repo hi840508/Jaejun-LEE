@@ -4382,9 +4382,11 @@
                     +'</div>');
                 // 작업바: 선택된 항목이 있을 때만 표시(아이콘)
                 const AB='width:34px;height:34px;border:none;border-radius:9px;background:transparent;color:#374151;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+                const _pickMode = !!window.__sfPickResolve;
                 const toolbar='<div id="_sf-selbar" style="display:none;flex:none;background:#eef4ff;padding:7px 14px;align-items:center;gap:4px;border-bottom:1px solid #dbe6ff;">'
                     +'<span id="_sf-cnt" style="font-size:13px;font-weight:700;color:#1d4ed8;padding:0 6px;">0개 선택</span>'
                     +'<div style="flex:1;"></div>'
+                    +(_pickMode ? '<button id="_sf-pickattach" style="'+'background:#d6006e;color:#fff;border:0;border-radius:8px;padding:8px 14px;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap;">✔ 선택 첨부</button>' : '')
                     +'<button class="_sf-act" data-act="preview" title="미리보기" style="'+AB+'">'+_SFIC.eye+'</button>'
                     +'<button class="_sf-act" data-act="share" title="공유 / 나에게 보내기" style="'+AB+'">'+_SFIC.share+'</button>'
                     +'<button class="_sf-act" data-act="rename" title="이름변경" style="'+AB+'">'+_SFIC.edit+'</button>'
@@ -4460,6 +4462,16 @@
                 const selbar=ov.querySelector('#_sf-selbar');
                 const updCnt=()=>{ const c=ov.querySelector('#_sf-cnt'); if(c) c.textContent=selected.size+'개 선택'; if(selbar) selbar.style.display=selected.size>0?'flex':'none'; };
                 const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ selected.clear(); ov.querySelectorAll('.rc-gf').forEach(el=>{ const c=el.querySelector('.rc-gf-chk'); if(c) c.checked=false; el.style.outline=''; }); updCnt(); };
+                // 📎 선택 모드(pick): 선택한 파일을 콜백으로 돌려주고 갤러리 닫기(의뢰서 첨부 등)
+                { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=async()=>{
+                    if(!selected.size){ showToast('첨부할 파일을 선택하세요.'); return; }
+                    const names=[...selected]; const files=[];
+                    showToast('파일 읽는 중… ('+names.length+'개)');
+                    for(const nm of names){ try{ const f=await R.getFileAt(path, nm); if(f) files.push(f); }catch(_){} }
+                    const cb=window.__sfPickResolve; window.__sfPickResolve=null;
+                    try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){}
+                    if(cb) cb(files);
+                }; }
                 // 폴더 카드 — 단일 클릭으로 열기 + 파일 카드를 끌어다 놓으면 그 폴더로 이동(탐색기처럼)
                 ov.querySelectorAll('.rc-gfd').forEach(el=>{ const nm=el.getAttribute('data-name');
                     el.addEventListener('click',()=>{ path=path.concat([nm]); render(); });
@@ -4777,6 +4789,16 @@
             }
         };
         window.openSharedFolderPanel = openSharedFolderPanel;
+        // 📎 공유폴더 '선택 모드' — 갤러리를 열어 파일을 고르게 하고, 선택한 File[]을 Promise로 돌려준다(의뢰서/채팅 첨부 등).
+        window.__sfPickResolve = null;
+        window._sfPickFiles = function(){
+            return new Promise(function(resolve){
+                if(!(window.RCFolder && window.RCFolder.supported)){ showToast('이 기기는 공유폴더를 지원하지 않습니다(모바일/사파리). 내 PC에서 선택해 주세요.'); resolve([]); return; }
+                window.__sfPickResolve = function(files){ resolve(files||[]); };
+                try{ openSharedFolderPanel(); }catch(_){ resolve([]); }
+                showToast('📁 첨부할 파일을 선택한 뒤 [✔ 선택 첨부]를 누르세요.');
+            });
+        };
 
         function loginSuccess(data) {
             currentUser = data; document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
@@ -11199,10 +11221,12 @@ pdfjsScript,
                 <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin-bottom:8px;">📝 요청 사항 / 메모</div>
                 <textarea id="order-buyer-memo" placeholder="배송 옵션, 사이즈, 색상, 기타 요청 등" rows="3" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-family:inherit; font-size:13px;"></textarea>
 
-                <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin:14px 0 8px;">📂 추가 파일 첨부 (선택)</div>
-                <div id="order-buyer-dropzone" class="dropzone" style="padding:20px;">
+                <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin:14px 0 8px;">📂 추가 파일 첨부 <span style="font-weight:500;color:var(--text-sub);font-size:12px;">(원본 의뢰서·쉐이드 이미지·구강 스캔 등)</span></div>
+                <div id="order-buyer-dropzone" class="dropzone" style="padding:20px;cursor:pointer;">
                     <div style="font-size:24px;">📁</div>
-                    <div style="font-size:13px; margin-top:4px;">파일을 드래그 앤 드롭하거나 클릭하여 선택</div>
+                    <div style="font-size:13px; margin-top:4px;font-weight:700;color:var(--primary,#d6006e);">클릭하면 공유폴더에서 선택</div>
+                    <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">여기로 드래그 앤 드롭도 가능</div>
+                    <button type="button" id="order-buyer-pc" style="margin-top:9px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;">💻 내 PC에서 선택</button>
                 </div>
                 <input type="file" id="order-buyer-files" multiple style="display:none;">
                 <div id="order-buyer-files-list" style="margin-top:8px;"></div>
@@ -11210,7 +11234,11 @@ pdfjsScript,
 
             const obDz = document.getElementById('order-buyer-dropzone');
             const obIn = document.getElementById('order-buyer-files');
-            obDz.addEventListener('click', () => obIn.click());
+            // 클릭 = 공유폴더에서 선택(원본 의뢰서·쉐이드·구강스캔 등). '내 PC' 버튼은 OS 파일 선택기.
+            obDz.addEventListener('click', async (e) => {
+                if(e.target && e.target.id === 'order-buyer-pc'){ obIn.click(); return; }
+                try{ const files = await window._sfPickFiles(); if(files && files.length) addBuyerFiles(files); }catch(_){ obIn.click(); }
+            });
             obDz.addEventListener('dragover', e => { e.preventDefault(); obDz.classList.add('dragover'); });
             obDz.addEventListener('dragleave', e => { e.preventDefault(); obDz.classList.remove('dragover'); });
             obDz.addEventListener('drop', e => { e.preventDefault(); obDz.classList.remove('dragover'); if(e.dataTransfer.files) addBuyerFiles(e.dataTransfer.files); });
