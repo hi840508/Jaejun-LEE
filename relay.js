@@ -580,7 +580,7 @@ app.post('/api/fcm/diag', (req, res) => {
 // 🩺 앱 상태 비콘(인증 불필요 — 로그인 전 상태도 진단). 앱이 열릴 때 브리지/로그인/토큰 유무를 서버 로그로 보고.
 app.post('/api/fcm/beacon', (req, res) => {
     const b = req.body || {};
-    console.log('[fcm-beacon] bridge:' + !!b.hasBridge + ' login:' + !!b.loggedIn + ' token:' + !!b.hasToken + '(' + (b.tokLen || 0) + ') ver:' + (b.vc || '?') + ' ua:' + String(b.ua || '').slice(0, 120));
+    console.log('[fcm-beacon] bridge:' + !!b.hasBridge + ' login:' + !!b.loggedIn + ' token:' + !!b.hasToken + '(' + (b.tokLen || 0) + ') sock:' + !!b.sock + ' sid:' + String(b.sid || '').slice(0, 8) + ' ver:' + (b.vc || '?') + ' ua:' + String(b.ua || '').slice(0, 90));
     res.json({ ok: true });
 });
 // 💥 앱 크래시 스택 수신(인증 불필요) — 네이티브 앱 실행 크래시 원격 진단.
