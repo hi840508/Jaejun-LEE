@@ -524,18 +524,42 @@ app.post('/api/push/clear-badge', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     pushBadge.set(me, 0); res.json({ ok: true });
 });
+// 🔔 내 기기로 테스트 알림 — 발신자 제외 규칙을 우회해 '나 자신'에게 보낸다(기기 알림 수신 여부 진단용).
+app.post('/api/push/test', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.all(`SELECT endpoint, sub FROM push_subs WHERE userName = ?`, [me], (e, rows) => {
+        const n = (rows || []).length;
+        if (!n) return res.json({ ok: false, subs: 0, reason: '이 계정에 등록된 푸시 구독이 없습니다(알림 권한 미허용).' });
+        const body = JSON.stringify({ title: '🔔 알림 테스트', body: '이 알림이 보이면 이 기기의 푸시가 정상입니다.', data: {}, badge: 0 });
+        let sent = 0, fail = 0, done = 0; const errs = [];
+        rows.forEach(r => {
+            let sub; try { sub = JSON.parse(r.sub); } catch (_) { done++; return; }
+            webpush.sendNotification(sub, body, { urgency: 'high', TTL: 3600 })
+                .then(() => { sent++; })
+                .catch(err => { fail++; const sc = err && err.statusCode; errs.push(sc + ':' + ((err && err.message) || '')); if (sc === 404 || sc === 410) db.run(`DELETE FROM push_subs WHERE endpoint = ?`, [r.endpoint]); })
+                .finally(() => { if (++done === n) res.json({ ok: sent > 0, subs: n, sent, fail, errors: errs }); });
+        });
+    });
+});
 // 특정 사용자에게 푸시(오프라인일 때만 호출). title/body/data 전달 + 뱃지 증가.
 function sendPushToUser(name, payload) {
-    if (!webpush || !name) return;
+    if (!webpush || !name) { console.log('[push] skip(webpush 없음 또는 대상없음):', name); return; }
     const badge = (pushBadge.get(name) || 0) + 1; pushBadge.set(name, badge);
     const body = JSON.stringify(Object.assign({ badge: badge }, payload));
     db.all(`SELECT endpoint, sub FROM push_subs WHERE userName = ?`, [name], (e, rows) => {
+        const n = (rows || []).length;
+        console.log('[push] →', name, '| 구독', n, '개 |', (payload && payload.title) || '', '/', (payload && payload.body) || '');
+        if (!n) return;
         (rows || []).forEach(r => {
             let sub; try { sub = JSON.parse(r.sub); } catch (_) { return; }
             // urgency:high + TTL → 절전(Doze) 상태에서도 즉시 깨워 전달(카톡식). 미전달 시 하루까지 재시도.
-            webpush.sendNotification(sub, body, { urgency: 'high', TTL: 86400 }).catch(err => {
-                if (err && (err.statusCode === 404 || err.statusCode === 410)) db.run(`DELETE FROM push_subs WHERE endpoint = ?`, [r.endpoint]);
-            });
+            webpush.sendNotification(sub, body, { urgency: 'high', TTL: 86400 })
+                .then(() => console.log('[push] ok', name, String(r.endpoint).slice(0, 40)))
+                .catch(err => {
+                    const sc = err && err.statusCode;
+                    console.log('[push] FAIL', name, 'status', sc, (err && err.body) ? String(err.body).slice(0, 120) : (err && err.message) || '');
+                    if (sc === 404 || sc === 410) db.run(`DELETE FROM push_subs WHERE endpoint = ?`, [r.endpoint]);
+                });
         });
     });
 }
@@ -1788,10 +1812,10 @@ app.post('/api/chat/leave-room', (req, res) => {
         // 주문 대화방: 환불/구매확정 등 '종료된 거래'만 나갈 수 있음(진행 중 거래는 보호)
         const orderId = roomId.replace('room_ord_', '');
         db.get(`SELECT status, ended FROM product_orders po LEFT JOIN chat_rooms cr ON cr.roomId = ? WHERE po.id = ?`, [roomId, orderId], (e, ord) => {
-            const terminal = ord && (ord.status === 'refunded' || ord.status === 'confirmed');
+            const terminal = ord && ['refunded', 'confirmed', 'cancelled', 'canceled', 'completed', 'done'].indexOf(ord.status) >= 0;
             const closed = ord && ord.ended === 1;
             if (terminal || closed || !ord) return _doHide(true);
-            return res.status(400).json({ error: '진행 중인 주문 대화방은 나갈 수 없습니다. (환불·구매확정 후 가능)' });
+            return res.status(400).json({ error: '진행 중인 주문 대화방은 나갈 수 없습니다. (환불·구매확정·취소 후 가능)' });
         });
         return;
     }

@@ -8729,6 +8729,19 @@
             for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
             return arr;
         }
+        // 🔔 내 기기로 테스트 알림(발신자 제외 규칙 우회) — 알림 수신 여부 즉시 진단
+        window._earthTestPush = async function(){
+            try{
+                // 구독이 없으면 먼저 구독 시도
+                try{ if(window._earthSetupPush) await window._earthSetupPush(); }catch(_){}
+                const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
+                const r = await fetch(API_URL + '/api/push/test', { method:'POST', headers:{ 'x-auth-token': tk } });
+                const j = await r.json().catch(()=>({}));
+                if(j && j.ok){ showToast('🔔 테스트 알림을 보냈습니다 ('+j.sent+'/'+j.subs+' 기기). 잠시 후 알림을 확인하세요.'); }
+                else if(j && j.subs === 0){ showToast('이 계정에 알림 구독이 없습니다 — [알림 켜기]로 권한을 허용해 주세요.'); }
+                else { showToast('테스트 알림 실패'+(j&&j.errors&&j.errors.length?(': '+j.errors[0]):'')+' (구독 '+((j&&j.subs)||0)+'개)'); }
+            }catch(e){ showToast('테스트 알림 오류: '+(e.message||e)); }
+        };
         window._earthSetupPush = async function(){
             try {
                 if(!('serviceWorker' in navigator) || !('PushManager' in window)) return;
@@ -8824,10 +8837,12 @@
                     + (denied ? '<div style="font-size:12px;color:#b91c1c;margin-top:12px;">알림이 차단돼 있어요. 설정 → 앱 → Alpha K → 알림에서 켜 주세요.</div>' : '')
                     + (perm === 'granted' ? soundTip : '')
                     + '<button id="notify-onboard-btn" style="width:100%;margin-top:16px;background:var(--gradient-btn);color:#fff;border:0;border-radius:10px;padding:13px;font-weight:800;font-size:14px;cursor:pointer;">' + (perm === 'granted' ? '확인' : '알림 켜기') + '</button>'
+                    + (perm === 'granted' ? '<button id="notify-onboard-test" style="width:100%;margin-top:8px;background:#fff;color:#b0005a;border:1px solid #d6006e;border-radius:10px;padding:11px;font-weight:800;font-size:13px;cursor:pointer;">🔔 이 기기로 알림 테스트</button>' : '')
                     + '<button id="notify-onboard-skip" style="width:100%;margin-top:8px;background:transparent;color:#888;border:0;padding:6px;font-size:12px;cursor:pointer;">나중에</button>'
                     + '</div>';
                 const close = function(){ localStorage.setItem('notify_onboarded','1'); try{ m.remove(); }catch(_){} };
                 document.getElementById('notify-onboard-skip').onclick = close;
+                { const tb=document.getElementById('notify-onboard-test'); if(tb) tb.onclick=function(){ if(window._earthTestPush) window._earthTestPush(); }; }
                 document.getElementById('notify-onboard-btn').onclick = async function(){
                     if(Notification.permission !== 'granted' && Notification.permission !== 'denied'){ try { await Notification.requestPermission(); } catch(_){} }
                     if(Notification.permission === 'granted'){
