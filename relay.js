@@ -478,8 +478,10 @@ const APK_URL = '/download/AlphaK.apk';   // 정식 주소(공백 없음)
 app.get([APK_URL, '/download/app.apk', '/download/Alpha%20K.apk', '/download/Earth.apk'], (req, res) => {
     const f = _resolveApk();
     if (!f) return res.status(404).send('apk not published yet');
+    // ⚠️ 파일명이 늘 AlphaK.apk 로 같아 브라우저/CDN이 옛 APK를 캐시함 → 버전 캐시버스터 + no-store 로 항상 최신 받게.
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     // R2 로 보내면 다운로드 전송비가 무료다. 실제 올라가 있는 이름 그대로 보낸다.
-    if (_r2) return res.redirect(302, _r2.publicBase + '/app/' + encodeURIComponent(f.name));
+    if (_r2) return res.redirect(302, _r2.publicBase + '/app/' + encodeURIComponent(f.name) + '?v=' + _apkVersionCode() + '_' + Math.floor(f.mtime));
     res.type('application/vnd.android.package-archive');
     res.download(f.path, 'AlphaK.apk');
 });
