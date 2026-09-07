@@ -6676,6 +6676,20 @@
             } catch(e){}
         }
 
+        // 📦 앱 안에서 연 묶음(iframe)에서 '대화하러가기'를 누르면 → 외부 브라우저 대신 앱 내에서 대화방 열기
+        window.addEventListener('message', function(ev){
+            const d = ev.data; if(!d || d.type !== 'earth_bundle_openchat') return;
+            try{
+                const u = new URL(d.url, location.href);
+                const room = u.searchParams.get('openroom');
+                const invite = u.searchParams.get('invite');
+                try{ closeModal('universal-modal'); }catch(_){}
+                try{ const m=document.getElementById('file-viewer-modal'); if(m) m.style.display='none'; }catch(_){}
+                if(room && window.openEarthRoom) window.openEarthRoom(room);
+                else if(invite && window.openMessengerChat) window.openMessengerChat(invite);
+                else if(invite && window.startChatWith) window.startChatWith(invite);
+            }catch(_){}
+        });
         function fireMobileNotification(sender, message) {
             // ★부모(Alpha K 앱)에 미확인 알림 → 채팅 아이콘 깜빡임/알림음★ (iframe 임베드 시)
             try { if(window.parent && window.parent !== window) window.parent.postMessage({ type:'rc_unread', from:sender, preview:/^\[[A-Z_]+\]/.test(message||'')?'📎 파일':(message||'') }, '*'); } catch(e){}
@@ -6683,8 +6697,8 @@
             if('vibrate' in navigator) { try { navigator.vibrate([180, 80, 180]); } catch(e){} }
             // 사운드
             playNotifySound();
-            // 브라우저 시스템 알림 (포커스 없을 때 OS 알림으로 표시됨)
-            if('Notification' in window && Notification.permission === 'granted') {
+            // 브라우저/앱 시스템 알림. Electron 앱은 렌더러 permission이 'default'로 남아도 네이티브 알림이 뜨므로 앱이면 항상 시도.
+            if('Notification' in window && (Notification.permission === 'granted' || !!window.rayApp)) {
                 try {
                     const preview = message.startsWith('[TRANSFER]') ? '💸 송금 도착' :
                                     message.startsWith('[PRIVATE_ASSET]') ? '📦 1:1 비공개 상품' :
@@ -8737,6 +8751,8 @@
                 const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
                 const r = await fetch(API_URL + '/api/push/test', { method:'POST', headers:{ 'x-auth-token': tk } });
                 const j = await r.json().catch(()=>({}));
+                // 앱/데스크톱은 즉시 로컬 알림도 띄워 '표시 자체'가 되는지 바로 확인(Electron 네이티브 알림은 권한과 무관)
+                try{ if('Notification' in window){ const n=new Notification('🔔 알림 테스트', { body:'이 알림이 보이면 이 기기의 알림 표시는 정상입니다.', tag:'earth-test' }); setTimeout(function(){ try{ n.close(); }catch(_){} }, 8000); } }catch(_){}
                 if(j && j.ok){ showToast('🔔 테스트 알림을 보냈습니다 ('+j.sent+'/'+j.subs+' 기기). 잠시 후 알림을 확인하세요.'); }
                 else if(j && j.subs === 0){ showToast('이 계정에 알림 구독이 없습니다 — [알림 켜기]로 권한을 허용해 주세요.'); }
                 else { showToast('테스트 알림 실패'+(j&&j.errors&&j.errors.length?(': '+j.errors[0]):'')+' (구독 '+((j&&j.subs)||0)+'개)'); }
@@ -9792,7 +9808,9 @@ pdfjsScript,
 'init();function loop(){requestAnimationFrame(loop);renderer.render(scene,camera);}loop();',
 'addEventListener("resize",function(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});',
 'document.getElementById("downloadAllBtn").addEventListener("click",function(){showToast("모든 파일 다운로드를 준비합니다...");var md=JSON.parse(document.getElementById("modelsDataJson").textContent||"[]");var ed=JSON.parse(document.getElementById("extraDataJson").textContent||"[]");var all=md.concat(ed);var k=0;function next(){if(k>=all.length)return;var it=all[k++];if(it.content){var a=document.createElement("a");a.href=it.content;a.download=it.filename;document.body.appendChild(a);a.click();document.body.removeChild(a);}setTimeout(next,500);}next();});',
-'</scr' + 'ipt></body></html>'
+'</scr' + 'ipt>',
+'<scr'+'ipt>(function(){if(window.parent&&window.parent!==window){document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var hr=a.getAttribute("href")||a.href||"";if(/[?&](invite|openroom)=/.test(hr)){e.preventDefault();try{window.parent.postMessage({type:"earth_bundle_openchat",url:a.href},"*");}catch(_){}}}},true);}})();</scr'+'ipt>',
+'</body></html>'
                 ].join('\n');
             }
 
@@ -9845,7 +9863,9 @@ pdfjsScript,
 '(function(){var data=JSON.parse(document.getElementById("bundle-data").textContent);var cards=document.getElementById("cards");function eh(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}function ea(s){return String(s||"").replace(/"/g,"&quot;");}',
 'function _b2u(d){try{if(!d||d.indexOf("data:")!==0)return d||"";var i=d.indexOf(",");var mm=(d.slice(0,i).match(/data:([^;]+)/)||[])[1]||"application/octet-stream";var bin=atob(d.slice(i+1));var a=new Uint8Array(bin.length);for(var j=0;j<bin.length;j++)a[j]=bin.charCodeAt(j);return URL.createObjectURL(new Blob([a],{type:mm}));}catch(e){return d;}}',
 'data.files.forEach(function(f){var card=document.createElement("div");card.className="card";var kb=(f.size?(f.size/1024).toFixed(0):"?");var du=_b2u(f.data);var pv=f.preview?_b2u(f.preview):"";var fn=(f.filename||"").toLowerCase();var img=/^image\\//.test(f.type)||/\\.(png|jpg|jpeg|gif|webp|bmp)$/.test(fn);var vid=/^video\\//.test(f.type)||/\\.(mp4|webm|mov)$/.test(fn);var aud=/^audio\\//.test(f.type)||/\\.(mp3|wav|ogg|m4a)$/.test(fn);var pdf=/pdf/i.test(f.type)||/\\.pdf$/.test(fn);var dcm=/dicom/i.test(f.type)||/\\.dcm$/.test(fn);var ic="\\uD83D\\uDCC4";if(img)ic="\\uD83D\\uDDBC";else if(vid)ic="\\uD83C\\uDFAC";else if(aud)ic="\\uD83C\\uDFB5";else if(pdf)ic="\\uD83D\\uDCD1";else if(dcm)ic="\\uD83E\\uDE7B";var h=\'<div class="card-head"><div class="card-icon">\'+ic+\'</div><div class="card-info"><div class="name">\'+eh(f.filename)+\'</div><div class="meta">\'+kb+\' KB · \'+eh(f.type||"파일")+\'</div></div></div>\';if(img)h+=\'<div class="preview"><img src="\'+du+\'"></div>\';else if(vid)h+=\'<div class="preview"><video src="\'+du+\'" controls></video></div>\';else if(aud)h+=\'<div class="preview"><audio src="\'+du+\'" controls></audio></div>\';else if(pdf)h+=\'<div class="preview"><iframe src="\'+du+\'"></iframe></div>\';else if(dcm&&f.preview)h+=\'<div class="preview"><img src="\'+pv+\'" style="max-width:100%;display:block;background:#000;"></div>\';else if(dcm)h+=\'<div class="preview" style="padding:22px;text-align:center;color:#94a3b8;font-size:12px;">DICOM 미리보기 없음 (다운로드로 열람)</div>\';h+=\'<div class="actions"><a class="btn" href="\'+du+\'" download="\'+ea(f.filename)+\'">다운로드</a></div>\';card.innerHTML=h;cards.appendChild(card);});})();',
-'</scr' + 'ipt></body></html>'
+'</scr' + 'ipt>',
+'<scr'+'ipt>(function(){if(window.parent&&window.parent!==window){document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var hr=a.getAttribute("href")||a.href||"";if(/[?&](invite|openroom)=/.test(hr)){e.preventDefault();try{window.parent.postMessage({type:"earth_bundle_openchat",url:a.href},"*");}catch(_){}}}},true);}})();</scr'+'ipt>',
+'</body></html>'
             ].join('\n');
         };
 
