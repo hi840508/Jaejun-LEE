@@ -6690,25 +6690,29 @@
                 else if(invite && window.startChatWith) window.startChatWith(invite);
             }catch(_){}
         });
-        function fireMobileNotification(sender, message) {
+        function fireMobileNotification(sender, message, roomId) {
             // ★부모(Alpha K 앱)에 미확인 알림 → 채팅 아이콘 깜빡임/알림음★ (iframe 임베드 시)
             try { if(window.parent && window.parent !== window) window.parent.postMessage({ type:'rc_unread', from:sender, preview:/^\[[A-Z_]+\]/.test(message||'')?'📎 파일':(message||'') }, '*'); } catch(e){}
             // 진동 (모바일)
             if('vibrate' in navigator) { try { navigator.vibrate([180, 80, 180]); } catch(e){} }
             // 사운드
             playNotifySound();
-            // 브라우저/앱 시스템 알림. Electron 앱은 렌더러 permission이 'default'로 남아도 네이티브 알림이 뜨므로 앱이면 항상 시도.
-            if('Notification' in window && (Notification.permission === 'granted' || !!window.rayApp)) {
+            const preview = message.startsWith('[TRANSFER]') ? '💸 송금 도착' :
+                            message.startsWith('[PRIVATE_ASSET]') ? '📦 1:1 비공개 상품' :
+                            message.startsWith('[FILE_ATTACH]') ? '📎 파일 도착' :
+                            message.startsWith('[LOCKED_FILE]') ? '🔒 잠금 파일 도착' :
+                            message.startsWith('[ORDER_CONFIRM]') ? '🛒 주문 확정 도착' :
+                            message.startsWith('[META_QR]') ? '🎫 상품권 도착' :
+                            message.length > 50 ? message.substring(0, 47) + '…' : message;
+            // 🔔 앱(Electron): 메인 프로세스 네이티브 알림이 가장 확실(렌더러 new Notification이 Windows에서 막혀도 뜬다).
+            if(window.rayApp && window.rayApp.notify){
+                try{ window.rayApp.notify({ title: '💬 '+sender, body: preview, roomId: roomId||'' }); return; }catch(_){}
+            }
+            // 브라우저: 시스템 알림
+            if('Notification' in window && Notification.permission === 'granted') {
                 try {
-                    const preview = message.startsWith('[TRANSFER]') ? '💸 송금 도착' :
-                                    message.startsWith('[PRIVATE_ASSET]') ? '📦 1:1 비공개 상품' :
-                                    message.startsWith('[FILE_ATTACH]') ? '📎 파일 도착' :
-                                    message.startsWith('[LOCKED_FILE]') ? '🔒 잠금 파일 도착' :
-                                    message.startsWith('[ORDER_CONFIRM]') ? '🛒 주문 확정 도착' :
-                                    message.startsWith('[META_QR]') ? '🎫 상품권 도착' :
-                                    message.length > 50 ? message.substring(0, 47) + '…' : message;
                     const n = new Notification(`💬 ${sender}`, { body: preview, tag: 'earth-chat-' + sender });
-                    n.onclick = () => { window.focus(); openMessengerChat(sender); n.close(); };
+                    n.onclick = () => { window.focus(); if(roomId && window.openEarthRoom) openEarthRoom(roomId); else openMessengerChat(sender); n.close(); };
                     setTimeout(() => { try { n.close(); } catch(e){} }, 8000);
                 } catch(e){}
             }
@@ -8743,16 +8747,22 @@
             for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
             return arr;
         }
+        // 🔔 네이티브 알림 클릭 시 해당 대화방 열기(Electron 앱)
+        try{ if(window.rayApp && window.rayApp.onOpenRoom){ window.rayApp.onOpenRoom(function(roomId){ try{ if(window.rayApp.showWindow) window.rayApp.showWindow(); }catch(_){} try{ if(roomId && window.openEarthRoom) window.openEarthRoom(roomId); }catch(_){} }); } }catch(_){}
         // 🔔 내 기기로 테스트 알림(발신자 제외 규칙 우회) — 알림 수신 여부 즉시 진단
         window._earthTestPush = async function(){
             try{
-                // 구독이 없으면 먼저 구독 시도
+                // 앱(Electron): 메인 프로세스 네이티브 알림을 즉시 띄워 '표시 자체' 확인(가장 확실)
+                if(window.rayApp && window.rayApp.notify){
+                    try{ const rr=await window.rayApp.notify({ title:'🔔 알림 테스트', body:'이 알림이 보이면 앱 알림이 정상입니다.' }); if(rr && rr.ok===false){ showToast('앱 네이티브 알림 실패: '+(rr.reason||'')+' — Windows 알림 설정 확인'); } else { showToast('🔔 앱 알림을 띄웠습니다. 알림이 보이는지 확인하세요.'); } }catch(_){}
+                }
+                // 구독이 없으면 먼저 구독 시도(웹푸시 경로)
                 try{ if(window._earthSetupPush) await window._earthSetupPush(); }catch(_){}
                 const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
                 const r = await fetch(API_URL + '/api/push/test', { method:'POST', headers:{ 'x-auth-token': tk } });
                 const j = await r.json().catch(()=>({}));
-                // 앱/데스크톱은 즉시 로컬 알림도 띄워 '표시 자체'가 되는지 바로 확인(Electron 네이티브 알림은 권한과 무관)
-                try{ if('Notification' in window){ const n=new Notification('🔔 알림 테스트', { body:'이 알림이 보이면 이 기기의 알림 표시는 정상입니다.', tag:'earth-test' }); setTimeout(function(){ try{ n.close(); }catch(_){} }, 8000); } }catch(_){}
+                // 브라우저는 로컬 알림도 시도
+                if(!(window.rayApp && window.rayApp.notify)){ try{ if('Notification' in window && Notification.permission==='granted'){ const n=new Notification('🔔 알림 테스트', { body:'이 알림이 보이면 이 기기의 알림 표시는 정상입니다.', tag:'earth-test' }); setTimeout(function(){ try{ n.close(); }catch(_){} }, 8000); } }catch(_){} }
                 if(j && j.ok){ showToast('🔔 테스트 알림을 보냈습니다 ('+j.sent+'/'+j.subs+' 기기). 잠시 후 알림을 확인하세요.'); }
                 else if(j && j.subs === 0){ showToast('이 계정에 알림 구독이 없습니다 — [알림 켜기]로 권한을 허용해 주세요.'); }
                 else { showToast('테스트 알림 실패'+(j&&j.errors&&j.errors.length?(': '+j.errors[0]):'')+' (구독 '+((j&&j.subs)||0)+'개)'); }
@@ -13657,7 +13667,7 @@ pdfjsScript,
                     if(data.id) { try { localStorage.setItem('rc_read_' + data.roomId, String(data.id)); } catch(_){} }
                     try { if(socket && socket.connected) socket.emit('read_room', { roomId: data.roomId }); } catch(_){}
                     // 현재 채팅방을 보고 있을 때도 진동+사운드 (현장감)
-                    fireMobileNotification(data.sender, data.message);
+                    fireMobileNotification(data.sender, data.message, data.roomId);
                 } else if(data.id) {
                     // 🚀 [v8+] 내 메시지 echo — 직전 낙관적 렌더 버블에 id 부여 (수정/삭제 가능하도록)
                     // 다른 기기/탭에서 보낸 내 메시지는 낙관적 버블이 없으므로 새로 append.
@@ -13670,7 +13680,7 @@ pdfjsScript,
                 loadChatList();
                 showToast(`${data.sender} 님의 새 메시지`);
                 // 다른 방 메시지는 진동+사운드+시스템 알림 모두 발사
-                fireMobileNotification(data.sender, data.message);
+                fireMobileNotification(data.sender, data.message, data.roomId);
             }
         }
 
