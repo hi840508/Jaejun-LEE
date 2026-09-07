@@ -4481,8 +4481,16 @@
                     el.addEventListener('click',(e)=>{ if(e.target===chk || (e.target&&e.target.closest&&e.target.closest('.rc-more'))) return; window.rcPreviewFolderFile(fnm, mim); });
                     // 🖥 더블클릭 = 실시간 뷰어(cbct_suite)로 열기. 같은 폴더의 다른 영상은 뷰어 안 DATA 서랍에서 추가로 연다.
                     el.addEventListener('dblclick',(e)=>{ if(e.target===chk) return; e.preventDefault(); e.stopPropagation(); window.rcOpenInLiveViewer(path, fnm); });
-                    el.addEventListener('dragstart',(e)=>{ if(!here){ e.preventDefault(); return; } try{ e.dataTransfer.setData('application/x-rc-file', fnm); e.dataTransfer.setData('text/plain', fnm); e.dataTransfer.effectAllowed='copy'; window.__rcDragFile=fnm; }catch(_){} });
-                    el.addEventListener('dragend',()=>{ window.__rcDragFile=null; });
+                    el.addEventListener('dragstart',(e)=>{ if(!here){ e.preventDefault(); return; } try{
+                        // 선택된 파일을 끌면 '선택 전체'를 함께 전달(대화방 드롭 시 묶음/개별 선택). 아니면 이 파일 하나.
+                        const multi = selected.has(fnm) && selected.size>1;
+                        window.__rcDragFiles = multi ? Array.from(selected) : [fnm];
+                        window.__rcDragFile = fnm;
+                        e.dataTransfer.setData('application/x-rc-file', fnm);
+                        e.dataTransfer.setData('text/plain', multi ? (Array.from(selected).join(', ')) : fnm);
+                        e.dataTransfer.effectAllowed='copy';
+                    }catch(_){} });
+                    el.addEventListener('dragend',()=>{ window.__rcDragFile=null; window.__rcDragFiles=null; });
                     // 우클릭 메뉴 — 로컬 파일은 전체 기능, 비로컬(원격) 파일도 최소 메뉴가 뜨게 한다.
                     el.addEventListener('contextmenu',(e)=>{ e.preventDefault();
                         const items=[];
@@ -4713,17 +4721,47 @@
         // 📤 폴더 파일 간편 공유(친구 선택 후 전송)
         window.rcShareFromFolder = function(name){ try{ openShareRecipientPicker([name]); }catch(e){ showToast('공유 실패'); } };
         // 🡒 갤러리 카드를 채팅 드로어로 드래그 → 현재 열린 대화방으로 전송
-        window._rcSendToCurrentRoom = async function(fname){
+        window._rcSendToCurrentRoom = async function(fname){ return window._rcSendFilesToRoom([fname]); };
+        function _fileToDataURL(f){ return new Promise((res)=>{ try{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>res(''); r.readAsDataURL(f); }catch(_){ res(''); } }); }
+        // 📦 여러 파일 전송 시 '묶음 vs 개별' 선택 안내
+        window._rcAskBundleMode = function(count){ return new Promise((resolve)=>{
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100500;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:400px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="font-size:34px;text-align:center;">📦</div><div style="font-weight:800;font-size:16px;text-align:center;margin:6px 0 4px;">'+count+'개 파일 전송</div><div style="font-size:13px;color:#475569;text-align:center;line-height:1.6;margin-bottom:16px;">여러 파일을 하나의 <b>묶음 파일(HTML)</b>로 보낼까요, 아니면 <b>개별 파일</b>로 각각 보낼까요?</div><div style="display:flex;flex-direction:column;gap:8px;"><button id="_bm-bundle" style="padding:12px;border:none;background:#d6006e;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">📦 묶음 파일로 전송</button><button id="_bm-indiv" style="padding:12px;border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:10px;font-weight:800;cursor:pointer;">🗂 개별 파일로 전송</button><button id="_bm-cancel" style="padding:10px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;border-radius:10px;font-weight:700;cursor:pointer;">취소</button></div></div>';
+            document.body.appendChild(ov); const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); };
+            ov.querySelector('#_bm-bundle').onclick=()=>done('bundle'); ov.querySelector('#_bm-indiv').onclick=()=>done('individual'); ov.querySelector('#_bm-cancel').onclick=()=>done(null); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(null); });
+        }); };
+        // 📤 공유폴더 → 대화방 전송. 규칙: 파일 1개=그대로, 여러 개=묶음/개별 선택.
+        window._rcSendFilesToRoom = async function(names){
+            names=(names||[]).filter(Boolean);
+            if(!names.length) return;
+            if(!currentChatRoomId || !activeChatFriend){ showToast('먼저 대화방을 여세요(친구 선택).'); return; }
+            const R=window.RCFolder, P=window.__sfPath||[];
+            const files=[]; for(const nm of names){ try{ const f=await R.getFileAt(P, nm); if(f) files.push(f); }catch(_){} }
+            if(!files.length){ showToast('파일을 찾을 수 없습니다.'); return; }
+            if(files.length===1){ if(window.handleChatFileAttach){ await window.handleChatFileAttach(files); } return; }
+            const mode=await window._rcAskBundleMode(files.length);
+            if(!mode) return;
+            if(mode==='individual'){ if(window.handleChatFileAttach){ await window.handleChatFileAttach(files); } return; }
+            // 묶음: 선택 파일들을 단일 HTML 묶음으로 변환해 1개로 전송
+            showToast('묶음 파일 생성 중… ('+files.length+'개)');
             try{
-                if(!currentChatRoomId || !activeChatFriend){ showToast('먼저 대화방을 여세요(친구 선택).'); return; }
-                const f=await window.RCFolder.getFileAt(window.__sfPath||[], fname); if(!f){ showToast('파일을 찾을 수 없습니다.'); return; }
-                if(window.handleChatFileAttach){ await window.handleChatFileAttach([f]); showToast('📤 전송: '+fname); }
-            }catch(e){ showToast('전송 실패'); }
+                const payloads=[]; for(const f of files){ const content=await _fileToDataURL(f); if(content) payloads.push({ filename:f.name, type:f.type||'', content }); }
+                if(!payloads.length){ showToast('묶음 생성 실패(파일 읽기)'); return; }
+                const html=window.buildChatBundleHTML(payloads, { title: files.length+'개 파일 묶음', sender: currentUser.name });
+                const ts=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+                const bundleFile=new File([html], '묶음_'+ts+'.html', { type:'text/html' });
+                if(window.handleChatFileAttach){ await window.handleChatFileAttach([bundleFile]); }
+            }catch(e){ showToast('묶음 생성 실패: '+(e.message||e)); }
         };
         (function(){
             const d=document.getElementById('messenger-drawer'); if(!d) return;
-            d.addEventListener('dragover',(e)=>{ try{ if((e.dataTransfer.types||[]).indexOf('application/x-rc-file')>=0){ e.preventDefault(); e.dataTransfer.dropEffect='copy'; } }catch(_){} });
-            d.addEventListener('drop',(e)=>{ try{ const fn=e.dataTransfer.getData('application/x-rc-file'); if(fn){ e.preventDefault(); window._rcSendToCurrentRoom(fn); } }catch(_){} });
+            d.addEventListener('dragover',(e)=>{ try{ if((e.dataTransfer.types||[]).indexOf('application/x-rc-file')>=0 || (window.__rcDragFiles&&window.__rcDragFiles.length)){ e.preventDefault(); e.dataTransfer.dropEffect='copy'; } }catch(_){} });
+            d.addEventListener('drop',(e)=>{ try{
+                const list=(window.__rcDragFiles&&window.__rcDragFiles.length)?window.__rcDragFiles.slice():[];
+                const fn=e.dataTransfer.getData('application/x-rc-file');
+                const names=list.length?list:(fn?[fn]:[]);
+                if(names.length){ e.preventDefault(); window._rcSendFilesToRoom(names); }
+            }catch(_){} });
         })();
         // 📁 2D: 반투명 썸네일 → 이 기기로 P2P 자기동기화 요청. 다른 기기가 온라인이면 직접 전송(클라우드 미경유).
         window.rcRequestSync = function(hash, fname){
@@ -8134,7 +8172,7 @@
                 e.preventDefault(); e.stopPropagation();
                 dragCounter = 0; overlay.classList.remove('active');
                 if(hasFiles && typeof window.handleChatFileAttach === 'function') window.handleChatFileAttach(e.dataTransfer.files);
-                else if(rc && window._rcSendToCurrentRoom) window._rcSendToCurrentRoom(rc);
+                else { const list=(window.__rcDragFiles&&window.__rcDragFiles.length)?window.__rcDragFiles.slice():(rc?[rc]:[]); if(list.length && window._rcSendFilesToRoom) window._rcSendFilesToRoom(list); }
             });
 
             // 🚀 [신규] 채팅 입력창에 이미지 붙여넣기 (Ctrl+V / Cmd+V)
