@@ -5271,20 +5271,17 @@
                 if(!isAdmin) return;
                 const now=new Date(); const d=now.getDate();
                 if(d<5 || d>10) return;
-                const key='tax_reminder_dismissed_'+now.getFullYear()+String(now.getMonth()+1).padStart(2,'0')+String(d).padStart(2,'0');
-                if(localStorage.getItem(key)) return;
                 if(document.getElementById('tax-reminder-banner')) return;
-                const left=10-d; const label = left<=0 ? 'D-DAY · 오늘이 마감!' : ('D-'+left);
+                const left=10-d; const label = left<=0 ? 'D-DAY' : ('D-'+left);
                 const urg = left<=1;
+                // 아주 간단히: 아이콘 + 짧은 라벨 + 버튼(한 줄, 세로로 접히지 않음). '오늘 그만보기' 없음 → 기한(1~10일)까지 계속 표시.
                 const b=document.createElement('div'); b.id='tax-reminder-banner';
-                b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:99991;max-width:94vw;background:'+(urg?'#7f1d1d':'#1e293b')+';color:#fff;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);';
-                b.innerHTML='<span style="font-size:20px;flex:none;">🧾</span>'
-                    +'<span style="font-size:13px;line-height:1.5;flex:1;min-width:0;">세금계산서 발행 기한 <b style="color:'+(urg?'#fecaca':'#7fe0ff')+';">'+label+'</b> — 매월 <b>1~10일</b> 발행 의무입니다. 이번 달 발행을 완료해 주세요.</span>'
-                    +'<button id="tax-rmd-go" style="padding:7px 12px;border:none;background:#2563eb;color:#fff;border-radius:8px;font-weight:800;cursor:pointer;white-space:nowrap;flex:none;">발행하러 가기</button>'
-                    +'<button id="tax-rmd-x" style="padding:7px 10px;border:none;background:transparent;color:#cbd5e1;border-radius:8px;cursor:pointer;flex:none;">오늘 그만보기</button>';
+                b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:99991;max-width:94vw;background:'+(urg?'#7f1d1d':'#1e293b')+';color:#fff;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 10px 30px rgba(0,0,0,.35);';
+                b.innerHTML='<span style="font-size:18px;flex:none;">🧾</span>'
+                    +'<span style="font-size:13px;font-weight:700;flex:none;white-space:nowrap;">세금계산서 발행 <b style="color:'+(urg?'#fecaca':'#7fe0ff')+';">'+label+'</b></span>'
+                    +'<button id="tax-rmd-go" style="padding:7px 12px;border:none;background:#2563eb;color:#fff;border-radius:8px;font-weight:800;cursor:pointer;white-space:nowrap;flex:none;">발행하기</button>';
                 document.body.appendChild(b);
                 b.querySelector('#tax-rmd-go').onclick=function(){ try{ switchTab('invoice'); }catch(_){} b.remove(); };
-                b.querySelector('#tax-rmd-x').onclick=function(){ try{ localStorage.setItem(key,'1'); }catch(_){} b.remove(); };
             }catch(_){}
         };
         function applyAdminUIState(active) {
@@ -9041,11 +9038,21 @@
             // 📦 앱 버전 표기 + 업데이트 New 뱃지(마지막으로 본 버전과 다르면 표시)
             async function _loadAppVersion(){
                 try{
-                    const d = await (await fetch(API_URL + '/api/app/version')).json();
-                    const ver = (d && d.version) || '';
+                    const ua = navigator.userAgent || '';
+                    const isAndroid = /Android/i.test(ua);
+                    let ver = '';
+                    if(isAndroid){
+                        // 안드로이드 사용자 → 받는 건 APK → APK 버전 표기(플랫폼과 일치)
+                        const r = await (await fetch(API_URL + '/api/rc/version')).json();
+                        ver = (r && (r.apkVersionName || (r.apkVersionCode ? String(r.apkVersionCode) : ''))) || '';
+                    } else {
+                        // PC 사용자 → 받는 건 설치파일(exe) → PC 앱 버전 표기
+                        const d = await (await fetch(API_URL + '/api/app/version')).json();
+                        ver = (d && d.version) || '';
+                    }
                     if(!ver) return;
                     window.__appVersion = ver;
-                    const vEl = document.getElementById('sb-app-ver'); if(vEl) vEl.textContent = 'v' + ver;
+                    const vEl = document.getElementById('sb-app-ver'); if(vEl) vEl.textContent = (isAndroid?'앱 v':'PC v') + ver;
                     const seen = localStorage.getItem('app_seen_version') || '';
                     const newEl = document.getElementById('sb-app-new'); if(newEl) newEl.style.display = (seen && seen !== ver) ? 'inline-block' : 'none';
                     if(!seen) localStorage.setItem('app_seen_version', ver);   // 최초 방문은 New 아님

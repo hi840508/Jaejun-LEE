@@ -473,6 +473,10 @@ function _apkVersion(f) {
 function _apkVersionCode() {
     try { return parseInt(fs.readFileSync(path.join(RC_AGENT_DIR, 'apk-versioncode.txt'), 'utf8').trim(), 10) || 0; } catch (_) { return 0; }
 }
+// 안드로이드 앱 버전명(예: 2.1.4) — agent/apk-versionname.txt. 다운로드 UI에 플랫폼별 버전 표기용.
+function _apkVersionName() {
+    try { return fs.readFileSync(path.join(RC_AGENT_DIR, 'apk-versionname.txt'), 'utf8').trim() || ''; } catch (_) { return ''; }
+}
 const APK_URL = '/download/AlphaK.apk';   // 정식 주소(공백 없음)
 // 옛 주소도 계속 받아 준다 — 이미 배포된 안내문·링크가 깨지지 않도록.
 app.get([APK_URL, '/download/app.apk', '/download/Alpha%20K.apk', '/download/Earth.apk'], (req, res) => {
@@ -701,7 +705,7 @@ function _pushPreview(msg) {
 app.get('/api/rc/version', (req, res) => {
     let v = '0'; try { v = fs.readFileSync(path.join(RC_AGENT_DIR, 'version.txt'), 'utf8').trim(); } catch (_) {}
     const _apk = _resolveApk();
-    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe', apk: !!_apk, apkUrl: APK_URL, apkVersion: _apkVersion(_apk), apkVersionCode: _apkVersionCode(), apkSize: _apk ? _apk.size : 0 });
+    res.json({ version: v, url: '/download/RAY_RemoteAgent.exe', exists: fs.existsSync(path.join(RC_AGENT_DIR, 'RAY_RemoteAgent.exe')), app: fs.existsSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')), appUrl: '/download/APP_Setup.exe', apk: !!_apk, apkUrl: APK_URL, apkVersion: _apkVersion(_apk), apkVersionCode: _apkVersionCode(), apkVersionName: _apkVersionName(), apkSize: _apk ? _apk.size : 0 });
 });
 // 개인화 원클릭 설치 배치 — 로그인 필요. exe 자동 다운로드 + 페어링(장기 기기 토큰) + 자동시작.
 app.post('/api/rc/installer', (req, res) => {
