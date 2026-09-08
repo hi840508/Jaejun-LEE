@@ -2987,11 +2987,25 @@ setInterval(_customerCenterSweep, 60 * 60 * 1000);
 app.post('/api/order/cancel', (req, res) => {
     const buyer = requireUser(req, res); if (!buyer) return;   // ★신원=토큰
     const { orderId } = req.body;
-    db.get(`SELECT buyer, status FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
+    db.get(`SELECT buyer, seller, status FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
         if(err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if(ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 취소 가능' });
         if(ord.status !== 'pending') return res.status(400).json({ error: 'pending 상태만 취소 가능' });
-        db.run(`UPDATE product_orders SET status = 'cancelled' WHERE id = ?`, [orderId], () => res.json({ success: true }));
+        db.run(`UPDATE product_orders SET status = 'cancelled' WHERE id = ?`, [orderId], () => {
+            // ⏱ 취소 후 새 대화가 없으면 24시간 뒤 대화방 자동 삭제(거절과 동일 메커니즘 — _rejectRoomSweep).
+            const roomId = _orderRoomId(orderId);
+            _setOrderRoom(roomId, ord.buyer, ord.seller);
+            const date = new Date().toLocaleString('ko-KR');
+            const msg = '🚫 [주문 취소] 구매자가 주문을 취소했습니다.\n※ 새로운 대화가 없으면 24시간 후 이 대화방은 자동으로 사라집니다.';
+            db.run(`INSERT INTO chats (roomId, sender, senderPic, message, date, created_at) VALUES (?, '__system__', NULL, ?, ?, ?)`, [roomId, msg, date, new Date().toISOString()], function() {
+                const mid = this.lastID;
+                try { _emitToRoomUsers(roomId, 'receive_message', { roomId, sender: '__system__', message: msg, id: mid, date }); } catch (_) {}
+                try { _emitToRoomUsers(roomId, 'order_status', { orderId, status: 'cancelled', buyer: ord.buyer, seller: ord.seller }); } catch (_) {}
+                const expireAt = Date.now() + 24 * 60 * 60 * 1000;
+                db.run(`UPDATE chat_rooms SET expire_at = ?, expire_after_id = ? WHERE roomId = ?`, [expireAt, mid, roomId], () => {});
+                res.json({ success: true });
+            });
+        });
     });
 });
 
