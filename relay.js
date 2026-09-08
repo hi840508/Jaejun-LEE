@@ -441,7 +441,14 @@ app.get('/icon.svg', (req, res) => {
 });
 // 📦 앱 현재 버전 — 업데이트 시 4번째 자리를 올린다(예: 0.0.0.1 → 0.0.0.2). 클라가 표기·New 뱃지에 사용.
 const APP_VERSION = '0.0.0.1';
-app.get('/api/app/version', (req, res) => { res.json({ version: APP_VERSION }); });
+app.get('/api/app/version', (req, res) => {
+    // PC 설치파일(exe) 버전: agent/pc-version.txt 있으면 그 값, 없으면 exe 파일 시각 기반(갱신 시 자동 변경).
+    let ver = '';
+    try { ver = fs.readFileSync(path.join(RC_AGENT_DIR, 'pc-version.txt'), 'utf8').trim(); } catch (_) {}
+    if (!ver) { try { const st = fs.statSync(path.join(RC_AGENT_DIR, 'APP_Setup.exe')); ver = new Date(st.mtimeMs).toISOString().slice(2, 10).replace(/-/g, '.'); } catch (_) {} }
+    if (!ver) ver = APP_VERSION;
+    res.json({ version: ver });
+});
 // 🖥 서버 내장 설치형 PC 앱(Electron) 인스톨러 — agent/ 폴더에 두면 배포됨(git 미추적, reset 보존)
 app.get('/download/APP_Setup.exe', (req, res) => {
     // ☁️ R2 설정 시 R2 공개 URL로 리다이렉트(다운로드 전송비 무료). 없으면 로컬 서빙.
