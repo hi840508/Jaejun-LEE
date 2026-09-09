@@ -4198,14 +4198,19 @@
                 return { type:'RAYCLOUD_LOAD_IMAGE', url:url, name:fname };
             }
             if(RC_3D_RE.test(lower)){
-                // 같은 이름의 텍스처(jpg/png)가 옆에 있으면 함께 보낸다(페이스·컬러 스캔)
+                // 텍스처(색상 스캔) 매칭 견고화: ①PLY 헤더의 TextureFile 참조 ②같은 이름 ③이미지가 1장뿐이면 그걸 텍스처로.
                 const base = String(fname).replace(/\.[^.]+$/,'').toLowerCase();
-                const texUrls = [], texNames = [];
-                for(const n of (siblings||[])){
-                    if(n === fname || !RC_IMG_RE.test(n)) continue;
-                    if(String(n).replace(/\.[^.]+$/,'').toLowerCase() !== base) continue;
-                    const tu = await _rcBlobFor(R, pathArr, n); if(tu){ texUrls.push(tu); texNames.push(n); }
-                }
+                const imgs = (siblings||[]).filter(n => n!==fname && RC_IMG_RE.test(n));
+                const texUrls = [], texNames = [], picked = {};
+                const _addTex = async (n) => { if(!n || picked[n]) return; picked[n]=1; const tu = await _rcBlobFor(R, pathArr, n); if(tu){ texUrls.push(tu); texNames.push(n); } };
+                // ① PLY 헤더의 TextureFile 이름과 일치하는 이미지(스캐너가 지정한 텍스처)
+                let texRefs = [];
+                try{ if(/\.ply$/.test(lower)){ const f0 = await R.getFileAt(pathArr, fname); if(f0 && f0.slice){ const head = await f0.slice(0, 8192).text(); const re=/texturefile\s+(.+)/ig; let mm; while((mm=re.exec(head))){ let nm=String(mm[1]||'').trim().split(/[\r\n]/)[0].split(/[\\/]/).pop().trim(); if(nm) texRefs.push(nm.toLowerCase()); } } } }catch(_){}
+                for(const n of imgs){ if(texRefs.indexOf(String(n).toLowerCase())>=0) await _addTex(n); }
+                // ② 같은 이름(base)의 이미지
+                for(const n of imgs){ if(String(n).replace(/\.[^.]+$/,'').toLowerCase()===base) await _addTex(n); }
+                // ③ 아직 없고 이미지가 딱 1장이면 그걸 텍스처로 간주(단일 컬러 스캔 — 이름이 달라도 적용)
+                if(!texUrls.length && imgs.length===1) await _addTex(imgs[0]);
                 return { type:'RAYCLOUD_LOAD_MESH', urls:[url], names:[fname], texUrls:texUrls, texNames:texNames };
             }
             if(RC_IMG_RE.test(lower)) return { type:'RAYCLOUD_LOAD_2D', url:url, name:fname };
