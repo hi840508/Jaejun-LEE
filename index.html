@@ -3850,6 +3850,7 @@
                 +'<path d="M32 2 v12 h12 z" fill="#e2e8f0"/>'
                 +(ext?('<rect x="3" y="30" width="42" height="15" rx="2.5" fill="'+col+'"/><text x="24" y="41" font-size="'+(ext.length>3?8:9.5)+'" font-weight="800" fill="#ffffff" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" letter-spacing="0.3">'+ext+'</text>'):'')
                 +'</svg></div>'; };
+        try{ window._sfDocIcon = _sfDocIcon; }catch(_){}   // 대화방 파일 카드 등에서 공유폴더와 동일 아이콘 재사용
         const _sfType=(mime,fn)=>{ mime=mime||''; fn=(fn||'').toLowerCase(); if(mime.indexOf('image/')===0||/\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(fn)) return 'image'; if(mime.indexOf('video/')===0||/\.(mp4|webm|mov|m4v|avi)$/.test(fn)) return 'video'; if(mime==='application/dicom'||/\.dcm$/.test(fn)) return 'dicom'; if(mime.indexOf('model/')===0||/\.(stl|ply|obj|gltf|glb|fbx)$/.test(fn)) return '3d'; if(mime==='application/pdf'||/\.(pdf|html?|txt|md|csv|docx?|xlsx?|pptx?|zip)$/.test(fn)) return 'doc'; return 'other'; };
         const _sfTypeLabel={ all:'전체', image:'이미지', video:'영상', doc:'문서', '3d':'3D', dicom:'CT/DICOM', other:'기타' };
         // 상대시간(방금/N분 전/N시간 전/N일 전/날짜) + 날짜 그룹키(오늘/YYYY-MM-DD)
@@ -13741,15 +13742,10 @@ pdfjsScript,
                     preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><video src="${dataUrl}" muted preload="metadata"></video><div class="play-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);font-size:36px;color:#fff;pointer-events:none;">▶</div></div>`;
                 } else if(isAudio) {
                     preview = `<div class="kt-card-preview" style="aspect-ratio:auto;padding:14px;background:#1e293b;cursor:default;flex-direction:column;gap:8px;"><div class="icon" style="color:#fbbf24;">🎵</div><audio src="${dataUrl}" controls style="width:100%;max-width:240px;"></audio></div>`;
-                } else if(isPdf) {
-                    preview = `<div class="kt-card-preview" style="background:#fef3c7;" onclick="openChatFilePreview('${fileKey}')"><div class="icon" style="color:#92400e;">📄</div></div>`;
-                } else if(is3d) {
-                    preview = `<div class="kt-card-preview" style="background:#252628;" onclick="openChatFilePreview('${fileKey}')"><div class="icon" style="color:#cbd5e1;">🧊</div></div>`;
-                } else if(isHtml) {
-                    preview = `<div class="kt-card-preview" style="background:#dbeafe;" onclick="openChatFilePreview('${fileKey}')"><div class="icon" style="color:#1e40af;">🌐</div></div>`;
                 } else {
-                    const icon = isText ? '📝' : '📎';
-                    preview = `<div class="kt-card-preview" style="background:#f8fafc; cursor:default; aspect-ratio:auto; padding:20px;"><div class="icon">${icon}</div></div>`;
+                    // 🗂 미리보기(썸네일) 안 되는 파일 = 공유폴더와 동일한 윈도우 탐색기식 아이콘(문서페이지+확장자 배지)으로 통일
+                    const _winIcon = (window._sfDocIcon ? window._sfDocIcon(fname) : '<div class="icon">📎</div>');
+                    preview = `<div class="kt-card-preview" style="background:#f1f5f9;" onclick="openChatFilePreview('${fileKey}')">${_winIcon}</div>`;
                 }
 
                 const previewBtn = ''; // 미리보기 버튼 제거 — 썸네일/카드 클릭으로 바로 미리보기(등록 즉시 썸네일 표시)
