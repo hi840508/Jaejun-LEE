@@ -15288,8 +15288,13 @@ pdfjsScript,
                         </div>
                     </div>
                     <div style="margin-top:12px;">
-                        <div id="rx-dropzone" onclick="document.getElementById('rx-file-input').click()" style="border:2px dashed #93c5fd;border-radius:10px;padding:16px;text-align:center;color:#2563eb;font-size:12px;cursor:pointer;background:#f0f7ff;">
-                            원본 의뢰서, 쉐이드 이미지, 구강 스캔 파일 및 기타 파일 첨부<br><span style="color:#64748b;">클릭하여 파일을 선택하세요.</span>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <div id="rx-dropzone" onclick="document.getElementById('rx-file-input').click()" style="flex:1; min-width:180px; border:2px dashed #93c5fd;border-radius:10px;padding:16px;text-align:center;color:#2563eb;font-size:12px;cursor:pointer;background:#f0f7ff;">
+                                💻 내 PC에서 파일 첨부<br><span style="color:#64748b;">원본 의뢰서·쉐이드 이미지·구강 스캔 등 · 클릭하여 선택</span>
+                            </div>
+                            <div onclick="rxPickFromFolder()" style="flex:1; min-width:180px; border:2px dashed #86efac;border-radius:10px;padding:16px;text-align:center;color:#16a34a;font-size:12px;cursor:pointer;background:#f0fdf4;">
+                                📁 공유폴더에서 선택<br><span style="color:#64748b;">받은/저장된 파일에서 바로 첨부</span>
+                            </div>
                         </div>
                         <input type="file" id="rx-file-input" multiple style="display:none;" onchange="rxAddFiles(this.files)">
                         <div id="rx-file-list" style="margin-top:6px;"></div>
@@ -15301,6 +15306,11 @@ pdfjsScript,
             window._rxAmPm = 'am';
             window.rxSetAmPm = function(v){ window._rxAmPm = v; const am=document.getElementById('rx-ampm-am'), pm=document.getElementById('rx-ampm-pm'); if(am&&pm){ const on='padding:9px 16px;border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; const off='padding:9px 16px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; am.style.cssText=v==='am'?on:off; pm.style.cssText=v==='pm'?on:off; } };
             window.rxAddFiles = function(fileList){ const st=window.rxOrderState; if(!st) return; st.attachFiles = st.attachFiles.concat(Array.from(fileList||[])); _renderRxFileList(); };
+            // 📁 공유폴더에서 파일 선택 → 첨부에 추가(별도 [내 PC 첨부] 버튼은 그대로 탐색기 호출)
+            window.rxPickFromFolder = async function(){
+                if(!(window.RCFolder && window.RCFolder.supported)){ showToast('이 기기는 공유폴더 선택을 지원하지 않습니다. [내 PC에서 파일 첨부]를 이용해 주세요.'); return; }
+                try{ const files = window._sfPickFiles ? await window._sfPickFiles() : []; if(files && files.length){ window.rxAddFiles(files); showToast('📎 공유폴더에서 '+files.length+'개 첨부됨'); } }catch(_){ }
+            };
             window.rxRemoveFile = function(i){ const st=window.rxOrderState; if(!st) return; st.attachFiles.splice(i,1); _renderRxFileList(); };
             function _renderRxFileList(){ const el=document.getElementById('rx-file-list'); const st=window.rxOrderState; if(!el||!st) return; el.innerHTML = st.attachFiles.map((f,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:5px 10px;margin-bottom:4px;font-size:12px;"><span>📎 ${esc(f.name)} <span style="color:#94a3b8;">(${(f.size/1024).toFixed(1)}KB)</span></span><button type="button" onclick="rxRemoveFile(${i})" style="border:none;background:none;color:var(--danger);cursor:pointer;">✕</button></div>`).join(''); }
 
