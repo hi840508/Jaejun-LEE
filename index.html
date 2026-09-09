@@ -122,6 +122,23 @@
         .input-group label { font-size: 13px; font-weight: 600; color: var(--text-sub); }
         .input-group input, .input-group textarea, .input-group select { padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: #ffffff; font-size: 14px; color: var(--text-main); outline: none; transition: 0.2s; font-family: inherit; }
         .input-group input:focus, .input-group textarea:focus, .input-group select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12); }
+        /* 🧭 회원가입 순차 입력 흐름: flex order로 시각 재배치(업체유형·면허·사업자·거래처 = 동의서 아래) */
+        #form-register-only { flex-direction: column; }
+        #form-register-only .ro-agree { order: 5; }
+        #form-register-only .ro-biztype { order: 10; }
+        #form-register-only .ro-license { order: 11; }
+        #form-register-only .ro-biz { order: 12; }
+        #form-register-only .ro-clinic { order: 13; }
+        #form-register-only .ro-submit { order: 20; }
+        /* 다음에 입력할 필수 1칸 = 하이라이트 */
+        .reg-active > label { color: var(--primary) !important; }
+        .reg-active input:not([type=checkbox]):not([type=radio]), .reg-active select, .reg-active textarea { border-color: var(--primary) !important; background: #ffffff !important; box-shadow: 0 0 0 3px rgba(59,130,246,.18); animation: regPulse 1.6s ease-in-out infinite; }
+        .reg-agree-box.reg-active { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 8px; animation: regPulse 1.6s ease-in-out infinite; }
+        /* 아직 차례가 아닌(잠긴) 칸 = 흐리게 + 입력 차단, 채워진 칸은 기본 흰색 유지 */
+        .reg-locked { opacity: .5; }
+        .reg-locked input, .reg-locked select, .reg-locked textarea, .reg-locked button, .reg-locked label { background: #f1f5f9 !important; color: #94a3b8 !important; pointer-events: none !important; cursor: not-allowed !important; }
+        .reg-locked.ro-submit { background: #cbd5e1 !important; color: #ffffff !important; pointer-events: none !important; }
+        @keyframes regPulse { 0%,100% { box-shadow: 0 0 0 3px rgba(59,130,246,.14); } 50% { box-shadow: 0 0 0 5px rgba(59,130,246,.30); } }
         
         .btn { 
             background: var(--gradient-btn); 
@@ -908,7 +925,7 @@
                     <div id="reg-name-status" style="font-size:11px; margin-top:4px; min-height:14px;"></div>
                 </div>
                 <div class="input-group"><label>비밀번호 <span style="color:var(--danger);">*</span></label><input type="password" id="reg-password" placeholder="비밀번호 지정"></div>
-                <div class="input-group"><label>업체 유형 <span style="color:var(--danger);">*</span></label>
+                <div class="input-group ro-biztype"><label>업체 유형 <span style="color:var(--danger);">*</span></label>
                     <select id="reg-business-type" style="padding:10px; border-radius:8px; border:1px solid var(--border-color); background:#fff; font-family:inherit; font-size:13px; width:100%;" onchange="updateRegBusinessUI()">
                         <option value="">유형 선택</option>
                         <option value="individual">개인 (일반 회원)</option>
@@ -938,7 +955,7 @@
                     </select>
                 </div>
                 <!-- 🚀 규제 업종 선택 시에만 표시되는 면허번호 입력 영역 -->
-                <div id="reg-license-zone" class="input-group" style="display:none;">
+                <div id="reg-license-zone" class="input-group ro-license" style="display:none;">
                     <label>면허(자격) 번호 <span style="color:var(--danger);">*</span></label>
                     <div style="background:#fef9c3; border:1px solid #fde047; padding:10px 12px; border-radius:8px; font-size:11px; color:#713f12; margin-bottom:8px; line-height:1.5;">
                         해당 업종은 <b>면허(자격) 번호 입력</b> 후 Admin 승인이 완료되어야 서비스 이용이 가능합니다.
@@ -948,7 +965,7 @@
                 </div>
                 <div class="input-group"><label>이메일 <span style="color:var(--danger);">*</span> <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(비밀번호 분실 시 OTP 수신용)</span></label><input type="email" id="reg-email" placeholder="example@email.com"></div>
                 <div class="input-group"><label>휴대전화번호</label><input type="tel" id="reg-phone" placeholder="예: 010-1234-5678"></div>
-                <div class="input-group"><label>배송지 주소</label>
+                <div class="input-group"><label>배송 받을 주소</label>
                     <div style="display:flex; gap:6px;"><input type="text" id="reg-shipping" placeholder="주소 찾기로 입력" style="flex:1;"><button type="button" class="btn btn-outline" style="padding:0 14px; white-space:nowrap;" onclick="openAddrSearch('reg-shipping','reg-shipping-detail')">🔍 주소 찾기</button></div>
                     <input type="text" id="reg-shipping-detail" placeholder="상세주소 (동/호수 등)" style="margin-top:6px;">
                 </div>
@@ -964,7 +981,7 @@
                 <div class="input-group"><label>정산 수령 계좌번호</label><input type="text" id="reg-account" placeholder="숫자만 입력"></div>
 
                 <!-- 🧾 사업자 정보 (세금계산서 발행용) — 사업자 유형 선택 시 표시 -->
-                <div id="reg-biz-zone" style="display:none;">
+                <div id="reg-biz-zone" class="ro-biz" style="display:none;">
                     <div style="height:1px; background:var(--border-color); margin:10px 0;"></div>
                     <label style="font-weight:700; font-size:13px; display:block; margin-bottom:6px;">사업자 정보 (세금계산서 발행용)</label>
                     <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:9px 12px; border-radius:8px; font-size:11px; color:#1e3a8a; margin-bottom:8px; line-height:1.5;">
@@ -983,7 +1000,7 @@
                 </div>
 
                 <!-- 🔐 개인정보 수집·이용 동의 (필수) -->
-                <div style="margin-top:14px;">
+                <div class="ro-agree" style="margin-top:14px;">
                     <label style="font-weight:700; font-size:13px; display:block; margin-bottom:6px;">개인정보 수집·이용 동의 <span style="color:var(--danger);">*</span></label>
                     <div style="max-height:170px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px; padding:12px 14px; background:#f8fafc; font-size:11.5px; line-height:1.7; color:#334155;">
                         <b>○ 개인정보 수집ㆍ이용 목적</b><br>
@@ -1008,7 +1025,7 @@
                 </div>
 
                 <!-- 📜 회원가입 동의서 (Alpha K 서비스 이용약관, 필수) -->
-                <div style="margin-top:14px;">
+                <div class="ro-agree" style="margin-top:14px;">
                     <label style="font-weight:700; font-size:13px; display:block; margin-bottom:6px;">회원가입 동의서 (서비스 이용약관) <span style="color:var(--danger);">*</span></label>
                     <div style="max-height:200px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px; padding:12px 14px; background:#f8fafc; font-size:11.5px; line-height:1.7; color:#334155;">
                         <div style="text-align:center; font-weight:800; font-size:13px; margin-bottom:8px;">회원가입 동의서</div>
@@ -1036,14 +1053,14 @@
                 </div>
 
                 <!-- 🦷 치과 기공소만: 거래처(거래 치과) 등록 (필수, 1곳 이상) — 동의서 아래 배치 -->
-                <div id="reg-clinic-zone" class="input-group" style="display:none;">
+                <div id="reg-clinic-zone" class="input-group ro-clinic" style="display:none;">
                     <label>거래처 (거래 치과) <span style="color:var(--danger);">*</span> <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(치과 기공소 필수 · 1곳 이상)</span></label>
                     <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:9px 12px; border-radius:8px; font-size:11px; color:#1e40af; margin-bottom:8px; line-height:1.5;">거래하는 치과(병·의원)의 <b>이름·전화번호(필수)</b>를 등록해 주세요. 주소는 선택이며 <b>동까지만</b> 입력해도 됩니다. 가입 후 <b>상점 관리 → 거래처</b>에서 수정·추가할 수 있습니다.</div>
                     <div id="reg-clinic-list"></div>
                     <button type="button" onclick="addRegClinicRow()" style="margin-top:6px; background:#fff; border:1px dashed #93c5fd; color:#2563eb; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer; width:100%;">＋ 거래처 추가</button>
                 </div>
 
-                <button class="btn btn-success" style="width: 100%; padding:14px; margin-top:12px; font-size:15px;" onclick="registerUser()">회원 등록 및 접속</button>
+                <button class="btn btn-success ro-submit" style="width: 100%; padding:14px; margin-top:12px; font-size:15px;" onclick="registerUser()">회원 등록 및 접속</button>
             </div>
         </div>
     </div><!-- /login-wrap -->
@@ -2758,8 +2775,9 @@
                 document.getElementById('form-register-only').style.display='none'; document.getElementById('form-login-only').style.display='block';
                 document.querySelectorAll('#login-tabs-wrap .tab')[0].classList.add('active'); document.querySelectorAll('#login-tabs-wrap .tab')[1].classList.remove('active');
             } else {
-                document.getElementById('form-login-only').style.display='none'; document.getElementById('form-register-only').style.display='block';
+                document.getElementById('form-login-only').style.display='none'; document.getElementById('form-register-only').style.display='flex';
                 document.querySelectorAll('#login-tabs-wrap .tab')[0].classList.remove('active'); document.querySelectorAll('#login-tabs-wrap .tab')[1].classList.add('active');
+                if(window.updateRegProgress) setTimeout(window.updateRegProgress, 0);
             }
         }
         function backToStep1() { toggleLoginMode('login'); }
@@ -2957,7 +2975,61 @@
                 if(isLab && list && !list.children.length) window.addRegClinicRow();
                 if(!isLab && list) list.innerHTML='';
             }
+            if(window.updateRegProgress) window.updateRegProgress();
         };
+
+        // 🧭 회원가입 순차 입력: 채워진 칸=흰색, 다음 입력할 필수 1칸=하이라이트, 그 뒤 칸=잠금(입력 차단)
+        window.updateRegProgress = function(){
+            const g = id => document.getElementById(id);
+            const form = g('form-register-only'); if(!form) return;
+            const bt = (g('reg-business-type')||{}).value || '';
+            const isReg = (window.REGULATED_TYPES||[]).includes(bt);
+            const isBiz = !!bt && bt !== 'individual';
+            const isLab = bt === 'dental_lab';
+            const val = id => (((g(id)||{}).value)||'').trim();
+            const emailOk = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+            const clinicsOk = () => { const cs = window.getRegClinics ? window.getRegClinics() : []; return cs.length>0 && cs.every(c=>c.name && c.phone); };
+            const ig = id => { const el=g(id); return el ? el.closest('.input-group') : null; };
+            const agBox = id => { const el=g(id); return el ? el.closest('.ro-agree') : null; };
+            // 시각 순서(=flex order 결과)와 동일하게 나열. req=필수 여부, ok=적정성 검증.
+            const steps = [
+                { box: ig('reg-name'),          req:true,          ok:()=> val('reg-name').length>=3 },
+                { box: ig('reg-password'),      req:true,          ok:()=> (((g('reg-password')||{}).value)||'').length>=4 },
+                { box: ig('reg-email'),         req:true,          ok:()=> emailOk(val('reg-email')) },
+                { box: ig('reg-phone'),         req:false,         ok:()=> true },
+                { box: ig('reg-shipping'),      req:false,         ok:()=> true },
+                { box: ig('reg-realname'),      req:false,         ok:()=> true },
+                { box: ig('reg-bank'),          req:false,         ok:()=> true },
+                { box: ig('reg-account'),       req:false,         ok:()=> true },
+                { box: agBox('reg-privacy-agree'), req:true, agree:true, ok:()=> !!(g('reg-privacy-agree')&&g('reg-privacy-agree').checked) },
+                { box: agBox('reg-terms-agree'),   req:true, agree:true, ok:()=> !!(g('reg-terms-agree')&&g('reg-terms-agree').checked) },
+                { box: ig('reg-business-type'), req:true,          ok:()=> !!bt },
+                { box: g('reg-license-zone'),   vis:isReg, req:isReg, ok:()=> !isReg || val('reg-license-no').replace(/[^0-9A-Za-z]/g,'').length>=4 },
+                { box: g('reg-biz-zone'),       vis:isBiz, req:isBiz, ok:()=> !isBiz || (!!val('reg-biz-no') && !!val('reg-biz-company')) },
+                { box: g('reg-clinic-zone'),    vis:isLab, req:isLab, ok:()=> !isLab || clinicsOk() },
+            ];
+            const resolved = steps.map(s => { if(!s.box) return null;
+                const visible = (s.vis!==undefined) ? !!s.vis : (s.box.style.display!=='none' && s.box.offsetParent!==null || (form.style.display!=='none' && s.box.style.display!=='none'));
+                return { box:s.box, visible, req:!!s.req, ok:!!s.ok(), agree:!!s.agree };
+            });
+            let activeIdx = -1;
+            for(let i=0;i<resolved.length;i++){ const r=resolved[i]; if(r && r.visible && r.req && !r.ok){ activeIdx=i; break; } }
+            resolved.forEach((r,i)=>{ if(!r) return;
+                r.box.classList.remove('reg-active','reg-locked','reg-agree-box');
+                if(!r.visible) return;
+                if(activeIdx>=0 && i>activeIdx){ r.box.classList.add('reg-locked'); }
+                else if(i===activeIdx){ r.box.classList.add('reg-active'); if(r.agree) r.box.classList.add('reg-agree-box'); }
+            });
+            const sb = form.querySelector('.ro-submit');
+            if(sb){ if(activeIdx===-1) sb.classList.remove('reg-locked'); else sb.classList.add('reg-locked'); }
+        };
+        // 폼 내 입력/선택/체크 변경 시마다 진행상태 갱신(동적 추가된 거래처 입력도 위임으로 포착)
+        (function(){ function _wire(){ const f=document.getElementById('form-register-only'); if(!f || f._regWired) return; f._regWired=true;
+            f.addEventListener('input', function(){ window.updateRegProgress&&window.updateRegProgress(); });
+            f.addEventListener('change', function(){ window.updateRegProgress&&window.updateRegProgress(); });
+            f.addEventListener('click', function(){ setTimeout(function(){ window.updateRegProgress&&window.updateRegProgress(); },0); }); }
+            if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', _wire); else _wire();
+        })();
         window.addRegClinicRow = function(v){
             const list = document.getElementById('reg-clinic-list'); if(!list) return;
             v = v || {}; const esc = function(s){ return String(s||'').replace(/"/g,'&quot;'); };
