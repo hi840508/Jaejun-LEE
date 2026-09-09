@@ -4449,7 +4449,10 @@
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
             try{ await R.ensureAccess(); }catch(_){}
-            const connected=R.chosen();
+            // ⚠️ connected는 '핸들 존재'가 아니라 '읽기 권한 granted'로 판정해야 함.
+            //   (기본화면=공유폴더 자동열기 등 사용자 제스처 없이 열리면 권한이 prompt라 파일이 비어 보임 →
+            //    이 경우 '비어 있습니다' 대신 '폴더 다시 연결' 버튼을 보여줘 한 번 탭하면 파일이 뜬다.)
+            let connected=false; try{ connected = R.isConnected ? await R.isConnected() : R.chosen(); }catch(_){ connected = R.chosen(); }
             const notSupported=!R.supported;
             const BTN='padding:8px 12px;border:1px solid #e5e7eb;background:#fff;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px;white-space:nowrap;flex:none;';
             const CHIP='padding:5px 11px;border:1px solid #e5e7eb;background:#fff;border-radius:999px;font-size:12px;cursor:pointer;color:#475569;white-space:nowrap;flex:none;';
