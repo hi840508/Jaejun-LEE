@@ -946,6 +946,13 @@
                     </div>
                     <input type="text" id="reg-license-no" placeholder="예: 치과의사/기공사 면허번호 또는 사업자등록번호" inputmode="numeric">
                 </div>
+                <!-- 🦷 치과 기공소만: 거래처(거래 치과) 등록 (필수, 1곳 이상) -->
+                <div id="reg-clinic-zone" class="input-group" style="display:none;">
+                    <label>거래처 (거래 치과) <span style="color:var(--danger);">*</span> <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(치과 기공소 필수 · 1곳 이상)</span></label>
+                    <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:9px 12px; border-radius:8px; font-size:11px; color:#1e40af; margin-bottom:8px; line-height:1.5;">거래하는 치과(병·의원) 이름을 등록해 주세요. 가입 후 <b>상점 관리 → 거래처</b>에서 수정·추가할 수 있습니다.</div>
+                    <div id="reg-clinic-list"></div>
+                    <button type="button" onclick="addRegClinicRow()" style="margin-top:6px; background:#fff; border:1px dashed #93c5fd; color:#2563eb; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer; width:100%;">＋ 거래처 추가</button>
+                </div>
                 <div class="input-group"><label>이메일 <span style="color:var(--danger);">*</span> <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(비밀번호 분실 시 OTP 수신용)</span></label><input type="email" id="reg-email" placeholder="example@email.com"></div>
                 <div class="input-group"><label>휴대전화번호</label><input type="tel" id="reg-phone" placeholder="예: 010-1234-5678"></div>
                 <div class="input-group"><label>배송지 주소</label>
@@ -2876,6 +2883,12 @@
                 if(!license_no) return showToast("선택하신 업종은 면허(자격) 번호 입력이 필수입니다.");
                 if(license_no.replace(/[^0-9A-Za-z]/g,'').length < 4) return showToast("면허(자격) 번호를 정확히 입력해 주세요.");
             }
+            // 🦷 치과 기공소: 거래처(거래 치과) 1곳 이상 필수
+            let partner_clinics = [];
+            if(business_type === 'dental_lab'){
+                partner_clinics = (window.getRegClinics ? window.getRegClinics() : []);
+                if(!partner_clinics.length) return showToast("치과 기공소는 거래처(거래 치과)를 1곳 이상 등록해 주세요.");
+            }
 
             // 🚀 [v8+] 가입 직전 ID 중복 확인
             try {
@@ -2885,7 +2898,7 @@
             } catch(e){ /* 서버 다운 시 일단 진행 */ }
 
             try {
-                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone, email, shipping_address, business_type, license_no, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, privacy_agreed: true, terms_agreed: true }) });
+                const res = await fetch(`${API_URL}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password, realname, bank, account, phone, email, shipping_address, business_type, license_no, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, partner_clinics, privacy_agreed: true, terms_agreed: true }) });
                 const data = await res.json();
                 if(res.ok) {
                     if(data.needsApproval) {
@@ -2933,7 +2946,22 @@
             // 🧾 사업자 정보(세금계산서 발행용) — 개인 외 모든 사업자 유형에서 표시
             const bizZone = document.getElementById('reg-biz-zone');
             if(bizZone) bizZone.style.display = (sel.value && sel.value !== 'individual') ? 'block' : 'none';
+            // 🦷 치과 기공소만 거래처(거래 치과) 등록 영역 표시 + 최소 1행 보장
+            const clinicZone = document.getElementById('reg-clinic-zone');
+            if(clinicZone){ const isLab = (sel.value === 'dental_lab'); clinicZone.style.display = isLab ? 'block' : 'none';
+                const list = document.getElementById('reg-clinic-list');
+                if(isLab && list && !list.children.length) window.addRegClinicRow();
+                if(!isLab && list) list.innerHTML='';
+            }
         };
+        window.addRegClinicRow = function(val){
+            const list = document.getElementById('reg-clinic-list'); if(!list) return;
+            const row = document.createElement('div'); row.style.cssText='display:flex; gap:6px; margin-bottom:6px;';
+            row.innerHTML = '<input type="text" class="reg-clinic-in" placeholder="예: OO치과의원" value="'+String(val||'').replace(/"/g,'&quot;')+'" style="flex:1; padding:9px 10px; border-radius:8px; border:1px solid var(--border-color); font-size:13px;">'
+                + '<button type="button" onclick="this.parentNode.remove()" style="flex:none; width:38px; border:1px solid #fca5a5; background:#fff; color:#dc2626; border-radius:8px; font-weight:800; cursor:pointer;">✕</button>';
+            list.appendChild(row);
+        };
+        window.getRegClinics = function(){ return [].slice.call(document.querySelectorAll('#reg-clinic-list .reg-clinic-in')).map(function(i){ return (i.value||'').trim(); }).filter(Boolean); };
 
         // (구) 자격증 파일 업로드 → 면허번호 입력 방식으로 대체됨. 레거시 호출 안전용 no-op.
         window.onLicensePicked = function() {};

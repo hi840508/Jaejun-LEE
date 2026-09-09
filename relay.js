@@ -915,6 +915,7 @@ function initTables() {
         // 🧾 세금계산서용 사업자 정보(공급받는자 자동 반영): 회원가입~발행 연결
         db.run(`ALTER TABLE users ADD COLUMN biz_no TEXT`, () => {});         // 사업자등록번호(개인=주민 대체 가능)
         db.run(`ALTER TABLE users ADD COLUMN biz_company TEXT`, () => {});    // 상호(사업자등록증상)
+        db.run(`ALTER TABLE users ADD COLUMN partner_clinics TEXT`, () => {});   // 🦷 치과기공소 거래처(거래 치과) JSON 배열 — 가입 시 필수
         db.run(`ALTER TABLE users ADD COLUMN biz_ceo TEXT`, () => {});        // 대표자명
         db.run(`ALTER TABLE users ADD COLUMN biz_addr TEXT`, () => {});       // 사업장 주소
         db.run(`ALTER TABLE users ADD COLUMN biz_industry TEXT`, () => {});   // 업태
@@ -1456,6 +1457,9 @@ app.post('/api/auth/register', (req, res) => {
     const regulated = ['dental_lab', 'dental_clinic', 'medical', 'pharmacy', 'medical_wholesale'];
     const needsApproval = regulated.includes(business_type);
     if(needsApproval && license_no.replace(/[^0-9A-Za-z]/g,'').length < 4) return res.status(400).json({ error: '해당 업종은 면허(자격) 번호 입력이 필수입니다.' });
+    // 🦷 치과 기공소: 거래처(거래 치과) 1곳 이상 필수 — 가입 시 등록
+    const partnerClinics = Array.isArray(req.body.partner_clinics) ? req.body.partner_clinics.map(x => String(x||'').trim()).filter(Boolean) : [];
+    if(business_type === 'dental_lab' && partnerClinics.length < 1) return res.status(400).json({ error: '치과 기공소는 거래처(거래 치과)를 1곳 이상 등록해야 합니다.' });
     const approvalStatus = needsApproval ? 'pending' : 'approved';
     const privacyAgreedAt = new Date().toISOString();   // 동의 시각 기록(보관 근거)
     const termsAgreedAt = new Date().toISOString();      // 📜 이용약관 동의 시각
@@ -1463,8 +1467,8 @@ app.post('/api/auth/register', (req, res) => {
     // 💳 (선택) 카드 비밀번호 4자리 — 실 PG 대비 저장만(현재 미검증). 형식 안 맞으면 저장 안 함.
     const cardPwRaw = _digits(req.body.card_pw || ''); const cardPw = /^\d{4}$/.test(cardPwRaw) ? cardPwRaw : null;
     // ⛔ 가입 축하금(10,000원) 정책 폐지 — 모든 신규 계정은 잔액 0으로 시작.
-    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_no, approval_status, privacy_agreed_at, terms_agreed_at, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, card_pw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, hashPassword(password), realname, bank, account, 0, phone || '', email || '', shipping_address || '', business_type || 'individual', license_no || null, approvalStatus, privacyAgreedAt, termsAgreedAt, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, cardPw], (err) => {
+    db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_no, approval_status, privacy_agreed_at, terms_agreed_at, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, card_pw, partner_clinics) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, hashPassword(password), realname, bank, account, 0, phone || '', email || '', shipping_address || '', business_type || 'individual', license_no || null, approvalStatus, privacyAgreedAt, termsAgreedAt, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, cardPw, JSON.stringify(partnerClinics)], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
         res.json({
             name, realname, bank, account,
@@ -4187,19 +4191,8 @@ app.post('/api/tax/settle', (req, res) => {
             // 💰 정산 입금 상세(거래내역에서 '어떤 항목의 정산인지' 표시용): 포함된 판매 항목 리스트
             const settleMemo = JSON.stringify({ kind: 'settlement', month: month || '', salesTotal, payFee: calc.payFee, payout,
                 items: rows.map(r => ({ orderId: r.id, name: r.productName || r.id, buyer: r.buyer, amount: r.escrow_held || 0 })) });
-            // 💰 본인(Admin) 상점 정산: 자금이 이미 Admin 지갑에 있으므로 자기이체 없이 주문만 settled 처리(수수료·지급 개념 미적용, 전액 Admin 귀속).
-            if (seller === admin) {
-                // 자기 상점: 자금 이동 없이 settled 플립만. 이미 정산된 건은 제외(AND settled=0) + 이중정산 차단.
-                db.serialize(() => {
-                    db.run('BEGIN IMMEDIATE');
-                    db.run(`UPDATE product_orders SET settled = 1, settled_at = ? WHERE settled = 0 AND id IN (${ids.map(() => '?').join(',')})`, [raw, ...ids], function(ue) {
-                        if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
-                        if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '이미 정산된 주문입니다.' }); }
-                        db.run('COMMIT', () => res.json({ success: true, seller, selfStore: true, count: rows.length, salesTotal, payFee: 0, payout: salesTotal, adminRevenue: 0 }));
-                    });
-                });
-                return;
-            }
+            // 💰 Admin 본인 상점도 동일 규칙: 수수료(≈2.97%)를 떼고 지급액만 정산하고, 수수료는 플랫폼(Admin) 수익으로 잔류·기록.
+            //   (판매자==Admin이면 아래 지급 이체가 자기→자기라 잔액 순변화 0이지만, payout/수수료가 거래내역에 정확히 남는다.)
             db.serialize(() => {
                 db.run('BEGIN IMMEDIATE');
                 // 이중 정산 차단: settled=0 조건부 플립을 먼저 수행(이미 정산됐으면 this.changes===0 → 롤백).
