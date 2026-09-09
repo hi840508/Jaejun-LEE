@@ -4216,6 +4216,33 @@
         };
 
         // 공유폴더 갤러리 안내 버튼용 — 권한 재요청/폴더 지정 후 패널 재열기
+        // 📁 공유폴더 지정 필수 게이트 — 지정 전까지 다른 기능 사용 차단(PC/지원 브라우저만. 모바일은 다운로드 폴더라 스킵).
+        window._requireSharedFolder = async function(){
+            try{
+                if(!(window.RCFolder && window.RCFolder.supported)) return;   // 모바일/미지원 → 게이트 없음
+                let ok=false; try{ ok = await window.RCFolder.isConnected(); }catch(_){ }
+                if(ok) return;                                                // 이미 연결됨
+                if(document.getElementById('sf-required-gate')) return;
+                const ov = document.createElement('div'); ov.id='sf-required-gate';
+                ov.style.cssText='position:fixed;inset:0;z-index:100200;background:rgba(15,23,42,.75);display:flex;align-items:center;justify-content:center;padding:20px;';
+                ov.innerHTML = '<div style="max-width:420px;width:100%;background:#fff;border-radius:16px;padding:24px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4);box-sizing:border-box;">'
+                    + '<div style="font-size:44px;margin-bottom:10px;">📁</div>'
+                    + '<div style="font-size:18px;font-weight:900;margin-bottom:8px;">공유폴더 지정이 필요합니다</div>'
+                    + '<div style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:18px;">받은 파일 자동 저장·주문 자료 관리를 위해 <b>공유폴더를 먼저 지정</b>해야 서비스를 이용할 수 있습니다.<br>(폴더는 한 번만 지정하면 됩니다.)</div>'
+                    + '<button id="sf-gate-pick" style="width:100%;padding:13px;background:var(--primary);color:#fff;border:0;border-radius:10px;font-weight:800;font-size:15px;cursor:pointer;">📂 공유폴더 지정하기</button>'
+                    + '</div>';
+                document.body.appendChild(ov);
+                document.getElementById('sf-gate-pick').onclick = async function(){
+                    try{ let done=false;
+                        // 이미 폴더 핸들이 있으면 권한만 다시 허용(재선택 불필요), 없으면 새로 지정
+                        if(window.RCFolder.chosen && window.RCFolder.chosen()){ try{ done = await window.RCFolder.ensureAccess(); }catch(_){ } }
+                        if(!done){ try{ done = await window.RCFolder.pick(); }catch(_){ } }
+                        if(done || (await window.RCFolder.isConnected())){ ov.remove(); showToast('✅ 공유폴더가 지정되었습니다.'); }
+                        else showToast('공유폴더 지정을 완료해 주세요.');
+                    }catch(_){ showToast('폴더 지정 실패 — 다시 시도해 주세요.'); }
+                };
+            }catch(_){}
+        };
         window._sfReconnect = async function(){ try{ const ok = await window.RCFolder.ensureAccess(); if(ok){ try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){} openSharedFolderPanel(); } else { showToast('폴더 접근을 허용해 주세요.'); } }catch(_){ showToast('폴더 다시 연결 실패'); } };
         window._sfPickNow = async function(){ try{ const ok = await window.RCFolder.pick(); if(ok){ try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){} openSharedFolderPanel(); } }catch(_){} };
         // ==========================================================================
@@ -5183,6 +5210,8 @@
             try { if(typeof loadMyBrandStores==='function') loadMyBrandStores(); } catch(_){}
             // 🏠 기본 화면 설정(홈/공유폴더) — 사용자가 설정에서 선택. 기본=홈. 'folder'면 로그인 후 공유폴더 자동 열기.
             try { if(localStorage.getItem('alphak_default_screen')==='folder'){ setTimeout(function(){ try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} }, 450); } } catch(_){}
+            // 📁 공유폴더 미지정 시 지정 필수 게이트(PC/지원 브라우저) — 지정 전까지 다른 기능 차단
+            try { setTimeout(function(){ try{ if(window._requireSharedFolder) window._requireSharedFolder(); }catch(_){} }, 900); } catch(_){}
             // 🚀 [v7] 사이드바 초기 렌더
             try { renderSidebarCategories(); renderMobileChips(); } catch(e){}
             // 🚀 [v7p+] 승인 대기 주문 5초마다 폴링 시작
