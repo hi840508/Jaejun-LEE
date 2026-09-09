@@ -8235,7 +8235,8 @@
                 let _html = String(o.bundle_html);
                 _html = _html.replace(/(간편|상세)\s*기공\s*의뢰서/g, '기공 의뢰서');
                 if(Number(o.amount) > 0) _html = _html.replace(/금액 미정 \(기공소 확정 예정\)/g, '최종 확정 금액: ' + Number(o.amount).toLocaleString() + '원');
-                // ⚠️ srcdoc은 첨부(base64 이미지·스캔)가 포함된 큰 의뢰서에서 속성 길이 한계로 빈 화면이 됨 → Blob URL로 렌더(대용량 안전).
+                // ⚠️ 빈 화면 방지: srcdoc을 'HTML 속성'에 넣으면 속성 길이 한계로, blob:을 샌드박스 iframe src로 쓰면 오리진 문제로 빈 화면이 됨.
+                //   → iframe.srcdoc을 'JS 프로퍼티'로 직접 설정(길이 제한 없음·동일출처). blob은 폴백으로만 준비.
                 var _rxBlobUrl=''; try{ _rxBlobUrl = URL.createObjectURL(new Blob([_html], {type:'text/html'})); }catch(_){}
                 m.innerHTML =
                     '<div style="width:100%;max-width:840px;height:100%;display:flex;flex-direction:column;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45);">'
@@ -8246,9 +8247,11 @@
                     +     '<button onclick="var el=document.getElementById(\'rx-preview-modal\');if(el){try{if(el.__rxBlobUrl)URL.revokeObjectURL(el.__rxBlobUrl);}catch(_){}el.remove();}" style="padding:8px 14px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;cursor:pointer;">닫기</button>'
                     +   '</div>'
                     + '</div>'
-                    + '<iframe id="rxpv-frame" sandbox="allow-same-origin allow-modals allow-popups" src="'+_rxBlobUrl+'" style="border:0;flex:1;width:100%;background:#fff;"></iframe>'
+                    + '<iframe id="rxpv-frame" sandbox="allow-same-origin allow-modals allow-popups" style="border:0;flex:1;width:100%;background:#fff;"></iframe>'
                     + '</div>';
                 try{ m.__rxBlobUrl=_rxBlobUrl; }catch(_){}
+                // ★ 빈화면 근본 해결: srcdoc을 프로퍼티로 주입(길이 제한 없음). 실패 시 blob src 폴백.
+                try{ var _f=document.getElementById('rxpv-frame'); if(_f){ try{ _f.srcdoc=_html; }catch(_e){ if(_rxBlobUrl) _f.src=_rxBlobUrl; } } }catch(_){}
             } catch(e){ showToast('의뢰서 로드 실패'); console.error(e); }
         };
 
