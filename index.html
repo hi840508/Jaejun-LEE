@@ -4184,7 +4184,7 @@
             return null;   // 영상이 아닌 파일
         }
 
-        window.rcOpenInLiveViewer = async function(pathArr, fname){
+        window.rcOpenInLiveViewer = async function(pathArr, fname, alsoNames){
             const R = window.RCFolder;
             if(!R) return;
             // 뷰어가 서버에 배포돼 있는지 먼저 확인
@@ -4288,6 +4288,16 @@
             // 첫 파일 전송
             try{ post(await _rcPayloadFor(R, pathArr, fname, siblings)); }
             catch(e){ try{ stat.textContent = '열기 실패'; }catch(_){} showToast('열지 못했습니다: ' + (e.message||e)); }
+            // 🗂 여러 파일 선택 시: 나머지 선택 파일들도 한 번에 로드(각자 알맞은 뷰 영역으로). DICOM은 시리즈로 이미 묶여 중복 로드 생략.
+            if(Array.isArray(alsoNames) && alsoNames.length){
+                const _seenDcm = RC_DCM_RE.test(String(fname||'').toLowerCase());
+                for(const an of alsoNames){
+                    if(!an || an === fname) continue;
+                    const anl = String(an).toLowerCase();
+                    if(RC_DCM_RE.test(anl)){ if(_seenDcm) continue; }   // DICOM 슬라이스는 첫 파일에서 시리즈로 이미 로드됨
+                    try{ const p2 = await _rcPayloadFor(R, pathArr, an, siblings); post(p2); }catch(_){}
+                }
+            }
 
             // 🗂 이 폴더의 영상 목록을 뷰어 '내장 DATA 서랍'에 넘긴다.
             //    (예전엔 좌측에 별도 목록을 그렸으나 뷰어 자체 DATA 서랍과 기능이 겹쳐 없앴다.)
@@ -4521,11 +4531,13 @@
                     // 우클릭 메뉴 — 로컬 파일은 전체 기능, 비로컬(원격) 파일도 최소 메뉴가 뜨게 한다.
                     el.addEventListener('contextmenu',(e)=>{ e.preventDefault();
                         const items=[];
+                        // 여러 개 선택 후 우클릭 → 선택 전체를 대상(묶음). 선택에 없던 파일을 우클릭하면 그 파일 하나만.
+                        const sel=(selected.has(fnm)&&selected.size>1)?Array.from(selected):[fnm]; const multi=sel.length>1;
                         if(here){
-                            items.push({label:'🖥 실시간 뷰어로 열기',fn:()=>window.rcOpenInLiveViewer(path, fnm)});
+                            items.push({label:(multi?('🖥 실시간 뷰어로 열기 ('+sel.length+'개)'):'🖥 실시간 뷰어로 열기'),fn:()=>{ if(multi) window.rcOpenInLiveViewer(path, sel[0], sel.slice(1)); else window.rcOpenInLiveViewer(path, fnm); }});
                             items.push({label:'👁 미리보기',fn:()=>window.rcPreviewFolderFile(fnm,mim)});
-                            items.push({label:'💾 원본 다운로드',fn:async()=>{ try{ const f=await R.getFileAt(path, fnm); if(!f){ showToast('파일을 찾을 수 없습니다.'); return; } const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=fnm; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} }, 60000); showToast('원본 다운로드'); }catch(_){ showToast('다운로드 실패'); } }});
-                            items.push({label:'📤 공유 / 나에게 보내기',fn:()=>openShareRecipientPicker([fnm])});
+                            items.push({label:(multi?('💾 원본 다운로드 ('+sel.length+'개)'):'💾 원본 다운로드'),fn:async()=>{ let ok=0; for(const nm of sel){ try{ const f=await R.getFileAt(path, nm); if(!f) continue; const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=nm; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} }, 60000); ok++; }catch(_){} } showToast(multi?('원본 다운로드 '+ok+'개'):'원본 다운로드'); }});
+                            items.push({label:(multi?('📤 공유 / 나에게 보내기 ('+sel.length+'개)'):'📤 공유 / 나에게 보내기'),fn:()=>openShareRecipientPicker(sel)});
                             items.push({label:'🔗 외부 공유(비회원 · QR/링크)',fn:()=>window.guestShareLocalFile(path, fnm, mim, 0)});
                             items.push({label:'✏️ 이름 변경',fn:async()=>{ const nn=await _sfPrompt('새 파일 이름',fnm); if(nn&&nn!==fnm){ if(await R.renameAt(path,fnm,nn,false)) render(); else showToast('이름변경 실패'); } }});
                             items.push({label:'🗑 삭제',danger:true,fn:async()=>{ if(confirm('"'+fnm+'" 삭제할까요?')){ if(await R.removeAt(path,fnm,false)) render(); else showToast('삭제 실패'); } }});
