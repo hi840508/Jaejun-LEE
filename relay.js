@@ -1458,8 +1458,18 @@ app.post('/api/auth/register', (req, res) => {
     const needsApproval = regulated.includes(business_type);
     if(needsApproval && license_no.replace(/[^0-9A-Za-z]/g,'').length < 4) return res.status(400).json({ error: '해당 업종은 면허(자격) 번호 입력이 필수입니다.' });
     // 🦷 치과 기공소: 거래처(거래 치과) 1곳 이상 필수 — 가입 시 등록
-    const partnerClinics = Array.isArray(req.body.partner_clinics) ? req.body.partner_clinics.map(x => String(x||'').trim()).filter(Boolean) : [];
-    if(business_type === 'dental_lab' && partnerClinics.length < 1) return res.status(400).json({ error: '치과 기공소는 거래처(거래 치과)를 1곳 이상 등록해야 합니다.' });
+    // 거래처 = {name, phone(필수), addr(선택·동까지만)} 객체 배열. 구버전 문자열 배열도 호환.
+    const partnerClinics = (Array.isArray(req.body.partner_clinics) ? req.body.partner_clinics : [])
+        .map(x => {
+            if (x && typeof x === 'object') return { name: String(x.name||'').trim(), phone: String(x.phone||'').trim(), addr: String(x.addr||'').trim() };
+            return { name: String(x||'').trim(), phone: '', addr: '' };
+        })
+        .filter(c => c.name || c.phone);
+    if(business_type === 'dental_lab'){
+        if(partnerClinics.length < 1) return res.status(400).json({ error: '치과 기공소는 거래처(거래 치과)를 1곳 이상 등록해야 합니다.' });
+        if(partnerClinics.some(c => !c.name)) return res.status(400).json({ error: '거래처(치과) 이름을 입력해 주세요.' });
+        if(partnerClinics.some(c => !c.phone)) return res.status(400).json({ error: '거래처(치과)의 전화번호는 필수입니다.' });
+    }
     const approvalStatus = needsApproval ? 'pending' : 'approved';
     const privacyAgreedAt = new Date().toISOString();   // 동의 시각 기록(보관 근거)
     const termsAgreedAt = new Date().toISOString();      // 📜 이용약관 동의 시각

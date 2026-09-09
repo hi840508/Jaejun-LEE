@@ -949,7 +949,7 @@
                 <!-- 🦷 치과 기공소만: 거래처(거래 치과) 등록 (필수, 1곳 이상) -->
                 <div id="reg-clinic-zone" class="input-group" style="display:none;">
                     <label>거래처 (거래 치과) <span style="color:var(--danger);">*</span> <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(치과 기공소 필수 · 1곳 이상)</span></label>
-                    <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:9px 12px; border-radius:8px; font-size:11px; color:#1e40af; margin-bottom:8px; line-height:1.5;">거래하는 치과(병·의원) 이름을 등록해 주세요. 가입 후 <b>상점 관리 → 거래처</b>에서 수정·추가할 수 있습니다.</div>
+                    <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:9px 12px; border-radius:8px; font-size:11px; color:#1e40af; margin-bottom:8px; line-height:1.5;">거래하는 치과(병·의원)의 <b>이름·전화번호(필수)</b>를 등록해 주세요. 주소는 선택이며 <b>동까지만</b> 입력해도 됩니다. 가입 후 <b>상점 관리 → 거래처</b>에서 수정·추가할 수 있습니다.</div>
                     <div id="reg-clinic-list"></div>
                     <button type="button" onclick="addRegClinicRow()" style="margin-top:6px; background:#fff; border:1px dashed #93c5fd; color:#2563eb; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer; width:100%;">＋ 거래처 추가</button>
                 </div>
@@ -2888,6 +2888,9 @@
             if(business_type === 'dental_lab'){
                 partner_clinics = (window.getRegClinics ? window.getRegClinics() : []);
                 if(!partner_clinics.length) return showToast("치과 기공소는 거래처(거래 치과)를 1곳 이상 등록해 주세요.");
+                if(partner_clinics.find(c => !c.name)) return showToast("거래처(치과) 이름을 입력해 주세요.");
+                if(partner_clinics.find(c => !c.phone)) return showToast("거래처(치과)의 전화번호를 입력해 주세요. (필수)");
+                // 주소는 선택(동까지만 입력해도 OK) — 검증 없음
             }
 
             // 🚀 [v8+] 가입 직전 ID 중복 확인
@@ -2954,14 +2957,25 @@
                 if(!isLab && list) list.innerHTML='';
             }
         };
-        window.addRegClinicRow = function(val){
+        window.addRegClinicRow = function(v){
             const list = document.getElementById('reg-clinic-list'); if(!list) return;
-            const row = document.createElement('div'); row.style.cssText='display:flex; gap:6px; margin-bottom:6px;';
-            row.innerHTML = '<input type="text" class="reg-clinic-in" placeholder="예: OO치과의원" value="'+String(val||'').replace(/"/g,'&quot;')+'" style="flex:1; padding:9px 10px; border-radius:8px; border:1px solid var(--border-color); font-size:13px;">'
-                + '<button type="button" onclick="this.parentNode.remove()" style="flex:none; width:38px; border:1px solid #fca5a5; background:#fff; color:#dc2626; border-radius:8px; font-weight:800; cursor:pointer;">✕</button>';
+            v = v || {}; const esc = function(s){ return String(s||'').replace(/"/g,'&quot;'); };
+            const row = document.createElement('div'); row.style.cssText='display:flex; gap:6px; margin-bottom:8px;';
+            row.innerHTML =
+                '<div style="flex:1; display:flex; flex-direction:column; gap:5px; border:1px solid var(--border-color); border-radius:8px; padding:8px; background:#fbfdff;">'
+                + '<div style="display:flex; gap:6px;">'
+                +   '<input type="text" class="rc-name" placeholder="치과 이름 (예: OO치과의원) *" value="'+esc(v.name)+'" style="flex:1; padding:8px 9px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">'
+                +   '<input type="tel" class="rc-phone" placeholder="전화번호 *" value="'+esc(v.phone)+'" style="width:130px; padding:8px 9px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">'
+                + '</div>'
+                + '<input type="text" class="rc-addr" placeholder="주소 (선택 · 동까지만 입력 가능)" value="'+esc(v.addr)+'" style="padding:8px 9px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">'
+                + '</div>'
+                + '<button type="button" onclick="this.parentNode.remove()" title="이 거래처 삭제" style="flex:none; width:36px; border:1px solid #fca5a5; background:#fff; color:#dc2626; border-radius:8px; font-weight:800; cursor:pointer;">✕</button>';
             list.appendChild(row);
         };
-        window.getRegClinics = function(){ return [].slice.call(document.querySelectorAll('#reg-clinic-list .reg-clinic-in')).map(function(i){ return (i.value||'').trim(); }).filter(Boolean); };
+        window.getRegClinics = function(){ return [].slice.call(document.querySelectorAll('#reg-clinic-list > div')).map(function(row){
+            var n=(row.querySelector('.rc-name')||{}).value||'', p=(row.querySelector('.rc-phone')||{}).value||'', a=(row.querySelector('.rc-addr')||{}).value||'';
+            return { name:n.trim(), phone:p.trim(), addr:a.trim() };
+        }).filter(function(c){ return c.name || c.phone; }); };
 
         // (구) 자격증 파일 업로드 → 면허번호 입력 방식으로 대체됨. 레거시 호출 안전용 no-op.
         window.onLicensePicked = function() {};
