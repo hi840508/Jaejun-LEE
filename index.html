@@ -8123,18 +8123,20 @@
                 let _html = String(o.bundle_html);
                 _html = _html.replace(/(간편|상세)\s*기공\s*의뢰서/g, '기공 의뢰서');
                 if(Number(o.amount) > 0) _html = _html.replace(/금액 미정 \(기공소 확정 예정\)/g, '최종 확정 금액: ' + Number(o.amount).toLocaleString() + '원');
-                const srcdoc = _html.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+                // ⚠️ srcdoc은 첨부(base64 이미지·스캔)가 포함된 큰 의뢰서에서 속성 길이 한계로 빈 화면이 됨 → Blob URL로 렌더(대용량 안전).
+                var _rxBlobUrl=''; try{ _rxBlobUrl = URL.createObjectURL(new Blob([_html], {type:'text/html'})); }catch(_){}
                 m.innerHTML =
                     '<div style="width:100%;max-width:840px;height:100%;display:flex;flex-direction:column;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45);">'
                     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex:none;">'
                     +   '<b style="font-size:15px;color:#1e293b;">🦷 의뢰서 미리보기</b>'
                     +   '<div style="display:flex;gap:8px;">'
                     +     '<button onclick="var f=document.getElementById(\'rxpv-frame\');try{f.contentWindow.focus();f.contentWindow.print();}catch(e){window.print();}" style="padding:8px 16px;background:#2563eb;color:#fff;border:0;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">🖨 인쇄 / PDF 저장</button>'
-                    +     '<button onclick="var el=document.getElementById(\'rx-preview-modal\');if(el)el.remove();" style="padding:8px 14px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;cursor:pointer;">닫기</button>'
+                    +     '<button onclick="var el=document.getElementById(\'rx-preview-modal\');if(el){try{if(el.__rxBlobUrl)URL.revokeObjectURL(el.__rxBlobUrl);}catch(_){}el.remove();}" style="padding:8px 14px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;cursor:pointer;">닫기</button>'
                     +   '</div>'
                     + '</div>'
-                    + '<iframe id="rxpv-frame" sandbox="allow-same-origin allow-modals" srcdoc="'+srcdoc+'" style="border:0;flex:1;width:100%;background:#fff;"></iframe>'
+                    + '<iframe id="rxpv-frame" sandbox="allow-same-origin allow-modals allow-popups" src="'+_rxBlobUrl+'" style="border:0;flex:1;width:100%;background:#fff;"></iframe>'
                     + '</div>';
+                try{ m.__rxBlobUrl=_rxBlobUrl; }catch(_){}
             } catch(e){ showToast('의뢰서 로드 실패'); console.error(e); }
         };
 
