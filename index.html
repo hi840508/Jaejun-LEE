@@ -2353,14 +2353,14 @@
         #chat-file-preview-modal.cfp-dock{ right:392px; }
         #chat-file-preview-modal.cfp-dock #cfp-close-btn{ right:408px; }
         #chat-file-preview-modal.cfp-dock #cfp-title{ right:472px; }
-        #chat-file-preview-modal.cfp-dock #cfp-dlbar{ right:392px; }
+        #chat-file-preview-modal.cfp-dock #cfp-dlbar{ right:392px !important; }
       }
     </style>
     <div id="chat-file-preview-modal" class="cfp-dock" onclick="if(event.target===this)closeChatFilePreview()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:4400; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px);">
         <div style="position:fixed; top:20px; left:24px; right:80px; color:#fff; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(0,0,0,0.5); padding:8px 16px; border-radius:20px;" id="cfp-title">파일</div>
         <button id="cfp-close-btn" onclick="closeChatFilePreview()" title="닫기 (ESC)" style="position:fixed; top:16px; right:16px; background:rgba(220,38,38,0.95); border:2px solid #fff; color:#fff; font-size:26px; line-height:1; cursor:pointer; width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; z-index:4300; box-shadow:0 4px 16px rgba(0,0,0,.5);">&times;</button>
         <div id="cfp-content" style="max-width:min(1400px,96vw); max-height:90vh; width:100%; height:auto; display:flex; align-items:center; justify-content:center;"></div>
-        <div id="cfp-dlbar" style="position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:4300;">
+        <div id="cfp-dlbar" style="position:fixed; bottom:calc(24px + env(safe-area-inset-bottom,0px)); right:24px; display:flex; gap:8px; z-index:4300;">
             <a id="cfp-download" download="" href="#" style="background:linear-gradient(135deg,#4a4a4e,#232326); color:#fff; padding:10px 22px; border-radius:24px; text-decoration:none; font-size:13px; font-weight:600;">원본 다운로드</a>
         </div>
     </div>
@@ -4716,6 +4716,8 @@
                 let f=null; try{ f=await window.RCFolder.getFileAt(window.__sfPath||[], name); }catch(_){}
                 if(!f && url){ try{ const r=await fetch(url); f=new File([await r.blob()], name, {type:mime||''}); }catch(_){} }
                 if(!f){ showToast('로컬에 없는 파일입니다. (다른 기기에 있으면 먼저 동기화하세요)'); return; }
+                // 💾 '원본 다운로드'는 항상 원본 파일 그대로 저장(3D/DICOM 등에서 직전 미리보기 이미지(jpg)가 저장되던 버그 수정)
+                try{ const _dl=document.getElementById('cfp-download'); if(_dl){ try{ if(_dl.__objurl) URL.revokeObjectURL(_dl.__objurl); }catch(_){} const _ou=URL.createObjectURL(f); _dl.__objurl=_ou; _dl.href=_ou; _dl.setAttribute('download', name||f.name||'file'); _dl.style.display=''; } }catch(_){}
                 const fn=(name||'').toLowerCase(); const mm=(mime||f.type||'').toLowerCase();
                 const isImage=/^image\//.test(mm)||/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(fn);
                 const isVideo=/^video\//.test(mm)||/\.(mp4|webm|mov|m4v)$/.test(fn);
