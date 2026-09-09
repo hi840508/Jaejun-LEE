@@ -1575,6 +1575,24 @@ app.get('/api/users/:name', (req, res) => {
     });
 });
 
+// 🚀 ============ 아이디 찾기 ============
+// 가입 시 등록한 이메일(또는 휴대전화)로 아이디(들) 조회. 무차별 조회 방지 rate-limit.
+app.post('/api/auth/find-id', (req, res) => {
+    if (rateLimitHit(req, res, 'find-id', 8)) return;
+    rateLimitFail(req, 'find-id');
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    const phoneRaw = String((req.body && req.body.phone) || '').replace(/[^0-9]/g, '');
+    if (!email && !phoneRaw) return res.status(400).json({ error: '가입 시 등록한 이메일 또는 휴대전화번호를 입력해 주세요.' });
+    const q = email
+        ? `SELECT name FROM users WHERE lower(email) = ?`
+        : `SELECT name FROM users WHERE replace(replace(replace(phone,'-',''),' ',''),'+','') = ?`;
+    db.all(q, [email || phoneRaw], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!rows || !rows.length) return res.status(404).json({ error: '입력하신 정보로 가입된 아이디를 찾을 수 없습니다.' });
+        res.json({ ids: rows.map(r => r.name), count: rows.length });
+    });
+});
+
 // 🚀 ============ 비밀번호 찾기 (OTP 흐름) ============
 // Step 1: ID로 가입된 이메일 조회 (마스킹된 형태 반환)
 app.post('/api/auth/find-email', (req, res) => {
