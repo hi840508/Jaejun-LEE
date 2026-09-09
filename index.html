@@ -3665,6 +3665,13 @@
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
         window.__rcIngestQueue = [];
         window.__rcIngesting = false;
+        // 📁 주문 폴더명 = 주문자ID_차트번호 (파일 안전문자로 정리)
+        window._orderFolderName = function(buyerId, chartNo){
+            const san = s => String(s||'').replace(/[\\/:*?"<>|]/g,'_').replace(/\s+/g,' ').trim();
+            const b = san(buyerId) || '주문자';
+            const c = san(chartNo);
+            return c ? (b + '_' + c) : (b + '_차트미기재');
+        };
         window.rcAutoIngest = function(name, url, mime, size, room){
             try{
                 if(!window.RCFolder || !window.RCFolder.supported) return;
@@ -12539,8 +12546,10 @@ pdfjsScript,
                     const _oid = currentChatRoomId.replace('room_ord_','');
                     fetch(`${API_URL}/api/order/${_oid}`).then(r=>r.json()).then(o=>{
                         if(!o || !o.status) return;
-                        let _label = '기공 의뢰서';
-                        try { const bi = o.buyer_info ? JSON.parse(o.buyer_info) : {}; if(bi.patientName) _label = '기공 의뢰서 · ' + bi.patientName; } catch(_){}
+                        let _label = '기공 의뢰서'; let _chart='';
+                        try { const bi = o.buyer_info ? JSON.parse(o.buyer_info) : {}; if(bi.patientName) _label = '기공 의뢰서 · ' + bi.patientName; _chart=bi.chartNo||''; } catch(_){}
+                        // 📁 주문 대화방 전달 파일 저장 폴더명 = 주문자ID_차트번호 (대화방 파일 자동저장이 이 폴더로 들어감)
+                        try{ window.__orderFolderMap = window.__orderFolderMap || {}; window.__orderFolderMap[currentChatRoomId] = _orderFolderName(o.buyer, _chart); }catch(_){}
                         window.renderOrderPin({ orderId:_oid, amount:Number(o.amount)||0, label:_label, isMe:(currentUser && currentUser.name === o.buyer) });
                     }).catch(()=>{});
                 }
@@ -13702,7 +13711,11 @@ pdfjsScript,
                 if (dataUrl.startsWith('THUMB::')) { const rest = dataUrl.slice(7); const sp = rest.indexOf('::'); if (sp >= 0) { _thumb = rest.substring(0, sp); dataUrl = rest.substring(sp + 2); } }
                 const _isUrl = /^https?:\/\//i.test(dataUrl);
                 // 📥 2C: 받은 파일(내가 보낸 게 아니고 원격 URL)을 공유폴더에 자동 저장·즉시등록. 오프라인이었으면 재접속 후 히스토리 재렌더 시 자동 이어받기.
-                try { if(!isMe && _isUrl && window.rcAutoIngest){ const _room=(typeof activeChatFriend!=='undefined' && activeChatFriend) ? activeChatFriend : (sender||'received'); window.rcAutoIngest(fname, dataUrl, mime, (parseFloat(sizeKB)||0)*1024, _room); } } catch(_){}
+                try { if(!isMe && _isUrl && window.rcAutoIngest){
+                    // 📁 주문 대화방이면 '주문자ID_차트번호' 폴더로, 아니면 상대 이름 폴더로 저장
+                    let _room=(typeof activeChatFriend!=='undefined' && activeChatFriend) ? activeChatFriend : (sender||'received');
+                    try{ if(window.__orderFolderMap && window.currentChatRoomId && window.__orderFolderMap[window.currentChatRoomId]) _room = window.__orderFolderMap[window.currentChatRoomId]; }catch(_){}
+                    window.rcAutoIngest(fname, dataUrl, mime, (parseFloat(sizeKB)||0)*1024, _room); } } catch(_){}
                 const escFname = (fname||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 const fnLower = (fname||'').toLowerCase();
                 const isImage = /^image\//.test(mime) || /\.(png|jpg|jpeg|gif|webp|bmp)$/.test(fnLower);
@@ -15874,6 +15887,15 @@ pdfjsScript,
                 const roomId = 'room_ord_' + submitData.orderId;
                 currentChatRoomId = roomId;
                 if(socket && socket.connected) socket.emit('join_room', roomId);
+
+                // 📁 주문 첨부 파일들을 지정 공유폴더의 '주문자ID_차트번호' 폴더에 저장 + 이후 대화방 전달 파일도 이 폴더로
+                try {
+                    const _ofn = _orderFolderName(currentUser.name, info.chartNo);
+                    window.__orderFolderMap = window.__orderFolderMap || {}; window.__orderFolderMap[roomId] = _ofn;
+                    if(window.RCFolder && window.RCFolder.supported && st.attachFiles && st.attachFiles.length){
+                        (async()=>{ let ok=0; for(const f of st.attachFiles){ try{ await window.RCFolder.writeFileInRoom(_ofn, f.name, f); ok++; }catch(_){} } if(ok) showToast('📁 첨부 '+ok+'개를 공유폴더 ['+_ofn+'] 폴더에 저장했습니다.'); })();
+                    }
+                } catch(_){}
 
                 // 대화방 헤더/목록용 상점명 캐시
                 window.__orderRoomStore = window.__orderRoomStore || {};
