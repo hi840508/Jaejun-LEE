@@ -2758,9 +2758,10 @@ function _orderChatFab(orderId) {
     const rid = 'room_ord_' + orderId;
     const url = PUBLIC_URL + '/?openroom=' + encodeURIComponent(rid);
     const st = PUBLIC_URL + '/api/chat/room-left?roomId=' + encodeURIComponent(rid);
-    return '\n<a href="' + url + '" target="_blank" id="fabChatBtn" title="대화방 열기" style="position:fixed;right:20px;bottom:20px;z-index:99999;width:58px;height:58px;border-radius:50%;background:#d6006e;box-shadow:0 8px 24px rgba(214,0,110,.45);display:flex;align-items:center;justify-content:center;text-decoration:none;">'
-        + '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>'
-        + '<span id="fabChatLeft" style="display:none;position:absolute;inset:0;border-radius:50%;background:rgba(30,41,59,.9);color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center;text-align:center;line-height:1.2;">나간<br>대화방</span></a>'
+    return '\n<style>@media print{#fabChatBtn,#fabChatLeft{display:none!important;}}</style>'
+        + '\n<a href="' + url + '" target="_blank" id="fabChatBtn" title="대화방 열기" class="noprint" style="position:fixed;right:20px;bottom:20px;z-index:99999;width:58px;height:58px;border-radius:20px 20px 20px 6px;background:#d6006e;box-shadow:0 8px 24px rgba(214,0,110,.45);display:flex;align-items:center;justify-content:center;text-decoration:none;">'
+        + '<span style="display:flex;gap:5px;align-items:center;"><span style="width:8px;height:8px;border-radius:50%;background:#fff;display:block;"></span><span style="width:8px;height:8px;border-radius:50%;background:#fff;display:block;"></span><span style="width:8px;height:8px;border-radius:50%;background:#fff;display:block;"></span></span>'
+        + '<span id="fabChatLeft" style="display:none;position:absolute;inset:0;border-radius:20px 20px 20px 6px;background:rgba(30,41,59,.9);color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center;text-align:center;line-height:1.2;">나간<br>대화방</span></a>'
         + '<scr' + 'ipt>(function(){try{var f=document.getElementById("fabChatBtn");if(!f)return;fetch("' + st + '").then(function(r){return r.json();}).then(function(j){if(j&&j.left){var lo=document.getElementById("fabChatLeft");if(lo)lo.style.display="flex";}}).catch(function(){});}catch(e){}})();</scr' + 'ipt>';
 }
 function _notifyOrderStatus(buyer, seller, orderId, status, msg, actor) {
