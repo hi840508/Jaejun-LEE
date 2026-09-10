@@ -3672,6 +3672,21 @@
             if(!c){ const d=new Date(); c = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
             return a + '_' + c;
         };
+        // 📁 주문 대화방 ID(room_ord_N) → 저장 폴더명(관점별) 해석 + 캐시. 저장 시점에 확실히 계산(타이밍 무관).
+        window._resolveOrderFolderName = async function(roomId){
+            try{
+                if(window.__orderFolderMap && window.__orderFolderMap[roomId]) return window.__orderFolderMap[roomId];
+                const oid = String(roomId||'').replace('room_ord_','');
+                const o = await fetch(`${API_URL}/api/order/${oid}`).then(r=>r.json()).catch(()=>null);
+                if(!o || !o.buyer) return roomId;
+                let chart=''; try{ const bi=o.buyer_info?JSON.parse(o.buyer_info):{}; chart=bi.chartNo||''; }catch(_){}
+                const isBuyer = (currentUser && currentUser.name === o.buyer);
+                const store = (window.__orderRoomStore && window.__orderRoomStore[roomId] && window.__orderRoomStore[roomId].storeName) || o.seller || '';
+                const name = window._orderFolderName ? (isBuyer ? window._orderFolderName(store, chart) : window._orderFolderName(o.buyer, chart)) : roomId;
+                window.__orderFolderMap = window.__orderFolderMap || {}; window.__orderFolderMap[roomId] = name;
+                return name;
+            }catch(_){ return roomId; }
+        };
         window.rcAutoIngest = function(name, url, mime, size, room){
             try{
                 if(!window.RCFolder || !window.RCFolder.supported) return;
@@ -3697,15 +3712,17 @@
                     let ledger; try{ ledger = JSON.parse(localStorage.getItem('rc_saved_files')||'[]'); }catch(_){ ledger = []; }
                     if(ledger.indexOf(t.key) >= 0) continue;
                     try{
-                        // 대화방 이름 폴더에 저장(같은 사람도 대화방별로 분리)
-                        showToast('📥 받은 파일 저장 중: ' + t.name + ' → ' + t.room);
+                        // 📁 주문 대화방이면 저장 직전에 폴더명(상점명_차트 / ID_차트 / 날짜)을 확실히 해석(타이밍 무관)
+                        let _folder = t.room;
+                        if(String(_folder||'').startsWith('room_ord_')){ _folder = await _resolveOrderFolderName(_folder); }
+                        showToast('📥 받은 파일 저장 중: ' + t.name + ' → ' + _folder);
                         const resp = await fetch(t.url); if(!resp.ok) throw new Error('http '+resp.status);
                         const blob = await resp.blob();
-                        await R.writeFileInRoom(t.room, t.name, blob);
+                        await R.writeFileInRoom(_folder, t.name, blob);
                         changed = true;
                         // ☁️ 미러 백업이 켜져 있으면 클라우드에도 사본 업로드(실패해도 로컬 저장엔 영향 없음)
-                        try{ if(window.RCMirror){ const _san=(s)=>String(s||'').replace(/[\\/:*?"<>|]/g,'_'); window.RCMirror.autoMirror(_san(t.room)+'/'+_san(t.name), blob, t.mime||blob.type||'', Date.now()); } }catch(_){}
-                        showToast('✅ [' + t.room + '] 폴더에 자동 저장됨: ' + t.name);
+                        try{ if(window.RCMirror){ const _san=(s)=>String(s||'').replace(/[\\/:*?"<>|]/g,'_'); window.RCMirror.autoMirror(_san(_folder)+'/'+_san(t.name), blob, t.mime||blob.type||'', Date.now()); } }catch(_){}
+                        showToast('✅ [' + _folder + '] 폴더에 자동 저장됨: ' + t.name);
                         ledger.push(t.key);
                         localStorage.setItem('rc_saved_files', JSON.stringify(ledger.slice(-2000)));
                     }catch(e){ /* 실패(오프라인/네트워크) → 다음 접속 때 히스토리 재렌더로 재시도. 원본은 R2에 90일 보관 */ }
@@ -12384,8 +12401,7 @@ pdfjsScript,
                 '}',
                 /* 거래 정보 */
                 'var partiesItems = [];',
-                'if(data.product && data.product.seller) partiesItems.push({label:"판매자",val:data.product.seller});',
-                'if(data.product && data.product.storeName) partiesItems.push({label:"상점",val:data.product.storeName});',
+                'if(data.product && (data.product.storeName || data.product.seller)){ var _selVal = data.product.storeName ? (data.product.storeName + " - " + (data.product.seller||"")) : (data.product.seller||""); partiesItems.push({label:"판매자(상점)",val:_selVal}); }',
                 'if(data.buyer && data.buyer.name) partiesItems.push({label:"구매자 ID", val: data.buyer.name});',
                 'if(data.buyer && data.buyer.info){',
                 ' if(data.buyer.info.name) partiesItems.push({label:"구매자 이름", val: data.buyer.info.name});',
@@ -13741,9 +13757,10 @@ pdfjsScript,
                 const _isUrl = /^https?:\/\//i.test(dataUrl);
                 // 📥 2C: 받은 파일(내가 보낸 게 아니고 원격 URL)을 공유폴더에 자동 저장·즉시등록. 오프라인이었으면 재접속 후 히스토리 재렌더 시 자동 이어받기.
                 try { if(!isMe && _isUrl && window.rcAutoIngest){
-                    // 📁 주문 대화방이면 '주문자ID_차트번호' 폴더로, 아니면 상대 이름 폴더로 저장
-                    let _room=(typeof activeChatFriend!=='undefined' && activeChatFriend) ? activeChatFriend : (sender||'received');
-                    try{ if(window.__orderFolderMap && window.currentChatRoomId && window.__orderFolderMap[window.currentChatRoomId]) _room = window.__orderFolderMap[window.currentChatRoomId]; }catch(_){}
+                    // 📁 주문 대화방이면 room_ord_ID를 그대로 전달 → 저장 직전 드레이너가 폴더명(관점별)을 확실히 해석. 아니면 상대 이름 폴더.
+                    let _room;
+                    if(String(window.currentChatRoomId||'').startsWith('room_ord_')) _room = window.currentChatRoomId;
+                    else _room = (typeof activeChatFriend!=='undefined' && activeChatFriend) ? activeChatFriend : (sender||'received');
                     window.rcAutoIngest(fname, dataUrl, mime, (parseFloat(sizeKB)||0)*1024, _room); } } catch(_){}
                 const escFname = (fname||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 const fnLower = (fname||'').toLowerCase();
