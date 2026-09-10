@@ -4172,7 +4172,10 @@ app.get('/api/admin/tax/settled', (req, res) => {
         if (from || to) {
             if (from) { where += ` AND date(o.settled_at) >= date(?)`; params.push(from); }
             if (to) { where += ` AND date(o.settled_at) <= date(?)`; params.push(to); }
-        } else if (month) { where += ` AND o.settle_month=?`; params.push(month); }
+        } else if (month) { where += ` AND o.settle_month=?`; params.push(month);
+            // ✅ 이미 세금계산서를 발행한 업체는 '발행 대상'에서 제외(발행 후에도 안내/목록에 남는 문제 해결)
+            where += ` AND o.seller NOT IN (SELECT seller FROM tax_invoices WHERE batchMonth=? AND (issueStatus IS NULL OR issueStatus NOT IN ('canceled','error')))`; params.push(month);
+        }
         if (owner) { where += ` AND o.seller=?`; params.push(owner); }
         db.all(`SELECT o.seller, COUNT(*) cnt, SUM(o.escrow_held) salesTotal, MAX(o.settled_at) settledAt,
                     su.realname sellerRealname, su.biz_no su_bizno, su.biz_company su_company, su.biz_ceo su_ceo,
