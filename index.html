@@ -13345,17 +13345,21 @@ pdfjsScript,
                 </div>`;
                 window.renderPdfCanvasInto(document.getElementById('cfp-pdf-scroll'), f.content);
             } else if(isHtml) {
-                // 🚀 [v8+] HTML 미리보기 — srcdoc 사용 (blob/data URL보다 호환성 높음)
+                // 🚀 HTML 미리보기 — srcdoc 사용. ★원격(R2) URL이면 텍스트로 받아 srcdoc(과거엔 URL을 data URL로 오인해 빈 화면이 됐음).
+                const _iframe = document.createElement('iframe');
+                _iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox allow-forms');
+                _iframe.style.cssText = 'width:92vw; height:88vh; border:none; background:#fff; border-radius:8px;';
+                content.innerHTML = ''; content.appendChild(_iframe); modal.style.display = 'flex';
+                if(/^https?:\/\//i.test(String(f.content||''))){
+                    fetch(f.content).then(r=>r.text()).then(html=>{ try{ _iframe.srcdoc = html; }catch(_){ _iframe.src = f.content; } }).catch(()=>{ try{ _iframe.src = f.content; }catch(_){} });
+                    return;
+                }
                 try {
                     const base64 = (f.content.split(',')[1] || '');
                     // UTF-8 안전 디코딩 (btoa(unescape(encodeURIComponent(...)))의 역순)
                     const decoded = decodeURIComponent(escape(atob(base64)));
-                    const iframe = document.createElement('iframe');
-                    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox allow-forms');
-                    iframe.style.cssText = 'width:92vw; height:88vh; border:none; background:#fff; border-radius:8px;';
-                    iframe.srcdoc = decoded;
-                    content.innerHTML = '';
-                    content.appendChild(iframe);
+                    _iframe.srcdoc = decoded;
+                    return;
                 } catch(e) {
                     // 폴백: Blob URL 방식
                     try {
