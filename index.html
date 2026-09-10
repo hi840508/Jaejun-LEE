@@ -1054,10 +1054,10 @@
                     </label>
                 </div>
 
-                <!-- 🦷 치과 기공소만: 거래처(거래 치과) 등록 (필수, 1곳 이상) — 동의서 아래 배치 -->
+                <!-- 🦷 치과 기공소·치과 병의원: 거래처 등록 (선택) — 동의서 아래 배치 -->
                 <div id="reg-clinic-zone" class="input-group ro-clinic" style="display:none;">
-                    <label>거래처 (거래 치과) <span style="color:var(--danger);">*</span> <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(치과 기공소 필수 · 1곳 이상)</span></label>
-                    <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:9px 12px; border-radius:8px; font-size:11px; color:#1e40af; margin-bottom:8px; line-height:1.5;">거래하는 치과(병·의원)의 <b>이름·전화번호(필수)</b>를 입력해 주세요. 입력된 거래처는 추후 <b>상대 거래처 가입 시 자동 친구 등록</b> 됩니다. 주소는 선택이며 <b>동까지만</b> 입력해도 됩니다. 가입 후 <b>상점 관리 → 거래처</b>에서 수정·추가할 수 있습니다.</div>
+                    <label><span id="reg-clinic-label">거래처</span> <span style="font-size:11px; color:var(--text-sub); font-weight:normal;">(선택 · 가입 후 상점 관리에서도 추가 가능)</span></label>
+                    <div id="reg-clinic-guide" style="background:#eff6ff; border:1px solid #bfdbfe; padding:9px 12px; border-radius:8px; font-size:11px; color:#1e40af; margin-bottom:8px; line-height:1.5;">거래하는 <b>기공소</b>의 <b>이름·전화번호</b>를 입력해 주세요. 입력된 거래처는 추후 <b>상대 거래처 가입 시 자동 친구 등록</b> 됩니다. 주소는 선택이며 <b>동까지만</b> 입력해도 됩니다.</div>
                     <div id="reg-clinic-list"></div>
                     <button type="button" onclick="addRegClinicRow()" style="margin-top:6px; background:#fff; border:1px dashed #93c5fd; color:#2563eb; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer; width:100%;">＋ 거래처 추가</button>
                 </div>
@@ -2900,14 +2900,13 @@
                 if(!license_no) return showToast("선택하신 업종은 면허(자격) 번호 입력이 필수입니다.");
                 if(license_no.replace(/[^0-9A-Za-z]/g,'').length < 4) return showToast("면허(자격) 번호를 정확히 입력해 주세요.");
             }
-            // 🦷 치과 기공소: 거래처(거래 치과) 1곳 이상 필수
+            // 🦷 거래처 등록 — 치과 기공소·치과 병의원 모두 '선택'. 입력한 행만 이름+전화 쌍 확인(빈 행은 무시).
             let partner_clinics = [];
-            if(business_type === 'dental_lab'){
-                partner_clinics = (window.getRegClinics ? window.getRegClinics() : []);
-                if(!partner_clinics.length) return showToast("치과 기공소는 거래처(거래 치과)를 1곳 이상 등록해 주세요.");
-                if(partner_clinics.find(c => !c.name)) return showToast("거래처(치과) 이름을 입력해 주세요.");
-                if(partner_clinics.find(c => !c.phone)) return showToast("거래처(치과)의 전화번호를 입력해 주세요. (필수)");
-                // 주소는 선택(동까지만 입력해도 OK) — 검증 없음
+            if(business_type === 'dental_lab' || business_type === 'dental_clinic'){
+                partner_clinics = (window.getRegClinics ? window.getRegClinics() : []);  // 빈 행은 getRegClinics가 이미 제외
+                if(partner_clinics.find(c => c.name && !c.phone)) return showToast("입력한 거래처의 전화번호를 입력해 주세요.");
+                if(partner_clinics.find(c => !c.name && c.phone)) return showToast("입력한 거래처의 이름을 입력해 주세요.");
+                // 최소 개수 요건 없음(선택) · 주소도 선택
             }
 
             // 🚀 [v8+] 가입 직전 ID 중복 확인
@@ -2966,12 +2965,23 @@
             // 🧾 사업자 정보(세금계산서 발행용) — 개인 외 모든 사업자 유형에서 표시
             const bizZone = document.getElementById('reg-biz-zone');
             if(bizZone) bizZone.style.display = (sel.value && sel.value !== 'individual') ? 'block' : 'none';
-            // 🦷 치과 기공소만 거래처(거래 치과) 등록 영역 표시 + 최소 1행 보장
+            // 🦷 거래처 등록 영역 — 치과 기공소·치과 병의원 둘 다 표시(선택). 서로 상대 유형을 등록.
             const clinicZone = document.getElementById('reg-clinic-zone');
-            if(clinicZone){ const isLab = (sel.value === 'dental_lab'); clinicZone.style.display = isLab ? 'block' : 'none';
+            if(clinicZone){
+                const isLab = (sel.value === 'dental_lab');           // 기공소 → 거래 '치과' 등록
+                const isClinic = (sel.value === 'dental_clinic');     // 치과   → 거래 '기공소' 등록
+                const showClinic = isLab || isClinic;
+                clinicZone.style.display = showClinic ? 'block' : 'none';
                 const list = document.getElementById('reg-clinic-list');
-                if(isLab && list && !list.children.length) window.addRegClinicRow();
-                if(!isLab && list) list.innerHTML='';
+                if(showClinic){
+                    // 서로 해당되는 안내 문구/라벨/플레이스홀더 — 기공소는 '치과', 치과는 '기공소'
+                    window._regClinicKind = isLab ? '치과' : '기공소';
+                    const k = window._regClinicKind;
+                    const lbl = document.getElementById('reg-clinic-label'); if(lbl) lbl.textContent = '거래처 (거래 '+k+')';
+                    const gd = document.getElementById('reg-clinic-guide');
+                    if(gd) gd.innerHTML = '거래하는 <b>'+(isLab?'치과(병·의원)':'기공소')+'</b>의 <b>이름·전화번호</b>를 입력해 주세요. 입력된 거래처는 추후 <b>상대 거래처 가입 시 자동 친구 등록</b> 됩니다. 주소는 선택이며 <b>동까지만</b> 입력해도 됩니다. (선택)';
+                    if(list && !list.children.length) window.addRegClinicRow();
+                } else if(list){ list.innerHTML=''; }
             }
             if(window.updateRegProgress) window.updateRegProgress();
         };
@@ -3004,7 +3014,7 @@
                 { box: ig('reg-business-type'), req:true,          ok:()=> !!bt },
                 { box: g('reg-license-zone'),   vis:isReg, req:isReg, ok:()=> !isReg || val('reg-license-no').replace(/[^0-9A-Za-z]/g,'').length>=4 },
                 { box: g('reg-biz-zone'),       vis:isBiz, req:isBiz, ok:()=> !isBiz || (!!val('reg-biz-no') && !!val('reg-biz-company')) },
-                { box: g('reg-clinic-zone'),    vis:isLab, req:isLab, ok:()=> !isLab || clinicsOk() },
+                { box: g('reg-clinic-zone'),    vis:(isLab || bt==='dental_clinic'), req:false, ok:()=> true },   // 거래처=선택(기공소·치과 모두)
             ];
             const resolved = steps.map(s => { if(!s.box) return null;
                 const visible = (s.vis!==undefined) ? !!s.vis : (s.box.style.display!=='none' && s.box.offsetParent!==null || (form.style.display!=='none' && s.box.style.display!=='none'));
@@ -3031,12 +3041,14 @@
         window.addRegClinicRow = function(v){
             const list = document.getElementById('reg-clinic-list'); if(!list) return;
             v = v || {}; const esc = function(s){ return String(s||'').replace(/"/g,'&quot;'); };
+            const kind = window._regClinicKind || '거래처';
+            const namePh = (kind==='치과') ? '치과 이름 (예: OO치과의원)' : (kind==='기공소' ? '기공소 이름 (예: OO기공소)' : '거래처 이름');
             const row = document.createElement('div'); row.style.cssText='display:flex; gap:6px; margin-bottom:8px;';
             row.innerHTML =
                 '<div style="flex:1; display:flex; flex-direction:column; gap:5px; border:1px solid var(--border-color); border-radius:8px; padding:8px; background:#fbfdff;">'
                 + '<div style="display:flex; gap:6px;">'
-                +   '<input type="text" class="rc-name" placeholder="치과 이름 (예: OO치과의원) *" value="'+esc(v.name)+'" style="flex:1; padding:8px 9px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">'
-                +   '<input type="tel" class="rc-phone" placeholder="전화번호 *" value="'+esc(v.phone)+'" style="width:130px; padding:8px 9px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">'
+                +   '<input type="text" class="rc-name" placeholder="'+namePh+'" value="'+esc(v.name)+'" style="flex:1; padding:8px 9px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">'
+                +   '<input type="tel" class="rc-phone" placeholder="전화번호" value="'+esc(v.phone)+'" style="width:130px; padding:8px 9px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">'
                 + '</div>'
                 + '<input type="text" class="rc-addr" placeholder="주소 (선택 · 동까지만 입력 가능)" value="'+esc(v.addr)+'" style="padding:8px 9px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">'
                 + '</div>'
