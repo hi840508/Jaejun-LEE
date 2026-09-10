@@ -2376,17 +2376,16 @@
       @media (min-width:900px){
         #chat-file-preview-modal.cfp-dock{ right:392px; }
         #chat-file-preview-modal.cfp-dock #cfp-close-btn{ right:408px; }
-        #chat-file-preview-modal.cfp-dock #cfp-title{ right:472px; }
-        #chat-file-preview-modal.cfp-dock #cfp-dlbar{ right:392px !important; }
+        #chat-file-preview-modal.cfp-dock #cfp-titlebar{ right:474px; }
       }
     </style>
     <div id="chat-file-preview-modal" class="cfp-dock" onclick="if(event.target===this)closeChatFilePreview()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:4400; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px);">
-        <div style="position:fixed; top:20px; left:24px; right:80px; color:#fff; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(0,0,0,0.5); padding:8px 16px; border-radius:20px;" id="cfp-title">파일</div>
+        <div id="cfp-titlebar" style="position:fixed; top:14px; left:24px; right:82px; display:flex; align-items:center; gap:10px; z-index:4300;">
+            <span id="cfp-title" style="flex:1; min-width:0; color:#fff; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(0,0,0,0.5); padding:8px 16px; border-radius:20px;">파일</span>
+            <a id="cfp-download" download="" href="#" onclick="return _cfpSaveAs(this.href, this.getAttribute('download'), event)" title="내 컴퓨터의 원하는 위치에 저장(탐색기)" style="flex:none; background:#2563eb; color:#fff; padding:9px 18px; border-radius:20px; text-decoration:none; font-size:13px; font-weight:700; white-space:nowrap; box-shadow:0 2px 10px rgba(0,0,0,.4);">💾 원본 저장하기</a>
+        </div>
         <button id="cfp-close-btn" onclick="closeChatFilePreview()" title="닫기 (ESC)" style="position:fixed; top:16px; right:16px; background:rgba(220,38,38,0.95); border:2px solid #fff; color:#fff; font-size:26px; line-height:1; cursor:pointer; width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; z-index:4300; box-shadow:0 4px 16px rgba(0,0,0,.5);">&times;</button>
         <div id="cfp-content" style="max-width:min(1400px,96vw); max-height:90vh; width:100%; height:auto; display:flex; align-items:center; justify-content:center;"></div>
-        <div id="cfp-dlbar" style="position:fixed; bottom:calc(24px + env(safe-area-inset-bottom,0px)); right:24px; display:flex; gap:8px; z-index:4300;">
-            <a id="cfp-download" download="" href="#" style="background:linear-gradient(135deg,#4a4a4e,#232326); color:#fff; padding:10px 22px; border-radius:24px; text-decoration:none; font-size:13px; font-weight:600;">원본 다운로드</a>
-        </div>
     </div>
 
     <!-- 📄 하단 고정 푸터: 이용약관 / 개인정보취급방침 (회색) -->
@@ -4974,7 +4973,7 @@
                     payloads.push(p);
                 }
                 if(!payloads.length){ showToast('묶음 생성 실패(파일 읽기)'); return; }
-                const html=window.buildChatBundleHTML(payloads, { title: files.length+'개 파일 묶음', sender: currentUser.name });
+                const html=window.buildChatBundleHTML(payloads, { title: files.length+'개 파일 묶음', sender: currentUser.name, roomId: (window.currentChatRoomId||'') });
                 const ts=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
                 const bundleFile=new File([html], '묶음_'+ts+'.html', { type:'text/html' });
                 if(window.handleChatFileAttach){ await window.handleChatFileAttach([bundleFile]); }
@@ -6981,8 +6980,15 @@
                 const u = new URL(d.url, location.href);
                 const room = u.searchParams.get('openroom');
                 const invite = u.searchParams.get('invite');
+                // 미리보기 닫기
                 try{ closeModal('universal-modal'); }catch(_){}
                 try{ const m=document.getElementById('file-viewer-modal'); if(m) m.style.display='none'; }catch(_){}
+                try{ if(window.closeChatFilePreview) closeChatFilePreview(); }catch(_){}
+                // ⭐ 이 묶음을 '주문 대화방'에서 열었으면 새 DM이 아니라 그 주문방으로 (파일을 전달받은 대화방)
+                if(room && /^room_ord_/.test(room) && window.openEarthRoom){ window.openEarthRoom(room); return; }
+                if(String(window.currentChatRoomId||'').startsWith('room_ord_') && window.activeChatFriend && window.openMessengerChat){
+                    window.openMessengerChat(window.activeChatFriend, window.currentChatRoomId); return;
+                }
                 if(room && window.openEarthRoom) window.openEarthRoom(room);
                 else if(invite && window.openMessengerChat) window.openMessengerChat(invite);
                 else if(invite && window.startChatWith) window.startChatWith(invite);
@@ -10168,8 +10174,11 @@
             const titleSafe = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
             const bundleTitle = opts.title || '첨부 파일';
             const senderForLink = opts.sender || '';
+            const roomForLink = opts.roomId || '';   // 주문 대화방(room_ord_N)이면 그 방으로 링크
             const platformOrigin = (opts.origin || (window.location.origin + window.location.pathname));
-            const inviteUrl = platformOrigin + '?invite=' + encodeURIComponent(senderForLink);
+            const inviteUrl = /^room_ord_/.test(roomForLink)
+                ? (platformOrigin + '?openroom=' + encodeURIComponent(roomForLink))
+                : (platformOrigin + '?invite=' + encodeURIComponent(senderForLink));
             const inviteUrlSafe = inviteUrl.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
             const senderSafe = titleSafe(senderForLink);
 
@@ -13299,6 +13308,26 @@ pdfjsScript,
             }; reader.readAsDataURL(file);
         }
 
+        // 💾 원본 저장하기 = OS 탐색기 저장 대화상자(showSaveFilePicker). 앱에서 미리보기로 열리지 않고 사용자가 위치를 골라 저장.
+        window._cfpSaveAs = function(url, filename, ev){
+            try{
+                if(window.showSaveFilePicker && /^(https?:|data:|blob:)/.test(String(url||''))){
+                    if(ev) ev.preventDefault();
+                    (async()=>{
+                        try{
+                            const resp = await fetch(url); const blob = await resp.blob();
+                            const handle = await window.showSaveFilePicker({ suggestedName: filename||'file' });
+                            const w = await handle.createWritable(); await w.write(blob); await w.close();
+                            showToast('✅ 저장했습니다: '+(filename||'파일'));
+                        }catch(e){ if(!(e && e.name==='AbortError')){ // 취소가 아니면 기본 다운로드 폴백
+                            try{ const a=document.createElement('a'); a.href=url; a.download=filename||'file'; document.body.appendChild(a); a.click(); a.remove(); }catch(_){}
+                        } }
+                    })();
+                    return false;
+                }
+            }catch(_){}
+            return true;   // 미지원(모바일 등) → 기본 <a download> 동작
+        };
         // 🚀 [v7] 채팅 파일 미리보기 (인라인 모달, 외부 창 X)
         window.openChatFilePreview = function(fileKey) {
             const f = (window.__chatFileRegistry || {})[fileKey];
