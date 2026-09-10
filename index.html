@@ -9767,6 +9767,7 @@
               +     '<button id="rc-vm-r" title="오른쪽 클릭" style="flex:2;padding:9px;background:#334155;color:#fff;border:0;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;"><svg width="20" height="24" viewBox="0 0 22 26" fill="none" stroke="#fff" stroke-width="1.5"><rect x="4" y="1.5" width="14" height="23" rx="7"/><path d="M11 2 A6.4 6.4 0 0 1 17.4 9.3 L11 9.3 Z" fill="#fff"/><line x1="11" y1="2" x2="11" y2="9.3"/></svg></button>'
               +   '</div>'
               +   '<div style="display:flex;gap:6px;margin-top:6px;">'
+              +     '<button id="rc-vm-hold" title="누른 채 유지(드래그) — 한 번 눌러 잡고, 패드로 끌고, 다시 눌러 놓기" style="flex:2;padding:8px;background:#334155;color:#fff;border:0;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;font-size:12px;font-weight:800;"><svg width="18" height="22" viewBox="0 0 22 26" fill="none" stroke="#fff" stroke-width="1.5"><rect x="4" y="1.5" width="14" height="23" rx="7"/><path d="M11 2 A6.4 6.4 0 0 0 4.6 9.3 L11 9.3 Z" fill="#fff"/><line x1="11" y1="2" x2="11" y2="9.3"/></svg><span>드래그</span></button>'
               +     '<button id="rc-vm-su" title="위로 스크롤" style="flex:1;padding:8px;background:#334155;color:#fff;border:0;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;"><svg width="16" height="20" viewBox="0 0 22 26" fill="none" stroke="#fff" stroke-width="1.5"><rect x="4" y="1.5" width="14" height="23" rx="7"/><rect x="9.2" y="5" width="3.6" height="6.5" rx="1.8" fill="#fff"/></svg><span style="font-size:14px;line-height:1;">▲</span></button>'
               +     '<button id="rc-vm-sd" title="아래로 스크롤" style="flex:1;padding:8px;background:#334155;color:#fff;border:0;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;"><svg width="16" height="20" viewBox="0 0 22 26" fill="none" stroke="#fff" stroke-width="1.5"><rect x="4" y="1.5" width="14" height="23" rx="7"/><rect x="9.2" y="5" width="3.6" height="6.5" rx="1.8" fill="#fff"/></svg><span style="font-size:14px;line-height:1;">▼</span></button>'
               +   '</div>'
@@ -9792,9 +9793,10 @@
             // 채팅 서랍은 항상 뷰어 위로(입력 가능)
             try{ if(d){ d.style.zIndex = '99995'; } }catch(_){}
             if(_rcIsMobile()){
-                // 📱 모바일: 뷰어는 항상 전체화면. 채팅은 '위에 전체로 덮어서' 껏다 켰다(반쪽 분할 안 함 → 세로/가로 모두 원격화면 잘 보임)
+                // 📱 모바일: 뷰어는 항상 전체화면. 채팅은 열면 '전체로 덮고', 닫으면 '완전히 화면 밖'으로(반쪽 분할 안 함)
+                //   → 열림=온전히 메신저만 / 닫힘=온전히 원격화면만. (폭을 100vw로 키웠으니 닫을 땐 right:-100vw로 완전히 숨겨야 함)
                 ov.style.left='0'; ov.style.right='0';
-                try{ if(d){ d.style.maxWidth='100vw'; } }catch(_){}   // 원격 중 모바일은 채팅을 전체화면으로
+                try{ if(d){ d.style.width='100vw'; d.style.maxWidth='100vw'; d.style.right = open ? '0' : '-100vw'; } }catch(_){}
             } else {
                 // 🖥 데스크톱: 채팅 서랍이 열려 있으면 그 폭만큼 비워 나란히
                 if(open){ let w=380; try{ w=Math.round(d.getBoundingClientRect().width)||380; }catch(_){}; ov.style.right = w+'px'; }
@@ -9810,19 +9812,23 @@
             //   (가로모드에서 헤더 툴바의 💬채팅 버튼이 화면 밖으로 밀려도 이 버튼으로 채팅을 열 수 있음)
             //   모바일에서만 노출(데스크톱은 나란히 배치라 불필요)
             const show = _rcIsMobile();
-            fb.textContent = open ? '🖥 원격화면 보기' : '💬 대화방 열기';
-            fb.style.cssText = 'position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:100002;background:'+(open?'#111827':'#db2777')+';color:#fff;border:0;border-radius:24px;padding:10px 18px;font-weight:800;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.5);cursor:pointer;display:'+(show?'block':'none')+';';
+            fb.textContent = open ? '🖥 원격화면' : '💬 대화방';
+            // 좌상단 배치: 우측(줌·키보드·마우스·종료 등)·우상단(×) 버튼을 가리지 않는 위치. 원격=peer라벨, 메신저=메신저라벨 위만 덮음
+            fb.style.cssText = 'position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:calc(8px + env(safe-area-inset-left,0px));z-index:100002;background:'+(open?'#111827':'#db2777')+';color:#fff;border:0;border-radius:22px;padding:9px 15px;font-weight:800;font-size:13px;box-shadow:0 3px 14px rgba(0,0,0,.5);cursor:pointer;display:'+(show?'block':'none')+';';
         }
         window._rcToggleChatWhileRemote = function(){
             const d=document.getElementById('messenger-drawer');
             try{ if(window.toggleMessengerDrawer) toggleMessengerDrawer(); }catch(_){}
-            // 토글 애니메이션(0.3s) 후 레이아웃/버튼 반영
+            // 즉시 반영 — 모바일은 전체화면 슬라이드(닫힘=-100vw로 완전히 숨김) + 플로팅 버튼 라벨 즉시 갱신(깜빡임 방지)
+            try{ if(d && _rcIsMobile()){ const nowOpen=d.classList.contains('open'); d.style.width='100vw'; d.style.maxWidth='100vw'; d.style.right = nowOpen?'0':'-100vw'; } }catch(_){}
+            try{ _rcUpdateFloatToggle(); }catch(_){}
+            // 토글 애니메이션(0.3s) 후 레이아웃/버튼 재반영
             setTimeout(function(){ _rcLayoutViewer(); _rcUpdateFloatToggle(); const b=document.getElementById('rc-chat-btn'); if(b){ const nowOpen=d&&d.classList.contains('open'); b.style.background = nowOpen?'#2563eb':'#334155'; } }, 330);
         };
         function _rcCloseViewer(){
             const ov = document.getElementById('rc-view-overlay'); if(ov) ov.remove();
             try{ const fb=document.getElementById('rc-float-toggle'); if(fb) fb.remove(); }catch(_){}
-            try{ const d=document.getElementById('messenger-drawer'); if(d){ d.style.zIndex=''; d.style.maxWidth=''; } }catch(_){}
+            try{ const d=document.getElementById('messenger-drawer'); if(d){ d.style.zIndex=''; d.style.maxWidth=''; d.style.width=''; d.style.right=''; } }catch(_){}
         }
         function _rcFracXY(cx, cy){
             const v = document.getElementById('rc-view-vid'); if(!v || !v.videoWidth) return null;
@@ -10026,6 +10032,10 @@
             p.style.display = show ? 'block' : 'none';
             const b=document.getElementById('rc-vm-btn'); if(b) b.style.background = show ? '#2563eb' : '#334155';
             if(show){ if(!p._vmBound){ p._vmBound=true; _rcVMouseBind(); } try{ showToast('🖱 가상 마우스 — 패드를 문질러 이동, 아래 버튼으로 클릭'); }catch(_){} }
+            else if(window._rcVMHold){ // 닫을 때 드래그가 눌린 채 남지 않도록 해제
+                try{ _rcSendInput({t:'mu',fx:window._rcVMx,fy:window._rcVMy}); }catch(_){}
+                window._rcVMHold=false; const hb=document.getElementById('rc-vm-hold'); if(hb) hb.style.background='#334155';
+            }
         };
         function _rcVMouseBind(){
             const pad=document.getElementById('rc-vm-pad'); if(!pad) return;
@@ -10043,7 +10053,7 @@
                 lx=x; ly=y; sendMove();
             };
             const end=()=>{ if(!active) return; active=false; pad.style.cursor='grab';
-                if(!moved && (Date.now()-downT)<350){ doClick(0); }   // 짧은 탭=왼쪽 클릭
+                if(!window._rcVMHold && !moved && (Date.now()-downT)<350){ doClick(0); }   // 짧은 탭=왼쪽 클릭 (드래그 유지 중엔 클릭 안 함)
             };
             if(window.PointerEvent){
                 pad.addEventListener('pointerdown', e=>{ e.preventDefault(); try{ pad.setPointerCapture(e.pointerId); }catch(_){} start(e.clientX,e.clientY); });
@@ -10066,6 +10076,19 @@
             bind('rc-vm-dbl', ()=>_rcSendInput({t:'dc',fx:window._rcVMx,fy:window._rcVMy}));
             bind('rc-vm-su', ()=>_rcSendInput({t:'w',d:120}));
             bind('rc-vm-sd', ()=>_rcSendInput({t:'w',d:-120}));
+            // ✊ 누른 채 유지(드래그) 토글 — ON: 마우스 왼버튼 '누름'(md) 유지 → 패드로 끌면 드래그 / OFF: '뗌'(mu)
+            //   (창 이동·슬라이더·선택영역 드래그에 사용. 호스트는 md/mu를 이미 지원)
+            (function(){ const hb=document.getElementById('rc-vm-hold'); if(!hb) return;
+                const setUI=()=>{ hb.style.background = window._rcVMHold ? '#db2777' : '#334155'; };
+                const toggleHold=(e)=>{ if(e){ e.preventDefault(); e.stopPropagation(); }
+                    window._rcVMHold = !window._rcVMHold;
+                    if(window._rcVMHold){ _rcSendInput({t:'md',fx:window._rcVMx,fy:window._rcVMy}); if(navigator.vibrate) try{navigator.vibrate(15);}catch(_){} }
+                    else { _rcSendInput({t:'mu',fx:window._rcVMx,fy:window._rcVMy}); }
+                    setUI();
+                };
+                if(window.PointerEvent) hb.addEventListener('pointerdown', toggleHold); else { hb.addEventListener('touchstart', toggleHold, {passive:false}); hb.addEventListener('click', toggleHold); }
+                hb.style.touchAction='manipulation'; setUI();
+            })();
         }
         function _rcBindViewerInput(){
             const stage = document.getElementById('rc-view-stage'); if(!stage) return;
