@@ -12027,6 +12027,24 @@ pdfjsScript,
                     </div>
                 </div>`;
 
+            // 🦷 기공 의뢰 상세 — 순서대로 입력(치식→보철종류→재질→쉐이드→교합→마진→보험여부)
+            const _rxdSel = (id, i, label, opts) => {
+                const o = ['<option value="">선택</option>'].concat(opts.map(v=>`<option value="${v}">${v}</option>`)).join('');
+                return `<div class="rxd-cell" style="display:flex;flex-direction:column;gap:4px;"><label style="font-size:11px;color:var(--text-sub);font-weight:700;">${label}</label><select id="${id}" class="rxd-f" data-i="${i}" style="padding:8px 10px;border:1px solid var(--border-color);border-radius:7px;font-size:12px;background:#fff;">${o}</select></div>`;
+            };
+            const _isLabForm = (product && (product.storeCategory === 'dental_lab' || product.category === 'dental_lab' || product.rx_form));
+            const rxDetailBox = !_isLabForm ? '' : `
+                <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin-bottom:8px;">🦷 기공 의뢰 상세 <span style="font-weight:500;color:var(--text-sub);font-size:12px;">(순서대로 입력하면 다음 항목이 열립니다 · 선택)</span></div>
+                <div id="rxd-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:14px;">
+                    <div class="rxd-cell" style="display:flex;flex-direction:column;gap:4px;"><label style="font-size:11px;color:var(--text-sub);font-weight:700;">치식 (치아 번호)</label><input id="rxd-teeth" class="rxd-f" data-i="0" placeholder="예: 16, 26, 36" style="padding:8px 10px;border:1px solid var(--border-color);border-radius:7px;font-size:12px;"></div>
+                    ${_rxdSel('rxd-prosth', 1, '보철 종류', ['크라운','브릿지','인레이/온레이','라미네이트','임플란트 보철','틀니(의치)','코핑','기타'])}
+                    ${_rxdSel('rxd-material', 2, '재질', ['지르코니아','e.max(글라스세라믹)','PFM','골드','메탈','PMMA(임시)','레진','기타'])}
+                    ${_rxdSel('rxd-shade', 3, '쉐이드(Shade)', ['A1','A2','A3','A3.5','A4','B1','B2','B3','B4','C1','C2','C3','C4','D2','D3','D4','BL1','BL2','BL3','BL4','기타'])}
+                    ${_rxdSel('rxd-occlusion', 4, '교합 (대합치)', ['자연치','보철물','임플란트','대합치 없음','기타'])}
+                    ${_rxdSel('rxd-margin', 5, '마진', ['숄더(Shoulder)','챔퍼(Chamfer)','나이프엣지','라운드 숄더','기타'])}
+                    ${_rxdSel('rxd-insurance', 6, '보험 여부', ['급여(보험)','비급여'])}
+                </div>`;
+
             body.innerHTML = `
                 <div style="background:linear-gradient(135deg, #404040, #1a1a1a); color:#fff; padding:14px 18px; border-radius:10px; margin-bottom:14px;">
                     <div style="font-size:18px; font-weight:900;">${(product.name||'').replace(/</g,'&lt;')}</div>
@@ -12055,6 +12073,8 @@ pdfjsScript,
 
                 <hr style="margin:18px 0; border:none; border-top:1px solid var(--border-color);">
 
+                ${rxDetailBox}
+
                 <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin-bottom:8px;">📝 요청 사항 / 메모</div>
                 <textarea id="order-buyer-memo" placeholder="배송 옵션, 사이즈, 색상, 기타 요청 등" rows="3" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-family:inherit; font-size:13px;"></textarea>
 
@@ -12068,6 +12088,14 @@ pdfjsScript,
                 <input type="file" id="order-buyer-files" multiple style="display:none;">
                 <div id="order-buyer-files-list" style="margin-top:8px;"></div>
             `;
+
+            // 🦷 기공 의뢰 상세 — 순차 입력: 앞 항목을 채워야 다음 항목이 활성화(회원가입 순차입력과 동일 UX)
+            (function _rxdSeqInit(){
+                const fs = Array.from(document.querySelectorAll('#rxd-grid .rxd-f')); if(!fs.length) return;
+                const refresh = ()=>{ for(let i=1;i<fs.length;i++){ const prev=String(fs[i-1].value||'').trim(); fs[i].disabled = !prev; const cell=fs[i].closest('.rxd-cell'); if(cell) cell.style.opacity = fs[i].disabled ? '0.45' : '1'; } };
+                fs.forEach(f=>{ f.addEventListener('input', refresh); f.addEventListener('change', refresh); });
+                refresh();
+            })();
 
             const obDz = document.getElementById('order-buyer-dropzone');
             const obIn = document.getElementById('order-buyer-files');
@@ -12201,7 +12229,13 @@ pdfjsScript,
             // 🦷 기공소(dental_lab) PDF 주문서: 금액 미설정(0) → 금액미정 흐름(기공소 확정→구매자 결제) + 핀 카드
             const _isLab = !!(st.product && st.product.storeCategory === 'dental_lab');
             if(_isLab) st.amount = 0;
-            const memo = (document.getElementById('order-buyer-memo').value || '').trim();
+            const memoRaw = (document.getElementById('order-buyer-memo').value || '').trim();
+            // 🦷 기공 의뢰 상세 캡처 → 의뢰서 메모 상단에 요약 + form_data에 구조화 저장
+            const _rxg = (id)=>{ const e=document.getElementById(id); return e? String(e.value||'').trim() : ''; };
+            const rxDetail = { teeth:_rxg('rxd-teeth'), prosthesis:_rxg('rxd-prosth'), material:_rxg('rxd-material'), shade:_rxg('rxd-shade'), occlusion:_rxg('rxd-occlusion'), margin:_rxg('rxd-margin'), insurance:_rxg('rxd-insurance') };
+            const _rxLabels = { teeth:'치식', prosthesis:'보철종류', material:'재질', shade:'쉐이드', occlusion:'교합(대합치)', margin:'마진', insurance:'보험여부' };
+            const rxSummary = Object.keys(_rxLabels).filter(k=>rxDetail[k]).map(k=>_rxLabels[k]+': '+rxDetail[k]).join(' · ');
+            const memo = rxSummary ? ('🦷 기공 의뢰 상세 — ' + rxSummary + (memoRaw ? ('\n\n' + memoRaw) : '')) : memoRaw;
             const pdfText = window.orderFormState.pdfFilledData || '';
             const buyerInfo = {
                 name: (document.getElementById('order-buyer-name').value || '').trim(),
@@ -12249,7 +12283,7 @@ pdfjsScript,
                 method: 'POST', headers: {'Content-Type':'application/json'},
                 body: JSON.stringify({
                     productId: st.product.id, buyer: currentUser.name, seller: st.seller,
-                    bundle_html: orderHtml, memo, form_data: { pdfText, buyerFilesMeta: buyerFilesB64.map(f => ({ filename: f.filename, type: f.type })) },
+                    bundle_html: orderHtml, memo, form_data: { pdfText, rxDetail, buyerFilesMeta: buyerFilesB64.map(f => ({ filename: f.filename, type: f.type })) },
                     pdf_filled_data: pdfText, buyer_info: buyerInfo,
                     amount: st.amount, status: 'pending',
                     payMethod: pay.method, cardPw: pay.cardPw
