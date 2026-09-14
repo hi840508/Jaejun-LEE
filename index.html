@@ -4621,7 +4621,20 @@
             _rcSendRoots();
             // 뷰어에서 공유폴더를 고르면 활성 루트를 바꾸고(또는 새 폴더 추가) 그 루트의 목록을 다시 보낸다.
             const onViewerMsg = async (ev)=>{
-                if(!ev.data || ev.data.type!=='RAYCLOUD_PICK_ROOT') return;
+                if(!ev.data) return;
+                // 💾 뷰어 저장하기/화면 캡처 → 메인 공유폴더에 저장
+                if(ev.data.type==='RAYCLOUD_SAVE_TO_FOLDER'){
+                    const nm = ev.data.name || ('AlphaK_Viewer_'+Date.now()+'.html');
+                    const blob = ev.data.blob;
+                    try{
+                        if(R.requireFolder){ const ok=await R.requireFolder(); if(!ok){ showToast('공유폴더를 먼저 지정하세요.'); try{ fr.contentWindow.postMessage({type:'RAYCLOUD_SAVED', error:'no-folder'}, '*'); }catch(_){} return; } }
+                        const saved = await R.writeFile(nm, blob);   // 메인 공유폴더 루트에 저장
+                        showToast('✅ 공유폴더에 저장됨: '+saved);
+                        try{ fr.contentWindow.postMessage({type:'RAYCLOUD_SAVED', name:saved}, '*'); }catch(_){}
+                    }catch(e){ showToast('저장 실패: '+(e.message||e)); try{ fr.contentWindow.postMessage({type:'RAYCLOUD_SAVED', error:String(e.message||e)}, '*'); }catch(_){} }
+                    return;
+                }
+                if(ev.data.type!=='RAYCLOUD_PICK_ROOT') return;
                 const id = ev.data.id;
                 try{ if(id==='__add__'){ if(R.pick) await R.pick(); } else if(R.setActiveRoot){ await R.setActiveRoot(id); } }catch(_){}
                 try{ post({ type:'RAYCLOUD_MANIFEST', items:[] }); }catch(_){}   // 이전 목록 비움
