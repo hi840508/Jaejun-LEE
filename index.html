@@ -882,6 +882,19 @@
             }
             input, select, textarea { background: #ffffff !important; color: #1a1a1a !important; }
         }
+        /* 🧭 영업 관리 상단 고정 네비 — 회원/매출/정산/세금계산서 항상 노출 */
+        .smnav{ position:sticky; top:0; z-index:30; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
+            background:#fff; padding:10px 14px; border:1px solid var(--border-color); border-radius:12px; margin-bottom:12px;
+            box-shadow:0 2px 8px rgba(0,0,0,.04); }
+        .smnav .smn-title{ margin-right:auto; font-weight:900; font-size:16px; display:inline-flex; align-items:center; gap:7px; }
+        .smn-btn{ display:inline-flex; align-items:center; gap:6px; padding:8px 13px; border-radius:9px; border:1px solid var(--border-color);
+            background:#fff; color:var(--text-main); font-weight:800; font-size:13px; cursor:pointer; white-space:nowrap; }
+        .smn-btn svg{ width:16px; height:16px; }
+        .smn-btn:hover{ border-color:var(--primary); }
+        .smn-btn.active{ background:var(--primary); color:#fff; border-color:var(--primary); }
+        .ic-svg{ width:18px; height:18px; vertical-align:-4px; }
+        h3 .ic-svg, h4 .ic-svg{ vertical-align:-3px; }
+        .btn .ic-svg{ width:16px; height:16px; vertical-align:-3px; }
     </style>
 </head>
 <body>
@@ -1131,10 +1144,8 @@
                     <div class="yt-sb-divider" id="sb-ops-divider" style="display:none"></div>
                     <div class="yt-sb-section" id="sb-ops-section" style="display:none">
                         <div class="yt-sb-title">운영·관리</div>
-                        <button class="yt-sb-item" onclick="switchTab('admin-members')" data-tab="admin-members"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span><span>회원 관리</span></button>
-                        <button class="yt-sb-item" onclick="switchTab('admin-orders')" data-tab="admin-orders"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path></svg></span><span>매출 관리</span></button>
-                        <button class="yt-sb-item" onclick="goSettle()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg></span><span>정산</span></button>
-                        <button class="yt-sb-item" onclick="goInvoice()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg></span><span>세금계산서</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('admin-members')" data-tab="admin-members"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg></span><span>영업 관리</span></button>
+                        <button class="yt-sb-item" id="admin-ops-btn" onclick="openAdminOps()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg></span><span>서버 관리</span></button>
                     </div>
                     <!-- 🚀 [v8] 사이드바 맨 아래 설정 + 사이드바 영역 늘리기 위해 flex-grow spacer -->
                     <div style="flex:1; min-height:10px;"></div>
@@ -1524,7 +1535,7 @@
                     </div>
                     <div style="margin-top:12px; padding-top:12px; border-top:1px dashed var(--danger); font-size:12px; color:#7f1d1d;">
                         회원 관리 도구(전체 회원 정보·가입 승인·가망 고객 정보·카테고리 노출)는 <b>운영·관리 → 회원 관리</b>로 이동했습니다.
-                        <button class="btn btn-outline" style="padding:6px 12px; font-size:12px; margin-left:6px;" onclick="switchTab('admin-members')">👥 회원 관리 열기</button>
+                        <button class="btn btn-outline" style="padding:6px 12px; font-size:12px; margin-left:6px;" onclick="switchTab('admin-members')"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> 회원 관리 열기</button>
                     </div>
                 </div>
             </div>
@@ -1619,22 +1630,22 @@
             <!-- 🧾 Admin 전자세금계산서 · 정산 (배민식 일괄) — tab-history 를 명시적으로 닫아 형제로 배치(중첩 방지) -->
             <!-- 💰 정산 페이지 (Admin) — 정산 전용 -->
             <div id="tab-tax" class="tab-content">
+                <div class="smnav-host"></div>
                 <div class="panel" style="padding:14px 16px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                         <div>
-                            <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;"><path d="M12 1v22"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> 정산 (Admin)</h3>
-                            <div style="font-size:12px;color:#707070;line-height:1.6;">구매확정된 매출을 업체별로 정산 지급합니다. 세금계산서 발행은 사이드바 <b>운영·관리 → 세금계산서</b>에서 진행하세요.</div>
+                            <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> 정산 (Admin)</h3>
+                            <div style="font-size:12px;color:#707070;line-height:1.6;">구매확정된 매출을 업체별로 정산 지급합니다. 세금계산서 발행은 상단 <b>세금계산서</b>에서 진행하세요.</div>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <button class="btn btn-secondary" style="padding:8px 14px;font-weight:800;" onclick="toggleStoreManage()">🏬 업체 관리</button>
-                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goInvoice()">🧾 세금계산서</button>
+                            <button class="btn btn-secondary" style="padding:8px 14px;font-weight:800;" onclick="toggleStoreManage()"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-5h16l1 5"></path><path d="M4 9v11h16V9"></path><path d="M9 20v-6h6v6"></path></svg> 업체 관리</button>
                         </div>
                     </div>
                 </div>
                 <!-- 🏬 상점 관리 — Admin 통합관리(에스크로) 대상 상점 지정 -->
                 <div id="store-manage-panel" class="panel" style="padding:14px;display:none;">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-                        <h4 style="font-size:14px;font-weight:900;margin:0;">🏬 업체 관리 (Admin 통합관리 지정)</h4>
+                        <h4 style="font-size:14px;font-weight:900;margin:0;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-5h16l1 5"></path><path d="M4 9v11h16V9"></path><path d="M9 20v-6h6v6"></path></svg> 업체 관리 (Admin 통합관리 지정)</h4>
                         <span onclick="toggleStoreManage()" style="cursor:pointer;font-size:20px;color:#94a3b8;">&times;</span>
                     </div>
                     <div style="font-size:11px;color:#94a3b8;line-height:1.6;margin-bottom:10px;">체크된 상점은 <b style="color:#2563eb;">Admin이 결제/매출을 통합관리(에스크로)</b>합니다. 구매대금은 Admin이 보관했다가 구매확정 후 정산으로 상점주에게 지급되며, 결제수수료는 Admin 매출로 귀속됩니다.</div>
@@ -1678,14 +1689,14 @@
 
             <!-- 🧾 세금계산서 발행 페이지 (Admin) — 월별 업체별/선택 업체 일괄 발행 전용 -->
             <div id="tab-invoice" class="tab-content">
+                <div class="smnav-host"></div>
                 <div class="panel" style="padding:14px 16px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                         <div>
-                            <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg> 전자세금계산서 발행 (Admin)</h3>
+                            <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg> 전자세금계산서 발행 (Admin)</h3>
                             <div style="font-size:12px;color:#707070;line-height:1.6;">월 단위로 정산완료된 업체의 플랫폼 이용 수수료 세금계산서를 <b>업체별</b> 또는 <b>선택 업체 일괄</b>로 발행합니다. 매월 1~10일 발행. 국세청 전송은 팍스빌 계약 후 활성(현재는 발행기록 + PDF).</div>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goSettle()">💰 정산</button>
                             <span id="tax-mode-pill" style="font-size:11px;font-weight:800;padding:6px 10px;border-radius:30px;background:#e5e7eb;color:#374151;">연동 확인 중</span>
                         </div>
                     </div>
@@ -1722,7 +1733,7 @@
                         <span id="settled-admin-revenue-badge" style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:#f0fdf4;color:#166534;">정산완료 Admin 수수료 매출: 0원</span>
                     </div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-                        <button class="btn btn-success" style="padding:9px 18px;" onclick="issueBulkSettled()">✅ 선택 업체 일괄 발행</button>
+                        <button class="btn btn-success" style="padding:9px 18px;" onclick="issueBulkSettled()"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 선택 업체 일괄 발행</button>
                         <button class="btn btn-outline" style="padding:9px 16px;" onclick="issueSettledAdminRevenueTax()">Admin 수수료 매출 세금계산서 발행</button>
                     </div>
                     <div style="overflow-x:auto;">
@@ -1745,8 +1756,8 @@
                                 <option value="nts_sent_mock">테스트(미전송)</option>
                                 <option value="not_sent">미전송</option>
                             </select>
-                            <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="taxPrintSelected()">🖨 출력·변환(PDF)</button>
-                            <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;color:#dc2626;border-color:#dc2626;" onclick="taxDeleteSelected()">🗑 삭제(매출취소)</button>
+                            <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="taxPrintSelected()"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> 출력·변환(PDF)</button>
+                            <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;color:#dc2626;border-color:#dc2626;" onclick="taxDeleteSelected()"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> 삭제(매출취소)</button>
                         </div>
                     </div>
                     <div style="overflow-x:auto;">
@@ -1764,24 +1775,18 @@
 
             <!-- 👑 Admin 전용: 회원 원장(회원 관리) — 회원→매출→정산→세금계산서 관리 흐름의 시작 -->
             <div id="tab-admin-members" class="tab-content">
+                <div class="smnav-host"></div>
                 <div class="panel" style="padding:14px 16px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-                        <div>
-                            <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">👥 회원 관리 (회원 원장)</h3>
-                            <div style="font-size:12px;color:#707070;line-height:1.6;">전체 회원과 각 회원의 <b>판매·구매·미정산</b> 현황을 한눈에 봅니다. 회원 → <b>매출 관리</b> → <b>정산</b> → <b>세금계산서</b>로 이어지는 영업 관리 시작 화면입니다.</div>
-                        </div>
-                        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="switchTab('admin-orders')">📈 매출 관리</button>
-                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goSettle()">💰 정산</button>
-                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goInvoice()">🧾 세금계산서</button>
-                        </div>
+                    <div>
+                        <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> 회원 관리 (회원 원장)</h3>
+                        <div style="font-size:12px;color:#707070;line-height:1.6;">전체 회원과 각 회원의 <b>판매·구매·미정산</b> 현황을 한눈에 봅니다. 회원 → <b>매출 관리</b> → <b>정산</b> → <b>세금계산서</b>로 이어지는 영업 관리 시작 화면입니다.</div>
                     </div>
                     <!-- 🛠 회원 관리 도구 (내 지갑 [Admin] 도구에서 이관) -->
                     <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border-color);display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                        <button class="btn btn-danger" style="padding:9px 14px;font-size:13px;" onclick="loadAdminUsers(); openModal('admin-users-modal');">🔑 전체 회원 정보 보기 (복구용)</button>
-                        <button class="btn btn-warning" style="padding:9px 14px;font-size:13px;" onclick="loadPendingApprovals(); openModal('admin-pending-modal');">✅ 가입 승인 대기 <span id="admin-pending-badge" style="background:#fff; color:var(--danger); padding:2px 8px; border-radius:20px; font-size:10px; margin-left:4px; display:none;">0</span></button>
-                        <button class="btn btn-outline" style="padding:9px 14px;font-size:13px;" onclick="openPartnerClinics()">🎯 가망 고객 정보</button>
-                        <button class="btn btn-outline" style="padding:9px 14px;font-size:13px;" onclick="openCategoryManage()">🗂 카테고리 노출 관리</button>
+                        <button class="btn btn-danger" style="padding:9px 14px;font-size:13px;" onclick="loadAdminUsers(); openModal('admin-users-modal');"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-3.5 3.5a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L19 4l3 3-3.5 3.5"></path></svg> 전체 회원 정보 보기 (복구용)</button>
+                        <button class="btn btn-warning" style="padding:9px 14px;font-size:13px;" onclick="loadPendingApprovals(); openModal('admin-pending-modal');"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 가입 승인 대기 <span id="admin-pending-badge" style="background:#fff; color:var(--danger); padding:2px 8px; border-radius:20px; font-size:10px; margin-left:4px; display:none;">0</span></button>
+                        <button class="btn btn-outline" style="padding:9px 14px;font-size:13px;" onclick="openPartnerClinics()"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg> 가망 고객 정보</button>
+                        <button class="btn btn-outline" style="padding:9px 14px;font-size:13px;" onclick="openCategoryManage()"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg> 카테고리 노출 관리</button>
                         <span style="font-size:11px; color:#7f1d1d; align-self:center;">회원 비밀번호 분실 시 복구를 위한 Admin 전용 도구입니다.</span>
                     </div>
                 </div>
@@ -1823,17 +1828,11 @@
 
             <!-- 👑 Admin 전용: 매출 관리 = 전체 주문(판매 상태) + 전체 거래내역(매출 거래 원장) -->
             <div id="tab-admin-orders" class="tab-content">
+                <div class="smnav-host"></div>
                 <div class="panel" style="padding:14px 16px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-                        <div>
-                            <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">📈 매출 관리 (매출 거래 원장)</h3>
-                            <div style="font-size:12px;color:#707070;line-height:1.6;">모든 상점의 주문 판매 상태와 전체 거래내역(매출 원장)을 조회합니다. 특정 거래처는 검색창에 ID를 넣어 필터할 수 있습니다.</div>
-                        </div>
-                        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="switchTab('admin-members')">👥 회원 관리</button>
-                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goSettle()">💰 정산</button>
-                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goInvoice()">🧾 세금계산서</button>
-                        </div>
+                    <div>
+                        <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path></svg> 매출 관리 (매출 거래 원장)</h3>
+                        <div style="font-size:12px;color:#707070;line-height:1.6;">모든 상점의 주문 판매 상태와 전체 거래내역(매출 원장)을 조회합니다. 특정 거래처는 검색창에 ID를 넣어 필터할 수 있습니다.</div>
                     </div>
                 </div>
                 <div class="panel" style="padding:14px;">
@@ -2137,7 +2136,6 @@
             <div style="height:1px; background:var(--border-color); margin:8px 0;"></div>
             <button class="btn btn-outline" style="width:100%; padding:11px; color:#dc2626; border-color:#fecaca;" onclick="withdrawAccount()">회원 탈퇴</button>
 
-            <button class="btn btn-outline" id="admin-ops-btn" style="width:100%; padding:12px; display:none; margin-top:5px;" onclick="openAdminOps()">🛠 서버 관리 — DB 백업 · 저장소 사용량</button>
             <button class="btn btn-danger" id="admin-db-reset-btn" style="width:100%; padding:12px; display:none; margin-top:5px; background:#7f1d1d;" onclick="adminForceResetDB()">⚠️ 전체 데이터 초기화 (DB 초기화)</button>
         </div>
     </div>
@@ -2201,7 +2199,7 @@
     <!-- 🚀 Admin 전용: 전체 회원 정보 모달 (복구 목적) -->
     <div class="modal-overlay" id="admin-users-modal">
         <div class="modal-content" style="max-width:95vw; width:1100px; max-height:90vh; display:flex; flex-direction:column;">
-            <div class="modal-header"><span>👥 전체 회원 정보 (Admin · 복구 목적)</span><button class="close-btn-x" onclick="closeModal('admin-users-modal')">&times;</button></div>
+            <div class="modal-header"><span><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> 전체 회원 정보 (Admin · 복구 목적)</span><button class="close-btn-x" onclick="closeModal('admin-users-modal')">&times;</button></div>
             <div style="background:#fee2e2; padding:8px 12px; border-radius:6px; font-size:11px; color:#991b1b; margin-bottom:8px;">
                 ⚠️ 민감 정보입니다. 외부 유출 금지. 비밀번호 분실/복구 목적으로만 사용하세요.
             </div>
@@ -2301,7 +2299,7 @@
     <div class="modal-overlay" id="tax-invoice-form-modal">
         <div class="modal-content" style="max-width:1020px; gap:0; padding:0;">
             <div class="modal-header" style="padding:16px 20px; margin:0;">
-                <span>🧾 전자세금계산서 발행</span>
+                <span><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg> 전자세금계산서 발행</span>
                 <button class="close-btn-x" onclick="closeModal('tax-invoice-form-modal')">&times;</button>
             </div>
             <div style="padding:16px 20px; overflow-y:auto;">
@@ -4203,7 +4201,7 @@
             if(!isAdmin){ showToast('관리자 전용입니다.'); return; }
             const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
             const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
-            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:760px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div style="font-weight:800;font-size:17px;">🎯 가망 고객 정보</div><button id="_pc-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.5;">회원들이 <b>가입 시 입력한 거래처</b>(치과·기공소)입니다. 아직 <b>미가입</b>인 곳에 신규 가입을 권유하는 <b>영업 리드</b>로 활용하세요.</div><div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;"><input id="_pc-q" placeholder="이름·연락처·주소·추천회원 검색" style="flex:1;min-width:180px;padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;"><label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;white-space:nowrap;"><input type="checkbox" id="_pc-notmember"> 미가입만</label><button id="_pc-csv" style="padding:9px 12px;border:none;background:#0f172a;color:#fff;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;">CSV 내보내기</button></div><div id="_pc-body" style="font-size:13px;color:#475569;">불러오는 중…</div></div>';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:760px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div style="font-weight:800;font-size:17px;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg> 가망 고객 정보</div><button id="_pc-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.5;">회원들이 <b>가입 시 입력한 거래처</b>(치과·기공소)입니다. 아직 <b>미가입</b>인 곳에 신규 가입을 권유하는 <b>영업 리드</b>로 활용하세요.</div><div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;"><input id="_pc-q" placeholder="이름·연락처·주소·추천회원 검색" style="flex:1;min-width:180px;padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;"><label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;white-space:nowrap;"><input type="checkbox" id="_pc-notmember"> 미가입만</label><button id="_pc-csv" style="padding:9px 12px;border:none;background:#0f172a;color:#fff;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;">CSV 내보내기</button></div><div id="_pc-body" style="font-size:13px;color:#475569;">불러오는 중…</div></div>';
             document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); }); ov.querySelector('#_pc-x').onclick=()=>ov.remove();
             const body=ov.querySelector('#_pc-body'); let data=null;
             try{ const r=await fetch(API_URL+'/api/admin/partner-clinics'); if(!r.ok){ body.innerHTML='<div style="color:#b45309;">권한이 없거나 불러올 수 없습니다.</div>'; return; } data=await r.json(); }
@@ -5604,8 +5602,7 @@
             if(dep) dep.style.display = active ? 'block' : 'none';
             const dbReset = document.getElementById('admin-db-reset-btn');
             if(dbReset) dbReset.style.display = active ? 'block' : 'none';
-            const adminOps = document.getElementById('admin-ops-btn');
-            if(adminOps) adminOps.style.display = active ? 'block' : 'none';
+            // 서버 관리 버튼은 사이드바 운영·관리 섹션(sb-ops-section)이 통째로 표시/숨김되므로 별도 display 강제 안 함(yt-sb-item flex 레이아웃 보존)
             const logoBtn = document.getElementById('admin-logo-btn');
             if(logoBtn) logoBtn.style.display = active ? 'inline-block' : 'none';
             const linkRow = document.getElementById('prod-link-row');   // 🔗 링크 상품(홈페이지) 입력란 — Admin 전용
@@ -6447,6 +6444,25 @@
             });
         };
 
+        // 🧭 영업 관리 상단 고정 네비(회원/매출/정산/세금계산서) — 4개 탭 상단에 동일 바를 심고 활성 표시
+        window._SALES_NAV_HTML = function(){
+            const S = {
+                brief:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>',
+                users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
+                chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path></svg>',
+                won:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>',
+                file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>'
+            };
+            return '<div class="smnav">'
+                + '<span class="smn-title">'+S.brief+' 영업 관리</span>'
+                + '<button class="smn-btn" data-nav="admin-members" onclick="switchTab(\'admin-members\')">'+S.users+' 회원 관리</button>'
+                + '<button class="smn-btn" data-nav="admin-orders" onclick="switchTab(\'admin-orders\')">'+S.chart+' 매출 관리</button>'
+                + '<button class="smn-btn" data-nav="tax" onclick="goSettle()">'+S.won+' 정산</button>'
+                + '<button class="smn-btn" data-nav="invoice" onclick="goInvoice()">'+S.file+' 세금계산서</button>'
+                + '</div>';
+        };
+        function _mountSalesNav(){ document.querySelectorAll('.smnav-host').forEach(function(h){ if(!h.dataset.mounted){ h.innerHTML=window._SALES_NAV_HTML(); h.dataset.mounted='1'; } }); }
+        function _setSalesNavActive(id){ document.querySelectorAll('.smn-btn').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-nav')===id); }); }
         function switchTab(id, _fromHistory) {
             try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){}   // 공유폴더 전체화면 열려 있으면 닫고 페이지 전환
             window.currentMarketFilter = null; // 상점 탭 이동시 필터 초기화
@@ -6501,6 +6517,8 @@
             }
             if(id === 'my-store') { loadMyStore(); loadMyBrandStores(); }
             if(id === 'sales-mgmt') { loadMySalesOrders(); }
+            // 🧭 영업 관리 4개 탭: 상단 고정 네비 심고 활성 표시
+            if(id === 'tax' || id === 'invoice' || id === 'admin-members' || id === 'admin-orders'){ try{ _mountSalesNav(); _setSalesNavActive(id); }catch(_){} }
             if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
             if(id === 'invoice') { if(typeof loadAdminInvoice==='function') loadAdminInvoice(); }
             if(id === 'admin-members') { if(typeof loadAdminMembers==='function') loadAdminMembers(); }
@@ -6601,8 +6619,10 @@
             const visibleStr = localStorage.getItem('earth_visible_cats');
             const visible = visibleStr ? JSON.parse(visibleStr) : null;
             const dotIcon = `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor; opacity:0.5;"></span>`;
+            const _openSet = new Set(window.OPEN_CATEGORIES || []);
             let h = `<button class="yt-sb-item ${active==='all'?'active':''}" onclick="setCategoryFilter('all'); switchTab('market');"><span class="ic">${dotIcon}</span><span>전체</span></button>`;
             window.BRAND_CATEGORIES.forEach(c => {
+                if(_openSet.size && !_openSet.has(c.id)) return;   // 카테고리 노출 관리에 켜진 것만
                 if(visible && !visible.includes(c.id)) return;
                 const cleanLabel = c.label.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{2700}-\u{27BF}\uFE0F]+\s*/u, '');
                 h += `<button class="yt-sb-item ${active===c.id?'active':''}" onclick="setCategoryFilter('${c.id}'); switchTab('market');"><span class="ic">${dotIcon}</span><span>${cleanLabel}</span></button>`;
@@ -6617,8 +6637,10 @@
             const active = window.activeCategoryFilter || 'all';
             const visibleStr = localStorage.getItem('earth_visible_cats');
             const visible = visibleStr ? JSON.parse(visibleStr) : null;
+            const _openSet = new Set(window.OPEN_CATEGORIES || []);
             let h = `<button class="cat-chip ${active==='all'?'active':''}" onclick="setCategoryFilter('all')">전체</button>`;
             window.BRAND_CATEGORIES.forEach(c => {
+                if(_openSet.size && !_openSet.has(c.id)) return;   // 카테고리 노출 관리에 켜진 것만
                 if(visible && !visible.includes(c.id)) return;
                 const cleanLabel = c.label.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{2700}-\u{27BF}\uFE0F]+\s*/u, '');
                 h += `<button class="cat-chip ${active===c.id?'active':''}" onclick="setCategoryFilter('${c.id}')">${cleanLabel}</button>`;
@@ -6666,7 +6688,13 @@
                     해당 카테고리는 회색으로 표시되며 체크할 수 없습니다.
                 </div>`;
             }
-            window.BRAND_CATEGORIES.forEach(c => {
+            // 🗂 '카테고리 노출 관리'에 체크된 카테고리(OPEN_CATEGORIES)만 제어판에서 고를 수 있게 제한
+            const _openSet = new Set(window.OPEN_CATEGORIES || []);
+            const _selectableCats = window.BRAND_CATEGORIES.filter(c => _openSet.has(c.id));
+            if(!_selectableCats.length){
+                h += '<div style="font-size:12px;color:var(--text-sub);padding:10px;background:#fff;border:1px dashed var(--border-color);border-radius:8px;">노출 가능한 카테고리가 없습니다.'+(isAdmin?' 회원 관리 → 카테고리 노출 관리에서 먼저 카테고리를 켜주세요.':'')+'</div>';
+            }
+            _selectableCats.forEach(c => {
                 const isLocked = lockedSet.has(c.id);
                 const checked = (visible.includes(c.id) && !isLocked) ? 'checked' : '';
                 const disabled = isLocked ? 'disabled' : '';
@@ -7311,6 +7339,7 @@
         window.loadOpenCategories = async function(){
             try{ const d=await (await fetch(API_URL+'/api/settings/open-categories')).json(); if(d&&Array.isArray(d.categories)&&d.categories.length) window.OPEN_CATEGORIES=d.categories; }catch(_){}
             try{ window.applyOpenCategories(); }catch(_){}
+            try{ if(window.renderSidebarCategories) renderSidebarCategories(); if(window.renderMobileChips) renderMobileChips(); }catch(_){}
         };
         // 🗂 [관리자] 카테고리 노출 관리 모달
         window.openCategoryManage = function(){
@@ -7323,7 +7352,7 @@
             ov.querySelector('#_cat-save').onclick=async()=>{
                 const cats=Array.from(ov.querySelectorAll('._cat-chk')).filter(x=>x.checked).map(x=>x.dataset.id);
                 if(!cats.length) return showToast('최소 1개 이상 선택하세요.');
-                try{ const r=await fetch(API_URL+'/api/admin/open-categories',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({categories:cats})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'저장 실패'); return; } window.OPEN_CATEGORIES=d.categories; window.applyOpenCategories(); showToast('카테고리 노출 설정 저장됨 ('+d.categories.length+'개)'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
+                try{ const r=await fetch(API_URL+'/api/admin/open-categories',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({categories:cats})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'저장 실패'); return; } window.OPEN_CATEGORIES=d.categories; window.applyOpenCategories(); try{ if(window.renderSidebarCategories) renderSidebarCategories(); if(window.renderMobileChips) renderMobileChips(); }catch(_){} showToast('카테고리 노출 설정 저장됨 ('+d.categories.length+'개)'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
             };
         };
 
