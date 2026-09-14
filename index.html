@@ -4463,6 +4463,37 @@
             return null;   // 영상이 아닌 파일
         }
 
+        // 🗂 폴더의 열람 가능한 파일 목록을 뷰어 DATA 서랍으로 전송(날짜·폴더 포함). 루트 전환 시에도 재사용.
+        //    · 단일 DICOM(=파노라마/2D)은 3D 볼륨이 아니라 2D로 디코드해 파노라믹 Arch 영역에 열리게 한다.
+        //    · CT 시리즈(.dcm 2장 이상)만 3D 볼륨(RAYCLOUD_LOAD_DICOM)으로 보낸다.
+        async function _rcSendManifest(R, pathArr, post){
+            let sibMeta=[]; try{ const cur=await R.listAt(pathArr)||{}; sibMeta=(cur.files||[]).map(f=>(typeof f==='string'?{fname:f,mtime:0}:{fname:(f&&f.fname)||(f&&f.name)||'',mtime:(f&&f.mtime)||0})).filter(x=>x.fname); }catch(_){}
+            const siblings=sibMeta.map(x=>x.fname);
+            const _mtimeOf=nm=>{ const m=sibMeta.find(x=>x.fname===nm); return m?(m.mtime||0):0; };
+            const _fmtDate=mt=>{ if(!mt) return ''; try{ const d=new Date(mt); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }catch(_){ return ''; } };
+            const folderNm=(pathArr&&pathArr.length)?pathArr[pathArr.length-1]:'Home';
+            const openable=siblings.filter(n=>!!_rcCatOf(n));
+            const items=[];
+            const dcms=openable.filter(n=>RC_DCM_RE.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+            if(dcms.length>=2){
+                const urls=[]; const gotd=await _rcMapLimit(dcms,6,n=>_rcBlobFor(R,pathArr,n)); gotd.forEach(u=>{ if(u)urls.push(u); });
+                const dcmDate=_fmtDate(Math.max.apply(null,dcms.map(_mtimeOf).concat(0)));
+                if(urls.length) items.push({ name:'CT 시리즈 ('+dcms.length+'장)', cat:'2D', date:dcmDate, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_DICOM', urls:urls, name:'CT Series ('+dcms.length+')' } });
+            } else if(dcms.length===1){
+                // 🩻 단일 DICOM = 파노라마/2D → 파노라믹 Arch 영역(vpPano)에 열리도록 2D 이미지로 디코드
+                let durl=''; try{ const f=await R.getFileAt(pathArr,dcms[0]); if(f&&R.dicomImage) durl=await R.dicomImage(f,2400); }catch(_){}
+                if(!durl) durl=await _rcBlobFor(R,pathArr,dcms[0]);
+                if(durl) items.push({ name:dcms[0], cat:'2D', date:_fmtDate(_mtimeOf(dcms[0])), folder:folderNm, thumb:(/^data:image/.test(durl)?durl:''), payload:{ type:'RAYCLOUD_LOAD_2D', url:durl, name:dcms[0] } });
+            }
+            for(const n of openable){ const cat=_rcCatOf(n); if(cat==='DICOM') continue; const u=await _rcBlobFor(R,pathArr,n); if(!u) continue; const dt=_fmtDate(_mtimeOf(n));
+                if(cat==='3D') items.push({ name:n, cat:'3D', date:dt, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } });
+                else if(cat==='PICTURE') items.push({ name:n, cat:'PICTURE', date:dt, folder:folderNm, thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } });
+                else items.push({ name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:dt, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', url:u, name:n } });
+            }
+            try{ post({ type:'RAYCLOUD_MANIFEST', items:items }); }catch(_){}
+            return items.length;
+        }
+
         window.rcOpenInLiveViewer = async function(pathArr, fname, alsoNames){
             const R = window.RCFolder;
             if(!R) return;
@@ -4582,34 +4613,25 @@
                 try{ setTimeout(()=>{ try{ stat.style.display='none'; }catch(_){} }, 900); }catch(_){}
             }
 
-            // 🗂 이 폴더의 영상 목록을 뷰어 '내장 DATA 서랍'에 넘긴다(날짜 포함). 로드는 서랍에서 클릭할 때 수행.
-            (async function sendManifest(){
-                const _mtimeOf = (nm)=>{ const m=sibMeta.find(x=>x.fname===nm); return m? (m.mtime||0) : 0; };
-                const _fmtDate = (mt)=>{ if(!mt) return ''; try{ const d=new Date(mt); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }catch(_){ return ''; } };
-                const folderNm = (pathArr && pathArr.length) ? pathArr[pathArr.length-1] : 'Home';
-                const openable = siblings.filter(n => !!_rcCatOf(n));
-                if(!openable.length) return;
-                const items = [];
-                const dcms = openable.filter(n => RC_DCM_RE.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-                if(dcms.length){
-                    const urls = [];
-                    const gotd = await _rcMapLimit(dcms, 6, n => _rcBlobFor(R, pathArr, n));
-                    gotd.forEach(u => { if(u) urls.push(u); });
-                    const dcmDate = _fmtDate(Math.max.apply(null, dcms.map(_mtimeOf).concat(0)));
-                    if(urls.length) items.push({ name:(dcms.length>1 ? ('CT 시리즈 ('+dcms.length+'장)') : dcms[0]), cat:'2D', date:dcmDate, folder:folderNm, thumb:'',
-                        payload:{ type:'RAYCLOUD_LOAD_DICOM', urls: urls, name:(dcms.length>1?('CT Series ('+dcms.length+')'):dcms[0]) } });
-                }
-                for(const n of openable){
-                    const cat = _rcCatOf(n);
-                    if(cat === 'DICOM') continue;
-                    const u = await _rcBlobFor(R, pathArr, n); if(!u) continue;
-                    const dt = _fmtDate(_mtimeOf(n));
-                    if(cat === '3D') items.push({ name:n, cat:'3D', date:dt, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } });
-                    else if(cat === 'PICTURE') items.push({ name:n, cat:'PICTURE', date:dt, folder:folderNm, thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } });
-                    else items.push({ name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:dt, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', url:u, name:n } });
-                }
-                if(items.length){ post({ type:'RAYCLOUD_MANIFEST', items: items }); if(!fname) post({ type:'RAYCLOUD_OPEN_DRAWER' }); }
-            })();
+            // 🗂 이 폴더의 영상 목록을 뷰어 DATA 서랍으로 전송(날짜·폴더 포함). 로드는 서랍에서 클릭할 때 수행.
+            _rcSendManifest(R, pathArr, post).then(cnt=>{ if(!fname && cnt) post({ type:'RAYCLOUD_OPEN_DRAWER' }); }).catch(()=>{});
+
+            // 🗂 연결된 공유폴더(루트) 목록을 뷰어로 보내 서랍에서 전환 가능하게 한다.
+            async function _rcSendRoots(){ try{ const roots=(R.listRoots? await R.listRoots():[])||[]; post({ type:'RAYCLOUD_ROOTS', roots: roots.map(r=>({ id:String(r.id), name:r.name, active:!!r.active })) }); }catch(_){} }
+            _rcSendRoots();
+            // 뷰어에서 공유폴더를 고르면 활성 루트를 바꾸고(또는 새 폴더 추가) 그 루트의 목록을 다시 보낸다.
+            const onViewerMsg = async (ev)=>{
+                if(!ev.data || ev.data.type!=='RAYCLOUD_PICK_ROOT') return;
+                const id = ev.data.id;
+                try{ if(id==='__add__'){ if(R.pick) await R.pick(); } else if(R.setActiveRoot){ await R.setActiveRoot(id); } }catch(_){}
+                try{ post({ type:'RAYCLOUD_MANIFEST', items:[] }); }catch(_){}   // 이전 목록 비움
+                try{ await _rcSendManifest(R, [], post); }catch(_){}             // 새 루트의 루트경로(=Home) 목록
+                _rcSendRoots();
+                try{ post({ type:'RAYCLOUD_OPEN_DRAWER' }); }catch(_){}
+            };
+            window.addEventListener('message', onViewerMsg);
+            const _origRemove2 = ov.remove.bind(ov);
+            ov.remove = function(){ try{ window.removeEventListener('message', onViewerMsg); }catch(_){} _origRemove2(); };
         };
 
         async function openSharedFolderPanel(){
