@@ -11886,11 +11886,20 @@ pdfjsScript,
             ov.querySelector('#pg-btn-cancel').onclick = ()=>{ window._pgClose(); if(onCancel) onCancel(); };
         }
         function _pgCardPrompt(amount, onCard, onCancel){
+            // 🔢 물리 키보드 없는 터치 PC(치과 등)·PC앱에서도 입력 가능하도록 숫자 키패드 내장(입력칸 탭 없이 눌러서 입력).
+            const keyBtn='padding:14px 0;font-size:20px;font-weight:800;border:1px solid var(--border-color,#e2e8f0);background:var(--card-bg,#fff);color:var(--text-main,#111);border-radius:12px;cursor:pointer;user-select:none;';
+            const pad = '<div id="pg-pad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">'
+                + [1,2,3,4,5,6,7,8,9].map(n=>'<button class="pg-key" data-k="'+n+'" style="'+keyBtn+'">'+n+'</button>').join('')
+                + '<button class="pg-key" data-k="clear" style="'+keyBtn+'color:#dc2626;font-size:15px;">지우기</button>'
+                + '<button class="pg-key" data-k="0" style="'+keyBtn+'">0</button>'
+                + '<button class="pg-key" data-k="back" style="'+keyBtn+'font-size:18px;">⌫</button>'
+                + '</div>';
             const ov = _pgOverlay(
                 '<div style="font-size:16px;font-weight:800;margin-bottom:4px;">💳 카드 결제</div>'+
                 '<div style="font-size:13px;color:var(--text-sub,#64748b);margin-bottom:14px;">결제 금액 <b>'+Number(amount||0).toLocaleString()+'원</b></div>'+
                 '<div style="font-size:12px;color:var(--text-sub,#64748b);margin-bottom:6px;">카드 비밀번호 4자리</div>'+
-                '<input id="pg-card-pw" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••" style="width:100%;padding:12px;font-size:22px;letter-spacing:10px;text-align:center;border:1px solid var(--border-color,#e2e8f0);border-radius:10px;margin-bottom:14px;box-sizing:border-box;">'+
+                '<input id="pg-card-pw" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••" style="width:100%;padding:12px;font-size:22px;letter-spacing:10px;text-align:center;border:1px solid var(--border-color,#e2e8f0);border-radius:10px;margin-bottom:12px;box-sizing:border-box;">'+
+                pad+
                 '<button id="pg-card-ok" style="width:100%;padding:12px;margin-bottom:8px;border:none;border-radius:10px;background:var(--gradient-btn,#6366f1);color:#fff;font-weight:700;cursor:pointer;">결제 승인</button>'+
                 '<button id="pg-card-cancel" style="width:100%;padding:8px;border:none;background:transparent;color:var(--text-sub,#64748b);cursor:pointer;">취소</button>'
             );
@@ -11898,6 +11907,15 @@ pdfjsScript,
             inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/\D/g,'').slice(0,4); });
             setTimeout(()=>{ try{ inp.focus(); }catch(_){} }, 50);
             const submit = ()=>{ const pw=(inp.value||'').replace(/\D/g,''); if(!/^\d{4}$/.test(pw)){ showToast('카드 비밀번호 4자리를 입력하세요.'); return; } window._pgClose(); onCard(pw); };
+            // 숫자 키패드: 입력칸에 직접 채움(키보드 불필요). 4자리 채우면 자동 제출.
+            ov.querySelectorAll('.pg-key').forEach(b=>{ b.addEventListener('click',(e)=>{ e.preventDefault();
+                const k=b.getAttribute('data-k'); let v=(inp.value||'').replace(/\D/g,'');
+                if(k==='clear') v='';
+                else if(k==='back') v=v.slice(0,-1);
+                else if(v.length<4) v=(v+k).slice(0,4);
+                inp.value=v;
+                if(v.length===4){ setTimeout(submit, 120); }
+            }); });
             ov.querySelector('#pg-card-ok').onclick = submit;
             ov.querySelector('#pg-card-cancel').onclick = ()=>{ window._pgClose(); if(onCancel) onCancel(); };
             inp.addEventListener('keydown', (e)=>{ if(e.key==='Enter') submit(); });
