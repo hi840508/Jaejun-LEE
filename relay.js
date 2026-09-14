@@ -1143,6 +1143,13 @@ function requireAdmin(req, res) {
     if (!isAdminName(me)) { res.status(403).json({ error: '관리자 권한이 필요합니다.' }); return null; }
     return me;
 }
+// 👥 영업 관리(매출/세금계산서) 공용 가드 — 관리자는 전체, 상점주(비관리자)는 '본인 상점(seller=me)'만 조회 가능.
+//   반환 {me, isAdmin}. 비관리자는 호출부에서 seller=me 스코프를 강제해야 한다(데이터 확대 금지).
+function reqAdminOrOwner(req, res) {
+    const me = authUser(req);
+    if (!me) { res.status(401).json({ error: '로그인이 필요합니다.' }); return null; }
+    return { me, isAdmin: isAdminName(me) };
+}
 
 // 🔐 비밀번호 해시 — 내장 crypto.scrypt(외부 의존성 없음). 형식: "scrypt$<salt>$<hash>".
 //   레거시 평문 비밀번호도 verifyPassword가 허용(로그인 성공 시 해시로 자동 업그레이드) → 기존 회원 잠김 없음.
@@ -4113,10 +4120,11 @@ app.post('/api/admin/store/manage', (req, res) => {
 });
 // 👑 [관리자] 전체 상품 주문(판매 상태) 조회 — 상태/검색 필터. 모든 상점의 주문을 상태와 함께.
 app.get('/api/admin/orders', (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    const sc = reqAdminOrOwner(req, res); if (!sc) return;
     const status = String(req.query.status || '').trim();
     const q = String(req.query.q || '').trim();
     let where = `1=1`; const params = [];
+    if (!sc.isAdmin) { where += ` AND o.seller = ?`; params.push(sc.me); }   // 상점주=본인 판매분만
     if (status) { where += ` AND o.status = ?`; params.push(status); }
     if (q) { where += ` AND (o.buyer LIKE ? OR o.seller LIKE ? OR IFNULL(pr.name,'') LIKE ? OR IFNULL(s.name,'') LIKE ?)`; const like = '%' + q + '%'; params.push(like, like, like, like); }
     db.all(`SELECT o.id, o.productId, o.buyer, o.seller, o.status, o.amount, o.tracking, o.courier,
@@ -4131,10 +4139,11 @@ app.get('/api/admin/orders', (req, res) => {
 });
 // 👑 [관리자] 전체 거래내역 조회 — 모든 사용자/상점의 거래.
 app.get('/api/admin/transactions', (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    const sc = reqAdminOrOwner(req, res); if (!sc) return;
     const q = String(req.query.q || '').trim();
     const month = String(req.query.month || '').slice(0, 7);
     let where = `1=1`; const params = [];
+    if (!sc.isAdmin) { where += ` AND t.seller = ?`; params.push(sc.me); }   // 상점주=본인 판매분만
     if (q) { where += ` AND (t.buyer LIKE ? OR t.seller LIKE ? OR IFNULL(t.productName,'') LIKE ?)`; const like = '%' + q + '%'; params.push(like, like, like); }
     if (month) { where += ` AND substr(IFNULL(t.rawDate,t.date),1,7) = ?`; params.push(month); }
     db.all(`SELECT t.id, t.buyer, t.seller, t.productId, t.productName, t.amount, t.purchaseType, t.date, t.rawDate, IFNULL(t.refunded,0) refunded
@@ -4231,9 +4240,10 @@ app.get('/api/admin/tax/settlement', (req, res) => {
 });
 // Admin: 정산 완료(settled=1) 상점별 목록 — 세금계산서 발행 대상. settlement과 동일 그룹/계산, settled=1 기준.
 app.get('/api/admin/tax/settled', (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    const sc = reqAdminOrOwner(req, res); if (!sc) return;
     const month = String(req.query.month || '').slice(0, 7);
-    const owner = String(req.query.owner || '').trim();
+    // 상점주(비관리자)는 owner 파라미터와 무관하게 '본인'으로 강제 스코프
+    const owner = sc.isAdmin ? String(req.query.owner || '').trim() : sc.me;
     const from = String(req.query.from || '').slice(0, 10);   // 정산완료일 기간(YYYY-MM-DD)
     const to = String(req.query.to || '').slice(0, 10);
     _taxConfig((cfg) => {

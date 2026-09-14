@@ -1144,7 +1144,7 @@
                     <div class="yt-sb-divider" id="sb-ops-divider" style="display:none"></div>
                     <div class="yt-sb-section" id="sb-ops-section" style="display:none">
                         <div class="yt-sb-title">운영·관리</div>
-                        <button class="yt-sb-item" onclick="switchTab('admin-members')" data-tab="admin-members"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg></span><span>영업 관리</span></button>
+                        <button class="yt-sb-item" onclick="openSalesMgmt()" data-tab="admin-members"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg></span><span>영업 관리</span></button>
                         <button class="yt-sb-item" id="admin-ops-btn" onclick="switchTab('admin-server')" data-tab="admin-server"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg></span><span>서버 관리</span></button>
                     </div>
                     <!-- 🚀 [v8] 사이드바 맨 아래 설정 + 사이드바 영역 늘리기 위해 flex-grow spacer -->
@@ -5696,10 +5696,8 @@
             const ind = document.getElementById('admin-indicator');
             if(ind) ind.style.display = active ? 'inline-block' : 'none';
             if(active){ try{ setTimeout(window.showTaxInvoiceReminder, 1200); }catch(_){} }
-            const sbOps = document.getElementById('sb-ops-section');   // 🛠 운영·관리(전체주문/정산/세금계산서, Admin 전용)
-            if(sbOps) sbOps.style.display = active ? 'block' : 'none';
-            const sbOpsDiv = document.getElementById('sb-ops-divider');
-            if(sbOpsDiv) sbOpsDiv.style.display = active ? 'block' : 'none';
+            // 🛠 운영·관리(영업 관리)는 관리자 + '상점주'에게도 노출(상점주는 본인 매출·세금계산서만). 세부는 _applyOpsVisibility가 처리.
+            try{ _applyOpsVisibility(); }catch(_){}
             const dep = document.getElementById('admin-deposit-panel');
             if(dep) dep.style.display = active ? 'block' : 'none';
             const dbReset = document.getElementById('admin-db-reset-btn');
@@ -5986,8 +5984,9 @@
             loadSettlement();
         };
         // 🧾 세금계산서 발행 페이지 진입
+        window._canSalesMgmt = function(){ return !!isAdmin || !!(window.myBrandStores && window.myBrandStores.length); };
         window.loadAdminInvoice=async function(){
-            if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
+            if(!_canSalesMgmt()){ showToast('상점을 개설하면 세금계산서를 이용할 수 있어요.'); return; }
             if(!taxG('inv-month')){ const d=new Date(); taxS('inv-month', d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); }
             // 기간 기본값(이번 달 1일~오늘)
             if(!taxG('inv-from') || !taxG('inv-to')){ const d=new Date(); const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'); if(!taxG('inv-from')) taxS('inv-from', y+'-'+m+'-01'); if(!taxG('inv-to')) taxS('inv-to', y+'-'+m+'-'+String(d.getDate()).padStart(2,'0')); }
@@ -6366,7 +6365,7 @@
         };
         function aoStatusBadge(st){ const m=window.__aoStatusMeta[st]||{txt:st,bg:'#f4f4f5',color:'#52525b'}; return `<span style="display:inline-block;padding:3px 9px;border-radius:20px;background:${m.bg};color:${m.color};font-size:11px;font-weight:700;white-space:nowrap;">${taxEscH(m.txt)}</span>`; }
         window.loadAdminOrders=function(){
-            if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
+            if(!_canSalesMgmt()){ showToast('상점을 개설하면 매출 관리를 이용할 수 있어요.'); return; }
             const mn=document.getElementById('ao-txn-month');
             if(mn && !mn.value){ const d=new Date(); mn.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
             loadAdminOrdersList(); loadAdminTransactions();
@@ -6491,7 +6490,7 @@
             if(tw) tw.style.display=range?'block':'none';
         };
         window.loadSettledVendors=async function(){
-            if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
+            if(!_canSalesMgmt()){ showToast('상점을 개설하면 세금계산서를 이용할 수 있어요.'); return; }
             const body=document.getElementById('settled-body'); if(!body) return;
             const range=(taxG('inv-range-mode')==='range');
             let qs, periodLabel;
@@ -6560,6 +6559,18 @@
             });
         };
 
+        // 👥 영업 관리 — 관리자 진입은 회원 관리부터, 상점주(비관리자)는 매출 관리부터.
+        window.openSalesMgmt = function(){ if(isAdmin) switchTab('admin-members'); else switchTab('admin-orders'); };
+        // 🛠 운영·관리 사이드바 노출 제어: 관리자=전체, 상점주=영업 관리(매출/세금계산서)만. 서버관리/회원관리/정산은 관리자 전용.
+        window._applyOpsVisibility = function(){
+            const hasStore = !!(window.myBrandStores && window.myBrandStores.length);
+            const show = !!isAdmin || hasStore;
+            const sbOps = document.getElementById('sb-ops-section'); if(sbOps) sbOps.style.display = show ? 'block' : 'none';
+            const sbOpsDiv = document.getElementById('sb-ops-divider'); if(sbOpsDiv) sbOpsDiv.style.display = show ? 'block' : 'none';
+            const srv = document.getElementById('admin-ops-btn'); if(srv) srv.style.display = isAdmin ? '' : 'none';   // 서버 관리=관리자 전용
+            // 상단 고정 네비: 회원 관리·정산·세금계산서는 관리자 전용(상점주는 매출 관리만)
+            try{ document.querySelectorAll('.smn-btn[data-nav="admin-members"], .smn-btn[data-nav="tax"], .smn-btn[data-nav="invoice"]').forEach(b=>{ b.style.display = isAdmin ? '' : 'none'; }); }catch(_){}
+        };
         // 🧭 영업 관리 상단 고정 네비(회원/매출/정산/세금계산서) — 4개 탭 상단에 동일 바를 심고 활성 표시
         window._SALES_NAV_HTML = function(){
             const S = {
@@ -6633,8 +6644,10 @@
             }
             if(id === 'my-store') { loadMyStore(); loadMyBrandStores(); }
             if(id === 'sales-mgmt') { loadMySalesOrders(); }
-            // 🧭 영업 관리 4개 탭: 상단 고정 네비 심고 활성 표시
-            if(id === 'tax' || id === 'invoice' || id === 'admin-members' || id === 'admin-orders'){ try{ _mountSalesNav(); _setSalesNavActive(id); }catch(_){} }
+            // 🔒 회원 관리·정산·세금계산서는 관리자 전용 — 상점주가 접근 시 매출 관리로 우회
+            if((id === 'admin-members' || id === 'tax' || id === 'invoice') && !isAdmin){ showToast('이 기능은 관리자 전용입니다. (상점주는 매출 관리 이용)'); return switchTab('admin-orders'); }
+            // 🧭 영업 관리 4개 탭: 상단 고정 네비 심고 활성 표시 + 권한별 버튼 노출
+            if(id === 'tax' || id === 'invoice' || id === 'admin-members' || id === 'admin-orders'){ try{ _mountSalesNav(); _setSalesNavActive(id); _applyOpsVisibility(); }catch(_){} }
             if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
             if(id === 'invoice') { if(typeof loadAdminInvoice==='function') loadAdminInvoice(); }
             if(id === 'admin-members') { if(typeof loadAdminMembers==='function') loadAdminMembers(); }
@@ -7809,6 +7822,7 @@
                 window.myBrandStores = stores;   // 편집 모달에서 사용
                 // 📦 주문 관리 메뉴는 상점 개설자에게만 노출
                 const _somb = document.getElementById('sb-order-mgmt'); if(_somb) _somb.style.display = (stores && stores.length) ? 'flex' : 'none';
+                try{ if(window._applyOpsVisibility) _applyOpsVisibility(); }catch(_){}   // 🛠 상점주면 영업 관리(매출) 사이드바 노출
                 const listZone = document.getElementById('my-brands-list-zone'); const selector = document.getElementById('target-brand-selector');
                 if(!listZone || !selector) return;
                 if(stores.length === 0) { listZone.innerHTML = '<div style="color:gray; font-size:13px;">상점이 없습니다. 상단의 "새 브랜드 만들기" 폼으로 개설하세요.</div>'; selector.innerHTML = '<option value="">상점을 선택하세요</option>'; window.onTargetBrandSelected && window.onTargetBrandSelected(); return; }
