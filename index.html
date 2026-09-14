@@ -5045,37 +5045,40 @@
                 window._sfOpenUnsupported(f, name, content, modal);
             }catch(e){ showToast('미리보기 실패'); }
         };
-        // 📂 인앱 미리보기 불가 파일 처리 — 데스크톱 앱이면 OS 기본 프로그램으로 열고(윈도우 탐색기처럼),
-        //    연결된 기본 프로그램이 없으면 '연결 프로그램' 선택 창을 띄운다. 웹(비앱)이면 원본 저장을 안내.
+        // 📂 인앱 미리보기 불가 파일 처리 — 데스크톱 앱이면 OS 기본 프로그램으로 '바로' 열고(윈도우 탐색기처럼, 화면 표시 안 함),
+        //    연결된 기본 프로그램이 없을 때만 파일 아이콘 + [연결 프로그램 선택] 버튼을 보여 탐색기 연결 프로그램 창으로 지정하게 한다.
         window._sfOpenUnsupported = async function(f, name, content, modal){
             const esc=_sfEsc; const isApp = !!(window.rayApp && window.rayApp.openFile);
-            const clip='<svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:4px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>';
-            const btn=(id,label,primary)=>'<button id="'+id+'" style="padding:10px 16px;border:'+(primary?'none':'1px solid #475569')+';background:'+(primary?'#2563eb':'transparent')+';color:#fff;border-radius:9px;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap;">'+label+'</button>';
-            const saveOriginal=()=>{ try{ const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=name||'file'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}} ,60000); }catch(_){ showToast('저장 실패'); } };
-            const panel=(desc,btns)=> '<div style="color:#fff;text-align:center;padding:30px;max-width:460px;margin:0 auto;">'+clip
-                + '<div style="margin:10px 0;font-weight:700;font-size:15px;">'+esc(name||'')+'</div>'
-                + '<div style="font-size:13px;color:#cbd5e1;line-height:1.6;margin-bottom:16px;">'+desc+'</div>'
-                + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">'+btns+'</div></div>';
-            if(isApp){
-                content.innerHTML=panel('이 형식은 인앱 미리보기를 지원하지 않습니다.<br>기본 프로그램으로 열거나 연결 프로그램을 선택하세요.', btn('_sfo-open','기본 프로그램으로 열기',true)+btn('_sfo-openwith','연결 프로그램 선택')+btn('_sfo-save','원본 저장'));
+            const fileIcon = (window._sfDocIcon ? window._sfDocIcon(name) : '');
+            const showChoose=(bytes)=>{
+                content.innerHTML='<div style="text-align:center;padding:28px 24px;max-width:420px;margin:0 auto;">'
+                    +'<div style="position:relative;width:88px;height:100px;margin:0 auto 12px;">'+fileIcon+'</div>'
+                    +'<div style="color:#fff;font-weight:700;font-size:15px;margin-bottom:6px;word-break:break-all;">'+esc(name||'')+'</div>'
+                    +'<div style="font-size:13px;color:#cbd5e1;line-height:1.6;margin-bottom:16px;">이 파일을 열 <b>연결 프로그램</b>이 지정되어 있지 않습니다.<br>연결 프로그램을 선택하면 이후 자동으로 열립니다.</div>'
+                    +'<button id="_sfo-openwith" style="padding:11px 20px;border:none;background:#2563eb;color:#fff;border-radius:9px;font-weight:800;font-size:13px;cursor:pointer;">연결 프로그램 선택</button></div>';
                 modal.style.display='flex';
-                const doOpen=async(openWith)=>{
-                    try{ showToast(openWith?'연결 프로그램 창 여는 중…':'기본 프로그램으로 여는 중…');
-                        const buf=await f.arrayBuffer();
-                        const res=await window.rayApp.openFile(name, new Uint8Array(buf), !!openWith);
-                        if(res&&res.ok){ showToast(res.openWith?'연결 프로그램 선택 창을 열었습니다.':'기본 프로그램으로 열었습니다.'); }
-                        else showToast('열기 실패: '+((res&&res.error)||'연결된 프로그램이 없습니다.'));
+                content.querySelector('#_sfo-openwith').onclick=async()=>{
+                    try{ showToast('연결 프로그램 창 여는 중…');
+                        const b = bytes || new Uint8Array(await f.arrayBuffer());
+                        const res=await window.rayApp.openFile(name, b, true);   // Windows '연결 프로그램' 선택 창
+                        if(!(res&&res.ok)) showToast('연결 프로그램 창 열기 실패: '+((res&&res.error)||''));
                     }catch(e){ showToast('열기 실패: '+(e.message||e)); }
                 };
-                content.querySelector('#_sfo-open').onclick=()=>doOpen(false);
-                content.querySelector('#_sfo-openwith').onclick=()=>doOpen(true);
-                content.querySelector('#_sfo-save').onclick=saveOriginal;
-                doOpen(false);   // 윈도우처럼 자동으로 기본 프로그램 열기 시도(없으면 연결 프로그램 창)
-            } else {
-                content.innerHTML=panel('이 형식은 인앱 미리보기를 지원하지 않습니다.<br>원본을 저장한 뒤 기본 프로그램으로 열 수 있습니다.', btn('_sfo-save','원본 저장하기',true));
-                modal.style.display='flex';
-                content.querySelector('#_sfo-save').onclick=saveOriginal;
+            };
+            if(isApp){
+                try{
+                    showToast('기본 프로그램으로 여는 중…');
+                    const bytes=new Uint8Array(await f.arrayBuffer());
+                    const res=await window.rayApp.openFile(name, bytes, false);
+                    if(res && res.ok){ try{ modal.style.display='none'; }catch(_){}; return; }   // ✅ 기본 프로그램으로 바로 열림 → 화면 표시 안 함
+                    // 연결 프로그램 없음 → 선택 화면
+                    showChoose(bytes);
+                }catch(e){ showChoose(null); }
+                return;
             }
+            // 웹(비앱): OS 연동 불가 → 원본을 조용히 저장(다운로드)해 기본 프로그램으로 열 수 있게
+            try{ const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=name||'file'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}} ,60000); showToast('원본을 저장했습니다. 저장된 파일을 기본 프로그램으로 열 수 있어요.'); }catch(_){ showToast('저장 실패'); }
+            try{ modal.style.display='none'; }catch(_){}
         };
         // 📤 폴더 파일 간편 공유(친구 선택 후 전송)
         window.rcShareFromFolder = function(name){ try{ openShareRecipientPicker([name]); }catch(e){ showToast('공유 실패'); } };
@@ -13719,10 +13722,11 @@ pdfjsScript,
                 if(window.rayApp && window.rayApp.openFile){
                     try{ modal.style.display='none'; }catch(_){}
                     (async()=>{ try{ showToast('기본 프로그램으로 여는 중…');
-                        const r=await fetch(f.content); const buf=await r.arrayBuffer();
-                        const res=await window.rayApp.openFile(f.filename||'file', new Uint8Array(buf), false);
-                        if(res&&res.ok){ showToast(res.openWith?'연결 프로그램 선택 창을 열었습니다.':'기본 프로그램으로 열었습니다.'); }
-                        else { showToast('열기 실패 — 원본을 저장합니다.'); if(window.rcDownloadShare) window.rcDownloadShare(f.content, f.filename); }
+                        const r=await fetch(f.content); const buf=await r.arrayBuffer(); const bytes=new Uint8Array(buf);
+                        const res=await window.rayApp.openFile(f.filename||'file', bytes, false);
+                        if(res&&res.ok) return;                                   // ✅ 기본 프로그램으로 바로 열림
+                        if(res&&res.noAssoc){ const r2=await window.rayApp.openFile(f.filename||'file', bytes, true); if(!(r2&&r2.ok)&&window.rcDownloadShare) window.rcDownloadShare(f.content, f.filename); return; }
+                        if(window.rcDownloadShare) window.rcDownloadShare(f.content, f.filename);
                     }catch(e){ if(window.rcDownloadShare) window.rcDownloadShare(f.content, f.filename); } })();
                     return;
                 }
