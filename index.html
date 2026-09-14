@@ -4631,6 +4631,9 @@
                         const saved = await R.writeFile(nm, blob);   // 메인 공유폴더 루트에 저장
                         showToast('✅ 공유폴더에 저장됨: '+saved);
                         try{ fr.contentWindow.postMessage({type:'RAYCLOUD_SAVED', name:saved}, '*'); }catch(_){}
+                        // 🔄 저장 즉시 반영: 뷰어 DATA 서랍(루트=저장 위치 목록 재전송+열기) + 부모 공유폴더 갤러리 재렌더(나가기 후 바로 보이게)
+                        try{ await _rcSendManifest(R, [], post); post({ type:'RAYCLOUD_OPEN_DRAWER' }); }catch(_){}
+                        try{ if(window._sfGotoPath) window._sfGotoPath(window.__sfPath||[]); }catch(_){}
                     }catch(e){ showToast('저장 실패: '+(e.message||e)); try{ fr.contentWindow.postMessage({type:'RAYCLOUD_SAVED', error:String(e.message||e)}, '*'); }catch(_){} }
                     return;
                 }
