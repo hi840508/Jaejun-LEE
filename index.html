@@ -4471,24 +4471,25 @@
             const siblings=sibMeta.map(x=>x.fname);
             const _mtimeOf=nm=>{ const m=sibMeta.find(x=>x.fname===nm); return m?(m.mtime||0):0; };
             const _fmtDate=mt=>{ if(!mt) return ''; try{ const d=new Date(mt); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }catch(_){ return ''; } };
+            const _fmtTime=mt=>{ if(!mt) return ''; try{ const d=new Date(mt); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }catch(_){ return ''; } };
             const folderNm=(pathArr&&pathArr.length)?pathArr[pathArr.length-1]:'Home';
             const openable=siblings.filter(n=>!!_rcCatOf(n));
             const items=[];
             const dcms=openable.filter(n=>RC_DCM_RE.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
             if(dcms.length>=2){
                 const urls=[]; const gotd=await _rcMapLimit(dcms,6,n=>_rcBlobFor(R,pathArr,n)); gotd.forEach(u=>{ if(u)urls.push(u); });
-                const dcmDate=_fmtDate(Math.max.apply(null,dcms.map(_mtimeOf).concat(0)));
-                if(urls.length) items.push({ name:'CT 시리즈 ('+dcms.length+'장)', cat:'2D', date:dcmDate, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_DICOM', urls:urls, name:'CT Series ('+dcms.length+')' } });
+                const dmt=Math.max.apply(null,dcms.map(_mtimeOf).concat(0));
+                if(urls.length) items.push({ name:'CT 시리즈 ('+dcms.length+'장)', cat:'2D', date:_fmtDate(dmt), time:_fmtTime(dmt), folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_DICOM', urls:urls, name:'CT Series ('+dcms.length+')' } });
             } else if(dcms.length===1){
                 // 🩻 단일 DICOM = 파노라마/2D → 파노라믹 Arch 영역(vpPano)에 열리도록 2D 이미지로 디코드
                 let durl=''; try{ const f=await R.getFileAt(pathArr,dcms[0]); if(f&&R.dicomImage) durl=await R.dicomImage(f,2400); }catch(_){}
                 if(!durl) durl=await _rcBlobFor(R,pathArr,dcms[0]);
-                if(durl) items.push({ name:dcms[0], cat:'2D', date:_fmtDate(_mtimeOf(dcms[0])), folder:folderNm, thumb:(/^data:image/.test(durl)?durl:''), payload:{ type:'RAYCLOUD_LOAD_2D', url:durl, name:dcms[0] } });
+                if(durl) items.push({ name:dcms[0], cat:'2D', date:_fmtDate(_mtimeOf(dcms[0])), time:_fmtTime(_mtimeOf(dcms[0])), folder:folderNm, thumb:(/^data:image/.test(durl)?durl:''), payload:{ type:'RAYCLOUD_LOAD_2D', url:durl, name:dcms[0] } });
             }
-            for(const n of openable){ const cat=_rcCatOf(n); if(cat==='DICOM') continue; const u=await _rcBlobFor(R,pathArr,n); if(!u) continue; const dt=_fmtDate(_mtimeOf(n));
-                if(cat==='3D') items.push({ name:n, cat:'3D', date:dt, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } });
-                else if(cat==='PICTURE') items.push({ name:n, cat:'PICTURE', date:dt, folder:folderNm, thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } });
-                else items.push({ name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:dt, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', url:u, name:n } });
+            for(const n of openable){ const cat=_rcCatOf(n); if(cat==='DICOM') continue; const u=await _rcBlobFor(R,pathArr,n); if(!u) continue; const mt=_mtimeOf(n); const dt=_fmtDate(mt); const tm=_fmtTime(mt);
+                if(cat==='3D') items.push({ name:n, cat:'3D', date:dt, time:tm, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } });
+                else if(cat==='PICTURE') items.push({ name:n, cat:'PICTURE', date:dt, time:tm, folder:folderNm, thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } });
+                else items.push({ name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:dt, time:tm, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', url:u, name:n } });
             }
             try{ post({ type:'RAYCLOUD_MANIFEST', items:items }); }catch(_){}
             return items.length;
