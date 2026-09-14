@@ -2053,6 +2053,19 @@ function _doWithdrawAccount(me, res) {
     });
 }
 
+// 👑 [관리자] 회원 강제 탈퇴 — 대상 회원 계정/개인데이터 삭제(재무 원장 보존). 관리자 계정·본인은 대상 불가.
+app.post('/api/admin/members/withdraw', (req, res) => {
+    const me = requireAdmin(req, res); if (!me) return;
+    const target = String(req.body.name || '').trim();
+    if (!target) return res.status(400).json({ error: '대상 회원을 지정하세요.' });
+    if (isAdminName(target)) return res.status(403).json({ error: '관리자 계정은 강제 탈퇴할 수 없습니다.' });
+    db.get(`SELECT name FROM users WHERE name = ?`, [target], (e, row) => {
+        if (e) return res.status(500).json({ error: e.message });
+        if (!row) return res.status(404).json({ error: '존재하지 않는 회원입니다.' });
+        _doWithdrawAccount(target, res);   // 계정+개인데이터 삭제(대화방 퇴장 안내·R2 사본 정리 포함), 재무 원장은 보존
+    });
+});
+
 app.post('/api/deposit/request', (req, res) => { const me = requireUser(req, res); if (!me) return; const rawDate = new Date().toISOString(); db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date, rawDate) VALUES (?, ?, ?, '대기', ?, ?)`, [me, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR'), rawDate], () => { res.json({ success: true }); }); });
 
 app.post('/api/withdraw/request', (req, res) => {
