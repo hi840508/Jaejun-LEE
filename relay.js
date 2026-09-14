@@ -3163,11 +3163,11 @@ app.post('/api/order/status', (req, res) => {
                 });
             } else { _markTx(); }
         } else {
-            // 배송완료 시각 기록(자동확정 3일 기준). 배송중/완료 상태 변경.
+            // 배송완료 시각 기록(자동확정 5영업일 기준). 배송중/완료 상태 변경.
             const dlvAt = (status === 'delivered') ? (ord.delivered_at || new Date().toISOString()) : ord.delivered_at;
             const _trk = tracking || ord.tracking || null;
             db.run(`UPDATE product_orders SET status = ?, tracking = ?, courier = ?, delivered_at = ? WHERE id = ?`, [status, _trk, req.body.courier || ord.courier || null, dlvAt || null, orderId], () => {
-                const msg = status === 'delivered' ? '📦 [상품서비스 제공 완료] 상품서비스가 제공되었습니다. 확인 후 완료(구매확정)를 눌러주세요. 구매 확정 버튼을 누르지 않아도 3일 후 자동 구매 확정 됩니다.'
+                const msg = status === 'delivered' ? '📦 [상품서비스 제공 완료] 상품서비스가 제공되었습니다. 확인 후 완료(구매확정)를 눌러주세요. 구매 확정 버튼을 누르지 않아도 5일 후 자동 구매 확정 됩니다.'
                           : (_trk ? `🚚 [배송 시작] 송장번호 ${_trk} 로 배송이 시작되었습니다.` : '🚚 [배송 시작] 배송이 시작되었습니다.');
                 _notifyOrderStatus(ord.buyer, ord.seller, orderId, status, msg);
                 res.json({ success: true });
