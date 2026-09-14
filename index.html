@@ -1131,7 +1131,8 @@
                     <div class="yt-sb-divider" id="sb-ops-divider" style="display:none"></div>
                     <div class="yt-sb-section" id="sb-ops-section" style="display:none">
                         <div class="yt-sb-title">운영·관리</div>
-                        <button class="yt-sb-item" onclick="switchTab('admin-orders')" data-tab="admin-orders"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span><span>전체 주문·거래 조회</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('admin-members')" data-tab="admin-members"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span><span>회원 관리</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('admin-orders')" data-tab="admin-orders"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path></svg></span><span>매출 관리</span></button>
                         <button class="yt-sb-item" onclick="goSettle()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg></span><span>정산</span></button>
                         <button class="yt-sb-item" onclick="goInvoice()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg></span><span>세금계산서</span></button>
                     </div>
@@ -1663,7 +1664,11 @@
                 <div class="panel" style="padding:14px;">
                     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
                         <div class="input-group" style="width:170px;"><label>정산 월</label><input id="tax-month" type="month"></div>
+                        <div class="input-group" style="width:200px;"><label>거래처 (판매자 ID, 선택)</label><input id="tax-owner" placeholder="특정 거래처만 · 비우면 전체" onkeydown="if(event.key==='Enter')loadSettlement()"></div>
                         <button class="btn btn-secondary" style="padding:9px 16px;" onclick="loadSettlement()">미정산 목록</button>
+                        <button class="btn btn-outline" style="padding:9px 14px;" onclick="(function(){var o=document.getElementById('tax-owner'); if(o)o.value=''; loadSettlement();})()">전체 보기</button>
+                        <div style="flex:1;"></div>
+                        <span id="settle-owner-badge" style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:#f8fafc;color:#475569;display:none;"></span>
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;">
@@ -1760,11 +1765,71 @@
                 </div>
             </div>
 
-            <!-- 👑 Admin 전용: 전체 주문(판매 상태) + 전체 거래내역 모니터링 -->
+            <!-- 👑 Admin 전용: 회원 원장(회원 관리) — 회원→매출→정산→세금계산서 관리 흐름의 시작 -->
+            <div id="tab-admin-members" class="tab-content">
+                <div class="panel" style="padding:14px 16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                        <div>
+                            <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">👥 회원 관리 (회원 원장)</h3>
+                            <div style="font-size:12px;color:#707070;line-height:1.6;">전체 회원과 각 회원의 <b>판매·구매·미정산</b> 현황을 한눈에 봅니다. 회원 → <b>매출 관리</b> → <b>정산</b> → <b>세금계산서</b>로 이어지는 영업 관리 시작 화면입니다.</div>
+                        </div>
+                        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="switchTab('admin-orders')">📈 매출 관리</button>
+                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goSettle()">💰 정산</button>
+                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goInvoice()">🧾 세금계산서</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel" style="padding:14px;">
+                    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
+                        <div class="input-group" style="flex:1;min-width:200px;"><label>검색 (ID·실명·상호·전화·이메일)</label><input id="am-q" placeholder="검색어 입력 후 Enter" onkeydown="if(event.key==='Enter')loadAdminMembers()"></div>
+                        <div class="input-group" style="width:180px;"><label>업체 유형</label>
+                            <select id="am-btype" onchange="loadAdminMembers()">
+                                <option value="">전체</option>
+                                <option value="dental_lab">치과 기공소</option>
+                                <option value="dental_clinic">치과 병·의원</option>
+                                <option value="medical">일반 병·의원</option>
+                                <option value="pharmacy">약국</option>
+                                <option value="medical_wholesale">의약 도·소매</option>
+                                <option value="individual">개인</option>
+                                <option value="general">일반 상점</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="width:150px;"><label>승인 상태</label>
+                            <select id="am-approval" onchange="loadAdminMembers()">
+                                <option value="">전체</option>
+                                <option value="approved">승인됨</option>
+                                <option value="pending">승인 대기</option>
+                                <option value="rejected">거절됨</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-outline" style="padding:9px 16px;" onclick="loadAdminMembers()">조회</button>
+                        <div style="flex:1;"></div>
+                        <span id="am-count-badge" style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:#eff6ff;color:#1e40af;">회원 0명</span>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;white-space:nowrap;">
+                            <thead><tr><th>회원(ID)</th><th>상호/실명</th><th>유형</th><th>연락처</th><th>사업자번호</th><th style="text-align:center;">승인</th><th style="text-align:right;">판매매출</th><th style="text-align:right;">미정산</th><th style="text-align:right;">구매액</th><th style="text-align:center;">영업 관리</th></tr></thead>
+                            <tbody id="am-body"><tr><td colspan="10" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 회원을 불러오세요.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 👑 Admin 전용: 매출 관리 = 전체 주문(판매 상태) + 전체 거래내역(매출 거래 원장) -->
             <div id="tab-admin-orders" class="tab-content">
                 <div class="panel" style="padding:14px 16px;">
-                    <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">전체 주문 · 거래 (Admin)</h3>
-                    <div style="font-size:12px;color:#707070;line-height:1.6;">모든 상점의 주문 판매 상태와 전체 거래내역을 조회합니다. 관리자 전용 화면입니다.</div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                        <div>
+                            <h3 style="font-size:18px;font-weight:900;margin:0 0 4px;">📈 매출 관리 (매출 거래 원장)</h3>
+                            <div style="font-size:12px;color:#707070;line-height:1.6;">모든 상점의 주문 판매 상태와 전체 거래내역(매출 원장)을 조회합니다. 특정 거래처는 검색창에 ID를 넣어 필터할 수 있습니다.</div>
+                        </div>
+                        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="switchTab('admin-members')">👥 회원 관리</button>
+                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goSettle()">💰 정산</button>
+                            <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goInvoice()">🧾 세금계산서</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="panel" style="padding:14px;">
                     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
@@ -5855,9 +5920,12 @@
         function renderAdminRevenue(){ const b=document.getElementById('admin-revenue-badge'); if(b) b.textContent='Admin 수수료 매출: '+taxFmt(window.taxAdminRevenue)+'원'; }
         window.loadSettlement=async function(){
             const month=taxG('tax-month'); const body=document.getElementById('settlement-body'); if(!body) return;
+            const owner=(taxG('tax-owner')||'').trim();   // 🏥 거래처별 조회(비우면 전체)
+            const ownBadge=document.getElementById('settle-owner-badge');
+            if(ownBadge){ if(owner){ ownBadge.style.display=''; ownBadge.textContent='거래처 필터: '+owner; } else { ownBadge.style.display='none'; } }
             body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             try{
-                const d=await fetch(`${API_URL}/api/admin/tax/settlement?month=${encodeURIComponent(month)}`).then(r=>r.json());
+                const d=await fetch(`${API_URL}/api/admin/tax/settlement?month=${encodeURIComponent(month)}${owner?('&owner='+encodeURIComponent(owner)):''}`).then(r=>r.json());
                 window.taxSettlement=d.vendors||[];
                 window.taxAdminRevenue=d.adminRevenue||0; renderAdminRevenue();
                 if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 정산 대상(구매확정·미정산) 매출이 없습니다.</td></tr>'; return; }
@@ -6247,6 +6315,47 @@
             }catch(e){ body.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
 
+        // ================= 👥 Admin 회원 관리(회원 원장) =================
+        window.__amBtypeLabel = { individual:'개인', general:'일반 상점', food:'음식점·카페', dental_lab:'치과 기공소', dental_clinic:'치과 병·의원', medical:'일반 병·의원', pharmacy:'약국', medical_wholesale:'의약 도·소매', fashion:'패션·의류', beauty:'뷰티·미용', education:'교육·강의', art:'아트·디자인', music:'음악·음원', game:'게임·IT', craft:'공예·수공', construction:'건설·시공', real_estate:'부동산', auto:'자동차·운송', pet:'반려동물', sports:'스포츠·레저', book:'도서·출판', legal:'법률·자문', finance:'금융·컨설팅', other:'기타' };
+        function amBtypeLabel(t){ return window.__amBtypeLabel[t] || t || '개인'; }
+        function amApprovalBadge(st){ const m={approved:{t:'승인',bg:'#d1fae5',c:'#065f46'},pending:{t:'대기',bg:'#fef3c7',c:'#92400e'},rejected:{t:'거절',bg:'#fee2e2',c:'#991b1b'}}[st]||{t:st||'-',bg:'#f4f4f5',c:'#52525b'}; return `<span style="display:inline-block;padding:3px 9px;border-radius:20px;background:${m.bg};color:${m.c};font-size:11px;font-weight:700;">${taxEscH(m.t)}</span>`; }
+        window.loadAdminMembers=async function(){
+            if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }
+            const body=document.getElementById('am-body'); if(!body) return;
+            const q=((document.getElementById('am-q')||{}).value||'').trim();
+            const btype=(document.getElementById('am-btype')||{}).value||'';
+            const approval=(document.getElementById('am-approval')||{}).value||'';
+            body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            try{
+                const d=await fetch(`${API_URL}/api/admin/members?q=${encodeURIComponent(q)}&business_type=${encodeURIComponent(btype)}&approval=${encodeURIComponent(approval)}`).then(r=>r.json());
+                const members=d.members||[];
+                const badge=document.getElementById('am-count-badge'); if(badge) badge.textContent='회원 '+members.length+'명';
+                if(!members.length){ body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#94a3b8;">회원이 없습니다.</td></tr>'; return; }
+                body.innerHTML=members.map(m=>{
+                    const idJs = (m.name||'').replace(/'/g,"\\'");
+                    return `<tr>
+                        <td style="font-weight:800;">${taxEscH(m.name||'')}${m.storeCount?` <span style="font-size:10px;color:#2563eb;">상점 ${m.storeCount}</span>`:''}</td>
+                        <td>${taxEscH(m.biz_company||m.realname||'-')}</td>
+                        <td style="font-size:11px;">${taxEscH(amBtypeLabel(m.business_type))}</td>
+                        <td style="font-size:11px;">${taxEscH(m.phone||'-')}</td>
+                        <td style="font-size:11px;">${taxEscH(m.biz_no||'-')}</td>
+                        <td style="text-align:center;">${amApprovalBadge(m.approval_status)}</td>
+                        <td style="text-align:right;font-weight:700;">${taxFmt(m.sellSales||0)}</td>
+                        <td style="text-align:right;color:${(m.sellUnsettled>0)?'#b45309':'#94a3b8'};font-weight:${(m.sellUnsettled>0)?'800':'400'};">${taxFmt(m.sellUnsettled||0)}</td>
+                        <td style="text-align:right;color:#475569;">${taxFmt(m.buySpent||0)}</td>
+                        <td style="text-align:center;white-space:nowrap;">
+                            <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="viewMemberSales('${idJs}')" title="이 회원의 매출·거래 원장 보기">매출</button>
+                            <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="viewMemberSettlement('${idJs}')" title="이 거래처의 정산 내역 보기">정산</button>
+                        </td>
+                    </tr>`;
+                }).join('');
+            }catch(e){ body.innerHTML=`<tr><td colspan="10" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+        };
+        // 회원 원장 → 매출 관리(그 회원으로 필터)
+        window.viewMemberSales=function(id){ switchTab('admin-orders'); setTimeout(function(){ const oq=document.getElementById('ao-order-q'); const tq=document.getElementById('ao-txn-q'); if(oq) oq.value=id; if(tq) tq.value=id; if(window.loadAdminOrdersList) loadAdminOrdersList(); if(window.loadAdminTransactions) loadAdminTransactions(); }, 60); };
+        // 회원 원장 → 정산(그 거래처로 필터)
+        window.viewMemberSettlement=function(id){ goSettle(); setTimeout(function(){ const o=document.getElementById('tax-owner'); if(o) o.value=id; if(window.loadSettlement) loadSettlement(); }, 60); };
+
         // ================= 💰 정산완료 업체 — 세금계산서 발행 =================
         window.taxSettled=[]; window.taxSettledAdminRevenue=0;
         function renderSettledAdminRevenue(){ const b=document.getElementById('settled-admin-revenue-badge'); if(b) b.textContent='정산완료 Admin 수수료 매출: '+taxFmt(window.taxSettledAdminRevenue)+'원'; }
@@ -6385,6 +6494,7 @@
             if(id === 'sales-mgmt') { loadMySalesOrders(); }
             if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
             if(id === 'invoice') { if(typeof loadAdminInvoice==='function') loadAdminInvoice(); }
+            if(id === 'admin-members') { if(typeof loadAdminMembers==='function') loadAdminMembers(); }
             if(id === 'admin-orders') { if(typeof loadAdminOrders==='function') loadAdminOrders(); }
             if(id === 'my-purchases') { loadMyPurchases(); if(window.loadPurchaseExpenses) loadPurchaseExpenses(); }
             if(id === 'history') {

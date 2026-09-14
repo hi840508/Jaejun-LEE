@@ -4094,6 +4094,28 @@ app.get('/api/admin/transactions', (req, res) => {
             FROM transactions t WHERE ${where} ORDER BY t.id DESC LIMIT 2000`, params,
         (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json({ transactions: rows || [] }));
 });
+// 👑 [관리자] 회원 원장 — 전 회원 + 영업 집계(판매/구매/미정산). 회원 원장→매출→정산→세금계산서 관리 흐름의 시작점.
+app.get('/api/admin/members', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const q = String(req.query.q || '').trim();
+    const btype = String(req.query.business_type || '').trim();
+    const approval = String(req.query.approval || '').trim();
+    let where = `1=1`; const params = [];
+    if (q) { where += ` AND (u.name LIKE ? OR IFNULL(u.realname,'') LIKE ? OR IFNULL(u.biz_company,'') LIKE ? OR IFNULL(u.phone,'') LIKE ? OR IFNULL(u.email,'') LIKE ?)`; const like = '%' + q + '%'; params.push(like, like, like, like, like); }
+    if (btype) { where += ` AND IFNULL(u.business_type,'individual') = ?`; params.push(btype); }
+    if (approval) { where += ` AND IFNULL(u.approval_status,'approved') = ?`; params.push(approval); }
+    db.all(`SELECT u.name, u.realname, IFNULL(u.business_type,'individual') business_type, u.phone, u.email,
+                   u.biz_no, u.biz_company, u.biz_ceo, IFNULL(u.approval_status,'approved') approval_status,
+                   IFNULL(u.balance,0) balance, u.terms_agreed_at, u.privacy_agreed_at,
+                   (SELECT COUNT(*) FROM stores s WHERE s.owner=u.name) storeCount,
+                   (SELECT COUNT(*) FROM product_orders o WHERE o.seller=u.name) sellOrders,
+                   (SELECT IFNULL(SUM(o.amount),0) FROM product_orders o WHERE o.seller=u.name AND o.status='confirmed') sellSales,
+                   (SELECT IFNULL(SUM(o.escrow_held),0) FROM product_orders o WHERE o.seller=u.name AND o.status='confirmed' AND o.escrow_held>0 AND o.settled=0) sellUnsettled,
+                   (SELECT COUNT(*) FROM product_orders o WHERE o.buyer=u.name) buyOrders,
+                   (SELECT IFNULL(SUM(o.amount),0) FROM product_orders o WHERE o.buyer=u.name AND o.status='confirmed') buySpent
+            FROM users u WHERE ${where} ORDER BY u.name ASC LIMIT 2000`, params,
+        (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json({ members: rows || [], adminAccount: _adminAccount() }));
+});
 // 🧾 공급자(플랫폼) 정보 서버 영속화 — 항상 마지막 입력값 자동 저장(settings.tax_supplier JSON). 프런트 localStorage와 병행.
 app.get('/api/tax/supplier', (req, res) => {
     db.get(`SELECT value FROM settings WHERE key='tax_supplier'`, [], (e, row) => {
