@@ -4472,12 +4472,12 @@
             if(!ready){ showToast('실시간 뷰어가 아직 서버에 배포되지 않았습니다.'); return; }
 
             const lower = String(fname||'').toLowerCase();
-            if(!_rcCatOf(lower)){ showToast('실시간 뷰어로 열 수 없는 형식입니다.'); return; }
+            if(fname && !_rcCatOf(lower)){ showToast('실시간 뷰어로 열 수 없는 형식입니다.'); return; }
             window.__rcBlobCache = new Map();   // 이번 세션의 blob 캐시(파일당 1개)
-            // 같은 폴더 파일 목록(서랍 + 시리즈 묶음용)
-            let siblings = [];
-            try{ const cur = await R.listAt(pathArr) || {}; siblings = (cur.files||[]).map(f => (typeof f==='string'? f : (f&&f.fname)||(f&&f.name)||'')).filter(Boolean); }catch(_){}
-            if(!siblings.length) siblings = [fname];
+            // 같은 폴더 파일 목록(서랍용) + 날짜(mtime) 메타
+            let siblings = [], sibMeta = [];
+            try{ const cur = await R.listAt(pathArr) || {}; sibMeta = (cur.files||[]).map(f => (typeof f==='string'? {fname:f,mtime:0} : {fname:(f&&f.fname)||(f&&f.name)||'', mtime:(f&&f.mtime)||0})).filter(x=>x.fname); siblings = sibMeta.map(x=>x.fname); }catch(_){}
+            if(!siblings.length && fname) siblings = [fname];
 
             let ov = document.getElementById('rc-live-viewer');
             if(ov){   // 이전 뷰어가 열려 있으면 WebGL 컨텍스트부터 반납시키고 제거(컨텍스트 누적 방지)
@@ -4564,44 +4564,51 @@
                 setTimeout(()=>{ if(!viewerReady){ viewerReady = true; try{ stat.style.display='none'; }catch(_){} while(queue.length){ try{ fr.contentWindow.postMessage(queue.shift(),'*'); }catch(_){} } } }, 2500);
             });
 
-            // 첫 파일 전송
-            try{ post(await _rcPayloadFor(R, pathArr, fname, siblings)); }
-            catch(e){ try{ stat.textContent = '열기 실패'; }catch(_){} showToast('열지 못했습니다: ' + (e.message||e)); }
-            // 🗂 여러 파일 선택 시: 나머지 선택 파일들도 한 번에 로드(각자 알맞은 뷰 영역으로). DICOM은 시리즈로 이미 묶여 중복 로드 생략.
-            if(Array.isArray(alsoNames) && alsoNames.length){
-                const _seenDcm = RC_DCM_RE.test(String(fname||'').toLowerCase());
-                for(const an of alsoNames){
-                    if(!an || an === fname) continue;
-                    const anl = String(an).toLowerCase();
-                    if(RC_DCM_RE.test(anl)){ if(_seenDcm) continue; }   // DICOM 슬라이스는 첫 파일에서 시리즈로 이미 로드됨
-                    try{ const p2 = await _rcPayloadFor(R, pathArr, an, siblings); post(p2); }catch(_){}
+            // 🗂 특정 파일을 명시적으로 열도록 호출된 경우에만 자동 로드(더블클릭 등). Viewer 버튼(빈 호출)은 아무 것도 자동 로드하지 않음.
+            if(fname){
+                try{ post(await _rcPayloadFor(R, pathArr, fname, siblings)); }
+                catch(e){ try{ stat.textContent = '열기 실패'; }catch(_){} showToast('열지 못했습니다: ' + (e.message||e)); }
+                if(Array.isArray(alsoNames) && alsoNames.length){
+                    const _seenDcm = RC_DCM_RE.test(String(fname||'').toLowerCase());
+                    for(const an of alsoNames){
+                        if(!an || an === fname) continue;
+                        const anl = String(an).toLowerCase();
+                        if(RC_DCM_RE.test(anl)){ if(_seenDcm) continue; }   // DICOM 슬라이스는 첫 파일에서 시리즈로 이미 로드됨
+                        try{ const p2 = await _rcPayloadFor(R, pathArr, an, siblings); post(p2); }catch(_){}
+                    }
                 }
+            } else {
+                // 빈 상태로 열림 — 준비 표시만 감춘다(영상은 사용자가 DATA 서랍에서 선택).
+                try{ setTimeout(()=>{ try{ stat.style.display='none'; }catch(_){} }, 900); }catch(_){}
             }
 
-            // 🗂 이 폴더의 영상 목록을 뷰어 '내장 DATA 서랍'에 넘긴다.
-            //    (예전엔 좌측에 별도 목록을 그렸으나 뷰어 자체 DATA 서랍과 기능이 겹쳐 없앴다.)
+            // 🗂 이 폴더의 영상 목록을 뷰어 '내장 DATA 서랍'에 넘긴다(날짜 포함). 로드는 서랍에서 클릭할 때 수행.
             (async function sendManifest(){
+                const _mtimeOf = (nm)=>{ const m=sibMeta.find(x=>x.fname===nm); return m? (m.mtime||0) : 0; };
+                const _fmtDate = (mt)=>{ if(!mt) return ''; try{ const d=new Date(mt); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }catch(_){ return ''; } };
+                const folderNm = (pathArr && pathArr.length) ? pathArr[pathArr.length-1] : 'Home';
                 const openable = siblings.filter(n => !!_rcCatOf(n));
                 if(!openable.length) return;
                 const items = [];
                 const dcms = openable.filter(n => RC_DCM_RE.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
                 if(dcms.length){
-                    // 초기 로드에서 이미 만든 blob 을 그대로 재사용한다(중복 생성 금지).
                     const urls = [];
                     const gotd = await _rcMapLimit(dcms, 6, n => _rcBlobFor(R, pathArr, n));
                     gotd.forEach(u => { if(u) urls.push(u); });
-                    if(urls.length) items.push({ name:(dcms.length>1 ? ('CT 시리즈 ('+dcms.length+'장)') : dcms[0]), cat:'2D', date:'', thumb:'',
+                    const dcmDate = _fmtDate(Math.max.apply(null, dcms.map(_mtimeOf).concat(0)));
+                    if(urls.length) items.push({ name:(dcms.length>1 ? ('CT 시리즈 ('+dcms.length+'장)') : dcms[0]), cat:'2D', date:dcmDate, folder:folderNm, thumb:'',
                         payload:{ type:'RAYCLOUD_LOAD_DICOM', urls: urls, name:(dcms.length>1?('CT Series ('+dcms.length+')'):dcms[0]) } });
                 }
                 for(const n of openable){
                     const cat = _rcCatOf(n);
                     if(cat === 'DICOM') continue;
                     const u = await _rcBlobFor(R, pathArr, n); if(!u) continue;
-                    if(cat === '3D') items.push({ name:n, cat:'3D', date:'', thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } });
-                    else if(cat === 'PICTURE') items.push({ name:n, cat:'PICTURE', date:'', thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } });
-                    else items.push({ name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:'', thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', url:u, name:n } });
+                    const dt = _fmtDate(_mtimeOf(n));
+                    if(cat === '3D') items.push({ name:n, cat:'3D', date:dt, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } });
+                    else if(cat === 'PICTURE') items.push({ name:n, cat:'PICTURE', date:dt, folder:folderNm, thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } });
+                    else items.push({ name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:dt, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', url:u, name:n } });
                 }
-                if(items.length) post({ type:'RAYCLOUD_MANIFEST', items: items });
+                if(items.length){ post({ type:'RAYCLOUD_MANIFEST', items: items }); if(!fname) post({ type:'RAYCLOUD_OPEN_DRAWER' }); }
             })();
         };
 
@@ -4773,14 +4780,9 @@
                 const addRootBtn=ov.querySelector('#_sf-addroot'); if(addRootBtn) addRootBtn.addEventListener('click',async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } });
                 // 🧊 Viewer 버튼 — 이 폴더의 열람 가능한 파일을 실시간 뷰어(cbct_suite) 안에서 연다(뷰어 DATA 서랍으로 함께 로드).
                 const viewerBtn=ov.querySelector('#_sf-viewer'); if(viewerBtn) viewerBtn.addEventListener('click',async()=>{
-                    let files=[]; try{ const c2=await R.listAt(path)||{}; files=(c2.files||[]).map(f=>(typeof f==='string'?f:(f&&f.fname)||(f&&f.name)||'')).filter(Boolean); }catch(_){}
-                    const viewable=files.filter(n=>_rcCatOf(String(n).toLowerCase()));
-                    if(!viewable.length){ showToast('이 폴더에 실시간 뷰어로 열 수 있는 파일이 없습니다.'); return; }
-                    // DICOM이 있으면 시리즈 우선(정렬), 아니면 첫 열람가능 파일을 대표로
-                    const dcm=viewable.filter(n=>/\.dcm$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-                    const primary = dcm.length ? dcm[0] : viewable[0];
-                    const rest = viewable.filter(n=>n!==primary);
-                    window.rcOpenInLiveViewer(path.slice(), primary, rest);
+                    // 🧊 뷰어를 '빈 상태'로 연다 — 이 폴더의 열람 가능한 파일은 뷰어의 DATA 서랍에 목록으로만 올리고,
+                    //    실제 로드는 사용자가 서랍에서 클릭할 때 수행(초기엔 아무 영상도 안 뜸).
+                    window.rcOpenInLiveViewer(path.slice(), null);
                 });
 
                 const selbar=ov.querySelector('#_sf-selbar');
@@ -4847,16 +4849,14 @@
                         ctxMenu(e.clientX,e.clientY,items);
                     });
                 });
-                // 🩻 CT 시리즈 카드 — 클릭=실시간 3D 뷰어(cbct_suite, CT의 메인 뷰어), 더블클릭도 동일, 🗑=시리즈 전체 삭제
-                //   · 2D 슬라이스(cornerstone) 뷰어는 우클릭 메뉴에서 별도로 제공.
+                // 🩻 CT 시리즈 카드 — 3D는 우측 상단 [Viewer] 버튼으로 통일. 카드 클릭=2D 슬라이스(cornerstone) 미리보기, 🗑=시리즈 전체 삭제
                 ov.querySelectorAll('.rc-serf').forEach(el=>{ const sid=el.getAttribute('data-sid'); const slices=seriesMap[sid]||[];
-                    const open3D=()=>{ if(slices && slices.length) window.rcOpenInLiveViewer(path.slice(), slices[0]); };
                     const open2D=()=>window._dicomSeriesViewer(path.slice(), slices);
-                    el.addEventListener('click',(e)=>{ if(e.target.closest('.rc-ser-del')) return; open3D(); });
-                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('.rc-ser-del')) return; e.preventDefault(); e.stopPropagation(); open3D(); });
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('.rc-ser-del')) return; open2D(); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('.rc-ser-del')) return; e.preventDefault(); e.stopPropagation(); open2D(); });
                     const delAll=async()=>{ if(!confirm('CT 시리즈('+slices.length+'컷) 전체를 삭제할까요? (실제 폴더에서 삭제)')) return; if(!(await R.ensureAccess())){ showToast('권한 필요'); return; } let ok=0,err=''; for(const nm of slices){ try{ if(await R.removeAt(path,nm,false)) ok++; }catch(e2){ err=(e2&&e2.message)||String(e2); } } showToast(ok?('🗑 삭제: '+ok+'컷'):('삭제 실패: '+(err||'권한 확인'))); render(); };
                     const db=el.querySelector('.rc-ser-del'); if(db) db.addEventListener('click',(e)=>{ e.stopPropagation(); delAll(); });
-                    el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); ctxMenu(e.clientX,e.clientY,[ {label:'🖥 실시간 3D 뷰어로 열기',fn:open3D}, {label:'🩻 슬라이스(2D) 뷰어',fn:open2D}, {label:'🗑 시리즈 삭제',danger:true,fn:delAll} ]); });
+                    el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); ctxMenu(e.clientX,e.clientY,[ {label:'🩻 슬라이스(2D) 뷰어',fn:open2D}, {label:'🗑 시리즈 삭제',danger:true,fn:delAll} ]); });
                 });
                 const allc=ov.querySelector('#_sf-all'); if(allc) allc.addEventListener('change',()=>{ selected.clear(); ov.querySelectorAll('.rc-gf').forEach(el=>{ const chk=el.querySelector('.rc-gf-chk'); chk.checked=allc.checked; if(allc.checked) selected.add(el.getAttribute('data-fname')); }); updCnt(); });
                 ov.querySelectorAll('._sf-act').forEach(b=>b.addEventListener('click', async()=>{
