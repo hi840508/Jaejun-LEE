@@ -2598,13 +2598,47 @@ app.post('/api/store/:id/clinics', (req, res) => {
 });
 
 // 🏥 [관리자] 기공소 상점의 거래 치과 정보 열람(홍보용). 관리자 전용.
+// 🎯 [관리자] 가망 고객 정보 — 회원가입/상점개설 시 입력한 거래처(치과·기공소)를 신규 가입 권유 대상으로 집계.
+//   출처: users.partner_clinics(가입 시 입력, 치과·기공소 양방향) + stores.partner_clinics(기공소 상점). 전화번호로 이미 가입한 회원인지 표시.
 app.get('/api/admin/partner-clinics', (req, res) => {
     if (!requireAdmin(req, res)) return;
-    db.all(`SELECT id, name AS storeName, owner, partner_clinics FROM stores WHERE category='dental_lab' AND partner_clinics IS NOT NULL AND partner_clinics != '' ORDER BY name`, [], (e, rows) => {
-        if (e) return res.status(500).json({ error: e.message });
-        const out = []; let total = 0;
-        (rows || []).forEach(r => { let clinics = []; try { clinics = JSON.parse(r.partner_clinics) || []; } catch (_) {} if (clinics.length) { out.push({ storeId: r.id, storeName: r.storeName, owner: r.owner, clinics }); total += clinics.length; } });
-        res.json({ stores: out, totalStores: out.length, totalClinics: total });
+    const norm = p => String(p || '').replace(/[^0-9]/g, '');
+    const typeLabel = t => ({ dental_lab: '기공소', dental_clinic: '치과' }[t] || '');
+    db.all(`SELECT name, IFNULL(business_type,'individual') business_type, phone, partner_clinics FROM users WHERE partner_clinics IS NOT NULL AND partner_clinics != ''`, [], (e1, urows) => {
+        if (e1) return res.status(500).json({ error: e1.message });
+        db.all(`SELECT id, name AS storeName, owner, partner_clinics FROM stores WHERE category='dental_lab' AND partner_clinics IS NOT NULL AND partner_clinics != ''`, [], (e2, srows) => {
+            if (e2) return res.status(500).json({ error: e2.message });
+            db.all(`SELECT phone FROM users`, [], (e3, allUsers) => {
+                if (e3) return res.status(500).json({ error: e3.message });
+                const memberPhones = new Set();
+                (allUsers || []).forEach(u => { const n = norm(u.phone); if (n) memberPhones.add(n); });
+                const prospects = []; const seen = new Set();
+                const push = (c, byMember, byType, targetLabel) => {
+                    if (!c || typeof c !== 'object') c = { name: String(c || '') };
+                    const name = String(c.name || '').trim(), phone = String(c.phone || '').trim();
+                    if (!name && !phone) return;
+                    const key = (name + '|' + norm(phone)).toLowerCase();
+                    if (seen.has(key)) return; seen.add(key);
+                    prospects.push({
+                        name, ceo: String(c.ceo || '').trim(), phone, addr: String(c.addr || '').trim(),
+                        byMember: byMember || '', byType: byType || '', targetLabel: targetLabel || '',
+                        alreadyMember: phone ? memberPhones.has(norm(phone)) : false
+                    });
+                };
+                (urows || []).forEach(u => {
+                    let arr = []; try { arr = JSON.parse(u.partner_clinics) || []; } catch (_) {}
+                    // 기공소가 등록 → 가망=치과 / 치과가 등록 → 가망=기공소
+                    const target = u.business_type === 'dental_lab' ? '치과' : (u.business_type === 'dental_clinic' ? '기공소' : '가망고객');
+                    arr.forEach(c => push(c, u.name, typeLabel(u.business_type), target));
+                });
+                (srows || []).forEach(s => {
+                    let arr = []; try { arr = JSON.parse(s.partner_clinics) || []; } catch (_) {}
+                    arr.forEach(c => push(c, s.owner, '기공소', '치과'));
+                });
+                const notMember = prospects.filter(p => !p.alreadyMember).length;
+                res.json({ prospects, total: prospects.length, notMember });
+            });
+        });
     });
 });
 

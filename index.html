@@ -1522,12 +1522,9 @@
                             <tbody id="admin-action-tbody"></tbody>
                         </table>
                     </div>
-                    <div style="margin-top:12px; padding-top:12px; border-top:1px dashed var(--danger); display:flex; gap:8px; flex-wrap:wrap;">
-                        <button class="btn btn-danger" style="padding:10px 16px; font-size:13px;" onclick="loadAdminUsers(); openModal('admin-users-modal');">전체 회원 정보 보기 (복구용)</button>
-                        <button class="btn btn-warning" style="padding:10px 16px; font-size:13px;" onclick="loadPendingApprovals(); openModal('admin-pending-modal');">가입 승인 대기 <span id="admin-pending-badge" style="background:#fff; color:var(--danger); padding:2px 8px; border-radius:20px; font-size:10px; margin-left:4px; display:none;">0</span></button>
-                        <button class="btn btn-outline" style="padding:10px 16px; font-size:13px;" onclick="openPartnerClinics()">🏥 기공소 거래 치과 정보</button>
-                        <button class="btn btn-outline" style="padding:10px 16px; font-size:13px;" onclick="openCategoryManage()">🗂 카테고리 노출 관리</button>
-                        <span style="font-size:11px; color:#7f1d1d; align-self:center;">회원 비밀번호 분실 시 복구를 위한 Admin 전용 도구입니다.</span>
+                    <div style="margin-top:12px; padding-top:12px; border-top:1px dashed var(--danger); font-size:12px; color:#7f1d1d;">
+                        회원 관리 도구(전체 회원 정보·가입 승인·가망 고객 정보·카테고리 노출)는 <b>운영·관리 → 회원 관리</b>로 이동했습니다.
+                        <button class="btn btn-outline" style="padding:6px 12px; font-size:12px; margin-left:6px;" onclick="switchTab('admin-members')">👥 회원 관리 열기</button>
                     </div>
                 </div>
             </div>
@@ -1778,6 +1775,14 @@
                             <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goSettle()">💰 정산</button>
                             <button class="btn btn-outline" style="padding:8px 14px;font-weight:800;" onclick="goInvoice()">🧾 세금계산서</button>
                         </div>
+                    </div>
+                    <!-- 🛠 회원 관리 도구 (내 지갑 [Admin] 도구에서 이관) -->
+                    <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border-color);display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                        <button class="btn btn-danger" style="padding:9px 14px;font-size:13px;" onclick="loadAdminUsers(); openModal('admin-users-modal');">🔑 전체 회원 정보 보기 (복구용)</button>
+                        <button class="btn btn-warning" style="padding:9px 14px;font-size:13px;" onclick="loadPendingApprovals(); openModal('admin-pending-modal');">✅ 가입 승인 대기 <span id="admin-pending-badge" style="background:#fff; color:var(--danger); padding:2px 8px; border-radius:20px; font-size:10px; margin-left:4px; display:none;">0</span></button>
+                        <button class="btn btn-outline" style="padding:9px 14px;font-size:13px;" onclick="openPartnerClinics()">🎯 가망 고객 정보</button>
+                        <button class="btn btn-outline" style="padding:9px 14px;font-size:13px;" onclick="openCategoryManage()">🗂 카테고리 노출 관리</button>
+                        <span style="font-size:11px; color:#7f1d1d; align-self:center;">회원 비밀번호 분실 시 복구를 위한 Admin 전용 도구입니다.</span>
                     </div>
                 </div>
                 <div class="panel" style="padding:14px;">
@@ -4193,31 +4198,35 @@
             };
         };
 
-        // 🏥 [관리자] 기공소 상점 거래 치과 정보 열람
+        // 🎯 [관리자] 가망 고객 정보 — 회원가입/상점개설 시 입력한 거래처를 신규 가입 권유 대상으로 열람
         window.openPartnerClinics = async function(){
             if(!isAdmin){ showToast('관리자 전용입니다.'); return; }
             const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
             const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
-            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:720px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div style="font-weight:800;font-size:17px;">🏥 기공소 거래 치과 정보</div><button id="_pc-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div style="font-size:12px;color:#64748b;margin-bottom:6px;">상점 등록 시 입력된 거래 치과 정보입니다. (홍보용 · 관리자 전용)</div><div style="display:flex;gap:6px;margin-bottom:12px;"><input id="_pc-q" placeholder="치과·기공소·연락처 검색" style="flex:1;padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;"><button id="_pc-csv" style="padding:9px 12px;border:none;background:#0f172a;color:#fff;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;">CSV 내보내기</button></div><div id="_pc-body" style="font-size:13px;color:#475569;">불러오는 중…</div></div>';
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:760px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;overflow:auto;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div style="font-weight:800;font-size:17px;">🎯 가망 고객 정보</div><button id="_pc-x" style="margin-left:auto;border:none;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.5;">회원들이 <b>가입 시 입력한 거래처</b>(치과·기공소)입니다. 아직 <b>미가입</b>인 곳에 신규 가입을 권유하는 <b>영업 리드</b>로 활용하세요.</div><div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;"><input id="_pc-q" placeholder="이름·연락처·주소·추천회원 검색" style="flex:1;min-width:180px;padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;"><label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;white-space:nowrap;"><input type="checkbox" id="_pc-notmember"> 미가입만</label><button id="_pc-csv" style="padding:9px 12px;border:none;background:#0f172a;color:#fff;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;">CSV 내보내기</button></div><div id="_pc-body" style="font-size:13px;color:#475569;">불러오는 중…</div></div>';
             document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); }); ov.querySelector('#_pc-x').onclick=()=>ov.remove();
             const body=ov.querySelector('#_pc-body'); let data=null;
             try{ const r=await fetch(API_URL+'/api/admin/partner-clinics'); if(!r.ok){ body.innerHTML='<div style="color:#b45309;">권한이 없거나 불러올 수 없습니다.</div>'; return; } data=await r.json(); }
             catch(e){ body.innerHTML='오류: '+(e.message||e); return; }
-            // flatten
-            const rows=[]; (data.stores||[]).forEach(s=>(s.clinics||[]).forEach(c=>rows.push({store:s.storeName,owner:s.owner,name:c.name,ceo:c.ceo||'',phone:c.phone,addr:c.addr,email:c.email||''})));
-            const render=()=>{ const q=(ov.querySelector('#_pc-q').value||'').toLowerCase().trim();
-                const list=rows.filter(r=>!q||[r.store,r.name,r.ceo,r.phone,r.addr,r.owner].some(v=>String(v||'').toLowerCase().includes(q)));
-                body.innerHTML='<div style="font-size:12px;color:#64748b;margin-bottom:8px;">기공소 '+data.totalStores+'곳 · 거래 치과 '+data.totalClinics+'건'+(q?(' · 검색 '+list.length+'건'):'')+'</div>'
+            const rows=(data.prospects||[]);
+            const memberChip=m=> m ? '<span style="font-size:10px;color:#166534;background:#dcfce7;padding:2px 7px;border-radius:20px;font-weight:700;">가입회원</span>' : '<span style="font-size:10px;color:#9a3412;background:#ffedd5;padding:2px 7px;border-radius:20px;font-weight:700;">미가입</span>';
+            const render=()=>{ const q=(ov.querySelector('#_pc-q').value||'').toLowerCase().trim(); const notOnly=ov.querySelector('#_pc-notmember').checked;
+                let list=rows.filter(r=>!q||[r.name,r.ceo,r.phone,r.addr,r.byMember].some(v=>String(v||'').toLowerCase().includes(q)));
+                if(notOnly) list=list.filter(r=>!r.alreadyMember);
+                body.innerHTML='<div style="font-size:12px;color:#64748b;margin-bottom:8px;">가망 고객 <b>'+data.total+'</b>건 · 미가입 <b style="color:#9a3412;">'+data.notMember+'</b>건'+(q||notOnly?(' · 표시 '+list.length+'건'):'')+'</div>'
                   +'<div style="border:1px solid #eef2f7;border-radius:10px;overflow:hidden;">'
-                  +'<div style="display:flex;gap:8px;padding:8px 10px;font-size:11px;color:#94a3b8;font-weight:700;border-bottom:1px solid #f1f5f9;"><span style="flex:1.3;">거래처(치과)</span><span style="flex:1;">대표이름</span><span style="flex:1;">전화</span><span style="flex:1.6;">주소</span><span style="flex:1;">기공소</span></div>'
-                  +(list.length?list.map(r=>'<div style="display:flex;gap:8px;padding:8px 10px;font-size:12px;border-bottom:1px solid #f6f8fa;"><span style="flex:1.3;font-weight:600;">'+esc(r.name)+'</span><span style="flex:1;">'+esc(r.ceo)+'</span><span style="flex:1;">'+esc(r.phone)+'</span><span style="flex:1.6;">'+esc(r.addr)+'</span><span style="flex:1;color:#64748b;">'+esc(r.store)+'</span></div>').join(''):'<div style="padding:16px;text-align:center;color:#94a3b8;">등록된 거래 치과 정보가 없습니다.</div>')
+                  +'<div style="display:flex;gap:8px;padding:8px 10px;font-size:11px;color:#94a3b8;font-weight:700;border-bottom:1px solid #f1f5f9;"><span style="flex:1.3;">가망 고객</span><span style="flex:.6;">구분</span><span style="flex:1;">전화</span><span style="flex:1.5;">주소</span><span style="flex:1;">추천 회원</span><span style="flex:.7;text-align:center;">가입여부</span></div>'
+                  +(list.length?list.map(r=>'<div style="display:flex;gap:8px;padding:8px 10px;font-size:12px;border-bottom:1px solid #f6f8fa;align-items:center;"><span style="flex:1.3;font-weight:600;">'+esc(r.name||'-')+(r.ceo?' <span style="color:#94a3b8;font-weight:400;">('+esc(r.ceo)+')</span>':'')+'</span><span style="flex:.6;color:#64748b;">'+esc(r.targetLabel||'-')+'</span><span style="flex:1;">'+esc(r.phone||'-')+'</span><span style="flex:1.5;color:#64748b;">'+esc(r.addr||'-')+'</span><span style="flex:1;color:#64748b;">'+esc(r.byMember||'-')+(r.byType?' <span style="font-size:10px;color:#94a3b8;">('+esc(r.byType)+')</span>':'')+'</span><span style="flex:.7;text-align:center;">'+memberChip(r.alreadyMember)+'</span></div>').join(''):'<div style="padding:16px;text-align:center;color:#94a3b8;">가망 고객 정보가 없습니다.</div>')
                   +'</div>';
             };
             render();
             ov.querySelector('#_pc-q').oninput=render;
-            ov.querySelector('#_pc-csv').onclick=()=>{ const q='"'; const hdr=['거래처(치과)','대표이름','전화','주소','기공소','기공소회원'];
-                const csv=[hdr.join(',')].concat(rows.map(r=>[r.name,r.ceo,r.phone,r.addr,r.store,r.owner].map(v=>q+String(v||'').replace(/"/g,'""')+q).join(','))).join('\r\n');
-                const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='거래치과정보.csv'; document.body.appendChild(a); a.click(); a.remove(); };
+            ov.querySelector('#_pc-notmember').onchange=render;
+            ov.querySelector('#_pc-csv').onclick=()=>{ const q='"'; const notOnly=ov.querySelector('#_pc-notmember').checked;
+                let list=rows; if(notOnly) list=rows.filter(r=>!r.alreadyMember);
+                const hdr=['가망고객','대표이름','구분','전화','주소','추천회원','추천회원유형','가입여부'];
+                const csv=[hdr.join(',')].concat(list.map(r=>[r.name,r.ceo,r.targetLabel,r.phone,r.addr,r.byMember,r.byType,(r.alreadyMember?'가입회원':'미가입')].map(v=>q+String(v||'').replace(/"/g,'""')+q).join(','))).join('\r\n');
+                const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='가망고객정보.csv'; document.body.appendChild(a); a.click(); a.remove(); };
         };
 
         window.openAdminOps = async function(){
