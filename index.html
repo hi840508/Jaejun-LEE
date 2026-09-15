@@ -8784,14 +8784,34 @@
         // 의뢰서 목록 카드 1건 렌더(오랄핏 양식 참고: 헤더=기공소·원장·환자·접수/완성·차트·주문번호·상태 / 본문=보철·치식·재질·쉐이드 / 가격 / 상세)
         window._rxListCard=function(o){
             const esc=taxEscH; let fd={}, bi={}; try{ fd=JSON.parse(o.form_data||'{}')||{}; }catch(_){} try{ bi=JSON.parse(o.buyer_info||'{}')||{}; }catch(_){}
-            const rx=(fd&&fd.rxDetail)||{};
+            let rx=(fd&&fd.rxDetail)||{};
+            // System B(간편/상세 의뢰서: fd.items/fd.orderInfo) → 카드 표시용 정규화
+            const _bItems = Array.isArray(fd.items)?fd.items:[];
+            const _oi = fd.orderInfo||{};
+            if(_bItems.length && !rx.orderType && !rx.prosthesis){
+                const allTeeth=[]; _bItems.forEach(it=>(it.teeth||[]).forEach(t=>allTeeth.push(t)));
+                const names=[]; _bItems.forEach(it=> (fd.rxMode==='detail'?(it.selected||[]):[]).forEach(s=>names.push(s.name)) );
+                if(fd.rxMode!=='detail'){ _bItems.forEach(it=>{ if(it.name) names.push(it.name); }); }
+                const flatPt=[]; _bItems.forEach(it=>{ const pt=it.perTooth||{}; Object.keys(pt).forEach(t=>{ const d=pt[t]||{}; flatPt.push(Object.assign({tooth:+t},d)); }); });
+                rx = {
+                    orderType: (_bItems[0]&&_bItems[0].makeType)||'',
+                    teeth: allTeeth.sort((a,b)=>a-b).join(', '),
+                    connection: (_bItems[0]&&_bItems[0].connection)||'',
+                    prosthesis: names.join(' / '),
+                    material: '',
+                    insurance: (_bItems[0]&&_bItems[0].insurance)||'',
+                    retention: (_bItems[0]&&_bItems[0].retention)||'',
+                    gold: (_bItems[0]&&_bItems[0].gold)||'',
+                    perTooth: flatPt.sort((a,b)=>a.tooth-b.tooth)
+                };
+            }
             const st=(o.settled&&(o.status==='confirmed'||o.status==='settled'))?'settled':o.status; const sm=window.__rxStatus[st]||{t:st||'-',c:'#64748b'};
             const dt=(s)=>{ if(!s) return '-'; try{ return new Date(s).toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'}); }catch(_){ return String(s).slice(0,10); } };
             const recv=o.created_at||''; const done=o.confirmed_at||o.delivered_at||'';
-            const gong=esc(o.seller||'-'); const wonjang=esc(bi.name||o.buyer||'-'); const patient=esc(bi.patient||fd.patient||'-'); const chart=esc(bi.chart||fd.chart||bi.chartNo||'-');
+            const gong=esc(o.seller||'-'); const wonjang=esc(bi.doctor||_oi.doctor||bi.name||o.buyer||'-'); const patient=esc(bi.patient||bi.patientName||_oi.patientName||fd.patient||'-'); const chart=esc(bi.chart||bi.chartNo||_oi.chartNo||fd.chart||'-');
             const price=Number(o.amount||0);
             const _v=(x)=> (x&&String(x).trim())?esc(x):'-';
-            let detailRows=[['주문 유형',rx.orderType],['치식',rx.teeth],['연결 타입',rx.connection],['보철 종류',rx.prosthesis],['재질',rx.material],['교합(대합치)',rx.occlusion],['마진',rx.margin],['보험 여부',rx.insurance]]
+            let detailRows=[['주문 유형',rx.orderType],['치식',rx.teeth],['연결 타입',rx.connection],['보철 종류',rx.prosthesis],['재질',rx.material],['교합(대합치)',rx.occlusion],['마진',rx.margin],['보험 여부',rx.insurance],['유지 방법',rx.retention],['골드',rx.gold]]
                 .map(([k,v])=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid #f1f5f9;"><span style="color:#2563eb;font-weight:700;">'+k+'</span><span style="color:#0f172a;font-weight:600;text-align:right;">'+_v(v)+'</span></div>').join('');
             // 🦷 치식별 세부 정보(픽스처/쉐이드/헥사/보험)
             const _pt=Array.isArray(rx.perTooth)?rx.perTooth:[];
@@ -12234,24 +12254,34 @@ pdfjsScript,
                     </div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
                         <span style="font-size:11px;font-weight:800;color:#475569;">치식 선택 <span style="color:var(--danger);">*</span></span>
-                        <span style="display:flex;gap:6px;"><button type="button" id="rxd-upper" style="font-size:11px;padding:4px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">상악 선택</button><button type="button" id="rxd-lower" style="font-size:11px;padding:4px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">하악 선택</button><button type="button" id="rxd-clear" style="font-size:11px;padding:4px 9px;border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;">초기화</button></span>
+                        <span style="display:flex;gap:6px;flex-wrap:wrap;"><button type="button" id="rxd-child" style="font-size:11px;padding:4px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">유아 치식</button><button type="button" id="rxd-upper" style="font-size:11px;padding:4px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">상악 선택</button><button type="button" id="rxd-lower" style="font-size:11px;padding:4px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">하악 선택</button><button type="button" id="rxd-clear" style="font-size:11px;padding:4px 9px;border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;">초기화</button></span>
                     </div>
-                    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px;overflow-x:auto;margin-bottom:12px;">
-                        <div style="display:flex;gap:2px;justify-content:center;margin-bottom:4px;">${_toothBtns(_fdiUpper)}</div>
-                        <div style="display:flex;gap:2px;justify-content:center;">${_toothBtns(_fdiLower)}</div>
+                    <div id="rxd-chart" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px;overflow-x:auto;margin-bottom:12px;">
+                        <div id="rxd-chart-up" style="display:flex;gap:2px;justify-content:center;margin-bottom:4px;">${_toothBtns(_fdiUpper)}</div>
+                        <div id="rxd-chart-lo" style="display:flex;gap:2px;justify-content:center;">${_toothBtns(_fdiLower)}</div>
                         <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:8px;">선택된 치식: <b id="rxd-teeth-sel" style="color:#2563eb;">-</b></div>
                     </div>
                     <input type="hidden" id="rxd-teeth" value="">
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
                         ${_rxdSel('rxd-connection', '연결 타입', ['Single','브릿지(Bridge)','풀아치(Full Arch)','기타'])}
-                        ${_rxdSel('rxd-prosth', '보철 종류', ['크라운','브릿지','인레이/온레이','라미네이트','임플란트 보철','틀니(의치)','코핑','기타'])}
-                        ${_rxdSel('rxd-material', '재질', ['지르코니아','e.max(글라스세라믹)','PFM','골드','메탈','PMMA(임시)','레진','기타'])}
                         ${_rxdSel('rxd-occlusion', '교합 (대합치)', ['자연치','보철물','임플란트','대합치 없음','기타'])}
                         ${_rxdSel('rxd-margin', '마진', ['숄더(Shoulder)','챔퍼(Chamfer)','나이프엣지','라운드 숄더','기타'])}
                         ${_rxdSel('rxd-insurance', '보험 여부', ['급여(보험)','비급여'])}
                     </div>
-                    <div style="font-size:11px;font-weight:800;color:#475569;margin:14px 0 6px;">치식별 세부 정보 <span style="font-weight:500;color:#94a3b8;">(치식을 선택하면 자동 생성 · 픽스처/쉐이드/헥사/보험)</span></div>
+                    <div style="font-size:11px;font-weight:800;color:#475569;margin-bottom:6px;">보철 품목 선택 <span style="color:var(--danger);">*</span> <span style="font-weight:500;color:#94a3b8;">(취급 품목 · 수가)</span></div>
+                    <div id="rxd-prosth-cat" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>
+                    <div id="rxd-prosth-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;min-height:20px;"><span style="font-size:11px;color:#94a3b8;">품목을 불러오는 중…</span></div>
+                    <input type="hidden" id="rxd-prosth" value=""><input type="hidden" id="rxd-material" value=""><input type="hidden" id="rxd-price" value="0">
+                    <div style="text-align:right;font-size:12px;color:#475569;margin-bottom:12px;">품목 가격(수가): <b id="rxd-price-lbl" style="font-size:16px;color:#0f172a;">0</b> 원 <span style="font-size:10px;color:#94a3b8;">(참고 · 최종 금액은 기공소 확정)</span></div>
+                    <div style="font-size:11px;font-weight:800;color:#475569;margin:6px 0;">치식별 세부 정보 <span style="font-weight:500;color:#94a3b8;">(치식을 선택하면 자동 생성 · 픽스처/쉐이드/헥사/보험 · 선택)</span></div>
                     <div id="rxd-pertooth"></div>
+                    <details style="margin-top:12px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;">
+                        <summary style="cursor:pointer;font-size:12px;font-weight:800;color:#475569;">임플란트 유지 방법 및 골드</summary>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+                            ${_rxdSel('rxd-retention', '유지 방법', ['시멘트 유지(Cement)','스크류 유지(Screw)','SCRP','기타'])}
+                            ${_rxdSel('rxd-gold', '골드', ['미사용','12% 골드','20% 골드','고함량 골드','기타'])}
+                        </div>
+                    </details>
                 </div>`;
 
             body.innerHTML = `
@@ -16168,6 +16198,9 @@ pdfjsScript,
                     if(st.mode==='simple'){
                         const nm = document.getElementById('rx-name-'+i); if(nm) it.name = nm.value;
                         const mk = document.getElementById('rx-mk-'+i); if(mk) it.makeType = mk.value;
+                    } else {
+                        const conn = document.getElementById('rx-conn-'+i); if(conn) it.connection = conn.value;
+                        const ins = document.getElementById('rx-ins-'+i); if(ins) it.insurance = ins.value;
                     }
                 });
             }
@@ -16214,34 +16247,82 @@ pdfjsScript,
                     </div>
                 </div>`;
             }
+            const RX_MAKE_TYPES = ['신규 제작','리메이크','리페어'];
+            const RX_CONN_TYPES = ['Single','브릿지(Bridge)','풀아치(Full Arch)','임플란트','기타'];
+            const RX_SHADES = ['A1','A2','A3','A3.5','A4','B1','B2','B3','B4','C1','C2','C3','C4','D2','D3','D4','BL1','BL2','BL3','BL4'];
+            const RX_HEXA = ['헥사','논헥사','알수없음'];
             function _detailItemHtml(it,i){
+                it.perTooth = it.perTooth || {};
+                if(!it.makeType) it.makeType = '신규 제작';
                 const lines = (it.selected||[]).map((s,j)=>{
                     const ponticInput = (Number(s.pontic)>0)
                         ? `<span style="display:inline-flex;align-items:center;gap:3px;color:#64748b;white-space:nowrap;">가공치<input type="number" min="0" value="${Number(s.ponticCount)||0}" onchange="rxSetPonticCount(${i},${j},this.value)" style="width:42px;padding:3px 4px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;" title="가공치(폰틱) 개수 · 단가 ${won(s.pontic)}">개</span>`
                         : '';
                     return `<div style="display:flex;justify-content:space-between;align-items:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:5px 10px;margin-top:4px;font-size:12px;gap:8px;"><span style="flex:1;min-width:0;">${esc(s.name)} <span style="color:#64748b;">(${esc(s.category)} · ${won(s.price)})</span></span>${ponticInput}<button type="button" onclick="rxRemoveSel(${i},${j})" style="border:none;background:none;color:var(--danger);cursor:pointer;">✕</button></div>`;
                 }).join('');
+                // 주문유형(제작구분) 라디오
+                const mkBtns = RX_MAKE_TYPES.map(t=>{ const on=(it.makeType===t); return `<button type="button" onclick="rxSetMakeType(${i},'${t}')" style="flex:1;min-width:80px;padding:7px;border:2px solid ${on?'#059669':'#e2e8f0'};background:${on?'#ecfdf5':'#fff'};color:${on?'#065f46':'#475569'};border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">${t}</button>`; }).join('');
+                // 연결 타입
+                const connOpts = ['<option value="">연결 타입 선택</option>'].concat(RX_CONN_TYPES.map(c=>`<option ${it.connection===c?'selected':''}>${c}</option>`)).join('');
+                // 치식별 세부정보 (픽스처/쉐이드/헥사/보험)
+                const teeth = (it.teeth||[]).slice().sort((a,b)=>a-b);
+                let ptBlock;
+                if(!teeth.length){ ptBlock = '<div style="font-size:11px;color:#94a3b8;padding:6px 2px;">← 치식을 선택하면 치식별 세부정보(픽스처·쉐이드·헥사·보험) 입력칸이 생성됩니다.</div>'; }
+                else {
+                    ptBlock = '<div style="display:flex;gap:6px;font-size:10px;font-weight:800;color:#94a3b8;padding:2px 2px 4px;"><span style="width:34px;">치식</span><span style="flex:1;">픽스처</span><span style="flex:1;">쉐이드</span><span style="flex:1;">헥사</span><span style="width:40px;text-align:center;">보험</span></div>'
+                        + teeth.map(t=>{ const d=it.perTooth[t]||{};
+                            return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;">'
+                            + '<span style="width:34px;font-weight:800;color:#059669;font-size:12px;">#'+t+'</span>'
+                            + '<input value="'+String(d.fixture||'').replace(/"/g,'&quot;')+'" oninput="rxSetPerTooth('+i+','+t+',\'fixture\',this.value)" placeholder="픽스처" style="flex:1;min-width:0;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;">'
+                            + '<select onchange="rxSetPerTooth('+i+','+t+',\'shade\',this.value)" style="flex:1;min-width:0;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;"><option value="">쉐이드</option>'+RX_SHADES.map(s=>'<option '+(d.shade===s?'selected':'')+'>'+s+'</option>').join('')+'</select>'
+                            + '<select onchange="rxSetPerTooth('+i+','+t+',\'hexa\',this.value)" style="flex:1;min-width:0;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;"><option value="">헥사</option>'+RX_HEXA.map(h=>'<option '+(d.hexa===h?'selected':'')+'>'+h+'</option>').join('')+'</select>'
+                            + '<label style="width:40px;text-align:center;"><input type="checkbox" '+(d.ins?'checked':'')+' onchange="rxSetPerTooth('+i+','+t+',\'ins\',this.checked)" style="width:15px;height:15px;" title="보험 적용"></label>'
+                            + '</div>';
+                        }).join('');
+                }
                 return `<div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:10px;background:#fff;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                         <b style="font-size:14px;">품목 ${i+1}</b>
                         <button type="button" onclick="rxRemoveItem(${i})" style="border:1px solid #fecaca;background:#fff;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">품목 삭제</button>
                     </div>
+                    <div style="font-size:11px;font-weight:800;color:#475569;margin-bottom:5px;">주문 유형</div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">${mkBtns}</div>
                     <div style="display:flex;gap:12px;flex-wrap:wrap;">
                         <div onclick="rxOpenTooth(${i})" style="width:130px;min-height:90px;border:1px solid #cbd5e1;border-radius:10px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;font-weight:700;color:#475569;cursor:pointer;background:#f8fafc;" id="rx-tooth-box-${i}">${esc(_toothLabel(it.teeth))}</div>
                         <div style="flex:1;min-width:200px;">
                             <button type="button" onclick="rxOpenItemPicker(${i})" style="width:100%;border:1px solid #6ee7b7;background:#ecfdf5;color:#065f46;border-radius:8px;padding:9px;font-size:13px;font-weight:700;cursor:pointer;">＋ 보철 품목 선택 (수가)</button>
                             <div>${lines}</div>
-                            <textarea id="rx-memo-${i}" maxlength="500" placeholder="상세 요청 사항 (500자 이내)" rows="2" style="width:100%;margin-top:6px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;resize:vertical;">${esc(it.memo)}</textarea>
                         </div>
                     </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+                        <div style="display:flex;flex-direction:column;gap:4px;"><label style="font-size:11px;color:#64748b;font-weight:700;">연결 타입</label><select id="rx-conn-${i}" onchange="rxSetConnection(${i},this.value)" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;background:#fff;">${connOpts}</select></div>
+                        <div style="display:flex;flex-direction:column;gap:4px;"><label style="font-size:11px;color:#64748b;font-weight:700;">보험 여부</label><select id="rx-ins-${i}" onchange="rxSetItemField(${i},'insurance',this.value)" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;background:#fff;"><option value="">선택</option><option ${it.insurance==='급여(보험)'?'selected':''}>급여(보험)</option><option ${it.insurance==='비급여'?'selected':''}>비급여</option></select></div>
+                    </div>
+                    <div style="font-size:11px;font-weight:800;color:#475569;margin:12px 0 6px;">치식별 세부 정보 <span style="font-weight:500;color:#94a3b8;">(픽스처 · 쉐이드 · 헥사 · 보험)</span></div>
+                    <div>${ptBlock}</div>
+                    <details style="margin-top:10px;">
+                        <summary style="cursor:pointer;font-size:11px;font-weight:700;color:#059669;">임플란트 유지 방법 및 골드</summary>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
+                            <div style="display:flex;flex-direction:column;gap:4px;"><label style="font-size:11px;color:#64748b;font-weight:700;">유지 방법</label><select onchange="rxSetItemField(${i},'retention',this.value)" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;background:#fff;"><option value="">선택</option>${['시멘트 유지(Cement)','스크류 유지(Screw)','SCRP','기타'].map(o=>`<option ${it.retention===o?'selected':''}>${o}</option>`).join('')}</select></div>
+                            <div style="display:flex;flex-direction:column;gap:4px;"><label style="font-size:11px;color:#64748b;font-weight:700;">골드</label><select onchange="rxSetItemField(${i},'gold',this.value)" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;background:#fff;"><option value="">선택</option>${['미사용','12% 골드','20% 골드','고함량 골드','기타'].map(o=>`<option ${it.gold===o?'selected':''}>${o}</option>`).join('')}</select></div>
+                        </div>
+                    </details>
+                    <textarea id="rx-memo-${i}" maxlength="500" placeholder="상세 요청 사항 (500자 이내)" rows="2" style="width:100%;margin-top:10px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;resize:vertical;">${esc(it.memo)}</textarea>
                 </div>`;
             }
+            window.rxSetMakeType = function(i,v){ const st=window.rxOrderState; if(!st||!st.items[i]) return; syncRxItemsFromDOM(); st.items[i].makeType=v; _renderRxItems(); };
+            window.rxSetConnection = function(i,v){ const st=window.rxOrderState; if(st&&st.items[i]) st.items[i].connection=v; };
+            window.rxSetItemField = function(i,k,v){ const st=window.rxOrderState; if(st&&st.items[i]) st.items[i][k]=v; };
+            window.rxSetPerTooth = function(i,t,k,v){ const st=window.rxOrderState; if(!st||!st.items[i]) return; const it=st.items[i]; it.perTooth=it.perTooth||{}; it.perTooth[t]=it.perTooth[t]||{}; it.perTooth[t][k]=v; };
             window.rxOpenTooth = function(i){
                 const st = window.rxOrderState; if(!st||!st.items[i]) return;
                 window.openToothChart(st.items[i].teeth||[], function(teeth){
+                    if(st.mode==='detail') syncRxItemsFromDOM();
                     st.items[i].teeth = teeth;
-                    const box = document.getElementById('rx-tooth-box-'+i); if(box) box.textContent = _toothLabel(teeth);
-                    if(st.mode==='detail') rxRecalc();
+                    // 선택 해제된 치식의 세부정보는 정리
+                    if(st.mode==='detail' && st.items[i].perTooth){ const keep=new Set(teeth.map(Number)); Object.keys(st.items[i].perTooth).forEach(k=>{ if(!keep.has(Number(k))) delete st.items[i].perTooth[k]; }); }
+                    if(st.mode==='detail'){ _renderRxItems(); }
+                    else { const box = document.getElementById('rx-tooth-box-'+i); if(box) box.textContent = _toothLabel(teeth); }
                 });
             };
             window.rxOpenPhrase = function(i){
@@ -16330,11 +16411,23 @@ pdfjsScript,
                         return `${esc(s.name)} (${won(s.price)}×${tc}${ponticTxt})`;
                     }).join('<br>') || '-';
                     const line = (it.selected||[]).reduce((a,s)=>a+(Number(s.price)||0)*tc+(Number(s.pontic)||0)*(Number(s.ponticCount)||0),0);
-                    return `<tr><td>${i+1}</td><td>${esc((it.teeth||[]).join(', ')||'-')}</td><td>${sub}</td><td>${esc(it.memo||'')}</td><td style="text-align:right;">${won(line)}</td></tr>`;
+                    // 주문유형/연결타입/보험/유지방법/골드 + 치식별 세부정보
+                    const meta = [
+                        it.makeType?('주문유형: '+esc(it.makeType)):'',
+                        it.connection?('연결: '+esc(it.connection)):'',
+                        it.insurance?('보험: '+esc(it.insurance)):'',
+                        it.retention?('유지: '+esc(it.retention)):'',
+                        it.gold?('골드: '+esc(it.gold)):''
+                    ].filter(Boolean).join(' · ');
+                    const pt = it.perTooth||{};
+                    const ptTxt = Object.keys(pt).sort((a,b)=>a-b).map(t=>{ const d=pt[t]||{}; const parts=[d.fixture?('픽스처 '+esc(d.fixture)):'', d.shade?('쉐이드 '+esc(d.shade)):'', d.hexa?esc(d.hexa):'', d.ins?'보험':''].filter(Boolean).join('/'); return parts?('#'+t+'('+parts+')'):''; }).filter(Boolean).join(', ');
+                    const detailLine = [meta, ptTxt?('치식별: '+ptTxt):''].filter(Boolean).join('<br>');
+                    const memoCell = [detailLine, esc(it.memo||'')].filter(Boolean).join(detailLine&&it.memo?'<hr style="border:none;border-top:1px dashed #e2e8f0;margin:4px 0;">':'');
+                    return `<tr><td>${i+1}</td><td>${esc((it.teeth||[]).join(', ')||'-')}</td><td>${sub}</td><td style="font-size:12px;">${memoCell||'-'}</td><td style="text-align:right;">${won(line)}</td></tr>`;
                 }).join('');
                 const head = st.mode==='simple'
                     ? '<tr><th>#</th><th>제작구분</th><th>치식</th><th>품목명</th><th>메모</th></tr>'
-                    : '<tr><th>#</th><th>치식</th><th>품목(수가×치아수)</th><th>메모</th><th>금액</th></tr>';
+                    : '<tr><th>#</th><th>치식</th><th>품목(수가×치아수)</th><th>세부/메모</th><th>금액</th></tr>';
                 const filesHtml = (filesMeta&&filesMeta.length) ? `<div class="sec">첨부 파일: ${filesMeta.map(f=>esc(f.filename)).join(', ')}</div>` : '';
                 const amtHtml = st.mode==='detail'
                     ? `<div class="amt">합계 금액: ${won(st.amount)}</div>`
