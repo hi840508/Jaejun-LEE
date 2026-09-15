@@ -3253,6 +3253,82 @@ app.post('/api/order/refund-request', (req, res) => {
     });
 });
 
+// ✏️ [의뢰서 추가정보 수정] 구매자·판매자 모두 가능. ⛔ 금액은 절대 변경 불가(추가 정보 기입만).
+//   buyer_info(환자명·차트·원장 등) 병합 + form_data.edits 로그 누적 + 메모 보완. 금액/품목가는 서버에서 건드리지 않음.
+app.post('/api/order/:orderId/info', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const orderId = req.params.orderId;
+    const b = req.body || {};
+    db.get(`SELECT buyer, seller, status, buyer_info, form_data, memo FROM product_orders WHERE id = ?`, [orderId], (e, ord) => {
+        if (e || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
+        if (me !== ord.buyer && me !== ord.seller && !isAdminName(me)) return res.status(403).json({ error: '해당 주문의 당사자만 수정할 수 있습니다.' });
+        if (['refunded', 'cancelled', 'rejected'].includes(ord.status)) return res.status(400).json({ error: '종료된 주문은 수정할 수 없습니다.' });
+        const role = (me === ord.seller) ? 'seller' : (me === ord.buyer ? 'buyer' : 'admin');
+        let bi = {}; try { bi = JSON.parse(ord.buyer_info || '{}') || {}; } catch (_) {}
+        let fd = {}; try { fd = JSON.parse(ord.form_data || '{}') || {}; } catch (_) {}
+        // 허용 필드만 병합(금액·품목 관련 필드는 무시)
+        const allow = ['patient', 'patientName', 'chart', 'chartNo', 'doctor', 'name', 'phone', 'address', 'birth', 'gender', 'dueDate', 'shade', 'note'];
+        const changed = {};
+        if (b.info && typeof b.info === 'object') {
+            allow.forEach(k => { if (b.info[k] != null && String(b.info[k]) !== String(bi[k] || '')) { bi[k] = String(b.info[k]); changed[k] = bi[k]; } });
+        }
+        const noteText = String(b.note || '').trim().slice(0, 1000);
+        fd.edits = Array.isArray(fd.edits) ? fd.edits : [];
+        if (noteText || Object.keys(changed).length) {
+            fd.edits.push({ by: me, role, at: new Date().toISOString(), note: noteText, fields: changed });
+        } else {
+            return res.status(400).json({ error: '수정할 내용이 없습니다.' });
+        }
+        let memo = ord.memo || '';
+        if (noteText) memo += `\n[보완·${role === 'seller' ? '판매자' : role === 'buyer' ? '구매자' : '관리자'}] ${noteText}`;
+        db.run(`UPDATE product_orders SET buyer_info = ?, form_data = ?, memo = ? WHERE id = ?`,
+            [JSON.stringify(bi), JSON.stringify(fd), memo, orderId], function (ue) {
+                if (ue) return res.status(500).json({ error: ue.message });
+                try { _notifyOrderStatus(ord.buyer, ord.seller, orderId, ord.status, `✏️ [의뢰서 보완] ${role === 'seller' ? '판매자' : '구매자'}가 의뢰서 정보를 추가/수정했습니다.` + (noteText ? ' 내용: ' + noteText : '')); } catch (_) {}
+                res.json({ success: true, orderId, edits: fd.edits.length });
+            });
+    });
+});
+
+// 💳 [추가 결제 요청] 판매자가 금액 변경 사유 발생 시, 해당 주문 기반으로 '추가 결제 주문(애드온)'을 생성.
+//   기존 주문/결제/정산 파이프라인 재사용: 새 주문 status=awaiting_payment → 구매자가 결제하면 에스크로 보관·정산.
+app.post('/api/order/:orderId/surcharge', (req, res) => {
+    const seller = requireUser(req, res); if (!seller) return;
+    const parentId = req.params.orderId;
+    const amount = Math.floor(Number(req.body.amount) || 0);
+    const reason = String(req.body.reason || '').trim().slice(0, 300);
+    const captureHtml = String(req.body.bundle_html || '');
+    if (!(amount > 0)) return res.status(400).json({ error: '추가 결제 금액을 1원 이상 입력하세요.' });
+    db.get(`SELECT * FROM product_orders WHERE id = ?`, [parentId], (e, ord) => {
+        if (e || !ord) return res.status(404).json({ error: '원 주문을 찾을 수 없음' });
+        if (ord.seller !== seller && !isAdminName(seller)) return res.status(403).json({ error: '본인 판매 주문만 추가 결제를 요청할 수 있습니다.' });
+        if (['refunded', 'cancelled', 'rejected'].includes(ord.status)) return res.status(400).json({ error: '종료된 주문에는 추가 결제를 요청할 수 없습니다.' });
+        const date = new Date().toLocaleString('ko-KR');
+        let bi = {}; try { bi = JSON.parse(ord.buyer_info || '{}') || {}; } catch (_) {}
+        const fd = { surchargeOf: Number(parentId), kind: 'surcharge', reason };
+        // 추가 결제 의뢰서(캡처) HTML — 없으면 원 주문 bundle에 사유·금액을 덧붙인 간단본
+        let bundle = captureHtml;
+        if (!bundle) {
+            bundle = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>추가 결제 요청</title></head><body style="font-family:'Malgun Gothic',sans-serif;padding:20px;">`
+                + `<h2 style="color:#b45309;">💳 추가 결제 요청 (원 주문 #${parentId})</h2>`
+                + `<p>환자: <b>${(bi.patientName || bi.patient || '-')}</b> · 차트: ${(bi.chartNo || bi.chart || '-')}</p>`
+                + `<p>사유: ${reason || '-'}</p><p style="font-size:20px;font-weight:900;color:#2563eb;">추가 결제 금액: ${amount.toLocaleString()}원</p></body></html>`;
+        }
+        db.run(`INSERT INTO product_orders (productId, buyer, seller, bundle_html, memo, form_data, buyer_info, status, amount, created_at, pay_method) VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_payment', ?, ?, 'balance')`,
+            [ord.productId, ord.buyer, seller, bundle, ('[추가 결제] ' + reason), JSON.stringify(fd), JSON.stringify(bi), amount, date],
+            function (ie) {
+                if (ie) return res.status(500).json({ error: ie.message });
+                const newId = this.lastID;
+                try { const fab = _orderChatFab(newId); if (fab) db.run(`UPDATE product_orders SET bundle_html = COALESCE(bundle_html,'') || ? WHERE id = ?`, [fab, newId], () => {}); } catch (_) {}
+                // 원 주문 대화방 + 새 주문 대화방 모두에 안내
+                try { _notifyOrderStatus(ord.buyer, seller, parentId, ord.status, `💳 [추가 결제 요청] 판매자가 추가 결제(${amount.toLocaleString()}원)를 요청했습니다.` + (reason ? ' 사유: ' + reason : '') + ` 구매목록/대화방에서 결제해 주세요. (추가주문 #${newId})`); } catch (_) {}
+                try { _notifyOrderStatus(ord.buyer, seller, newId, 'awaiting_payment', `💳 [추가 결제] 원 주문 #${parentId}의 추가 결제 요청입니다. 결제 시 진행됩니다.`); } catch (_) {}
+                try { sendPushToUser(ord.buyer, { title: '💳 추가 결제 요청', body: (reason || '판매자가 추가 결제를 요청했습니다.') + ' ' + amount.toLocaleString() + '원', data: { roomId: _orderRoomId(newId) } }); } catch (_) {}
+                res.json({ success: true, orderId: newId, parentId: Number(parentId), amount });
+            });
+    });
+});
+
 // 📅 n영업일 전 시각(ISO) — 주말(토·일) 제외하고 하루씩 되돌아 카운트. 제4조 마(5영업일) 자동완결 기준.
 function _businessDaysAgoISO(n) {
     const d = new Date(); let cnt = 0;

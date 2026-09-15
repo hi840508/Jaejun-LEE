@@ -1566,6 +1566,7 @@
                             <option value="settled">정산완료</option>
                             <option value="refund_requested">환불요청</option>
                         </select>
+                        <button class="btn btn-outline" style="padding:8px 14px; font-size:12px; font-weight:800;" onclick="openSellerRxCollection()" title="필터된 주문의 의뢰서를 목록으로 보기·인쇄">📋 의뢰서 목록</button>
                     </div>
                     <div id="my-sales-orders-list" style="display:flex; flex-direction:column; gap:8px;"></div>
                 </div>
@@ -8254,9 +8255,11 @@
                         acts += _obtn('승인','#059669',`approvePendingOrder('${o.id}','${(o.productName||'').replace(/'/g,"\\'")}',${Number(o.amount||0)})`);
                         acts += _obtn('거절','#dc2626',`rejectPendingOrder('${o.id}')`);
                     }
-                    else if(o.status === 'approved') acts = _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
-                    else if(o.status === 'shipping') acts = _obtn('송장 수정','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`) + _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
-                    else if(o.status === 'delivered') acts = _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
+                    // 🧾 의뢰서 목록·수정(판매자도 열람/추가정보 기입 가능) 버튼 공통
+                    else if(o.status === 'approved') acts = _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
+                    else if(o.status === 'shipping') acts = _obtn('송장 수정','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
+                    else if(o.status === 'delivered') acts = '';
+                    // ⚠ 환불 수락은 '구매자가 환불 요청(refund_requested)'한 경우에만 노출
                     else if(o.status === 'refund_requested') acts = _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     h += `<div style="background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:12px 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; cursor:pointer; transition:0.2s;"
                         onclick="window.openOrderInChatRoom('${o.buyer}', '${o.id}')"
@@ -8878,6 +8881,7 @@
         // 의뢰서 목록 카드 1건 렌더(오랄핏 양식 참고: 헤더=기공소·원장·환자·접수/완성·차트·주문번호·상태 / 본문=보철·치식·재질·쉐이드 / 가격 / 상세)
         window._rxListCard=function(o){
             const esc=taxEscH; let fd={}, bi={}; try{ fd=JSON.parse(o.form_data||'{}')||{}; }catch(_){} try{ bi=JSON.parse(o.buyer_info||'{}')||{}; }catch(_){}
+            const _rxcIsSeller = !!(window.currentUser && o.seller===currentUser.name);
             let rx=(fd&&fd.rxDetail)||{};
             // System B(간편/상세 의뢰서: fd.items/fd.orderInfo) → 카드 표시용 정규화
             const _bItems = Array.isArray(fd.items)?fd.items:[];
@@ -8936,15 +8940,90 @@
                 // 버튼
                 +'<div style="display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px;">'
                 +  '<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="openRxPreview(\''+esc(o.id)+'\')">📄 상세·인쇄</button>'
-                +  (o.orderId||o.id?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="_rxcOpenChat(\''+String(o.seller||'').replace(/'/g,"\\'")+'\',\'room_ord_'+esc(o.id)+'\')">💬 대화방 열기</button>':'')
+                +  '<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="editOrderInfo(\''+esc(o.id)+'\')">✏️ 의뢰서 수정</button>'
+                +  (_rxcIsSeller?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;color:#b45309;border-color:#f59e0b;" onclick="requestSurcharge(\''+esc(o.id)+'\')">💳 추가 결제 요청</button>':'')
+                +  (o.orderId||o.id?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="_rxcOpenChat(\''+String((_rxcIsSeller?o.buyer:o.seller)||'').replace(/'/g,"\\'")+'\',\'room_ord_'+esc(o.id)+'\')">💬 대화방 열기</button>':'')
                 +'</div>'
                 +'</div>';
         };
         // 💬 의뢰서 목록에서 대화방 열기 — 목록 오버레이를 닫아 대화방이 맨 위로 보이게 한다.
         window._rxcOpenChat=function(seller, room){ try{ const o=document.getElementById('rxc-ov'); if(o) o.remove(); }catch(_){} try{ openMessengerChat(seller, room); }catch(_){} };
-        window.openRxCollection = async function(){
-            const cards=Array.from(document.querySelectorAll('.my-purchase-card')).filter(c=>c.style.display!=='none' && c.getAttribute('data-order'));
-            const orderIds=Array.from(new Set(cards.map(c=>c.getAttribute('data-order')).filter(Boolean)));
+        // ✏️ 의뢰서 추가정보 수정(구매자·판매자 모두 · 금액 변경 불가, 추가 정보 기입만)
+        window.editOrderInfo=async function(orderId){
+            let o={}; try{ o=await fetch(`${API_URL}/api/order/${encodeURIComponent(orderId)}`).then(r=>r.json()); }catch(_){}
+            if(!o||!o.id){ showToast('주문을 불러올 수 없습니다.'); return; }
+            let bi={}; try{ bi=JSON.parse(o.buyer_info||'{}')||{}; }catch(_){}
+            const esc=(s)=>String(s==null?'':s).replace(/"/g,'&quot;');
+            const amt=Number(o.amount||0);
+            let m=document.getElementById('edit-order-info-modal'); if(m) m.remove();
+            m=document.createElement('div'); m.id='edit-order-info-modal'; m.style.cssText='position:fixed;inset:0;z-index:100002;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;';
+            m.innerHTML='<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:92vh;overflow:auto;padding:20px 22px;">'
+                +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="margin:0;font-size:18px;font-weight:900;color:#2563eb;">✏️ 의뢰서 정보 수정</h3><span onclick="document.getElementById(\'edit-order-info-modal\').remove()" style="cursor:pointer;font-size:24px;color:#94a3b8;">&times;</span></div>'
+                +'<div style="background:#f1f5f9;border-radius:8px;padding:8px 12px;font-size:12px;color:#475569;margin-bottom:14px;">💡 <b>추가 정보만</b> 기입/수정할 수 있습니다. <b>금액은 변경되지 않습니다</b> (현재 '+(amt?amt.toLocaleString()+'원':'미정')+'). 금액 조정이 필요하면 판매자가 <b>추가 결제 요청</b>을 이용하세요.</div>'
+                +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+                +'<div><label style="font-size:11px;color:#64748b;">환자명</label><input id="eoi-patient" value="'+esc(bi.patientName||bi.patient||'')+'" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
+                +'<div><label style="font-size:11px;color:#64748b;">차트번호</label><input id="eoi-chart" value="'+esc(bi.chartNo||bi.chart||'')+'" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
+                +'<div><label style="font-size:11px;color:#64748b;">담당 원장/의뢰자</label><input id="eoi-doctor" value="'+esc(bi.doctor||bi.name||'')+'" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
+                +'<div><label style="font-size:11px;color:#64748b;">연락처</label><input id="eoi-phone" value="'+esc(bi.phone||'')+'" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
+                +'</div>'
+                +'<div style="margin-top:10px;"><label style="font-size:11px;color:#64748b;">추가 기입/보완 사항 (500자)</label><textarea id="eoi-note" rows="3" maxlength="500" placeholder="쉐이드 변경, 추가 요청, 특이사항 등 — 기존 내용에 누적 기록됩니다." style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;resize:vertical;"></textarea></div>'
+                +'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;"><button class="btn btn-outline" style="padding:9px 18px;" onclick="document.getElementById(\'edit-order-info-modal\').remove()">취소</button><button class="btn" style="padding:9px 22px;background:var(--gradient-btn);color:#fff;font-weight:800;" onclick="submitOrderInfoEdit(\''+esc(orderId)+'\')">저장</button></div>'
+                +'</div>';
+            document.body.appendChild(m);
+        };
+        window.submitOrderInfoEdit=async function(orderId){
+            const g=(id)=>{ const e=document.getElementById(id); return e?e.value.trim():''; };
+            const info={ patientName:g('eoi-patient'), chartNo:g('eoi-chart'), doctor:g('eoi-doctor'), phone:g('eoi-phone') };
+            const note=g('eoi-note');
+            try{
+                const r=await fetch(`${API_URL}/api/order/${encodeURIComponent(orderId)}/info`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ info, note }) });
+                const d=await r.json().catch(()=>({}));
+                if(!r.ok) return showToast(d.error||'수정 실패');
+                showToast('✅ 의뢰서 정보가 저장되었습니다.');
+                const m=document.getElementById('edit-order-info-modal'); if(m) m.remove();
+                // 목록/미리보기 갱신
+                if(document.getElementById('rxc-ov') && window.openRxCollection){ /* 목록 열려있으면 카드 다시 그리기는 생략(다음 열람 시 반영) */ }
+            }catch(e){ showToast('수정 오류: '+(e.message||e)); }
+        };
+        // 💳 판매자: 추가 결제 요청 — 사유·금액 입력 → 추가 결제 주문 생성(구매자 결제 시 진행)
+        window.requestSurcharge=async function(orderId){
+            const reason=prompt('추가 결제 사유를 입력하세요.\n(예: 지대주 추가, 재료 변경, 항목 추가 등)');
+            if(reason===null) return;
+            const v=prompt('추가 결제 금액(원)을 입력하세요.');
+            if(v===null) return;
+            const amount=parseInt(String(v).replace(/[^0-9]/g,''),10);
+            if(!Number.isFinite(amount)||amount<=0) return showToast('금액을 1원 이상 숫자로 입력하세요.');
+            if(!confirm(`추가 결제 요청\n사유: ${reason||'-'}\n금액: ${amount.toLocaleString()}원\n\n구매자에게 결제 요청이 전송됩니다. 계속할까요?`)) return;
+            // 수정된 의뢰서 캡처(원 주문 bundle)를 함께 첨부
+            let bundle_html='';
+            try{ const o=await fetch(`${API_URL}/api/order/${encodeURIComponent(orderId)}`).then(r=>r.json()); if(o&&o.bundle_html) bundle_html=window._rxcClean?window._rxcClean(o.bundle_html,o.amount):o.bundle_html; }catch(_){}
+            try{
+                const r=await fetch(`${API_URL}/api/order/${encodeURIComponent(orderId)}/surcharge`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ amount, reason, bundle_html }) });
+                const d=await r.json().catch(()=>({}));
+                if(!r.ok) return showToast(d.error||'추가 결제 요청 실패');
+                showToast('💳 추가 결제 요청을 보냈습니다. (추가주문 #'+(d.orderId||'')+')');
+                if(window.loadMySalesOrders) loadMySalesOrders();
+            }catch(e){ showToast('추가 결제 요청 오류: '+(e.message||e)); }
+        };
+        // 🧾 판매자 주문관리 → 현재 필터에 보이는 주문들의 의뢰서 목록
+        window.openSellerRxCollection = function(){
+            const orders = window.__salesOrders || [];
+            const q = ((document.getElementById('sales-search')||{}).value||'').toLowerCase().trim();
+            const stf = (document.getElementById('sales-status')||{}).value||'';
+            const ids = orders.filter(o=>{
+                const stKey = (o.settled && (o.status==='confirmed'||o.status==='settled')) ? 'settled' : o.status;
+                if(stf && stKey !== stf) return false;
+                if(q){ let pat=''; try{ const bi=o.buyer_info?JSON.parse(o.buyer_info):{}; pat=bi.patientName||''; }catch(_){} const hay = ((o.productName||'')+' '+(o.buyer||'')+' '+pat+' '+(o.memo||'')).toLowerCase(); if(hay.indexOf(q)<0) return false; }
+                return true;
+            }).map(o=>String(o.id));
+            if(!ids.length){ showToast('표시된 의뢰서가 없습니다. 필터를 확인하세요.'); return; }
+            openRxCollection(ids);
+        };
+        window.openRxCollection = async function(orderIds){
+            if(!Array.isArray(orderIds)){
+                const cards=Array.from(document.querySelectorAll('.my-purchase-card')).filter(c=>c.style.display!=='none' && c.getAttribute('data-order'));
+                orderIds=Array.from(new Set(cards.map(c=>c.getAttribute('data-order')).filter(Boolean)));
+            }
             if(!orderIds.length){ showToast('표시된 의뢰서가 없습니다. 필터를 확인하세요.'); return; }
             let ov=document.getElementById('rxc-ov'); if(ov) ov.remove();
             ov=document.createElement('div'); ov.id='rxc-ov'; ov.style.cssText='position:fixed;inset:0;z-index:100000;background:#eef2f7;display:flex;flex-direction:column;';
@@ -15211,6 +15290,7 @@ pdfjsScript,
                             ${['confirmed','settled','rejected','cancelled','refunded'].includes(p.orderStatus) ? '' : (p.orderId
                                 ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="openMessengerChat('${escSeller.replace(/'/g, "\\'")}','room_ord_${p.orderId}')">대화방 열기</button>`
                                 : `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.contactSellerFromPurchase('${escSeller.replace(/'/g, "\\'")}')">대화방 열기</button>`)}
+                            ${(p.orderId && p.orderStatus==='awaiting_payment' && Number(p.amount||0)>0) ? `<button class="btn btn-success" style="padding:6px 12px; font-size:11px;" onclick="window.payOrder('${p.orderId}', ${Number(p.amount||0)})">💳 결제하기 · ${Number(p.amount||0).toLocaleString()}원</button>` : ''}
                             ${(p.orderId && ['approved','shipping','delivered'].includes(p.orderStatus)) ? `<button class="btn btn-success" style="padding:6px 12px; font-size:11px;" onclick="window.confirmPurchaseOrder('${p.orderId}')">구매확정</button>` : ''}
                             ${(p.orderId && ['approved','shipping','delivered'].includes(p.orderStatus))
                                 ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px; color:#ea580c; border-color:#ea580c;" onclick="window.requestOrderRefund('${p.orderId}')">환불 요청</button>`
@@ -16744,6 +16824,7 @@ pdfjsScript,
                     showToast('결제 완료 · 주문이 진행됩니다.');
                     if(window.updateUserBalance) updateUserBalance();
                     refreshRxDocStatus(orderId);
+                    if(window.loadMyPurchases) try{ loadMyPurchases(); }catch(_){}
                 } catch(_){ /* pgPay 취소 */ }
             };
             // 🚚 기공소: 송장번호 입력(배송중) / 배송완료 처리 (채팅 카드에서)
