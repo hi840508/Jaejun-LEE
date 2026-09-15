@@ -1853,8 +1853,8 @@
                     <div id="ao-sum" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;white-space:nowrap;">
-                            <thead><tr><th>주문#/거래#</th><th>일시</th><th>상점</th><th>상품</th><th>구매자</th><th>판매자</th><th style="text-align:right;">금액</th><th style="text-align:right;">정산금액</th><th style="text-align:right;">이익금</th><th style="text-align:right;">잔여금</th><th style="text-align:center;">상태</th><th style="text-align:center;">정산</th></tr></thead>
-                            <tbody id="ao-body"><tr><td colspan="12" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 통합 매출 원장을 불러오세요.</td></tr></tbody>
+                            <thead><tr><th>주문#/거래#</th><th>일시</th><th>상점</th><th>상품</th><th>구매자</th><th>판매자</th><th style="text-align:right;">금액</th><th style="text-align:right;background:#f0fdf4;">정산금액<br><span style="font-size:9px;font-weight:400;">판매자 지급</span></th><th style="text-align:right;background:#f5f3ff;">이익금<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:right;background:#fff7ed;">잔여금<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:right;background:#fef2f2;">정산예정<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:center;">상태</th><th style="text-align:center;">정산</th></tr></thead>
+                            <tbody id="ao-body"><tr><td colspan="13" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 통합 매출 원장을 불러오세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -6359,11 +6359,11 @@
             const month=(document.getElementById('ao-month')||{}).value||'';
             const store=(document.getElementById('ao-store')||{}).value||'';
             const sumEl=document.getElementById('ao-sum');
-            body.innerHTML='<tr><td colspan="12" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            body.innerHTML='<tr><td colspan="13" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             try{
                 const d=await fetch(`${API_URL}/api/admin/ledger?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q.trim())}&month=${encodeURIComponent(month)}&store=${encodeURIComponent(store.trim())}`).then(r=>r.json());
                 const rows=d.entries||[]; const T=d.totals||{};
-                if(!rows.length){ body.innerHTML='<tr><td colspan="12" style="text-align:center;padding:16px;color:#94a3b8;">표시할 원장이 없습니다.</td></tr>'; if(sumEl) sumEl.style.display='none'; return; }
+                if(!rows.length){ body.innerHTML='<tr><td colspan="13" style="text-align:center;padding:16px;color:#94a3b8;">표시할 원장이 없습니다.</td></tr>'; if(sumEl) sumEl.style.display='none'; return; }
                 const dtF=(r)=>{ if(r&&r.ts){ const d=new Date(r.ts); if(!isNaN(d)){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); } } const s=r&&r.date; if(!s) return '-'; return String(s).replace('T',' ').substring(0,16); };
                 body.innerHTML=rows.map(r=>{
                     const isOrd = r.kind==='order';
@@ -6380,23 +6380,34 @@
                         <td>${taxEscH(r.buyer||'-')}${r.buyerRealname?` <span style="font-size:10px;color:#94a3b8;">(${taxEscH(r.buyerRealname)})</span>`:''}</td>
                         <td>${taxEscH(r.seller||'-')}</td>
                         <td style="text-align:right;font-weight:700;">${taxFmt(r.amount)}</td>
-                        <td style="text-align:right;color:#166534;font-weight:700;">${r.valid?taxFmt(r.payout):'-'}</td>
-                        <td style="text-align:right;color:#7c3aed;font-weight:700;">${r.valid?taxFmt(r.profit):'-'}</td>
-                        <td style="text-align:right;color:${r.remain>0?'#b45309':'#cbd5e1'};font-weight:${r.remain>0?'800':'400'};">${r.remain>0?taxFmt(r.remain):'-'}</td>
+                        <td style="text-align:right;color:#166534;font-weight:700;background:#f7fdf9;">${r.valid?taxFmt(r.payout):'-'}</td>
+                        <td style="text-align:right;color:#7c3aed;font-weight:700;background:#faf9ff;">${r.valid?taxFmt(r.profit):'-'}</td>
+                        <td style="text-align:right;color:${r.remain>0?'#b45309':'#cbd5e1'};font-weight:${r.remain>0?'800':'400'};background:#fffcf7;">${r.remain>0?taxFmt(r.remain):'-'}</td>
+                        <td style="text-align:right;color:${r.payable>0?'#b91c1c':'#cbd5e1'};font-weight:${r.payable>0?'800':'400'};background:#fffafa;">${r.payable>0?taxFmt(r.payable):'-'}</td>
                         <td style="text-align:center;">${aoStatusBadge(r.status)}</td>
                         <td style="text-align:center;font-size:11px;">${settledTxt}</td>
                     </tr>`;
                 }).join('');
-                if(sumEl){ sumEl.style.display='flex';
+                if(sumEl){ sumEl.style.display='block';
                     const chip=(lbl,val,c,tc)=>'<span style="font-size:12px;font-weight:800;padding:9px 15px;border-radius:9px;background:'+(c||'#f1f5f9')+';color:'+(tc||'#0f172a')+';">'+lbl+' <b>'+taxFmt(val)+'원</b></span>';
-                    sumEl.innerHTML =
-                        chip('총 '+(T.count||rows.length)+'건 · 매출 '+(T.saleCount||0)+'건 총 금액', T.amount||0, '#eff6ff')
+                    const isAdminView = !!(window.currentUser && window.isAdmin);
+                    // 1줄: 상점 운영 관련(판매자 관점) — 매출·판매자 지급액
+                    const row1 = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">'
+                        + '<span style="font-size:11px;font-weight:800;color:#64748b;min-width:78px;">상점 운영</span>'
+                        + chip('총 '+(T.count||rows.length)+'건 · 매출 '+(T.saleCount||0)+'건 총 금액', T.amount||0, '#eff6ff')
                         + chip('총 정산금액(판매자 지급)', T.payout||0, '#f0fdf4', '#166534')
-                        + chip('총 이익금(플랫폼 수수료)', T.profit||0, '#f5f3ff', '#6d28d9')
+                        + '</div>';
+                    // 2줄: 관리자 전용(플랫폼) — 수수료·잔여금·정산예정·정산완료. 상점주에게는 숨김.
+                    const row2 = isAdminView ? ('<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:8px;border-top:1px dashed #e2e8f0;">'
+                        + '<span style="font-size:11px;font-weight:800;color:#7c3aed;min-width:78px;">관리자 전용</span>'
+                        + chip('이익금(플랫폼 수수료)', T.profit||0, '#f5f3ff', '#6d28d9')
                         + chip('잔여금(미정산 보관)', T.remain||0, '#fff7ed', '#b45309')
-                        + chip('정산완료 지급액', T.settledPayout||0, '#ecfeff', '#0e7490');
+                        + chip('정산해야 할 금액(지급 예정)', T.payable||0, '#fef2f2', '#b91c1c')
+                        + chip('정산완료 지급액', T.settledPayout||0, '#ecfeff', '#0e7490')
+                        + '</div>') : '';
+                    sumEl.innerHTML = row1 + row2;
                 }
-            }catch(e){ body.innerHTML=`<tr><td colspan="12" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+            }catch(e){ body.innerHTML=`<tr><td colspan="13" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         // 하위호환: 예전 호출부가 남아있어도 통합 원장으로 라우팅
         window.loadAdminOrdersList=function(){ return window.loadAdminLedger(); };

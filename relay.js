@@ -4214,6 +4214,8 @@ app.get('/api/admin/ledger', (req, res) => {
                     const valid = !_revStatus[o.status] && amt > 0;
                     const calc = valid ? _settleCalc(amt, cfg) : { payout: 0, payFee: 0 };
                     const remain = (o.escrow_held > 0 && !o.settled && ['delivered', 'confirmed'].includes(o.status)) ? Number(o.escrow_held) : 0;
+                    // 정산해 주어야 할 금액 = 잔여금(보관중)에서 판매자에게 지급할 몫(수수료 제외)
+                    const payable = remain > 0 ? _settleCalc(remain, cfg).payout : 0;
                     const rawDate = o.txDate || o.confirmed_at || o.delivered_at || o.created_at || '';
                     const pd = _parseDate(rawDate);
                     entries.push({
@@ -4223,7 +4225,7 @@ app.get('/api/admin/ledger', (req, res) => {
                         storeId: o.storeId || '', storeName: o.storeName || '', storeManaged: !!o.storeManaged,
                         productName: o.productName || o.productId || '', amount: amt,
                         status: o.status, tracking: o.tracking || '', courier: o.courier || '',
-                        payout: valid ? calc.payout : 0, profit: valid ? calc.payFee : 0, remain,
+                        payout: valid ? calc.payout : 0, profit: valid ? calc.payFee : 0, remain, payable,
                         settled: !!o.settled, settleMonth: o.settle_month || '', refunded: !!o.txRefunded, valid
                     });
                 });
@@ -4251,14 +4253,14 @@ app.get('/api/admin/ledger', (req, res) => {
                 // 최신순(파싱 타임스탬프 우선, 없으면 id)
                 entries.sort((a, b) => (b.ts - a.ts) || ((b.orderId || b.txId || 0) - (a.orderId || a.txId || 0)));
                 // 합계(필터 반영 후)
-                let totAmt = 0, totPayout = 0, totProfit = 0, totRemain = 0, totSettledPayout = 0, saleCount = 0;
+                let totAmt = 0, totPayout = 0, totProfit = 0, totRemain = 0, totPayable = 0, totSettledPayout = 0, saleCount = 0;
                 entries.forEach(e => {
                     if (e.valid) { totAmt += e.amount; totPayout += e.payout; totProfit += e.profit; saleCount++; if (e.settled) totSettledPayout += e.payout; }
-                    totRemain += (e.remain || 0);
+                    totRemain += (e.remain || 0); totPayable += (e.payable || 0);
                 });
                 res.json({
                     entries,
-                    totals: { count: entries.length, saleCount, amount: totAmt, payout: totPayout, profit: totProfit, remain: totRemain, settledPayout: totSettledPayout },
+                    totals: { count: entries.length, saleCount, amount: totAmt, payout: totPayout, profit: totProfit, remain: totRemain, payable: totPayable, settledPayout: totSettledPayout },
                     feeRate: cfg.feeRate, vatRate: cfg.vatRate
                 });
             });
