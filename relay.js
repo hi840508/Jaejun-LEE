@@ -4158,7 +4158,8 @@ app.get('/api/admin/members', (req, res) => {
     const btype = String(req.query.business_type || '').trim();
     const approval = String(req.query.approval || '').trim();
     let where = `1=1`; const params = [];
-    if (q) { where += ` AND (u.name LIKE ? OR IFNULL(u.realname,'') LIKE ? OR IFNULL(u.biz_company,'') LIKE ? OR IFNULL(u.phone,'') LIKE ? OR IFNULL(u.email,'') LIKE ?)`; const like = '%' + q + '%'; params.push(like, like, like, like, like); }
+    // 🔎 ID·실명·상호·전화·이메일 + '거래처(partner_clinics) 정보'까지 검색(거래처 이름/전화/주소로도 회원을 찾음)
+    if (q) { where += ` AND (u.name LIKE ? OR IFNULL(u.realname,'') LIKE ? OR IFNULL(u.biz_company,'') LIKE ? OR IFNULL(u.phone,'') LIKE ? OR IFNULL(u.email,'') LIKE ? OR IFNULL(u.partner_clinics,'') LIKE ?)`; const like = '%' + q + '%'; params.push(like, like, like, like, like, like); }
     if (btype) { where += ` AND IFNULL(u.business_type,'individual') = ?`; params.push(btype); }
     if (approval) { where += ` AND IFNULL(u.approval_status,'approved') = ?`; params.push(approval); }
     db.all(`SELECT u.name, u.realname, IFNULL(u.business_type,'individual') business_type, u.phone, u.email,
