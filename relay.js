@@ -4249,7 +4249,18 @@ app.get('/api/admin/members/:name/clinics', (req, res) => {
     const sc = reqAdminOrOwner(req, res); if (!sc) return;
     const target = String(req.params.name || '').trim();
     if (!sc.isAdmin && sc.me !== target) return res.status(403).json({ error: '본인 거래처만 조회할 수 있습니다.' });
-    db.get(`SELECT name, IFNULL(business_type,'individual') business_type, biz_company, realname, partner_clinics FROM users WHERE name=?`, [target], (e, row) => {
+    db.get(`SELECT u.name, IFNULL(u.business_type,'individual') business_type, u.realname, u.phone, u.email, u.shipping_address,
+                   u.biz_no, u.biz_company, u.biz_ceo, u.biz_addr, u.biz_industry, u.biz_item, u.tax_email,
+                   u.bank, u.account, IFNULL(u.balance,0) balance, u.license_no, IFNULL(u.approval_status,'approved') approval_status,
+                   u.terms_agreed_at, u.privacy_agreed_at, u.partner_clinics,
+                   (SELECT GROUP_CONCAT(s.name, ', ') FROM stores s WHERE s.owner=u.name) storeNames,
+                   (SELECT COUNT(*) FROM stores s WHERE s.owner=u.name) storeCount,
+                   (SELECT COUNT(*) FROM product_orders o WHERE o.seller=u.name) sellOrders,
+                   (SELECT IFNULL(SUM(o.amount),0) FROM product_orders o WHERE o.seller=u.name AND o.status='confirmed') sellSales,
+                   (SELECT IFNULL(SUM(o.escrow_held),0) FROM product_orders o WHERE o.seller=u.name AND o.status='confirmed' AND o.escrow_held>0 AND o.settled=0) sellUnsettled,
+                   (SELECT COUNT(*) FROM product_orders o WHERE o.buyer=u.name) buyOrders,
+                   (SELECT IFNULL(SUM(o.amount),0) FROM product_orders o WHERE o.buyer=u.name AND o.status='confirmed') buySpent
+            FROM users u WHERE u.name=?`, [target], (e, row) => {
         if (e) return res.status(500).json({ error: e.message });
         if (!row) return res.status(404).json({ error: '회원이 없습니다.' });
         let clinics = []; try { clinics = JSON.parse(row.partner_clinics || '[]') || []; } catch (_) {}
@@ -4263,7 +4274,18 @@ app.get('/api/admin/members/:name/clinics', (req, res) => {
                     const candidates = _clinicCandidatesFull(c, users || [], storeNamesN, storeNamesRaw, target);
                     return Object.assign({}, c, { linked: !!um, linkedInfo, candidates });
                 });
-                res.json({ member: { name: row.name, business_type: row.business_type, bizName: (row.biz_company || row.realname || row.name) }, clinics: out });
+                const member = {
+                    name: row.name, bizName: (row.biz_company || row.realname || row.name), business_type: row.business_type,
+                    realname: row.realname || '', phone: row.phone || '', email: row.email || '', shipping_address: row.shipping_address || '',
+                    biz_no: row.biz_no || '', biz_company: row.biz_company || '', biz_ceo: row.biz_ceo || '', biz_addr: row.biz_addr || '',
+                    biz_industry: row.biz_industry || '', biz_item: row.biz_item || '', tax_email: row.tax_email || '',
+                    bank: row.bank || '', account: row.account || '', balance: row.balance || 0, license_no: row.license_no || '',
+                    approval_status: row.approval_status, joined_at: row.terms_agreed_at || row.privacy_agreed_at || '',
+                    storeNames: row.storeNames || '', storeCount: row.storeCount || 0,
+                    sellOrders: row.sellOrders || 0, sellSales: row.sellSales || 0, sellUnsettled: row.sellUnsettled || 0,
+                    buyOrders: row.buyOrders || 0, buySpent: row.buySpent || 0
+                };
+                res.json({ member, clinics: out });
             });
         });
     });
