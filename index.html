@@ -1855,10 +1855,11 @@
                         </div>
                         <button class="btn btn-outline" style="padding:9px 16px;" onclick="loadAdminOrdersList()">조회</button>
                     </div>
+                    <div id="ao-orders-sum" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:10px;"></div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;white-space:nowrap;">
-                            <thead><tr><th>주문#</th><th>상품</th><th>상점</th><th>구매자</th><th>판매자</th><th style="text-align:right;">금액</th><th style="text-align:center;">상태</th><th>송장</th><th style="text-align:center;">정산</th></tr></thead>
-                            <tbody id="ao-orders-body"><tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 전체 주문을 불러오세요.</td></tr></tbody>
+                            <thead><tr><th>주문#</th><th>상품</th><th>상점</th><th>구매자</th><th>판매자</th><th style="text-align:right;">금액</th><th style="text-align:right;">정산금액</th><th style="text-align:center;">상태</th><th>송장</th><th style="text-align:center;">정산</th></tr></thead>
+                            <tbody id="ao-orders-body"><tr><td colspan="10" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 전체 주문을 불러오세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -6374,14 +6375,22 @@
             const body=document.getElementById('ao-orders-body'); if(!body) return;
             const status=(document.getElementById('ao-order-status')||{}).value||'';
             const q=(document.getElementById('ao-order-q')||{}).value||'';
-            body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            // 💰 정산금액(지급액) = 금액 − 수수료(2.7%) − 그 VAT(10%). 원단위 버림.
+            const _payout=(amt)=>{ amt=Number(amt)||0; if(amt<=0) return 0; const fee=Math.floor(amt*0.027); const vat=Math.floor(fee*0.1); return amt-fee-vat; };
+            const _revStatus={ refunded:1, rejected:1, cancelled:1 };   // 매출·정산 제외 상태
             try{
                 const d=await fetch(`${API_URL}/api/admin/orders?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q.trim())}`).then(r=>r.json());
                 const orders=d.orders||[];
-                if(!orders.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">주문이 없습니다.</td></tr>'; return; }
+                const sumEl=document.getElementById('ao-orders-sum');
+                if(!orders.length){ body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#94a3b8;">주문이 없습니다.</td></tr>'; if(sumEl) sumEl.style.display='none'; return; }
+                let totAmt=0, totPay=0, totSettled=0;
                 body.innerHTML=orders.map(o=>{
                     const trk = o.tracking ? taxEscH(((window.courierName?window.courierName(o.courier):'')+' '+o.tracking).trim()) : '-';
                     const settledTxt = o.settled ? '<span style="color:#166534;font-weight:700;">정산완료</span>' : (o.escrow_held ? '<span style="color:#b45309;">보관중</span>' : '-');
+                    const valid = !_revStatus[o.status];
+                    const pay = valid ? _payout(o.amount) : 0;
+                    if(valid){ totAmt+=Number(o.amount)||0; totPay+=pay; if(o.settled) totSettled+=pay; }
                     return `<tr>
                         <td style="text-align:center;">${o.id}</td>
                         <td style="font-weight:700;max-width:180px;overflow:hidden;text-overflow:ellipsis;">${taxEscH(o.productName||o.productId||'-')}</td>
@@ -6389,12 +6398,17 @@
                         <td>${taxEscH(o.buyer||'')}${o.buyerRealname?` <span style="font-size:10px;color:#94a3b8;">(${taxEscH(o.buyerRealname)})</span>`:''}</td>
                         <td>${taxEscH(o.seller||'')}</td>
                         <td style="text-align:right;font-weight:700;">${taxFmt(o.amount)}</td>
+                        <td style="text-align:right;color:#166534;font-weight:700;">${valid?taxFmt(pay):'-'}</td>
                         <td style="text-align:center;">${aoStatusBadge(o.status)}</td>
                         <td style="font-size:11px;">${trk}</td>
                         <td style="text-align:center;font-size:11px;">${settledTxt}</td>
                     </tr>`;
                 }).join('');
-            }catch(e){ body.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+                if(sumEl){ sumEl.style.display='flex';
+                    const chip=(lbl,val,c)=>'<span style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:'+(c||'#f1f5f9')+';color:#0f172a;">'+lbl+' <b>'+taxFmt(val)+'원</b></span>';
+                    sumEl.innerHTML = chip('총 주문 '+orders.length+'건 · 총 금액', totAmt, '#eff6ff') + chip('총 정산금액(지급액)', totPay, '#f0fdf4') + chip('정산완료 지급액', totSettled, '#ecfeff');
+                }
+            }catch(e){ body.innerHTML=`<tr><td colspan="10" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         window.loadAdminTransactions=async function(){
             const body=document.getElementById('ao-txns-body'); if(!body) return;
@@ -6440,9 +6454,10 @@
                 if(!members.length){ body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#94a3b8;">회원이 없습니다.</td></tr>'; return; }
                 body.innerHTML=members.map(m=>{
                     const idJs = (m.name||'').replace(/'/g,"\\'");
-                    return `<tr>
-                        <td style="font-weight:800;">${taxEscH(m.name||'')}${m.storeCount?` <span style="font-size:10px;color:#2563eb;">상점 ${m.storeCount}</span>`:''}</td>
-                        <td>${taxEscH(m.biz_company||m.realname||'-')}</td>
+                    const bizNm = (m.biz_company||m.realname||'').trim();
+                    return `<tr style="cursor:pointer;" onclick="if(!event.target.closest('button'))openMemberClinics('${idJs}')" title="클릭: 이 회원의 거래처 보기">
+                        <td style="font-weight:800;">${taxEscH(m.name||'')}${bizNm?`<div style="font-size:11px;color:#2563eb;font-weight:700;margin-top:1px;">${taxEscH(bizNm)}</div>`:''}${m.storeCount?` <span style="font-size:10px;color:#94a3b8;font-weight:500;">상점 ${m.storeCount}</span>`:''}</td>
+                        <td>${taxEscH(bizNm||'-')}</td>
                         <td style="font-size:11px;">${taxEscH(amBtypeLabel(m.business_type))}</td>
                         <td style="font-size:11px;">${taxEscH(m.phone||'-')}</td>
                         <td style="font-size:11px;">${taxEscH(m.biz_no||'-')}</td>
@@ -6451,8 +6466,8 @@
                         <td style="text-align:right;color:${(m.sellUnsettled>0)?'#b45309':'#94a3b8'};font-weight:${(m.sellUnsettled>0)?'800':'400'};">${taxFmt(m.sellUnsettled||0)}</td>
                         <td style="text-align:right;color:#475569;">${taxFmt(m.buySpent||0)}</td>
                         <td style="text-align:center;white-space:nowrap;">
+                            <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="openMemberClinics('${idJs}')" title="이 회원의 거래처(가입여부·수정)">거래처</button>
                             <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="viewMemberSales('${idJs}')" title="이 회원의 매출·거래 원장 보기">매출</button>
-                            <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="viewMemberSettlement('${idJs}')" title="이 거래처의 정산 내역 보기">정산</button>
                             <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;color:#dc2626;border-color:#fecaca;" onclick="adminWithdrawMember('${idJs}','${(m.biz_company||m.realname||'').replace(/'/g,"\\'")}')" title="이 회원을 강제 탈퇴시킵니다">탈퇴</button>
                         </td>
                     </tr>`;
@@ -6463,6 +6478,43 @@
         window.viewMemberSales=function(id){ switchTab('admin-orders'); setTimeout(function(){ const oq=document.getElementById('ao-order-q'); const tq=document.getElementById('ao-txn-q'); if(oq) oq.value=id; if(tq) tq.value=id; if(window.loadAdminOrdersList) loadAdminOrdersList(); if(window.loadAdminTransactions) loadAdminTransactions(); }, 60); };
         // 회원 원장 → 정산(그 거래처로 필터)
         window.viewMemberSettlement=function(id){ goSettle(); setTimeout(function(){ const o=document.getElementById('tax-owner'); if(o) o.value=id; if(window.loadSettlement) loadSettlement(); }, 60); };
+        // 🏥 회원 거래처 상세 — 거래처 목록 + 가입여부 + 수정(관리자/본인). 최초=상대 기입정보, 가입 시 자동 갱신.
+        window.openMemberClinics=async function(name){
+            const esc=taxEscH;
+            let ov=document.getElementById('mc-ov'); if(ov) ov.remove();
+            ov=document.createElement('div'); ov.id='mc-ov'; ov.style.cssText='position:fixed;inset:0;z-index:5200;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:720px;width:100%;padding:22px;max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-weight:800;font-size:16px;" id="mc-title">거래처</div><button id="mc-x" style="margin-left:auto;border:0;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div id="mc-body" style="font-size:13px;color:#475569;">불러오는 중…</div></div>';
+            document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); }); ov.querySelector('#mc-x').onclick=()=>ov.remove();
+            const body=ov.querySelector('#mc-body');
+            let data=null; try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(name)}/clinics`); data=await r.json(); if(!r.ok) throw new Error(data.error||'로드 실패'); }catch(e){ body.innerHTML='<div style="color:#dc2626;">'+esc(e.message||'로드 실패')+'</div>'; return; }
+            ov.querySelector('#mc-title').textContent='거래처 · '+((data.member&&data.member.bizName)||name)+' (ID: '+name+')';
+            let rows=(data.clinics||[]).map(c=>Object.assign({},c));
+            const joinChip=j=> j?'<span style="font-size:10px;color:#166534;background:#dcfce7;padding:2px 8px;border-radius:20px;font-weight:700;white-space:nowrap;">가입</span>':'<span style="font-size:10px;color:#9a3412;background:#ffedd5;padding:2px 8px;border-radius:20px;font-weight:700;white-space:nowrap;">미가입</span>';
+            const render=()=>{
+                const joined=rows.filter(c=>c.joined).length;
+                body.innerHTML='<div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.6;">이 회원이 등록한 거래처입니다. 최초엔 <b>상대방이 기입한 정보</b>가 들어오고, 그 거래처가 <b>회원가입하면 실제 정보로 자동 갱신</b>됩니다. 관리자·본인이 직접 수정할 수 있습니다.<br>총 <b>'+rows.length+'</b>곳 · 가입 <b style="color:#166534;">'+joined+'</b> · 미가입 <b style="color:#9a3412;">'+(rows.length-joined)+'</b></div>'
+                    +'<div id="mc-list"></div>'
+                    +'<button id="mc-add" style="margin:2px 0 12px;padding:8px 12px;border:1px dashed #93c5fd;background:#fff;color:#2563eb;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">＋ 거래처 추가</button>'
+                    +'<div style="display:flex;gap:8px;"><button id="mc-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button><button id="mc-save" style="flex:2;padding:11px;border:0;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장</button></div>';
+                const list=body.querySelector('#mc-list');
+                list.innerHTML=rows.length? rows.map((c,i)=>'<div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:8px;border:1px solid #eef2f7;border-radius:10px;padding:8px;background:#fbfdff;">'
+                    +'<div style="flex:1;display:flex;flex-direction:column;gap:5px;">'
+                    +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><input data-i="'+i+'" data-k="name" value="'+esc(c.name||'')+'" placeholder="거래처 이름" style="flex:1;min-width:120px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;"><input data-i="'+i+'" data-k="phone" value="'+esc(c.phone||'')+'" placeholder="전화번호" style="width:130px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">'+joinChip(c.joined)+'</div>'
+                    +'<input data-i="'+i+'" data-k="addr" value="'+esc(c.addr||'')+'" placeholder="주소(선택)" style="padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">'
+                    +(c.matchedUser?'<div style="font-size:11px;color:#166534;">가입 회원: '+esc(c.matchedName||'')+' (ID: '+esc(c.matchedUser)+')</div>':'')
+                    +'</div>'
+                    +'<button data-del="'+i+'" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;flex:none;">✕</button></div>').join('')
+                    : '<div style="padding:14px;text-align:center;color:#94a3b8;">등록된 거래처가 없습니다.</div>';
+                list.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',()=>{ const i=+inp.dataset.i,k=inp.dataset.k; rows[i][k]=inp.value; }));
+                list.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ rows.splice(+b.dataset.del,1); render(); });
+                body.querySelector('#mc-add').onclick=()=>{ rows.push({name:'',phone:'',addr:''}); render(); };
+                body.querySelector('#mc-cancel').onclick=()=>ov.remove();
+                body.querySelector('#mc-save').onclick=async()=>{
+                    try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(name)}/clinics`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics:rows})}); const d=await r.json(); if(!r.ok||!d.success){ showToast(d.error||'저장 실패'); return; } showToast('거래처 '+d.count+'건 저장됨'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
+                };
+            };
+            render();
+        };
         // 👑 회원 강제 탈퇴 — 관리자 전용. 계정/개인데이터 삭제(재무 원장은 보존). 2단계 확인.
         window.adminWithdrawMember=async function(id, label){
             if(!isAdmin){ showToast('Admin 권한이 필요합니다.'); return; }

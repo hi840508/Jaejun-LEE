@@ -1487,6 +1487,7 @@ app.post('/api/auth/register', (req, res) => {
     db.run(`INSERT INTO users (name, password, realname, bank, account, balance, phone, email, shipping_address, business_type, license_no, approval_status, privacy_agreed_at, terms_agreed_at, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, card_pw, partner_clinics) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [name, hashPassword(password), realname, bank, account, 0, phone || '', email || '', shipping_address || '', business_type || 'individual', license_no || null, approvalStatus, privacyAgreedAt, termsAgreedAt, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, cardPw, JSON.stringify(partnerClinics)], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
+        try { _syncClinicsOnRegister(name); } catch (_) {}   // 🏥 다른 회원이 거래처로 적어둔 이 회원의 정보를 실제 가입정보로 업데이트+연결
         res.json({
             name, realname, bank, account,
             phone: phone || '', email: email || '', shipping_address: shipping_address || '',
@@ -4171,6 +4172,89 @@ app.get('/api/admin/members', (req, res) => {
                    (SELECT IFNULL(SUM(o.amount),0) FROM product_orders o WHERE o.buyer=u.name AND o.status='confirmed') buySpent
             FROM users u WHERE ${where} ORDER BY u.name ASC LIMIT 2000`, params,
         (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json({ members: rows || [], adminAccount: _adminAccount() }));
+});
+// 🏥 거래처(partner_clinic) 1건이 '가입한 회원'과 일치하는지 판정 → 일치하는 회원 name 반환(없으면 null).
+//   판정: 연락처>이메일>이름(상점/실명)+주소. _autoFriendFromClinics와 동일 규칙.
+function _clinicMatchedUser(c, users, storeNames, excludeName) {
+    const cPhone = _digits(c && c.phone), cEmail = String((c && c.email) || '').trim().toLowerCase();
+    const cName = _normTxt(c && c.name), cAddr = _normTxt(c && c.addr);
+    for (const u of users) {
+        if (!u.name || u.name === excludeName) continue;
+        if (cPhone.length >= 9 && _digits(u.phone) === cPhone) return u.name;
+        if (cEmail && String(u.email || '').trim().toLowerCase() === cEmail) return u.name;
+        if (cName && cAddr) {
+            const names = (storeNames[u.name] || []).concat([_normTxt(u.realname), _normTxt(u.name), _normTxt(u.biz_company)]).filter(Boolean);
+            const uAddr = _normTxt(u.shipping_address) || _normTxt(u.biz_addr);
+            const nameHit = names.some(n => n && (n === cName || (n.length >= 4 && cName.indexOf(n) >= 0) || (cName.length >= 4 && n.indexOf(cName) >= 0)));
+            const addrHit = uAddr && cAddr && (uAddr.indexOf(cAddr.slice(0, 10)) >= 0 || cAddr.indexOf(uAddr.slice(0, 10)) >= 0);
+            if (nameHit && addrHit) return u.name;
+        }
+    }
+    return null;
+}
+// 🏥 새 회원 가입 시 — 다른 회원들이 '거래처'로 적어둔 정보 중 이 신규 회원과 일치하는 항목을 신규 회원의 실제 가입정보로 업데이트(+연결).
+function _syncClinicsOnRegister(newName) {
+    db.get(`SELECT name, realname, biz_company, phone, shipping_address, biz_addr, email FROM users WHERE name=?`, [newName], (e, nu) => {
+        if (e || !nu) return;
+        const canonName = (nu.biz_company || nu.realname || nu.name || '').trim();
+        const canonAddr = (nu.biz_addr || nu.shipping_address || '').trim();
+        db.all(`SELECT name, partner_clinics FROM users WHERE partner_clinics IS NOT NULL AND partner_clinics!='' AND name!=?`, [newName], (e2, rows) => {
+            (rows || []).forEach(r => {
+                let arr = []; try { arr = JSON.parse(r.partner_clinics) || []; } catch (_) { return; }
+                let changed = false;
+                arr = arr.map(c => {
+                    const mu = _clinicMatchedUser(c, [nu], {}, r.name);
+                    if (mu === nu.name) {
+                        changed = true;
+                        return Object.assign({}, c, { name: canonName || c.name, phone: (nu.phone || c.phone), addr: (canonAddr || c.addr), email: (nu.email || c.email || ''), memberId: nu.name });
+                    }
+                    return c;
+                });
+                if (changed) db.run(`UPDATE users SET partner_clinics=? WHERE name=?`, [JSON.stringify(arr), r.name], () => {});
+            });
+        });
+    });
+}
+// 🏥 [영업관리] 특정 회원의 거래처 목록 + 각 거래처의 '회원 가입 여부'. 관리자 또는 본인만.
+app.get('/api/admin/members/:name/clinics', (req, res) => {
+    const sc = reqAdminOrOwner(req, res); if (!sc) return;
+    const target = String(req.params.name || '').trim();
+    if (!sc.isAdmin && sc.me !== target) return res.status(403).json({ error: '본인 거래처만 조회할 수 있습니다.' });
+    db.get(`SELECT name, IFNULL(business_type,'individual') business_type, biz_company, realname, partner_clinics FROM users WHERE name=?`, [target], (e, row) => {
+        if (e) return res.status(500).json({ error: e.message });
+        if (!row) return res.status(404).json({ error: '회원이 없습니다.' });
+        let clinics = []; try { clinics = JSON.parse(row.partner_clinics || '[]') || []; } catch (_) {}
+        db.all(`SELECT name, realname, phone, email, shipping_address, biz_addr, biz_company FROM users`, [], (e2, users) => {
+            db.all(`SELECT owner, name FROM stores`, [], (e3, stores) => {
+                const storeNames = {}; (stores || []).forEach(st => { if (st.owner) (storeNames[st.owner] = storeNames[st.owner] || []).push(_normTxt(st.name)); });
+                const out = clinics.map(c => {
+                    const mu = c.memberId || _clinicMatchedUser(c, users || [], storeNames, target);
+                    const um = (users || []).find(u => u.name === mu);
+                    return Object.assign({}, c, { matchedUser: mu || '', joined: !!mu, matchedName: um ? (um.biz_company || um.realname || um.name) : '' });
+                });
+                res.json({ member: { name: row.name, business_type: row.business_type, bizName: (row.biz_company || row.realname || row.name) }, clinics: out });
+            });
+        });
+    });
+});
+// 🏥 [영업관리] 회원의 거래처 정보 수정 — 관리자 또는 본인. (상대 거래처 정보/Admin 모두 수정 가능)
+app.post('/api/admin/members/:name/clinics', (req, res) => {
+    const sc = reqAdminOrOwner(req, res); if (!sc) return;
+    const target = String(req.params.name || '').trim();
+    if (!sc.isAdmin && sc.me !== target) return res.status(403).json({ error: '본인 거래처만 수정할 수 있습니다.' });
+    const clinics = (Array.isArray(req.body.clinics) ? req.body.clinics : []).map(c => ({
+        name: String(c.name || '').trim(), phone: String(c.phone || '').trim(), addr: String(c.addr || '').trim(),
+        ceo: String(c.ceo || '').trim(), email: String(c.email || '').trim(), memberId: String(c.memberId || '').trim() || undefined
+    })).filter(c => c.name || c.phone);
+    if (clinics.some(c => c.name && !c.phone)) return res.status(400).json({ error: '거래처 전화번호를 입력해 주세요.' });
+    db.get(`SELECT name FROM users WHERE name=?`, [target], (e, row) => {
+        if (e) return res.status(500).json({ error: e.message });
+        if (!row) return res.status(404).json({ error: '회원이 없습니다.' });
+        db.run(`UPDATE users SET partner_clinics=? WHERE name=?`, [clinics.length ? JSON.stringify(clinics) : null, target], (ue) => {
+            if (ue) return res.status(500).json({ error: ue.message });
+            res.json({ success: true, count: clinics.length });
+        });
+    });
 });
 // 🧾 공급자(플랫폼) 정보 서버 영속화 — 항상 마지막 입력값 자동 저장(settings.tax_supplier JSON). 프런트 localStorage와 병행.
 app.get('/api/tax/supplier', (req, res) => {
