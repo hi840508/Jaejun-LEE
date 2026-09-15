@@ -1452,7 +1452,7 @@
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                         <div>
                             <h3 style="font-size:18px; color:#1a1a1a; font-weight:900; margin-bottom:4px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg> 구매 목록</h3>
-                            <div style="font-size:12px; color:#707070;">결제한 상품을 다시 열람 · 추가 주문 · 판매자 채팅으로 연결합니다.</div>
+                            <div style="font-size:12px; color:#707070;">결제한 상품을 다시 열람 · 추가 주문 · 대화방 열기로 연결합니다.</div>
                         </div>
                         <div id="my-purchases-summary" style="text-align:right; font-size:12px; color:#475569; white-space:nowrap;">
                             <div>총 지출 <b id="mp-sum-count" style="color:#1a1a1a;">0</b>건</div>
@@ -1465,8 +1465,12 @@
                 <div id="my-pending-orders-wrap" style="display:none;"></div>
                 <div class="panel" style="padding:0; overflow:hidden;">
                     <div style="padding:10px 14px; background:#f8fafc; border-bottom:1px solid var(--border-color); display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                        <input type="text" id="my-purchases-search" list="expense-targets" placeholder="상품명 / 판매자 / 거래 대상 검색..." style="flex:1; min-width:200px; padding:8px 12px; border-radius:6px; border:1px solid var(--border-color); outline:none;" oninput="filterMyPurchases()">
+                        <input type="text" id="my-purchases-search" list="expense-targets" placeholder="상품명 / 판매자 / 거래 대상 검색..." style="flex:1; min-width:180px; padding:8px 12px; border-radius:6px; border:1px solid var(--border-color); outline:none;" oninput="filterMyPurchases()">
                         <datalist id="expense-targets"></datalist>
+                        <select id="my-purchases-store" title="상점(판매자)별" style="padding:8px 12px; border-radius:6px; border:1px solid var(--border-color);" onchange="filterMyPurchases()"><option value="">전체 상점</option></select>
+                        <input type="date" id="my-purchases-from" title="시작일" style="padding:7px 8px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;" onchange="filterMyPurchases()">
+                        <span style="color:#94a3b8;">~</span>
+                        <input type="date" id="my-purchases-to" title="종료일" style="padding:7px 8px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;" onchange="filterMyPurchases()">
                         <select id="my-purchases-filter" style="padding:8px 12px; border-radius:6px; border:1px solid var(--border-color);" onchange="filterMyPurchases()">
                             <option value="all">전체</option>
                             <option value="package">패키지만</option>
@@ -1474,6 +1478,7 @@
                             <option value="refundable">환불 가능</option>
                             <option value="refunded">환불 완료</option>
                         </select>
+                        <button class="btn btn-outline" style="padding:8px 14px; font-size:12px; font-weight:800;" onclick="openRxCollection()" title="필터된 의뢰서를 한 번에 모아보기·인쇄">📋 의뢰서 모아보기</button>
                     </div>
                     <div id="my-purchases-list" style="min-height:200px;">
                         <div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">구매 내역 로딩 중...</div>
@@ -1819,8 +1824,8 @@
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;white-space:nowrap;">
-                            <thead><tr><th>회원(ID)</th><th>상점명/상호</th><th>유형</th><th>연락처</th><th>사업자번호</th><th style="text-align:center;">승인</th><th style="text-align:right;">판매매출</th><th style="text-align:right;">미정산</th><th style="text-align:right;">구매액</th><th style="text-align:center;">영업 관리</th></tr></thead>
-                            <tbody id="am-body"><tr><td colspan="10" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 회원을 불러오세요.</td></tr></tbody>
+                            <thead><tr><th>회원(ID)</th><th>상점명/상호</th><th>대표자</th><th>유형</th><th>연락처</th><th>이메일</th><th>사업자번호</th><th>가입일</th><th style="text-align:center;">승인</th><th style="text-align:right;">판매매출</th><th style="text-align:right;">미정산</th><th style="text-align:right;">구매액</th><th style="text-align:right;">잔액</th><th style="text-align:center;">영업 관리</th></tr></thead>
+                            <tbody id="am-body"><tr><td colspan="14" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 회원을 불러오세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -6375,7 +6380,7 @@
             const body=document.getElementById('ao-orders-body'); if(!body) return;
             const status=(document.getElementById('ao-order-status')||{}).value||'';
             const q=(document.getElementById('ao-order-q')||{}).value||'';
-            body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            body.innerHTML='<tr><td colspan="14" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             // 💰 정산금액(지급액) = 금액 − 수수료(2.7%) − 그 VAT(10%). 원단위 버림.
             const _payout=(amt)=>{ amt=Number(amt)||0; if(amt<=0) return 0; const fee=Math.floor(amt*0.027); const vat=Math.floor(fee*0.1); return amt-fee-vat; };
             const _revStatus={ refunded:1, rejected:1, cancelled:1 };   // 매출·정산 제외 상태
@@ -6408,7 +6413,7 @@
                     const chip=(lbl,val,c)=>'<span style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:'+(c||'#f1f5f9')+';color:#0f172a;">'+lbl+' <b>'+taxFmt(val)+'원</b></span>';
                     sumEl.innerHTML = chip('총 주문 '+orders.length+'건 · 총 금액', totAmt, '#eff6ff') + chip('총 정산금액(지급액)', totPay, '#f0fdf4') + chip('정산완료 지급액', totSettled, '#ecfeff');
                 }
-            }catch(e){ body.innerHTML=`<tr><td colspan="10" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+            }catch(e){ body.innerHTML=`<tr><td colspan="14" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         window.loadAdminTransactions=async function(){
             const body=document.getElementById('ao-txns-body'); if(!body) return;
@@ -6451,20 +6456,24 @@
                 const d=await fetch(`${API_URL}/api/admin/members?q=${encodeURIComponent(q)}&business_type=${encodeURIComponent(btype)}&approval=${encodeURIComponent(approval)}`).then(r=>r.json());
                 const members=d.members||[];
                 const badge=document.getElementById('am-count-badge'); if(badge) badge.textContent='회원 '+members.length+'명';
-                if(!members.length){ body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#94a3b8;">회원이 없습니다.</td></tr>'; return; }
+                if(!members.length){ body.innerHTML='<tr><td colspan="14" style="text-align:center;padding:16px;color:#94a3b8;">회원이 없습니다.</td></tr>'; return; }
                 body.innerHTML=members.map(m=>{
                     const idJs = (m.name||'').replace(/'/g,"\\'");
                     const bizNm = (m.biz_company||m.realname||'').trim();
                     return `<tr style="cursor:pointer;" onclick="if(!event.target.closest('button'))openMemberClinics('${idJs}')" title="클릭: 이 회원의 거래처 보기">
                         <td style="font-weight:800;">${taxEscH(m.name||'')}${bizNm?`<div style="font-size:11px;color:#2563eb;font-weight:700;margin-top:1px;">${taxEscH(bizNm)}</div>`:''}${m.storeNames?`<div style="font-size:10px;color:#0e7490;font-weight:600;margin-top:1px;">🏪 ${taxEscH(m.storeNames)}</div>`:''}</td>
                         <td style="font-size:12px;">${m.storeNames?taxEscH(m.storeNames):(bizNm?taxEscH(bizNm):'-')}</td>
+                        <td style="font-size:11px;">${taxEscH(m.biz_ceo||'-')}</td>
                         <td style="font-size:11px;">${taxEscH(amBtypeLabel(m.business_type))}</td>
                         <td style="font-size:11px;">${taxEscH(m.phone||'-')}</td>
+                        <td style="font-size:11px;word-break:break-all;">${taxEscH(m.email||'-')}</td>
                         <td style="font-size:11px;">${taxEscH(m.biz_no||'-')}</td>
+                        <td style="font-size:11px;white-space:nowrap;">${taxEscH(((m.terms_agreed_at||m.privacy_agreed_at||'')+'').slice(0,10)||'-')}</td>
                         <td style="text-align:center;">${amApprovalBadge(m.approval_status)}</td>
                         <td style="text-align:right;font-weight:700;">${taxFmt(m.sellSales||0)}</td>
                         <td style="text-align:right;color:${(m.sellUnsettled>0)?'#b45309':'#94a3b8'};font-weight:${(m.sellUnsettled>0)?'800':'400'};">${taxFmt(m.sellUnsettled||0)}</td>
                         <td style="text-align:right;color:#475569;">${taxFmt(m.buySpent||0)}</td>
+                        <td style="text-align:right;color:#0f766e;font-weight:700;">${taxFmt(m.balance||0)}</td>
                         <td style="text-align:center;white-space:nowrap;">
                             <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="openMemberClinics('${idJs}')" title="이 회원의 거래처(가입여부·수정)">거래처</button>
                             <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="viewMemberSales('${idJs}')" title="이 회원의 매출·거래 원장 보기">매출</button>
@@ -8776,6 +8785,35 @@
                 // 💬 미리보기 위로 마젠타 채팅버튼을 올려 클릭 가능하게(닫으면 복원)
                 try{ var _fmb=document.querySelector('.floating-messenger-btn'); if(_fmb) _fmb.style.zIndex='100001'; }catch(_){}
             } catch(e){ showToast('의뢰서 로드 실패'); console.error(e); }
+        };
+
+        // 📋 의뢰서 모아보기 — 현재 필터에 보이는 주문들의 의뢰서를 한 화면에 모아 표시 + 전체 인쇄/PDF
+        window._rxcClean=function(h, amt){ h=String(h||''); h=h.replace(/(간편|상세)\s*기공\s*의뢰서/g,'기공 의뢰서'); if(Number(amt)>0) h=h.replace(/금액 미정 \(기공소 확정 예정\)/g,'최종 확정 금액: '+Number(amt).toLocaleString()+'원'); try{ h=h.replace(/<a[^>]*id=["']fabChatBtn["'][\s\S]*?<\/a>/gi,'').replace(/<script>[^<]*getElementById\(["']fabChatBtn["']\)[\s\S]*?<\/script>/gi,'').replace(/<style>@media print\{#fabChatBtn[\s\S]*?<\/style>/gi,''); }catch(_){} return h; };
+        window.openRxCollection = async function(){
+            const cards=Array.from(document.querySelectorAll('.my-purchase-card')).filter(c=>c.style.display!=='none' && c.getAttribute('data-order'));
+            const orderIds=Array.from(new Set(cards.map(c=>c.getAttribute('data-order')).filter(Boolean)));
+            if(!orderIds.length){ showToast('표시된 의뢰서가 없습니다. 필터를 확인하세요.'); return; }
+            let ov=document.getElementById('rxc-ov'); if(ov) ov.remove();
+            ov=document.createElement('div'); ov.id='rxc-ov'; ov.style.cssText='position:fixed;inset:0;z-index:100000;background:#eef2f7;display:flex;flex-direction:column;';
+            ov.innerHTML='<div style="background:#fff;display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid #e2e8f0;flex:none;"><b style="font-size:15px;color:#1e293b;">📋 의뢰서 모아보기 <span style="color:#64748b;font-weight:500;">('+orderIds.length+'건)</span></b><button id="rxc-print" style="margin-left:auto;padding:8px 16px;background:#2563eb;color:#fff;border:0;border-radius:8px;font-weight:800;cursor:pointer;">🖨 전체 인쇄 / PDF</button><button id="rxc-x" style="padding:8px 14px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;">닫기 ✕</button></div><div id="rxc-body" style="flex:1;overflow:auto;padding:16px;"><div id="rxc-stat" style="text-align:center;color:#64748b;padding:30px;">의뢰서 불러오는 중… (0/'+orderIds.length+')</div></div>';
+            document.body.appendChild(ov);
+            ov.querySelector('#rxc-x').onclick=()=>ov.remove();
+            const bodyEl=ov.querySelector('#rxc-body'); const stat=ov.querySelector('#rxc-stat');
+            window.__rxcHtmls=[];
+            for(let i=0;i<orderIds.length;i++){
+                try{ const r=await fetch(`${API_URL}/api/order/${encodeURIComponent(orderIds[i])}`); const o=await r.json(); if(o&&o.bundle_html) window.__rxcHtmls.push(window._rxcClean(o.bundle_html,o.amount)); }catch(_){}
+                if(stat) stat.textContent='의뢰서 불러오는 중… ('+(i+1)+'/'+orderIds.length+')';
+            }
+            if(!window.__rxcHtmls.length){ bodyEl.innerHTML='<div style="text-align:center;color:#94a3b8;padding:30px;">불러올 의뢰서가 없습니다.</div>'; return; }
+            bodyEl.innerHTML=window.__rxcHtmls.map((_,i)=>'<div style="background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.08);margin:0 auto 18px;max-width:860px;overflow:hidden;"><div style="font-size:12px;font-weight:800;color:#475569;padding:8px 14px;border-bottom:1px solid #eef2f7;background:#f8fafc;">의뢰서 '+(i+1)+' / '+window.__rxcHtmls.length+'</div><iframe class="rxc-frame" data-i="'+i+'" sandbox="allow-scripts allow-same-origin allow-modals allow-popups" style="border:0;width:100%;height:1000px;background:#fff;"></iframe></div>').join('');
+            bodyEl.querySelectorAll('.rxc-frame').forEach(f=>{ const i=+f.dataset.i; try{ f.srcdoc=window.__rxcHtmls[i]; }catch(_){} });
+            ov.querySelector('#rxc-print').onclick=()=>window._rxcPrint();
+        };
+        window._rxcPrint=function(){
+            const htmls=window.__rxcHtmls||[]; if(!htmls.length){ showToast('인쇄할 의뢰서가 없습니다.'); return; }
+            const w=window.open('','_blank'); if(!w){ showToast('팝업이 차단되어 인쇄할 수 없습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+            const doc='<!DOCTYPE html><html><head><meta charset="utf-8"><title>의뢰서 모음 ('+htmls.length+'건)</title><style>@media print{.rxc-pg{page-break-after:always;}}.rxc-pg iframe{border:0;width:100%;height:1050px;}</style></head><body style="margin:0;">'+htmls.map((_,i)=>'<div class="rxc-pg"><iframe id="pf'+i+'"></iframe></div>').join('')+'<scr'+'ipt>var H='+JSON.stringify(htmls)+';H.forEach(function(h,i){var f=document.getElementById("pf"+i);if(f){try{f.srcdoc=h;}catch(e){}}});setTimeout(function(){try{window.focus();window.print();}catch(e){}},1400);</scr'+'ipt></body></html>';
+            w.document.write(doc); w.document.close();
         };
 
         // 🚀 주문 HTML 다운로드 (서버에 저장된 bundle_html을 가져와서 새 창으로)
@@ -11185,7 +11223,7 @@ pdfjsScript,
                     '<h1>🌍 Alpha K Bundle</h1>',
                     '<div class="sub">' + target.length + '개 상품 · 자체완결 뷰어</div>',
                     '<div class="creator-pill">' + (creatorPic ? '<img src="' + creatorPic + '">' : '<span></span>') + '<span>판매자: <b>' + creatorSafe + '</b></span></div>',
-                    '<div><a href="#" class="chat-btn" id="topChatBtn">판매자와 채팅하기</a></div>',
+                    '<div><a href="#" class="chat-btn" id="topChatBtn">대화방 열기</a></div>',
                     '</div>',
                     '<div class="container" id="productsContainer"></div>',
                     '<div class="footer-chat"><a href="#" class="footer-chat-btn" id="bottomChatBtn">' + creatorSafe + ' 님과 채팅</a></div>',
@@ -12788,7 +12826,7 @@ pdfjsScript,
                 '<div class="header">',
                 '<div><h1>' + headerTitle + '</h1><div class="sub">' + esc(timestamp) + (storeName ? ' · ' + esc(storeName) : '') + '</div></div>',
                 '<div class="header-actions">',
-                sellerChatLink && mode !== 'order' ? `<a href="${sellerChatLink}" target="_blank" class="header-btn primary">판매자 채팅</a>` : '',
+                sellerChatLink && mode !== 'order' ? `<a href="${sellerChatLink}" target="_blank" class="header-btn primary">대화방 열기</a>` : '',
                 '</div>',
                 '</div>',
                 '<div class="wrap">',
@@ -14915,7 +14953,7 @@ pdfjsScript,
                 const date = p.date || '';
                 const canRefund = !p.refunded && p.refundStatus !== 'pending' && p.purchaseType !== 'refund';
 
-                h += `<div class="my-purchase-card" data-name="${escName.toLowerCase()}" data-seller="${escSeller.toLowerCase()}" data-pkg="${p.is_package?1:0}" data-refunded="${p.refunded?1:0}" data-refundable="${canRefund?1:0}" style="display:flex; gap:14px; padding:14px 16px; border-bottom:1px solid #f1f5f9; align-items:flex-start;">
+                h += `<div class="my-purchase-card" data-name="${escName.toLowerCase()}" data-seller="${escSeller.toLowerCase()}" data-sellerid="${(p.seller||'').replace(/"/g,'&quot;')}" data-order="${p.orderId||''}" data-date="${(p.rawDate||p.date||'').toString().slice(0,10)}" data-pkg="${p.is_package?1:0}" data-refunded="${p.refunded?1:0}" data-refundable="${canRefund?1:0}" style="display:flex; gap:14px; padding:14px 16px; border-bottom:1px solid #f1f5f9; align-items:flex-start;">
                     <div style="width:80px; height:80px; flex-shrink:0; background:#f1f5f9; border-radius:10px; overflow:hidden; border:1px solid #e2e8f0; cursor:pointer;" onclick="window.openUniversalViewer && window.openUniversalViewer('${p.productId}', ${p.purchaseType==='original'?'true':'false'})">
                         <img src="${thumb}" style="width:100%; height:100%; object-fit:cover;">
                     </div>
@@ -14942,12 +14980,12 @@ pdfjsScript,
                             return `<div style="margin-bottom:8px;">${line}</div>`;
                         })()}
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                            ${p.orderId ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openRxPreview('${p.orderId}')">미리보기</button>` : `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openUniversalViewer && window.openUniversalViewer('${p.productId}', true)">미리보기</button>`}
+                            ${p.orderId ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openRxPreview('${p.orderId}')">📋 의뢰서</button>` : `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openUniversalViewer && window.openUniversalViewer('${p.productId}', true)">미리보기</button>`}
                             ${hasPdf ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.openPackagePdf('${p.productId}')">주문서 PDF 보기</button>` : ''}
                             ${p.is_package ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.placeAdditionalOrder('${p.productId}')">추가 주문 / 재주문</button>` : ''}
                             ${['confirmed','settled','rejected','cancelled','refunded'].includes(p.orderStatus) ? '' : (p.orderId
-                                ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="openMessengerChat('${escSeller.replace(/'/g, "\\'")}','room_ord_${p.orderId}')">판매자 채팅</button>`
-                                : `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.contactSellerFromPurchase('${escSeller.replace(/'/g, "\\'")}')">판매자 채팅</button>`)}
+                                ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="openMessengerChat('${escSeller.replace(/'/g, "\\'")}','room_ord_${p.orderId}')">대화방 열기</button>`
+                                : `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.contactSellerFromPurchase('${escSeller.replace(/'/g, "\\'")}')">대화방 열기</button>`)}
                             ${(p.orderId && ['approved','shipping','delivered'].includes(p.orderStatus)) ? `<button class="btn btn-success" style="padding:6px 12px; font-size:11px;" onclick="window.confirmPurchaseOrder('${p.orderId}')">구매확정</button>` : ''}
                             ${(p.orderId && ['approved','shipping','delivered'].includes(p.orderStatus))
                                 ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px; color:#ea580c; border-color:#ea580c;" onclick="window.requestOrderRefund('${p.orderId}')">환불 요청</button>`
@@ -14957,19 +14995,35 @@ pdfjsScript,
                 </div>`;
             });
             list.innerHTML = h;
+            // 🏪 상점(판매자) 필터 옵션 채우기 — 이번 목록의 고유 판매자
+            try{
+                const sel=document.getElementById('my-purchases-store'); if(sel){ const prev=sel.value;
+                    const sellers=Array.from(new Set(Array.from(list.querySelectorAll('.my-purchase-card')).map(c=>c.getAttribute('data-sellerid')||'').filter(Boolean))).sort();
+                    sel.innerHTML='<option value="">전체 상점</option>'+sellers.map(s=>'<option value="'+s.replace(/"/g,'&quot;')+'">'+(s.replace(/</g,'&lt;'))+'</option>').join('');
+                    if(sellers.indexOf(prev)>=0) sel.value=prev;
+                }
+            }catch(_){}
         }
 
         window.filterMyPurchases = function() {
             const q = (document.getElementById('my-purchases-search').value || '').toLowerCase().trim();
             const filter = document.getElementById('my-purchases-filter').value;
+            const store = (document.getElementById('my-purchases-store')||{}).value || '';
+            const from = (document.getElementById('my-purchases-from')||{}).value || '';
+            const to = (document.getElementById('my-purchases-to')||{}).value || '';
             const cards = document.querySelectorAll('.my-purchase-card');
             cards.forEach(c => {
                 const name = c.getAttribute('data-name') || '';
                 const seller = c.getAttribute('data-seller') || '';
+                const sellerId = c.getAttribute('data-sellerid') || '';
+                const cdate = (c.getAttribute('data-date')||'').slice(0,10);
                 const isPkg = c.getAttribute('data-pkg') === '1';
                 const isRefunded = c.getAttribute('data-refunded') === '1';
                 const isRefundable = c.getAttribute('data-refundable') === '1';
                 let show = !q || name.includes(q) || seller.includes(q);
+                if(store && sellerId !== store) show = false;
+                if(from && cdate && cdate < from) show = false;
+                if(to && cdate && cdate > to) show = false;
                 if(filter === 'package' && !isPkg) show = false;
                 if(filter === 'single' && isPkg) show = false;
                 if(filter === 'refunded' && !isRefunded) show = false;
