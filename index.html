@@ -1476,7 +1476,7 @@
                             <option value="refundable">환불 가능</option>
                             <option value="refunded">환불 완료</option>
                         </select>
-                        <button class="btn btn-outline" style="padding:8px 14px; font-size:12px; font-weight:800;" onclick="openRxCollection()" title="필터된 의뢰서를 한 번에 모아보기·인쇄">📋 의뢰서 모아보기</button>
+                        <button class="btn btn-outline" style="padding:8px 14px; font-size:12px; font-weight:800;" onclick="openRxCollection()" title="필터된 의뢰서를 목록으로 보기·인쇄">📋 의뢰서 목록</button>
                     </div>
                     <div id="my-purchases-list" style="min-height:200px;">
                         <div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">구매 내역 로딩 중...</div>
@@ -8777,24 +8777,68 @@
 
         // 📋 의뢰서 모아보기 — 현재 필터에 보이는 주문들의 의뢰서를 한 화면에 모아 표시 + 전체 인쇄/PDF
         window._rxcClean=function(h, amt){ h=String(h||''); h=h.replace(/(간편|상세)\s*기공\s*의뢰서/g,'기공 의뢰서'); if(Number(amt)>0) h=h.replace(/금액 미정 \(기공소 확정 예정\)/g,'최종 확정 금액: '+Number(amt).toLocaleString()+'원'); try{ h=h.replace(/<a[^>]*id=["']fabChatBtn["'][\s\S]*?<\/a>/gi,'').replace(/<script>[^<]*getElementById\(["']fabChatBtn["']\)[\s\S]*?<\/script>/gi,'').replace(/<style>@media print\{#fabChatBtn[\s\S]*?<\/style>/gi,''); }catch(_){} return h; };
+        // 의뢰서 상태 라벨(오랄핏식)
+        window.__rxStatus={ pending:{t:'승인 대기',c:'#92400e'}, approved:{t:'제작 준비',c:'#1e40af'}, shipping:{t:'배송중',c:'#1d4ed8'}, delivered:{t:'도착 완료',c:'#c2410c'}, confirmed:{t:'구매확정',c:'#166534'}, settled:{t:'정산완료',c:'#166534'}, refund_requested:{t:'환불요청',c:'#9a3412'}, refunded:{t:'환불됨',c:'#991b1b'}, rejected:{t:'거절됨',c:'#991b1b'}, cancelled:{t:'취소됨',c:'#64748b'} };
+        // 의뢰서 목록 카드 1건 렌더(오랄핏 양식 참고: 헤더=기공소·원장·환자·접수/완성·차트·주문번호·상태 / 본문=보철·치식·재질·쉐이드 / 가격 / 상세)
+        window._rxListCard=function(o){
+            const esc=taxEscH; let fd={}, bi={}; try{ fd=JSON.parse(o.form_data||'{}')||{}; }catch(_){} try{ bi=JSON.parse(o.buyer_info||'{}')||{}; }catch(_){}
+            const rx=(fd&&fd.rxDetail)||{};
+            const st=(o.settled&&(o.status==='confirmed'||o.status==='settled'))?'settled':o.status; const sm=window.__rxStatus[st]||{t:st||'-',c:'#64748b'};
+            const dt=(s)=>{ if(!s) return '-'; try{ return new Date(s).toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'}); }catch(_){ return String(s).slice(0,10); } };
+            const recv=o.created_at||''; const done=o.confirmed_at||o.delivered_at||'';
+            const gong=esc(o.seller||'-'); const wonjang=esc(bi.name||o.buyer||'-'); const patient=esc(bi.patient||fd.patient||'-'); const chart=esc(bi.chart||fd.chart||bi.chartNo||'-');
+            const price=Number(o.amount||0);
+            const _v=(x)=> (x&&String(x).trim())?esc(x):'-';
+            const detailRows=[['치식',rx.teeth],['보철 종류',rx.prosthesis],['재질',rx.material],['쉐이드',rx.shade],['교합(대합치)',rx.occlusion],['마진',rx.margin],['보험 여부',rx.insurance]]
+                .map(([k,v])=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid #f1f5f9;"><span style="color:#2563eb;font-weight:700;">'+k+'</span><span style="color:#0f172a;font-weight:600;text-align:right;">'+_v(v)+'</span></div>').join('');
+            return '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.06);margin:0 auto 16px;max-width:1000px;overflow:hidden;border:1px solid #e8eef5;">'
+                // 헤더
+                +'<div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #eef2f7;background:#f8fbff;">'
+                +  '<div style="min-width:280px;">'
+                +    '<div style="font-weight:800;font-size:15px;color:#0f172a;">✅ '+gong+'</div>'
+                +    '<div style="display:grid;grid-template-columns:auto auto;gap:2px 18px;font-size:11.5px;color:#475569;margin-top:6px;">'
+                +      '<span>담당 원장/거래처 : <b>'+wonjang+'</b></span><span>접수/완성일 : <b>'+dt(recv)+' / '+dt(done)+'</b></span>'
+                +      '<span>환자명 : <b>'+patient+'</b></span><span>차트번호 : <b>'+chart+'</b></span>'
+                +      '<span>주문번호 : <b>'+esc(o.id||'')+'</b></span><span>상품 : <b>'+esc(o.productName||'-')+'</b></span>'
+                +    '</div>'
+                +  '</div>'
+                +  '<div style="text-align:right;min-width:120px;"><div style="font-weight:800;font-size:14px;color:'+sm.c+';">'+esc(sm.t)+'</div><div style="font-size:11px;color:#94a3b8;margin-top:2px;">'+dt(o.created_at)+'</div></div>'
+                +'</div>'
+                // 본문 (보철/치식/재질 + 가격) + 상세
+                +'<div style="display:flex;flex-wrap:wrap;gap:14px;padding:14px 16px;">'
+                +  '<div style="flex:1;min-width:280px;border:2px solid #dbeafe;border-radius:10px;padding:12px 14px;">'
+                +    '<div style="font-weight:800;font-size:14px;color:#0f172a;">'+_v(rx.prosthesis||'제작')+(rx.teeth?' · 치식 '+esc(rx.teeth):'')+'</div>'
+                +    '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">'+(rx.material?'<span style="background:#fef9c3;color:#854d0e;padding:3px 10px;border-radius:16px;font-size:12px;font-weight:800;">'+esc(rx.material)+'</span>':'')+(rx.shade?'<span style="background:#e0f2fe;color:#075985;padding:3px 10px;border-radius:16px;font-size:12px;font-weight:800;">쉐이드 '+esc(rx.shade)+'</span>':'')+(rx.insurance?'<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:16px;font-size:12px;font-weight:800;">'+esc(rx.insurance)+'</span>':'')+'</div>'
+                +    '<div style="margin-top:12px;text-align:right;"><span style="color:#2563eb;font-weight:800;">품목 가격</span> <b style="font-size:18px;color:#0f172a;">'+(price?price.toLocaleString():((st==='pending')?'미정':'0'))+'</b><span style="color:#64748b;"> 원</span></div>'
+                +  '</div>'
+                +  '<div style="width:280px;max-width:100%;background:#f8fbff;border:1px solid #e0eaf5;border-radius:10px;padding:12px 14px;"><div style="font-weight:800;color:#0f172a;margin-bottom:4px;">품목 상세 정보</div>'+detailRows+'</div>'
+                +'</div>'
+                // 버튼
+                +'<div style="display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px;">'
+                +  '<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="openRxPreview(\''+esc(o.id)+'\')">📄 상세·인쇄</button>'
+                +  (o.orderId||o.id?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="openMessengerChat(\''+String(o.seller||'').replace(/'/g,"\\'")+'\',\'room_ord_'+esc(o.id)+'\')">💬 대화방 열기</button>':'')
+                +'</div>'
+                +'</div>';
+        };
         window.openRxCollection = async function(){
             const cards=Array.from(document.querySelectorAll('.my-purchase-card')).filter(c=>c.style.display!=='none' && c.getAttribute('data-order'));
             const orderIds=Array.from(new Set(cards.map(c=>c.getAttribute('data-order')).filter(Boolean)));
             if(!orderIds.length){ showToast('표시된 의뢰서가 없습니다. 필터를 확인하세요.'); return; }
             let ov=document.getElementById('rxc-ov'); if(ov) ov.remove();
             ov=document.createElement('div'); ov.id='rxc-ov'; ov.style.cssText='position:fixed;inset:0;z-index:100000;background:#eef2f7;display:flex;flex-direction:column;';
-            ov.innerHTML='<div style="background:#fff;display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid #e2e8f0;flex:none;"><b style="font-size:15px;color:#1e293b;">📋 의뢰서 모아보기 <span style="color:#64748b;font-weight:500;">('+orderIds.length+'건)</span></b><button id="rxc-print" style="margin-left:auto;padding:8px 16px;background:#2563eb;color:#fff;border:0;border-radius:8px;font-weight:800;cursor:pointer;">🖨 전체 인쇄 / PDF</button><button id="rxc-x" style="padding:8px 14px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;">닫기 ✕</button></div><div id="rxc-body" style="flex:1;overflow:auto;padding:16px;"><div id="rxc-stat" style="text-align:center;color:#64748b;padding:30px;">의뢰서 불러오는 중… (0/'+orderIds.length+')</div></div>';
+            ov.innerHTML='<div style="background:#fff;display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid #e2e8f0;flex:none;"><b style="font-size:16px;color:#2563eb;">📋 의뢰서 목록</b><span style="color:#64748b;font-size:12px;">검색 결과 '+orderIds.length+'건</span><span style="margin-left:14px;color:#94a3b8;font-size:12px;">품목을 확인하려면 [상세·인쇄]를 누르세요.</span><button id="rxc-print" style="margin-left:auto;padding:8px 16px;background:#2563eb;color:#fff;border:0;border-radius:8px;font-weight:800;cursor:pointer;">🖨 전체 인쇄 / PDF</button><button id="rxc-x" style="padding:8px 14px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;">닫기 ✕</button></div><div id="rxc-body" style="flex:1;overflow:auto;padding:16px;"><div id="rxc-stat" style="text-align:center;color:#64748b;padding:30px;">의뢰서 불러오는 중… (0/'+orderIds.length+')</div></div>';
             document.body.appendChild(ov);
             ov.querySelector('#rxc-x').onclick=()=>ov.remove();
             const bodyEl=ov.querySelector('#rxc-body'); const stat=ov.querySelector('#rxc-stat');
-            window.__rxcHtmls=[];
+            window.__rxcHtmls=[]; const orders=[];
             for(let i=0;i<orderIds.length;i++){
-                try{ const r=await fetch(`${API_URL}/api/order/${encodeURIComponent(orderIds[i])}`); const o=await r.json(); if(o&&o.bundle_html) window.__rxcHtmls.push(window._rxcClean(o.bundle_html,o.amount)); }catch(_){}
+                try{ const r=await fetch(`${API_URL}/api/order/${encodeURIComponent(orderIds[i])}`); const o=await r.json(); if(o&&o.id){ orders.push(o); if(o.bundle_html) window.__rxcHtmls.push(window._rxcClean(o.bundle_html,o.amount)); } }catch(_){}
                 if(stat) stat.textContent='의뢰서 불러오는 중… ('+(i+1)+'/'+orderIds.length+')';
             }
-            if(!window.__rxcHtmls.length){ bodyEl.innerHTML='<div style="text-align:center;color:#94a3b8;padding:30px;">불러올 의뢰서가 없습니다.</div>'; return; }
-            bodyEl.innerHTML=window.__rxcHtmls.map((_,i)=>'<div style="background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.08);margin:0 auto 18px;max-width:860px;overflow:hidden;"><div style="font-size:12px;font-weight:800;color:#475569;padding:8px 14px;border-bottom:1px solid #eef2f7;background:#f8fafc;">의뢰서 '+(i+1)+' / '+window.__rxcHtmls.length+'</div><iframe class="rxc-frame" data-i="'+i+'" sandbox="allow-scripts allow-same-origin allow-modals allow-popups" style="border:0;width:100%;height:1000px;background:#fff;"></iframe></div>').join('');
-            bodyEl.querySelectorAll('.rxc-frame').forEach(f=>{ const i=+f.dataset.i; try{ f.srcdoc=window.__rxcHtmls[i]; }catch(_){} });
+            if(!orders.length){ bodyEl.innerHTML='<div style="text-align:center;color:#94a3b8;padding:30px;">불러올 의뢰서가 없습니다.</div>'; return; }
+            // 최신순 정렬
+            orders.sort((a,b)=>(b.id||0)-(a.id||0));
+            bodyEl.innerHTML=orders.map(o=>window._rxListCard(o)).join('');
             ov.querySelector('#rxc-print').onclick=()=>window._rxcPrint();
         };
         window._rxcPrint=function(){
@@ -12154,10 +12198,12 @@ pdfjsScript,
             const cu = currentUser || {};
             const buyerInfoBox = `
                 <div style="background:#fff7ed; border:1px solid #fdba74; padding:12px 14px; border-radius:8px; margin-bottom:14px;">
-                    <div style="font-size:12px; font-weight:bold; color:#7c2d12; margin-bottom:8px;">📇 구매자 정보 (판매자에게 자동 전달)</div>
+                    <div style="font-size:12px; font-weight:bold; color:#7c2d12; margin-bottom:8px;">📇 의뢰 정보 (판매자에게 자동 전달)</div>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                        <div><label style="font-size:11px; color:var(--text-sub);">이름</label><input id="order-buyer-name" type="text" value="${(cu.realname||cu.name||'').replace(/"/g,'&quot;')}" style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"></div>
+                        <div><label style="font-size:11px; color:var(--text-sub);">담당 원장/의뢰자</label><input id="order-buyer-name" type="text" value="${(cu.realname||cu.name||'').replace(/"/g,'&quot;')}" style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"></div>
                         <div><label style="font-size:11px; color:var(--text-sub);">전화번호</label><input id="order-buyer-phone" type="tel" value="${(cu.phone||'').replace(/"/g,'&quot;')}" placeholder="연락처" style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"></div>
+                        <div><label style="font-size:11px; color:var(--text-sub);">환자명</label><input id="order-buyer-patient" type="text" placeholder="환자 이름" style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"></div>
+                        <div><label style="font-size:11px; color:var(--text-sub);">차트번호</label><input id="order-buyer-chart" type="text" placeholder="차트 번호" style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"></div>
                         <div style="grid-column:1/-1;"><label style="font-size:11px; color:var(--text-sub);">배송지/주소</label><input id="order-buyer-address" type="text" value="${(cu.shipping_address||'').replace(/"/g,'&quot;')}" placeholder="주소 입력 (선택)" style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"></div>
                     </div>
                 </div>`;
@@ -12376,6 +12422,8 @@ pdfjsScript,
                 name: (document.getElementById('order-buyer-name').value || '').trim(),
                 phone: (document.getElementById('order-buyer-phone').value || '').trim(),
                 address: (document.getElementById('order-buyer-address').value || '').trim(),
+                patient: ((document.getElementById('order-buyer-patient')||{}).value || '').trim(),
+                chart: ((document.getElementById('order-buyer-chart')||{}).value || '').trim(),
                 userId: currentUser.name
             };
 
