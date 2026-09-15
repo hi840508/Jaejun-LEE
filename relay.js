@@ -4151,6 +4151,100 @@ app.get('/api/admin/transactions', (req, res) => {
             FROM transactions t WHERE ${where} ORDER BY t.id DESC LIMIT 2000`, params,
         (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json({ transactions: rows || [] }));
 });
+// 👑 [관리자/상점주] 통합 매출 원장 — '전체 주문(판매 상태)'과 '전체 거래내역'을 하나로 합쳐,
+//   주문 1건 = 원장 1행(고유 주문#, 연결 거래#, 정산금액·이익금·잔여금 포함). 주문에 연결되지 않은 즉시결제/환불 거래도 별도 행으로 표시.
+//   검색: q(구매자·판매자·상품·상점), status(주문 상태), month(YYYY-MM), store(상점 id/명).
+app.get('/api/admin/ledger', (req, res) => {
+    const sc = reqAdminOrOwner(req, res); if (!sc) return;
+    const status = String(req.query.status || '').trim();
+    const q = String(req.query.q || '').trim();
+    const month = String(req.query.month || '').slice(0, 7);
+    const store = String(req.query.store || '').trim();
+    const like = '%' + q + '%';
+    const _revStatus = { refunded: 1, rejected: 1, cancelled: 1 };
+    _taxConfig((cfg) => {
+        // ── 1) 주문 원장(+ 연결 거래) ──
+        let ow = `1=1`; const op = [];
+        if (!sc.isAdmin) { ow += ` AND o.seller = ?`; op.push(sc.me); }
+        if (status) { ow += ` AND o.status = ?`; op.push(status); }
+        if (q) { ow += ` AND (o.buyer LIKE ? OR o.seller LIKE ? OR IFNULL(pr.name,'') LIKE ? OR IFNULL(s.name,'') LIKE ?)`; op.push(like, like, like, like); }
+        if (month) { ow += ` AND substr(IFNULL(t.rawDate, o.created_at),1,7) = ?`; op.push(month); }
+        if (store) { ow += ` AND (s.id = ? OR IFNULL(s.name,'') LIKE ?)`; op.push(store, '%' + store + '%'); }
+        db.all(`SELECT o.id, o.productId, o.buyer, o.seller, o.status, o.amount, o.tracking, o.courier,
+                       o.created_at, o.delivered_at, o.confirmed_at, o.escrow_held, o.settled, o.settled_at, o.settle_month, o.txId,
+                       pr.name AS productName, s.id AS storeId, s.name AS storeName, IFNULL(s.admin_managed,0) AS storeManaged,
+                       (SELECT realname FROM users WHERE name = o.buyer) AS buyerRealname,
+                       t.rawDate AS txDate, IFNULL(t.refunded,0) AS txRefunded
+                FROM product_orders o
+                LEFT JOIN products pr ON pr.id = o.productId
+                LEFT JOIN stores s ON pr.storeId = s.id
+                LEFT JOIN transactions t ON t.id = o.txId
+                WHERE ${ow} ORDER BY o.id DESC LIMIT 2000`, op, (e1, orders) => {
+            if (e1) return res.status(500).json({ error: e1.message });
+            orders = orders || [];
+            // ── 2) 주문에 연결되지 않은 거래(즉시결제·환불·기타) ──
+            let tw = `t.id NOT IN (SELECT txId FROM product_orders WHERE txId IS NOT NULL)`; const tp = [];
+            if (!sc.isAdmin) { tw += ` AND t.seller = ?`; tp.push(sc.me); }
+            if (q) { tw += ` AND (t.buyer LIKE ? OR t.seller LIKE ? OR IFNULL(t.productName,'') LIKE ?)`; tp.push(like, like, like); }
+            if (month) { tw += ` AND substr(IFNULL(t.rawDate,t.date),1,7) = ?`; tp.push(month); }
+            // status 필터가 걸리면(주문 상태 개념) 순수 거래행은 제외
+            const skipTxns = !!status;
+            const runTxns = (cb) => {
+                if (skipTxns) return cb([]);
+                db.all(`SELECT t.id, t.buyer, t.seller, t.productId, t.productName, t.amount, t.purchaseType, t.date, t.rawDate, IFNULL(t.refunded,0) refunded
+                        FROM transactions t WHERE ${tw} ORDER BY t.id DESC LIMIT 2000`, tp, (e2, txns) => cb(e2 ? [] : (txns || [])));
+            };
+            runTxns((txns) => {
+                const entries = [];
+                let totAmt = 0, totPayout = 0, totProfit = 0, totRemain = 0, totSettledPayout = 0, saleCount = 0;
+                // 주문 행
+                orders.forEach(o => {
+                    const amt = Number(o.amount) || 0;
+                    const valid = !_revStatus[o.status] && amt > 0;
+                    const calc = valid ? _settleCalc(amt, cfg) : { payout: 0, payFee: 0 };
+                    const remain = (o.escrow_held > 0 && !o.settled && ['delivered', 'confirmed'].includes(o.status)) ? Number(o.escrow_held) : 0;
+                    if (valid) { totAmt += amt; totPayout += calc.payout; totProfit += calc.payFee; saleCount++; if (o.settled) totSettledPayout += calc.payout; }
+                    totRemain += remain;
+                    entries.push({
+                        kind: 'order', orderId: o.id, txId: o.txId || null,
+                        date: o.txDate || o.confirmed_at || o.delivered_at || o.created_at || '',
+                        buyer: o.buyer, buyerRealname: o.buyerRealname || '', seller: o.seller,
+                        storeId: o.storeId || '', storeName: o.storeName || '', storeManaged: !!o.storeManaged,
+                        productName: o.productName || o.productId || '', amount: amt,
+                        status: o.status, tracking: o.tracking || '', courier: o.courier || '',
+                        payout: valid ? calc.payout : 0, profit: valid ? calc.payFee : 0, remain,
+                        settled: !!o.settled, settleMonth: o.settle_month || '', refunded: !!o.txRefunded, valid
+                    });
+                });
+                // 순수 거래 행
+                txns.forEach(t => {
+                    const amt = Number(t.amount) || 0;
+                    const isSale = amt > 0 && t.productId && !t.refunded && t.purchaseType && !['refund', 'signup_bonus'].includes(t.purchaseType);
+                    const calc = isSale ? _settleCalc(amt, cfg) : { payout: 0, payFee: 0 };
+                    if (isSale) { totAmt += amt; totPayout += calc.payout; totProfit += calc.payFee; saleCount++; }
+                    entries.push({
+                        kind: 'txn', orderId: null, txId: t.id,
+                        date: t.rawDate || t.date || '',
+                        buyer: t.buyer, buyerRealname: '', seller: t.seller,
+                        storeId: '', storeName: '', storeManaged: false,
+                        productName: t.productName || t.productId || '', amount: amt,
+                        status: t.refunded ? 'refunded' : (t.purchaseType || 'txn'),
+                        tracking: '', courier: '',
+                        payout: isSale ? calc.payout : 0, profit: isSale ? calc.payFee : 0, remain: 0,
+                        settled: false, settleMonth: '', refunded: !!t.refunded, valid: isSale, purchaseType: t.purchaseType || ''
+                    });
+                });
+                // 최신순(날짜 우선, 없으면 id)
+                entries.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || ((b.orderId || b.txId || 0) - (a.orderId || a.txId || 0)));
+                res.json({
+                    entries,
+                    totals: { count: entries.length, saleCount, amount: totAmt, payout: totPayout, profit: totProfit, remain: totRemain, settledPayout: totSettledPayout },
+                    feeRate: cfg.feeRate, vatRate: cfg.vatRate
+                });
+            });
+        });
+    });
+});
 // 👑 [관리자] 회원 원장 — 전 회원 + 영업 집계(판매/구매/미정산). 회원 원장→매출→정산→세금계산서 관리 흐름의 시작점.
 app.get('/api/admin/members', (req, res) => {
     if (!requireAdmin(req, res)) return;
