@@ -6489,28 +6489,61 @@
             let data=null; try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(name)}/clinics`); data=await r.json(); if(!r.ok) throw new Error(data.error||'로드 실패'); }catch(e){ body.innerHTML='<div style="color:#dc2626;">'+esc(e.message||'로드 실패')+'</div>'; return; }
             ov.querySelector('#mc-title').textContent='거래처 · '+((data.member&&data.member.bizName)||name)+' (ID: '+name+')';
             let rows=(data.clinics||[]).map(c=>Object.assign({},c));
-            const joinChip=j=> j?'<span style="font-size:10px;color:#166534;background:#dcfce7;padding:2px 8px;border-radius:20px;font-weight:700;white-space:nowrap;">가입</span>':'<span style="font-size:10px;color:#9a3412;background:#ffedd5;padding:2px 8px;border-radius:20px;font-weight:700;white-space:nowrap;">미가입</span>';
+            window.__mcRows=rows;   // 후보 적용 콜백에서 접근
+            const F=(s)=>esc(s||'');
+            // 후보 회원의 전체 가입정보로 거래처를 '연결·업데이트'
+            window._mcApplyCandidate=function(i, encoded){ let cand={}; try{ cand=JSON.parse(decodeURIComponent(encoded)); }catch(_){}
+                const c=window.__mcRows[i]; if(!c) return;
+                c.name=cand.bizName||cand.storeName||c.name; c.phone=cand.phone||c.phone; c.addr=cand.addr||c.addr;
+                c.ceo=cand.ceo||''; c.bizNo=cand.bizNo||''; c.email=cand.email||''; c.memberId=cand.name; c.linked=true;
+                c.linkedInfo=cand;
+                render(); showToast('가입 회원 정보로 업데이트했습니다. [저장]을 눌러 반영하세요.');
+            };
+            window._mcUnlink=function(i){ const c=window.__mcRows[i]; if(!c) return; c.memberId=undefined; c.linked=false; c.linkedInfo=null; render(); };
             const render=()=>{
-                const joined=rows.filter(c=>c.joined).length;
-                body.innerHTML='<div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.6;">이 회원이 등록한 거래처입니다. 최초엔 <b>상대방이 기입한 정보</b>가 들어오고, 그 거래처가 <b>회원가입하면 실제 정보로 자동 갱신</b>됩니다. 관리자·본인이 직접 수정할 수 있습니다.<br>총 <b>'+rows.length+'</b>곳 · 가입 <b style="color:#166534;">'+joined+'</b> · 미가입 <b style="color:#9a3412;">'+(rows.length-joined)+'</b></div>'
+                const joined=rows.filter(c=>c.linked).length;
+                body.innerHTML='<div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.6;">이 회원이 등록한 거래처입니다. 아래 <b>후보군</b>은 입력 정보(상호·전화·주소·사업자번호 등)가 하나라도 일치하는 가입 회원입니다. 알맞은 후보의 <b>[이 회원으로 업데이트]</b>를 누르면 그 회원의 <b>전체 가입정보</b>로 채워집니다. 확인 후 <b>[저장]</b>하세요.<br>총 <b>'+rows.length+'</b>곳 · 연결됨 <b style="color:#166534;">'+joined+'</b></div>'
                     +'<div id="mc-list"></div>'
                     +'<button id="mc-add" style="margin:2px 0 12px;padding:8px 12px;border:1px dashed #93c5fd;background:#fff;color:#2563eb;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">＋ 거래처 추가</button>'
                     +'<div style="display:flex;gap:8px;"><button id="mc-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button><button id="mc-save" style="flex:2;padding:11px;border:0;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장</button></div>';
                 const list=body.querySelector('#mc-list');
-                list.innerHTML=rows.length? rows.map((c,i)=>'<div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:8px;border:1px solid #eef2f7;border-radius:10px;padding:8px;background:#fbfdff;">'
+                list.innerHTML=rows.length? rows.map((c,i)=>{
+                    // 연결됨 박스 or 후보군
+                    let matchBox='';
+                    if(c.linked && c.linkedInfo){ const li=c.linkedInfo;
+                        matchBox='<div style="margin-top:6px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;font-size:11px;color:#065f46;">'
+                            +'<div style="font-weight:800;">✅ 가입 회원 연결됨: '+F(li.bizName||li.name)+' <span style="color:#059669;">(ID: '+F(li.name)+')</span></div>'
+                            +'<div style="margin-top:3px;color:#047857;">'+[li.storeName?('상점 '+F(li.storeName)):'', li.bizNo?('사업자 '+F(li.bizNo)):'', li.ceo?('대표 '+F(li.ceo)):'', li.phone?('☎ '+F(li.phone)):'', li.addr?('📍 '+F(li.addr)):''].filter(Boolean).join(' · ')+'</div>'
+                            +'<button onclick="_mcUnlink('+i+')" style="margin-top:6px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;">연결 해제</button></div>';
+                    } else if((c.candidates||[]).length){
+                        matchBox='<div style="margin-top:6px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 10px;">'
+                            +'<div style="font-size:11px;font-weight:800;color:#9a3412;margin-bottom:6px;">🔎 가입 회원 후보 '+c.candidates.length+'건 — 확인 후 선택</div>'
+                            +c.candidates.map(cd=>{ const enc=encodeURIComponent(JSON.stringify(cd));
+                                return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid #ffedd5;">'
+                                +'<div style="font-size:11px;color:#7c2d12;line-height:1.5;"><b>'+F(cd.bizName||cd.name)+'</b> <span style="color:#c2410c;">(ID: '+F(cd.name)+')</span>'
+                                +(cd.storeName?' · 상점 '+F(cd.storeName):'')+(cd.phone?' · ☎ '+F(cd.phone):'')+(cd.addr?' · 📍 '+F(cd.addr):'')+(cd.bizNo?' · 사업자 '+F(cd.bizNo):'')
+                                +'<br><span style="font-size:10px;color:#166534;">일치: '+F((cd.matchFields||[]).join(', '))+'</span></div>'
+                                +'<button onclick="_mcApplyCandidate('+i+',\''+enc+'\')" style="flex:none;border:0;background:#16a34a;color:#fff;border-radius:7px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;">이 회원으로 업데이트</button></div>';
+                            }).join('')+'</div>';
+                    } else {
+                        matchBox='<div style="margin-top:4px;font-size:11px;color:#94a3b8;">일치하는 가입 회원 후보가 없습니다(미가입).</div>';
+                    }
+                    return '<div style="margin-bottom:10px;border:1px solid #eef2f7;border-radius:10px;padding:9px;background:#fbfdff;">'
+                    +'<div style="display:flex;gap:6px;align-items:flex-start;">'
                     +'<div style="flex:1;display:flex;flex-direction:column;gap:5px;">'
-                    +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><input data-i="'+i+'" data-k="name" value="'+esc(c.name||'')+'" placeholder="거래처 이름" style="flex:1;min-width:120px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;"><input data-i="'+i+'" data-k="phone" value="'+esc(c.phone||'')+'" placeholder="전화번호" style="width:130px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">'+joinChip(c.joined)+'</div>'
-                    +'<input data-i="'+i+'" data-k="addr" value="'+esc(c.addr||'')+'" placeholder="주소(선택)" style="padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">'
-                    +(c.matchedUser?'<div style="font-size:11px;color:#166534;">✅ 가입 회원: '+esc(c.matchedName||'')+' (ID: '+esc(c.matchedUser)+')'+((c.ceo||c.bizNo)?' · '+[c.bizNo?('사업자 '+esc(c.bizNo)):'',c.ceo?('대표 '+esc(c.ceo)):''].filter(Boolean).join(' · '):'')+'</div>':'')
+                    +'<div style="display:flex;gap:6px;flex-wrap:wrap;"><input data-i="'+i+'" data-k="name" value="'+F(c.name)+'" placeholder="거래처 이름" style="flex:1;min-width:120px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;"><input data-i="'+i+'" data-k="phone" value="'+F(c.phone)+'" placeholder="전화번호" style="width:130px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;"></div>'
+                    +'<input data-i="'+i+'" data-k="addr" value="'+F(c.addr)+'" placeholder="주소(선택)" style="padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">'
                     +'</div>'
-                    +'<button data-del="'+i+'" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;flex:none;">✕</button></div>').join('')
-                    : '<div style="padding:14px;text-align:center;color:#94a3b8;">등록된 거래처가 없습니다.</div>';
+                    +'<button data-del="'+i+'" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;flex:none;">✕</button></div>'
+                    +matchBox+'</div>';
+                }).join('') : '<div style="padding:14px;text-align:center;color:#94a3b8;">등록된 거래처가 없습니다.</div>';
                 list.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',()=>{ const i=+inp.dataset.i,k=inp.dataset.k; rows[i][k]=inp.value; }));
                 list.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ rows.splice(+b.dataset.del,1); render(); });
                 body.querySelector('#mc-add').onclick=()=>{ rows.push({name:'',phone:'',addr:''}); render(); };
                 body.querySelector('#mc-cancel').onclick=()=>ov.remove();
                 body.querySelector('#mc-save').onclick=async()=>{
-                    try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(name)}/clinics`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics:rows})}); const d=await r.json(); if(!r.ok||!d.success){ showToast(d.error||'저장 실패'); return; } showToast('거래처 '+d.count+'건 저장됨'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
+                    const payload=rows.map(c=>({ name:c.name, phone:c.phone, addr:c.addr, ceo:c.ceo, email:c.email, bizNo:c.bizNo, memberId:c.memberId }));
+                    try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(name)}/clinics`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics:payload})}); const d=await r.json(); if(!r.ok||!d.success){ showToast(d.error||'저장 실패'); return; } showToast('거래처 '+d.count+'건 저장됨'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
                 };
             };
             render();

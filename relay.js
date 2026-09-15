@@ -4217,7 +4217,34 @@ function _syncClinicsOnRegister(newName) {
         });
     });
 }
-// 🏥 [영업관리] 특정 회원의 거래처 목록 + 각 거래처의 '회원 가입 여부'. 관리자 또는 본인만.
+// 🏥 거래처 1건에 대한 '가입 회원 후보군' — 입력한 정보가 하나라도 맞으면 후보. 점수 내림차순.
+//   규칙 가중치: 사업자번호/전화/이메일=강함, 상호(상점/실명)=중간(+주소 동반 시 가점), 주소=보조.
+function _clinicCandidatesFull(c, users, storeNamesN, storeNamesRaw, excludeName) {
+    const cPhone = _digits(c && c.phone), cEmail = String((c && c.email) || '').trim().toLowerCase();
+    const cName = _normTxt(c && c.name), cAddr = _normTxt(c && c.addr), cBiz = _digits(c && c.bizNo);
+    const cands = [];
+    for (const u of users) {
+        if (!u.name || u.name === excludeName) continue;
+        const fields = []; let score = 0;
+        if (cPhone.length >= 9 && _digits(u.phone) === cPhone) { fields.push('전화'); score += 50; }
+        if (cEmail && String(u.email || '').trim().toLowerCase() === cEmail) { fields.push('이메일'); score += 45; }
+        if (cBiz.length >= 8 && _digits(u.biz_no) === cBiz) { fields.push('사업자번호'); score += 50; }
+        const names = (storeNamesN[u.name] || []).concat([_normTxt(u.realname), _normTxt(u.name), _normTxt(u.biz_company)]).filter(Boolean);
+        const nameHit = cName && names.some(n => n && (n === cName || (n.length >= 3 && cName.indexOf(n) >= 0) || (cName.length >= 3 && n.indexOf(cName) >= 0)));
+        const uAddr = _normTxt(u.biz_addr) || _normTxt(u.shipping_address);
+        const addrHit = cAddr && uAddr && (uAddr.indexOf(cAddr.slice(0, 8)) >= 0 || cAddr.indexOf(uAddr.slice(0, 8)) >= 0);
+        if (nameHit) { fields.push('상호/상점명'); score += 25; if (addrHit) score += 15; }
+        if (addrHit) { fields.push('주소'); score += 20; }
+        if (score > 0) cands.push({
+            name: u.name, bizName: (u.biz_company || u.realname || u.name), realname: u.realname || '', phone: u.phone || '',
+            addr: (u.biz_addr || u.shipping_address || ''), bizNo: u.biz_no || '', ceo: u.biz_ceo || '', email: u.email || '',
+            business_type: u.business_type || '', storeName: (storeNamesRaw[u.name] || ''), matchFields: fields, score
+        });
+    }
+    cands.sort((a, b) => b.score - a.score);
+    return cands.slice(0, 6);
+}
+// 🏥 [영업관리] 특정 회원의 거래처 목록 + 각 거래처의 '가입 회원 후보군'(사용자가 확인해 연결·갱신). 관리자 또는 본인만.
 app.get('/api/admin/members/:name/clinics', (req, res) => {
     const sc = reqAdminOrOwner(req, res); if (!sc) return;
     const target = String(req.params.name || '').trim();
@@ -4226,26 +4253,16 @@ app.get('/api/admin/members/:name/clinics', (req, res) => {
         if (e) return res.status(500).json({ error: e.message });
         if (!row) return res.status(404).json({ error: '회원이 없습니다.' });
         let clinics = []; try { clinics = JSON.parse(row.partner_clinics || '[]') || []; } catch (_) {}
-        db.all(`SELECT name, realname, phone, email, shipping_address, biz_addr, biz_company, biz_no, biz_ceo FROM users`, [], (e2, users) => {
+        db.all(`SELECT name, realname, phone, email, shipping_address, biz_addr, biz_company, biz_no, biz_ceo, IFNULL(business_type,'individual') business_type FROM users`, [], (e2, users) => {
             db.all(`SELECT owner, name FROM stores`, [], (e3, stores) => {
-                const storeNames = {}; (stores || []).forEach(st => { if (st.owner) (storeNames[st.owner] = storeNames[st.owner] || []).push(_normTxt(st.name)); });
-                let changed = false;
+                const storeNamesN = {}, storeNamesRaw = {};
+                (stores || []).forEach(st => { if (st.owner) { (storeNamesN[st.owner] = storeNamesN[st.owner] || []).push(_normTxt(st.name)); storeNamesRaw[st.owner] = storeNamesRaw[st.owner] ? (storeNamesRaw[st.owner] + ', ' + st.name) : st.name; } });
                 const out = clinics.map(c => {
-                    const mu = c.memberId || _clinicMatchedUser(c, users || [], storeNames, target);
-                    const um = (users || []).find(u => u.name === mu);
-                    // 🔄 가입된 거래처는 그 회원의 '실제 가입 정보'로 거래처 정보를 갱신(추가 정보 반영) 후 저장
-                    if (um) {
-                        const canonName = (um.biz_company || um.realname || um.name || '').trim();
-                        const canonAddr = (um.biz_addr || um.shipping_address || '').trim();
-                        const nc = Object.assign({}, c, {
-                            name: canonName || c.name, phone: (um.phone || c.phone), addr: (canonAddr || c.addr),
-                            email: (um.email || c.email || ''), ceo: (um.biz_ceo || c.ceo || ''), bizNo: (um.biz_no || c.bizNo || ''), memberId: um.name
-                        });
-                        if (JSON.stringify(nc) !== JSON.stringify(c)) { changed = true; Object.assign(c, nc); }
-                    }
-                    return Object.assign({}, c, { matchedUser: mu || '', joined: !!mu, matchedName: um ? (um.biz_company || um.realname || um.name) : '' });
+                    const um = c.memberId ? (users || []).find(u => u.name === c.memberId) : null;
+                    const linkedInfo = um ? { name: um.name, bizName: (um.biz_company || um.realname || um.name), phone: um.phone || '', addr: (um.biz_addr || um.shipping_address || ''), bizNo: um.biz_no || '', ceo: um.biz_ceo || '', email: um.email || '', business_type: um.business_type || '', storeName: (storeNamesRaw[um.name] || '') } : null;
+                    const candidates = _clinicCandidatesFull(c, users || [], storeNamesN, storeNamesRaw, target);
+                    return Object.assign({}, c, { linked: !!um, linkedInfo, candidates });
                 });
-                if (changed) db.run(`UPDATE users SET partner_clinics=? WHERE name=?`, [JSON.stringify(clinics), target], () => {});   // 갱신분 영속화
                 res.json({ member: { name: row.name, business_type: row.business_type, bizName: (row.biz_company || row.realname || row.name) }, clinics: out });
             });
         });
