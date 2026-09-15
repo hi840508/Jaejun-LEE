@@ -8950,28 +8950,36 @@
         };
         // 💬 의뢰서 목록에서 대화방 열기 — 목록 오버레이를 닫아 대화방이 맨 위로 보이게 한다.
         window._rxcOpenChat=function(seller, room){ try{ const o=document.getElementById('rxc-ov'); if(o) o.remove(); }catch(_){} try{ openMessengerChat(seller, room); }catch(_){} };
-        // ✏️ 의뢰서 추가정보 수정(구매자·판매자 모두 · 금액 변경 불가, 추가 정보 기입만)
+        // ✏️ 의뢰서 수정 — 원래 의뢰서 양식(상세/간편)을 그대로 다시 열어 전체 수정. 승인 전이면 금액도 재계산되어 갱신.
         window.editOrderInfo=async function(orderId){
             let o={}; try{ o=await fetch(`${API_URL}/api/order/${encodeURIComponent(orderId)}`).then(r=>r.json()); }catch(_){}
             if(!o||!o.id){ showToast('주문을 불러올 수 없습니다.'); return; }
-            let bi={}; try{ bi=JSON.parse(o.buyer_info||'{}')||{}; }catch(_){}
-            const esc=(s)=>String(s==null?'':s).replace(/"/g,'&quot;');
-            const amt=Number(o.amount||0);
-            let m=document.getElementById('edit-order-info-modal'); if(m) m.remove();
-            m=document.createElement('div'); m.id='edit-order-info-modal'; m.style.cssText='position:fixed;inset:0;z-index:100002;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;';
-            m.innerHTML='<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:92vh;overflow:auto;padding:20px 22px;">'
-                +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="margin:0;font-size:18px;font-weight:900;color:#2563eb;">✏️ 의뢰서 정보 수정</h3><span onclick="document.getElementById(\'edit-order-info-modal\').remove()" style="cursor:pointer;font-size:24px;color:#94a3b8;">&times;</span></div>'
-                +'<div style="background:#f1f5f9;border-radius:8px;padding:8px 12px;font-size:12px;color:#475569;margin-bottom:14px;">💡 <b>추가 정보만</b> 기입/수정할 수 있습니다. <b>금액은 변경되지 않습니다</b> (현재 '+(amt?amt.toLocaleString()+'원':'미정')+'). 금액 조정이 필요하면 판매자가 <b>추가 결제 요청</b>을 이용하세요.</div>'
-                +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
-                +'<div><label style="font-size:11px;color:#64748b;">환자명</label><input id="eoi-patient" value="'+esc(bi.patientName||bi.patient||'')+'" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
-                +'<div><label style="font-size:11px;color:#64748b;">차트번호</label><input id="eoi-chart" value="'+esc(bi.chartNo||bi.chart||'')+'" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
-                +'<div><label style="font-size:11px;color:#64748b;">담당 원장/의뢰자</label><input id="eoi-doctor" value="'+esc(bi.doctor||bi.name||'')+'" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
-                +'<div><label style="font-size:11px;color:#64748b;">연락처</label><input id="eoi-phone" value="'+esc(bi.phone||'')+'" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
-                +'</div>'
-                +'<div style="margin-top:10px;"><label style="font-size:11px;color:#64748b;">추가 기입/보완 사항 (500자)</label><textarea id="eoi-note" rows="3" maxlength="500" placeholder="쉐이드 변경, 추가 요청, 특이사항 등 — 기존 내용에 누적 기록됩니다." style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;resize:vertical;"></textarea></div>'
-                +'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;"><button class="btn btn-outline" style="padding:9px 18px;" onclick="document.getElementById(\'edit-order-info-modal\').remove()">취소</button><button class="btn" style="padding:9px 22px;background:var(--gradient-btn);color:#fff;font-weight:800;" onclick="submitOrderInfoEdit(\''+esc(orderId)+'\')">저장</button></div>'
-                +'</div>';
-            document.body.appendChild(m);
+            let fd={}, bi={}; try{ fd=JSON.parse(o.form_data||'{}')||{}; }catch(_){} try{ bi=JSON.parse(o.buyer_info||'{}')||{}; }catch(_){}
+            const hasRx = Array.isArray(fd.items) && fd.items.length;
+            if(!hasRx){ showToast('이 주문은 상세/간편 의뢰서 양식이 아니어서 양식 수정이 지원되지 않습니다.'); return; }
+            const mode = fd.rxMode || (fd.items.some(it=>Array.isArray(it.selected))?'detail':'simple');
+            // 상점 rx 품목/이름 로드(품목 선택 피커용)
+            let items=[], storeName='', storeId=(o.storeId||'');
+            try{ const pd=await fetch(`${API_URL}/api/product/detail/${encodeURIComponent(o.productId)}`).then(r=>r.json()); if(pd&&pd.storeId) storeId=pd.storeId; }catch(_){}
+            try{ const d=await fetch(`${API_URL}/api/store/rx-items/${encodeURIComponent(storeId)}`).then(r=>r.json()); items=d.items||[]; storeName=d.storeName||''; storeId=d.storeId||storeId; }catch(_){}
+            const oi = fd.orderInfo || { doctor:bi.doctor, patientName:bi.patientName||bi.patient, birth:bi.birth, gender:bi.gender, chartNo:bi.chartNo||bi.chart, dueDate:bi.dueDate, dueAmPm:bi.dueAmPm, clinic:bi.clinic };
+            window.rxOrderState = {
+                product:{ id:o.productId, name:o.productName||'', storeId:storeId, storeCategory:'dental_lab' },
+                seller:o.seller, amount:Number(o.amount)||0, storeId:storeId, storeName:(storeName||oi.clinic||''),
+                mode:mode, rxItems:items, attachFiles:[], items:fd.items, preselectName:'',
+                editOrderId:o.id, editStatus:o.status, editAmountLocked:(o.status!=='pending'), _editOrderInfo:oi
+            };
+            if(mode==='detail'){ if(window.openDetailRxForm) openDetailRxForm(); }
+            else { if(window.openSimpleRxForm) openSimpleRxForm(); }
+            setTimeout(()=>{
+                const s=(id,v)=>{ const e=document.getElementById(id); if(e&&v!=null&&v!=='') e.value=v; };
+                s('rx-oi-doctor', oi.doctor); s('rx-oi-patient', oi.patientName); s('rx-oi-birth', oi.birth);
+                s('rx-oi-gender', oi.gender); s('rx-oi-chart', oi.chartNo); s('rx-oi-due', oi.dueDate);
+                if(oi.dueAmPm && window.rxSetAmPm) rxSetAmPm(oi.dueAmPm==='오후'?'pm':'am');
+                if(window.rxOrderState && window.rxOrderState.editAmountLocked){
+                    const t=document.getElementById('rx-total'); if(t&&t.parentNode){ const n=document.createElement('div'); n.style.cssText='font-size:11px;color:#b45309;font-weight:700;margin-top:2px;'; n.textContent='※ 승인/결제 후에는 금액이 고정됩니다. 증액분은 판매자가 추가 결제로 요청합니다.'; t.parentNode.appendChild(n); }
+                }
+            }, 80);
         };
         window.submitOrderInfoEdit=async function(orderId){
             const g=(id)=>{ const e=document.getElementById(id); return e?e.value.trim():''; };
@@ -16894,6 +16902,29 @@ pdfjsScript,
                     st.amount = 0;
                     const hasContent = st.items.some(it=>(it.name||'').trim() || (it.teeth||[]).length);
                     if(!hasContent) return showToast('품목명 또는 치식을 입력해 주세요.');
+                }
+                // ✏️ [수정 모드] 기존 주문 편집 — 새 주문 생성 대신 edit 엔드포인트로 갱신(금액은 승인 전만 변경).
+                if(st.editOrderId){
+                    const orderHtmlE = buildRxBundleHTML(st, info, []);
+                    const buyerInfoE = { name: info.clinic, phone:(st._editOrderInfo&&st._editOrderInfo.phone)||'', address:'', userId: currentUser.name, clinic:info.clinic, doctor:info.doctor, patientName:info.patientName, birth:info.birth, gender:info.gender, chartNo:info.chartNo, dueDate:info.dueDate, dueAmPm:info.dueAmPm };
+                    const formDataE = { rxMode: st.mode, orderInfo: info, items: st.items };
+                    try{
+                        const r=await fetch(`${API_URL}/api/order/${encodeURIComponent(st.editOrderId)}/edit`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ form_data: formDataE, buyer_info: buyerInfoE, bundle_html: orderHtmlE, amount: st.amount||0 }) });
+                        const d=await r.json().catch(()=>({}));
+                        if(!r.ok) return showToast(d.error||'의뢰서 수정 실패');
+                        if(window.rxCloseOverlay) rxCloseOverlay('rx-form-modal');
+                        showToast('✅ 의뢰서가 수정되었습니다.'+(d.amountEditable&&Number(d.amount||0)>0?(' (금액 '+Number(d.amount).toLocaleString()+'원)'):''));
+                        if(d.surchargeSuggested>0){
+                            const amISeller = !!(currentUser && currentUser.name===st.seller);
+                            if(amISeller){ if(confirm('수정으로 금액이 '+Number(d.surchargeSuggested).toLocaleString()+'원 증가했습니다.\n구매자에게 추가 결제를 요청할까요?')){ if(window.requestSurcharge) requestSurcharge(st.editOrderId); } }
+                            else showToast('금액이 '+Number(d.surchargeSuggested).toLocaleString()+'원 증가했습니다. 판매자가 추가 결제를 요청할 수 있습니다.');
+                        }
+                        try{ if(window.loadMyPurchases) loadMyPurchases(); }catch(_){}
+                        try{ if(window.loadMySalesOrders) loadMySalesOrders(); }catch(_){}
+                        try{ if(document.getElementById('rxc-ov')){ const ov=document.getElementById('rxc-ov'); ov.remove(); } }catch(_){}
+                        try{ if(window.refreshRxDocStatus) refreshRxDocStatus(st.editOrderId); }catch(_){}
+                    }catch(e){ showToast('의뢰서 수정 오류: '+(e.message||e)); }
+                    return;
                 }
                 if(!confirm(`📤 ${st.mode==='simple'?'간편':'상세'} 의뢰서를 ${st.seller}님(기공소)에게 보냅니다.\n\n결제 예정: ${st.mode==='detail'?won(st.amount):'금액 미정'}\n\n⚠ 지금은 결제되지 않습니다. 기공소가 주문을 수락(승인)한 뒤 결제하시면 진행됩니다.\n\n계속하시겠습니까?`)) return;
                 // 💳 [중요] 제출 시점에는 결제하지 않는다. 기공소가 승인(awaiting_payment)한 뒤 구매자가 결제 → 에스크로.
