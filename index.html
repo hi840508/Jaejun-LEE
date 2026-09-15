@@ -1315,8 +1315,8 @@
                             <div style="font-size:11px; color:#94a3b8; margin:4px 12px 0;">세금계산서 발행에 사용됩니다. (사업자=사업자등록번호 / 개인=주민등록번호)</div>
                             <!-- 🦷 치과 기공소: 취급 보철 품목 + 수가 체크리스트(선택한 항목만 등록) -->
                             <div id="new-brand-rx-wrap" style="display:none; margin:10px 12px 0; border:1px solid var(--border-color); border-radius:10px; overflow:hidden;">
-                                <div style="padding:8px 12px; background:var(--primary-soft); font-size:12px; font-weight:700; color:var(--primary);">🦷 취급 보철 품목 · 수가 (체크한 항목만 등록됩니다)</div>
-                                <div style="font-size:11px; color:#94a3b8; padding:6px 12px 0;">체크 없이 등록 시 기본 품목이 자동으로 시드됩니다. 수가/폰틱은 나중에 상점 관리에서 수정할 수 있습니다.</div>
+                                <div style="padding:8px 12px; background:var(--primary-soft); font-size:12px; font-weight:700; color:var(--primary);">🦷 보철 품목 · 수가 관리 <span style="color:var(--danger);">*</span> (필수 · 취급 품목을 1개 이상 선택)</div>
+                                <div style="font-size:11px; color:#94a3b8; padding:6px 12px 0;">취급할 품목을 <b>체크</b>하고 <b>수가/폰틱</b>을 입력하세요. <b>공개</b>에 체크된 품목만 구매자에게 노출됩니다. (등록 후 상점 관리 → 보철 품목·수가 관리에서 수정 가능)</div>
                                 <div id="new-brand-rx-list" style="max-height:300px; overflow-y:auto; padding:6px 8px;"></div>
                             </div>
                             <!-- 🦷 치과 기공소: 기존 거래 치과 정보(홍보용) -->
@@ -7807,11 +7807,13 @@
             if(!storeName) return showToast("상점 이름을 입력해 주세요.");
             if(!category) return showToast("카테고리를 선택해 주세요.");
             if(!bizNo) return showToast(bizType === 'individual' ? "주민등록번호를 입력해 주세요." : "사업자등록번호를 입력해 주세요.");
-            // 🦷 치과 기공소: 체크된 취급 품목만 rxItems로 전송(없으면 백엔드가 기본 시드)
+            // 🦷 치과 기공소: 체크된 취급 품목만 rxItems로 전송 — 필수(1개 이상)
             const rxItems = (category === 'dental_lab' && typeof window.collectNewBrandRxItems === 'function') ? window.collectNewBrandRxItems() : null;
             // 🏥 거래 치과 정보(관리자 열람) — 기공소 상점은 최소 1건 필수(거래처명·대표이름·전화·주소 모두)
             const clinics = (category === 'dental_lab' && typeof window.collectClinics === 'function') ? window.collectClinics() : null;
             if(category === 'dental_lab'){
+                if(!rxItems || !rxItems.length){ try{ const w=document.getElementById('new-brand-rx-wrap'); if(w) w.scrollIntoView({behavior:'smooth',block:'center'}); }catch(_){} return showToast("보철 품목·수가를 1개 이상 선택(취급 체크)해 주세요. (필수)"); }
+                if(rxItems.find(x=>!(Number(x.price)>0))) return showToast("취급 품목의 수가(가격)를 입력해 주세요. (0원 불가)");
                 if(!clinics || !clinics.length) return showToast("기존 거래 치과 정보를 1건 이상 등록해 주세요. (필수)");
                 const bad = clinics.find(c => !c.name || !c.ceo || !c.phone || !c.addr);
                 if(bad) return showToast("거래 치과의 거래처명·대표이름·전화번호·주소를 모두 입력해 주세요. (필수)");
@@ -8816,10 +8818,12 @@
                 // 버튼
                 +'<div style="display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px;">'
                 +  '<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="openRxPreview(\''+esc(o.id)+'\')">📄 상세·인쇄</button>'
-                +  (o.orderId||o.id?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="openMessengerChat(\''+String(o.seller||'').replace(/'/g,"\\'")+'\',\'room_ord_'+esc(o.id)+'\')">💬 대화방 열기</button>':'')
+                +  (o.orderId||o.id?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="_rxcOpenChat(\''+String(o.seller||'').replace(/'/g,"\\'")+'\',\'room_ord_'+esc(o.id)+'\')">💬 대화방 열기</button>':'')
                 +'</div>'
                 +'</div>';
         };
+        // 💬 의뢰서 목록에서 대화방 열기 — 목록 오버레이를 닫아 대화방이 맨 위로 보이게 한다.
+        window._rxcOpenChat=function(seller, room){ try{ const o=document.getElementById('rxc-ov'); if(o) o.remove(); }catch(_){} try{ openMessengerChat(seller, room); }catch(_){} };
         window.openRxCollection = async function(){
             const cards=Array.from(document.querySelectorAll('.my-purchase-card')).filter(c=>c.style.display!=='none' && c.getAttribute('data-order'));
             const orderIds=Array.from(new Set(cards.map(c=>c.getAttribute('data-order')).filter(Boolean)));
@@ -15830,12 +15834,20 @@ pdfjsScript,
                 wrap.style.display = 'block';
                 const list = document.getElementById('new-brand-rx-list');
                 if(list && !list.dataset.filled){
-                    list.innerHTML = window.RX_DEFAULT_ITEMS.map((it,i)=>`
+                    const head = `<div style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:2px solid #e2e8f0;font-size:11px;font-weight:800;color:#64748b;position:sticky;top:0;background:#fff;z-index:1;">
+                            <span style="width:15px;text-align:center;">취급</span>
+                            <span style="flex:1;min-width:0;">보철 품목 (분류)</span>
+                            <span style="width:78px;text-align:center;">수가</span>
+                            <span style="width:70px;text-align:center;">폰틱</span>
+                            <span style="width:36px;text-align:center;">공개</span>
+                        </div>`;
+                    list.innerHTML = head + window.RX_DEFAULT_ITEMS.map((it,i)=>`
                         <label style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid #f1f5f9;font-size:12px;">
-                            <input type="checkbox" class="nb-rx-chk" data-idx="${i}" checked style="width:15px;height:15px;">
+                            <input type="checkbox" class="nb-rx-chk" data-idx="${i}" checked style="width:15px;height:15px;" title="취급(등록)">
                             <span style="flex:1;min-width:0;"><b style="font-weight:600;">${esc(it.name)}</b> <span style="color:#94a3b8;">(${esc(it.category)})</span></span>
                             <input type="number" class="nb-rx-price" data-idx="${i}" value="${it.price}" style="width:78px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;" title="수가">
                             <input type="number" class="nb-rx-pontic" data-idx="${i}" value="${it.pontic}" style="width:70px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;" title="폰틱 수가">
+                            <span style="width:36px;text-align:center;"><input type="checkbox" class="nb-rx-pub" data-idx="${i}" checked style="width:15px;height:15px;" title="공개(구매자에게 노출)"></span>
                         </label>`).join('');
                     list.dataset.filled = '1';
                 }
@@ -15849,7 +15861,8 @@ pdfjsScript,
                     const base = window.RX_DEFAULT_ITEMS[i]; if(!base) return;
                     const price = Number((list.querySelector(`.nb-rx-price[data-idx="${i}"]`)||{}).value || base.price);
                     const pontic = Number((list.querySelector(`.nb-rx-pontic[data-idx="${i}"]`)||{}).value || base.pontic);
-                    out.push({ tab:base.tab, category:base.category, name:base.name, price, pontic });
+                    const pub = !!((list.querySelector(`.nb-rx-pub[data-idx="${i}"]`)||{}).checked);
+                    out.push({ tab:base.tab, category:base.category, name:base.name, price, pontic, pub });
                 });
                 return out;
             };
@@ -15862,7 +15875,7 @@ pdfjsScript,
                 try {
                     const res = await fetch(`${API_URL}/api/store/rx-items/${encodeURIComponent(storeId)}`);
                     const data = await res.json();
-                    _rxMgrItems = (data.items||[]).map(it => ({ tab:it.tab||'general', category:it.category||'', name:it.name||'', price:Number(it.price)||0, pontic:Number(it.pontic)||0 }));
+                    _rxMgrItems = (data.items||[]).map(it => ({ tab:it.tab||'general', category:it.category||'', name:it.name||'', price:Number(it.price)||0, pontic:Number(it.pontic)||0, pub:(it.pub===undefined?true:!!it.pub) }));
                     _rxMgrStoreName = data.storeName || _rxMgrStoreName;
                 } catch(e){ _rxMgrItems = []; }
                 _renderRxMgr();
@@ -15878,6 +15891,7 @@ pdfjsScript,
                         <td style="padding:6px 4px;"><input value="${esc(it.name)}" onchange="rxMgrEdit(${i},'name',this.value)" placeholder="보철명" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></td>
                         <td style="padding:6px 4px;"><input type="number" value="${it.price}" onchange="rxMgrEdit(${i},'price',this.value)" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></td>
                         <td style="padding:6px 4px;"><input type="number" value="${it.pontic}" onchange="rxMgrEdit(${i},'pontic',this.value)" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></td>
+                        <td style="padding:6px 4px;text-align:center;"><input type="checkbox" ${it.pub!==false?'checked':''} onchange="rxMgrEdit(${i},'pub',this.checked)" style="width:15px;height:15px;" title="공개(구매자에게 노출)"></td>
                     </tr>` : '').join('');
                 box.innerHTML = `
                     <div style="padding:18px 22px;">
@@ -15895,8 +15909,9 @@ pdfjsScript,
                                 <th style="padding:8px 4px;text-align:left;">보철명</th>
                                 <th style="padding:8px 4px;text-align:left;width:110px;">수가</th>
                                 <th style="padding:8px 4px;text-align:left;width:110px;">폰틱 수가</th>
+                                <th style="padding:8px 4px;text-align:center;width:50px;">공개</th>
                             </tr></thead>
-                            <tbody id="rx-mgr-tbody">${rows || '<tr><td colspan="5" style="padding:20px;text-align:center;color:#94a3b8;">이 탭에 품목이 없습니다. 아래 "품목 추가"로 등록하세요.</td></tr>'}</tbody>
+                            <tbody id="rx-mgr-tbody">${rows || '<tr><td colspan="6" style="padding:20px;text-align:center;color:#94a3b8;">이 탭에 품목이 없습니다. 아래 "품목 추가"로 등록하세요.</td></tr>'}</tbody>
                         </table>
                         </div>
                         <div style="text-align:center;margin-top:8px;"><button type="button" onclick="rxMgrAddRow()" style="border:none;background:none;color:var(--primary);font-weight:700;font-size:13px;cursor:pointer;padding:8px;">+ 품목 추가</button></div>
@@ -15911,7 +15926,7 @@ pdfjsScript,
             }
             window.rxMgrSwitchTab = function(t){ _rxMgrTab = t; _renderRxMgr(); };
             window.rxMgrEdit = function(i, key, val){ if(!_rxMgrItems[i]) return; _rxMgrItems[i][key] = (key==='price'||key==='pontic') ? Number(val)||0 : val; };
-            window.rxMgrAddRow = function(){ _rxMgrItems.push({ tab:_rxMgrTab, category:(_rxMgrTab==='denture'?'덴처':_rxMgrTab==='ortho'?'교정':'임플란트'), name:'', price:0, pontic:0 }); _renderRxMgr(); };
+            window.rxMgrAddRow = function(){ _rxMgrItems.push({ tab:_rxMgrTab, category:(_rxMgrTab==='denture'?'덴처':_rxMgrTab==='ortho'?'교정':'임플란트'), name:'', price:0, pontic:0, pub:true }); _renderRxMgr(); };
             window.rxMgrDeleteChecked = function(){
                 const ov = document.getElementById('rx-mgr-modal'); if(!ov) return;
                 const del = new Set(); ov.querySelectorAll('.rxm-chk').forEach(c=>{ if(c.checked) del.add(Number(c.dataset.i)); });

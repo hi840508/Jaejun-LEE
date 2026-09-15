@@ -2553,7 +2553,7 @@ app.post('/api/store/create', (req, res) => {
         // 🦷 기공소: 취급 품목/수가 시드(요청 body의 rxItems가 있으면 사용, 없으면 기본 시드)
         const isLab = (category === 'dental_lab');
         let rxItems = null;
-        if (isLab) { try { rxItems = Array.isArray(req.body.rxItems) && req.body.rxItems.length ? req.body.rxItems : _defaultRxItems(); } catch (_) { rxItems = _defaultRxItems(); } }
+        if (isLab) { try { const raw = Array.isArray(req.body.rxItems) && req.body.rxItems.length ? req.body.rxItems : _defaultRxItems(); rxItems = raw.map(it => ({ tab:String(it.tab||'general'), category:String(it.category||''), name:String(it.name||''), price:_n(it.price), pontic:_n(it.pontic), pub:(it.pub===undefined?true:!!it.pub) })).filter(x => x.name); if (!rxItems.length) rxItems = _defaultRxItems(); } catch (_) { rxItems = _defaultRxItems(); } }
         // 🏥 거래 치과 정보(홍보용) — 화이트리스트 필드만 정제 저장
         let clinics = null;
         if (isLab && Array.isArray(req.body.clinics) && req.body.clinics.length) {
@@ -3724,7 +3724,7 @@ app.post('/api/store/rx-items', (req, res) => {
     db.get(`SELECT owner FROM stores WHERE id = ?`, [storeId], (e, row) => {
         if (!row) return res.status(404).json({ error: '상점을 찾을 수 없음' });
         if (row.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '상점 주인만 수정할 수 있습니다.' });
-        const arr = Array.isArray(items) ? items.slice(0, 500).map(it => ({ tab:String(it.tab||'general'), category:String(it.category||''), name:String(it.name||''), price:_n(it.price), pontic:_n(it.pontic) })).filter(x => x.name) : [];
+        const arr = Array.isArray(items) ? items.slice(0, 500).map(it => ({ tab:String(it.tab||'general'), category:String(it.category||''), name:String(it.name||''), price:_n(it.price), pontic:_n(it.pontic), pub:(it.pub===undefined?true:!!it.pub) })).filter(x => x.name) : [];
         db.run(`UPDATE stores SET rx_items = ? WHERE id = ?`, [JSON.stringify(arr), storeId], (ue) => ue ? res.status(500).json({ error: ue.message }) : res.json({ success: true, count: arr.length }));
     });
 });
