@@ -4166,6 +4166,7 @@ app.get('/api/admin/members', (req, res) => {
                    u.biz_no, u.biz_company, u.biz_ceo, IFNULL(u.approval_status,'approved') approval_status,
                    IFNULL(u.balance,0) balance, u.terms_agreed_at, u.privacy_agreed_at,
                    (SELECT COUNT(*) FROM stores s WHERE s.owner=u.name) storeCount,
+                   (SELECT GROUP_CONCAT(s.name, ', ') FROM stores s WHERE s.owner=u.name) storeNames,
                    (SELECT COUNT(*) FROM product_orders o WHERE o.seller=u.name) sellOrders,
                    (SELECT IFNULL(SUM(o.amount),0) FROM product_orders o WHERE o.seller=u.name AND o.status='confirmed') sellSales,
                    (SELECT IFNULL(SUM(o.escrow_held),0) FROM product_orders o WHERE o.seller=u.name AND o.status='confirmed' AND o.escrow_held>0 AND o.settled=0) sellUnsettled,
@@ -4225,14 +4226,26 @@ app.get('/api/admin/members/:name/clinics', (req, res) => {
         if (e) return res.status(500).json({ error: e.message });
         if (!row) return res.status(404).json({ error: '회원이 없습니다.' });
         let clinics = []; try { clinics = JSON.parse(row.partner_clinics || '[]') || []; } catch (_) {}
-        db.all(`SELECT name, realname, phone, email, shipping_address, biz_addr, biz_company FROM users`, [], (e2, users) => {
+        db.all(`SELECT name, realname, phone, email, shipping_address, biz_addr, biz_company, biz_no, biz_ceo FROM users`, [], (e2, users) => {
             db.all(`SELECT owner, name FROM stores`, [], (e3, stores) => {
                 const storeNames = {}; (stores || []).forEach(st => { if (st.owner) (storeNames[st.owner] = storeNames[st.owner] || []).push(_normTxt(st.name)); });
+                let changed = false;
                 const out = clinics.map(c => {
                     const mu = c.memberId || _clinicMatchedUser(c, users || [], storeNames, target);
                     const um = (users || []).find(u => u.name === mu);
+                    // 🔄 가입된 거래처는 그 회원의 '실제 가입 정보'로 거래처 정보를 갱신(추가 정보 반영) 후 저장
+                    if (um) {
+                        const canonName = (um.biz_company || um.realname || um.name || '').trim();
+                        const canonAddr = (um.biz_addr || um.shipping_address || '').trim();
+                        const nc = Object.assign({}, c, {
+                            name: canonName || c.name, phone: (um.phone || c.phone), addr: (canonAddr || c.addr),
+                            email: (um.email || c.email || ''), ceo: (um.biz_ceo || c.ceo || ''), bizNo: (um.biz_no || c.bizNo || ''), memberId: um.name
+                        });
+                        if (JSON.stringify(nc) !== JSON.stringify(c)) { changed = true; Object.assign(c, nc); }
+                    }
                     return Object.assign({}, c, { matchedUser: mu || '', joined: !!mu, matchedName: um ? (um.biz_company || um.realname || um.name) : '' });
                 });
+                if (changed) db.run(`UPDATE users SET partner_clinics=? WHERE name=?`, [JSON.stringify(clinics), target], () => {});   // 갱신분 영속화
                 res.json({ member: { name: row.name, business_type: row.business_type, bizName: (row.biz_company || row.realname || row.name) }, clinics: out });
             });
         });
@@ -4245,7 +4258,7 @@ app.post('/api/admin/members/:name/clinics', (req, res) => {
     if (!sc.isAdmin && sc.me !== target) return res.status(403).json({ error: '본인 거래처만 수정할 수 있습니다.' });
     const clinics = (Array.isArray(req.body.clinics) ? req.body.clinics : []).map(c => ({
         name: String(c.name || '').trim(), phone: String(c.phone || '').trim(), addr: String(c.addr || '').trim(),
-        ceo: String(c.ceo || '').trim(), email: String(c.email || '').trim(), memberId: String(c.memberId || '').trim() || undefined
+        ceo: String(c.ceo || '').trim(), email: String(c.email || '').trim(), bizNo: String(c.bizNo || '').trim() || undefined, memberId: String(c.memberId || '').trim() || undefined
     })).filter(c => c.name || c.phone);
     if (clinics.some(c => c.name && !c.phone)) return res.status(400).json({ error: '거래처 전화번호를 입력해 주세요.' });
     db.get(`SELECT name FROM users WHERE name=?`, [target], (e, row) => {

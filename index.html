@@ -1819,7 +1819,7 @@
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;white-space:nowrap;">
-                            <thead><tr><th>회원(ID)</th><th>상호/실명</th><th>유형</th><th>연락처</th><th>사업자번호</th><th style="text-align:center;">승인</th><th style="text-align:right;">판매매출</th><th style="text-align:right;">미정산</th><th style="text-align:right;">구매액</th><th style="text-align:center;">영업 관리</th></tr></thead>
+                            <thead><tr><th>회원(ID)</th><th>상점명/상호</th><th>유형</th><th>연락처</th><th>사업자번호</th><th style="text-align:center;">승인</th><th style="text-align:right;">판매매출</th><th style="text-align:right;">미정산</th><th style="text-align:right;">구매액</th><th style="text-align:center;">영업 관리</th></tr></thead>
                             <tbody id="am-body"><tr><td colspan="10" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 회원을 불러오세요.</td></tr></tbody>
                         </table>
                     </div>
@@ -6456,8 +6456,8 @@
                     const idJs = (m.name||'').replace(/'/g,"\\'");
                     const bizNm = (m.biz_company||m.realname||'').trim();
                     return `<tr style="cursor:pointer;" onclick="if(!event.target.closest('button'))openMemberClinics('${idJs}')" title="클릭: 이 회원의 거래처 보기">
-                        <td style="font-weight:800;">${taxEscH(m.name||'')}${bizNm?`<div style="font-size:11px;color:#2563eb;font-weight:700;margin-top:1px;">${taxEscH(bizNm)}</div>`:''}${m.storeCount?` <span style="font-size:10px;color:#94a3b8;font-weight:500;">상점 ${m.storeCount}</span>`:''}</td>
-                        <td>${taxEscH(bizNm||'-')}</td>
+                        <td style="font-weight:800;">${taxEscH(m.name||'')}${bizNm?`<div style="font-size:11px;color:#2563eb;font-weight:700;margin-top:1px;">${taxEscH(bizNm)}</div>`:''}${m.storeNames?`<div style="font-size:10px;color:#0e7490;font-weight:600;margin-top:1px;">🏪 ${taxEscH(m.storeNames)}</div>`:''}</td>
+                        <td style="font-size:12px;">${m.storeNames?taxEscH(m.storeNames):(bizNm?taxEscH(bizNm):'-')}</td>
                         <td style="font-size:11px;">${taxEscH(amBtypeLabel(m.business_type))}</td>
                         <td style="font-size:11px;">${taxEscH(m.phone||'-')}</td>
                         <td style="font-size:11px;">${taxEscH(m.biz_no||'-')}</td>
@@ -6484,7 +6484,7 @@
             let ov=document.getElementById('mc-ov'); if(ov) ov.remove();
             ov=document.createElement('div'); ov.id='mc-ov'; ov.style.cssText='position:fixed;inset:0;z-index:5200;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
             ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:720px;width:100%;padding:22px;max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-weight:800;font-size:16px;" id="mc-title">거래처</div><button id="mc-x" style="margin-left:auto;border:0;background:#f1f5f9;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;">✕</button></div><div id="mc-body" style="font-size:13px;color:#475569;">불러오는 중…</div></div>';
-            document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); }); ov.querySelector('#mc-x').onclick=()=>ov.remove();
+            document.body.appendChild(ov); ov.querySelector('#mc-x').onclick=()=>ov.remove();   // 배경 클릭으로 닫히지 않음(입력 중 실수 방지) — ✕/닫기로만 닫기
             const body=ov.querySelector('#mc-body');
             let data=null; try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(name)}/clinics`); data=await r.json(); if(!r.ok) throw new Error(data.error||'로드 실패'); }catch(e){ body.innerHTML='<div style="color:#dc2626;">'+esc(e.message||'로드 실패')+'</div>'; return; }
             ov.querySelector('#mc-title').textContent='거래처 · '+((data.member&&data.member.bizName)||name)+' (ID: '+name+')';
@@ -6501,7 +6501,7 @@
                     +'<div style="flex:1;display:flex;flex-direction:column;gap:5px;">'
                     +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><input data-i="'+i+'" data-k="name" value="'+esc(c.name||'')+'" placeholder="거래처 이름" style="flex:1;min-width:120px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;"><input data-i="'+i+'" data-k="phone" value="'+esc(c.phone||'')+'" placeholder="전화번호" style="width:130px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">'+joinChip(c.joined)+'</div>'
                     +'<input data-i="'+i+'" data-k="addr" value="'+esc(c.addr||'')+'" placeholder="주소(선택)" style="padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">'
-                    +(c.matchedUser?'<div style="font-size:11px;color:#166534;">가입 회원: '+esc(c.matchedName||'')+' (ID: '+esc(c.matchedUser)+')</div>':'')
+                    +(c.matchedUser?'<div style="font-size:11px;color:#166534;">✅ 가입 회원: '+esc(c.matchedName||'')+' (ID: '+esc(c.matchedUser)+')'+((c.ceo||c.bizNo)?' · '+[c.bizNo?('사업자 '+esc(c.bizNo)):'',c.ceo?('대표 '+esc(c.ceo)):''].filter(Boolean).join(' · '):'')+'</div>':'')
                     +'</div>'
                     +'<button data-del="'+i+'" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;flex:none;">✕</button></div>').join('')
                     : '<div style="padding:14px;text-align:center;color:#94a3b8;">등록된 거래처가 없습니다.</div>';
