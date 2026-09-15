@@ -951,6 +951,8 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS device_files (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, deviceId TEXT, fname TEXT, size INTEGER, hash TEXT, thumb TEXT, mime TEXT, updated INTEGER, UNIQUE(deviceId, hash))`, () => {});
         db.run(`ALTER TABLE chats ADD COLUMN created_at TEXT`, () => {});   // ⏱ ISO 타임스탬프(고객센터 24h 자동삭제 기준)
         db.run(`ALTER TABLE users ADD COLUMN card_pw TEXT`, () => {});   // (선택) 회원가입 시 카드 비밀번호 4자리 — 실 PG 대비 저장만, 현재 미검증
+        db.run(`ALTER TABLE users ADD COLUMN postal_code TEXT`, () => {});    // 🏷 우편번호
+        db.run(`ALTER TABLE users ADD COLUMN office_phone TEXT`, () => {});   // ☎ 사무실 전화번호(phone=핸드폰)
 
         // 🚀 [v8+] 전역 설정 (Admin 권한 비밀번호 등) — 초기값 'mars'
         db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`, () => {
@@ -4265,6 +4267,7 @@ app.get('/api/admin/ledger', (req, res) => {
     const q = String(req.query.q || '').trim();
     const month = String(req.query.month || '').slice(0, 7);
     const store = String(req.query.store || '').trim();
+    const category = String(req.query.category || '').trim();   // 카테고리(판매자 업체유형: dental_lab/dental_clinic 등)
     const like = '%' + q + '%';
     const _revStatus = { refunded: 1, rejected: 1, cancelled: 1 };
     // 📅 created_at이 한국어 로케일 문자열("2026. 9. 9. AM 4:31:56")로 저장된 경우가 있어 substr 월비교가 실패한다.
@@ -4288,14 +4291,17 @@ app.get('/api/admin/ledger', (req, res) => {
         if (status) { ow += ` AND o.status = ?`; op.push(status); }
         if (q) { ow += ` AND (o.buyer LIKE ? OR o.seller LIKE ? OR IFNULL(pr.name,'') LIKE ? OR IFNULL(s.name,'') LIKE ?)`; op.push(like, like, like, like); }
         if (store) { ow += ` AND (s.id = ? OR IFNULL(s.name,'') LIKE ?)`; op.push(store, '%' + store + '%'); }
-        db.all(`SELECT o.id, o.productId, o.buyer, o.seller, o.status, o.amount, o.tracking, o.courier,
+        if (category) { ow += ` AND IFNULL(su.business_type,'individual') = ?`; op.push(category); }
+        db.all(`SELECT o.id, o.productId, o.buyer, o.seller, o.status, o.amount, o.tracking, o.courier, o.pay_method, o.pg_approval,
                        o.created_at, o.delivered_at, o.confirmed_at, o.escrow_held, o.settled, o.settled_at, o.settle_month, o.txId,
                        pr.name AS productName, s.id AS storeId, s.name AS storeName, IFNULL(s.admin_managed,0) AS storeManaged,
+                       IFNULL(su.business_type,'individual') AS sellerType,
                        (SELECT realname FROM users WHERE name = o.buyer) AS buyerRealname,
-                       t.rawDate AS txDate, IFNULL(t.refunded,0) AS txRefunded
+                       t.rawDate AS txDate, t.pay_method AS txPayMethod, t.pg_approval AS txPgApproval, IFNULL(t.refunded,0) AS txRefunded
                 FROM product_orders o
                 LEFT JOIN products pr ON pr.id = o.productId
                 LEFT JOIN stores s ON pr.storeId = s.id
+                LEFT JOIN users su ON su.name = o.seller
                 LEFT JOIN transactions t ON t.id = o.txId
                 WHERE ${ow} ORDER BY o.id DESC LIMIT 2000`, op, (e1, orders) => {
             if (e1) return res.status(500).json({ error: e1.message });
@@ -4304,11 +4310,13 @@ app.get('/api/admin/ledger', (req, res) => {
             let tw = `t.id NOT IN (SELECT txId FROM product_orders WHERE txId IS NOT NULL)`; const tp = [];
             if (!sc.isAdmin) { tw += ` AND t.seller = ?`; tp.push(sc.me); }
             if (q) { tw += ` AND (t.buyer LIKE ? OR t.seller LIKE ? OR IFNULL(t.productName,'') LIKE ?)`; tp.push(like, like, like); }
+            if (category) { tw += ` AND IFNULL((SELECT business_type FROM users WHERE name=t.seller),'individual') = ?`; tp.push(category); }
             // status 필터가 걸리면(주문 상태 개념) 순수 거래행은 제외
             const skipTxns = !!status;
             const runTxns = (cb) => {
                 if (skipTxns) return cb([]);
-                db.all(`SELECT t.id, t.buyer, t.seller, t.productId, t.productName, t.amount, t.purchaseType, t.date, t.rawDate, IFNULL(t.refunded,0) refunded
+                db.all(`SELECT t.id, t.buyer, t.seller, t.productId, t.productName, t.amount, t.purchaseType, t.date, t.rawDate, t.pay_method, t.pg_approval, IFNULL(t.refunded,0) refunded,
+                               IFNULL((SELECT business_type FROM users WHERE name=t.seller),'individual') sellerType
                         FROM transactions t WHERE ${tw} ORDER BY t.id DESC LIMIT 2000`, tp, (e2, txns) => cb(e2 ? [] : (txns || [])));
             };
             runTxns((txns) => {
@@ -4336,6 +4344,7 @@ app.get('/api/admin/ledger', (req, res) => {
                         payout: valid ? calc.payout : 0, profit: valid ? calc.payFee : 0, remain, payable,
                         settled: !!o.settled, settledAt: o.settled_at || '', settleMonth: o.settle_month || '',
                         settleDueAt, settleEligible, confirmedAt: o.confirmed_at || '', deliveredAt: o.delivered_at || '',
+                        payMethod: (o.txPayMethod || o.pay_method || ''), pgApproval: (o.txPgApproval || o.pg_approval || ''), sellerType: o.sellerType || '',
                         refunded: !!o.txRefunded, valid
                     });
                 });
@@ -4355,7 +4364,9 @@ app.get('/api/admin/ledger', (req, res) => {
                         status: t.refunded ? 'refunded' : (t.purchaseType || 'txn'),
                         tracking: '', courier: '',
                         payout: isSale ? calc.payout : 0, profit: isSale ? calc.payFee : 0, remain: 0,
-                        settled: false, settleMonth: '', refunded: !!t.refunded, valid: isSale, purchaseType: t.purchaseType || ''
+                        settled: false, settledAt: '', settleMonth: '',
+                        payMethod: (t.pay_method || ''), pgApproval: (t.pg_approval || ''), sellerType: t.sellerType || '',
+                        refunded: !!t.refunded, valid: isSale, purchaseType: t.purchaseType || ''
                     });
                 });
                 // 📅 월 필터(JS) — 로케일 문자열도 안전 반영
@@ -4475,7 +4486,7 @@ app.get('/api/admin/members/:name/clinics', (req, res) => {
     const sc = reqAdminOrOwner(req, res); if (!sc) return;
     const target = String(req.params.name || '').trim();
     if (!sc.isAdmin && sc.me !== target) return res.status(403).json({ error: '본인 거래처만 조회할 수 있습니다.' });
-    db.get(`SELECT u.name, IFNULL(u.business_type,'individual') business_type, u.realname, u.phone, u.email, u.shipping_address,
+    db.get(`SELECT u.name, IFNULL(u.business_type,'individual') business_type, u.realname, u.phone, u.office_phone, u.postal_code, u.email, u.shipping_address,
                    u.biz_no, u.biz_company, u.biz_ceo, u.biz_addr, u.biz_industry, u.biz_item, u.tax_email,
                    u.bank, u.account, IFNULL(u.balance,0) balance, u.license_no, IFNULL(u.approval_status,'approved') approval_status,
                    u.terms_agreed_at, u.privacy_agreed_at, u.partner_clinics,
@@ -4502,7 +4513,7 @@ app.get('/api/admin/members/:name/clinics', (req, res) => {
                 });
                 const member = {
                     name: row.name, bizName: (row.biz_company || row.realname || row.name), business_type: row.business_type,
-                    realname: row.realname || '', phone: row.phone || '', email: row.email || '', shipping_address: row.shipping_address || '',
+                    realname: row.realname || '', phone: row.phone || '', office_phone: row.office_phone || '', postal_code: row.postal_code || '', email: row.email || '', shipping_address: row.shipping_address || '',
                     biz_no: row.biz_no || '', biz_company: row.biz_company || '', biz_ceo: row.biz_ceo || '', biz_addr: row.biz_addr || '',
                     biz_industry: row.biz_industry || '', biz_item: row.biz_item || '', tax_email: row.tax_email || '',
                     bank: row.bank || '', account: row.account || '', balance: row.balance || 0, license_no: row.license_no || '',
@@ -4532,6 +4543,32 @@ app.post('/api/admin/members/:name/clinics', (req, res) => {
         db.run(`UPDATE users SET partner_clinics=? WHERE name=?`, [clinics.length ? JSON.stringify(clinics) : null, target], (ue) => {
             if (ue) return res.status(500).json({ error: ue.message });
             res.json({ success: true, count: clinics.length });
+        });
+    });
+});
+// 🧾 [영업관리] 회원 기본정보 수정 — 관리자 전용. (상호·성함·주소·우편번호·사무실전화·핸드폰·이메일·면허번호 등)
+app.post('/api/admin/members/:name/info', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const target = String(req.params.name || '').trim();
+    const b = req.body || {};
+    // 수정 허용 컬럼 화이트리스트(컬럼명: 입력키)
+    const map = {
+        biz_company: 'biz_company', biz_ceo: 'biz_ceo', realname: 'realname',
+        biz_addr: 'biz_addr', postal_code: 'postal_code', office_phone: 'office_phone',
+        phone: 'phone', email: 'email', license_no: 'license_no',
+        biz_no: 'biz_no', biz_industry: 'biz_industry', biz_item: 'biz_item', tax_email: 'tax_email',
+        business_type: 'business_type'
+    };
+    const sets = [], params = [];
+    Object.keys(map).forEach(col => { if (b[map[col]] != null) { sets.push(col + '=?'); params.push(String(b[map[col]]).trim()); } });
+    if (!sets.length) return res.status(400).json({ error: '수정할 항목이 없습니다.' });
+    db.get(`SELECT name FROM users WHERE name=?`, [target], (e, row) => {
+        if (e) return res.status(500).json({ error: e.message });
+        if (!row) return res.status(404).json({ error: '회원이 없습니다.' });
+        params.push(target);
+        db.run(`UPDATE users SET ${sets.join(', ')} WHERE name=?`, params, function (ue) {
+            if (ue) return res.status(500).json({ error: ue.message });
+            res.json({ success: true, updated: sets.length });
         });
     });
 });

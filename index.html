@@ -1843,10 +1843,22 @@
                 <div class="panel" style="padding:14px;">
                     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
                         <h4 style="font-size:14px;font-weight:900;margin:0;flex:1;min-width:120px;">통합 매출 원장 <span style="font-size:11px;font-weight:500;color:#94a3b8;">(주문 + 거래내역 통합 · 주문번호 고유 추적)</span></h4>
-                        <div class="input-group" style="width:170px;"><label>월 (선택)</label><input id="ao-month" type="month" onchange="loadAdminLedger()"></div>
-                        <div class="input-group" style="width:150px;"><label>상점</label><input id="ao-store" placeholder="상점명/ID" onkeydown="if(event.key==='Enter')loadAdminLedger()"></div>
-                        <div class="input-group" style="width:230px;"><label>검색 (상품·구매자·판매자)</label><input id="ao-q" placeholder="검색어 입력 후 Enter" onkeydown="if(event.key==='Enter')loadAdminLedger()"></div>
-                        <div class="input-group" style="width:160px;"><label>상태</label>
+                        <div class="input-group" style="width:150px;"><label>월 (선택)</label><input id="ao-month" type="month" onchange="loadAdminLedger()"></div>
+                        <div class="input-group" style="width:150px;"><label>카테고리(거래처)</label>
+                            <select id="ao-category" onchange="loadAdminLedger()">
+                                <option value="">전체</option>
+                                <option value="dental_lab">치과 기공소</option>
+                                <option value="dental_clinic">치과 병·의원</option>
+                                <option value="medical">일반 병·의원</option>
+                                <option value="pharmacy">약국</option>
+                                <option value="medical_wholesale">의약 도·소매</option>
+                                <option value="general">일반 상점</option>
+                                <option value="individual">개인</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="width:140px;"><label>상점</label><input id="ao-store" placeholder="상점명/ID" onkeydown="if(event.key==='Enter')loadAdminLedger()"></div>
+                        <div class="input-group" style="width:200px;"><label>검색 (상품·구매자·판매자)</label><input id="ao-q" placeholder="검색어 입력 후 Enter" onkeydown="if(event.key==='Enter')loadAdminLedger()"></div>
+                        <div class="input-group" style="width:150px;"><label>상태</label>
                             <select id="ao-status" onchange="loadAdminLedger()">
                                 <option value="">전체</option>
                                 <option value="pending">승인 대기</option>
@@ -1865,8 +1877,8 @@
                     <div id="ao-sum" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;white-space:nowrap;">
-                            <thead><tr><th>주문#/거래#</th><th>일시</th><th>상점</th><th>상품</th><th>구매자</th><th>판매자</th><th style="text-align:right;">금액</th><th style="text-align:right;background:#f0fdf4;">정산금액<br><span style="font-size:9px;font-weight:400;">판매자 지급</span></th><th style="text-align:right;background:#f5f3ff;">이익금<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:right;background:#fff7ed;">잔여금<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:right;background:#fef2f2;">정산예정<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:center;">상태</th><th style="text-align:center;">정산</th></tr></thead>
-                            <tbody id="ao-body"><tr><td colspan="13" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 통합 매출 원장을 불러오세요.</td></tr></tbody>
+                            <thead><tr><th>주문#/거래#</th><th>주문일시</th><th>카테고리</th><th>거래처(상점)</th><th>거래품목</th><th>구매자</th><th>판매자</th><th>결제수단</th><th>승인번호</th><th style="text-align:right;">거래금액</th><th style="text-align:right;background:#f0fdf4;">차액<br><span style="font-size:9px;font-weight:400;">판매자 지급</span></th><th style="text-align:right;background:#f5f3ff;">수수료<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:right;background:#fff7ed;">잔여금<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:right;background:#fef2f2;">정산예정<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:center;background:#ecfeff;">지급일자<br><span style="font-size:9px;font-weight:400;">관리자</span></th><th style="text-align:center;">상태</th><th style="text-align:center;">정산</th></tr></thead>
+                            <tbody id="ao-body"><tr><td colspan="17" style="text-align:center;padding:20px;color:#94a3b8;">[조회]를 눌러 통합 매출 원장을 불러오세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -6445,13 +6457,18 @@
             const q=(document.getElementById('ao-q')||{}).value||'';
             const month=(document.getElementById('ao-month')||{}).value||'';
             const store=(document.getElementById('ao-store')||{}).value||'';
+            const category=(document.getElementById('ao-category')||{}).value||'';
             const sumEl=document.getElementById('ao-sum');
-            body.innerHTML='<tr><td colspan="13" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            body.innerHTML='<tr><td colspan="17" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             try{
-                const d=await fetch(`${API_URL}/api/admin/ledger?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q.trim())}&month=${encodeURIComponent(month)}&store=${encodeURIComponent(store.trim())}`).then(r=>r.json());
+                const d=await fetch(`${API_URL}/api/admin/ledger?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q.trim())}&month=${encodeURIComponent(month)}&store=${encodeURIComponent(store.trim())}&category=${encodeURIComponent(category)}`).then(r=>r.json());
                 const rows=d.entries||[]; const T=d.totals||{};
-                if(!rows.length){ body.innerHTML='<tr><td colspan="13" style="text-align:center;padding:16px;color:#94a3b8;">표시할 원장이 없습니다.</td></tr>'; if(sumEl) sumEl.style.display='none'; return; }
-                const dtF=(r)=>{ if(r&&r.ts){ const d=new Date(r.ts); if(!isNaN(d)){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); } } const s=r&&r.date; if(!s) return '-'; return String(s).replace('T',' ').substring(0,16); };
+                if(!rows.length){ body.innerHTML='<tr><td colspan="17" style="text-align:center;padding:16px;color:#94a3b8;">표시할 원장이 없습니다.</td></tr>'; if(sumEl) sumEl.style.display='none'; return; }
+                // 🕒 주문일시 — 초 단위까지
+                const dtF=(r)=>{ if(r&&r.ts){ const d=new Date(r.ts); if(!isNaN(d)){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); } } const s=r&&r.date; if(!s) return '-'; return String(s).replace('T',' ').substring(0,19); };
+                const _catLbl=(t)=> (window.__amBtypeLabel&&window.__amBtypeLabel[t])||t||'-';
+                const _payLbl=(r)=>{ const pm=r.payMethod; if(pm==='card') return '<span style="color:#2563eb;font-weight:700;">💳 카드</span>'; if(pm==='balance') return '잔액'; return pm?taxEscH(pm):'-'; };
+                const _dOnly=(iso)=>{ if(!iso) return '-'; try{ const d=new Date(iso); if(!isNaN(d)){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); } }catch(_){} return String(iso).slice(0,10); };
                 body.innerHTML=rows.map(r=>{
                     const isOrd = r.kind==='order';
                     const idCell = isOrd
@@ -6461,16 +6478,20 @@
                     const settledTxt = _aoSettleCell(r);
                     return `<tr style="${isOrd?'':'background:#fcfcfd;'}">
                         <td style="text-align:center;font-size:11px;">${idCell}</td>
-                        <td style="font-size:11px;">${taxEscH(dtF(r))}</td>
+                        <td style="font-size:11px;white-space:nowrap;">${taxEscH(dtF(r))}</td>
+                        <td style="font-size:11px;">${taxEscH(_catLbl(r.sellerType))}</td>
                         <td style="font-size:12px;">${store}</td>
-                        <td style="font-weight:700;max-width:180px;overflow:hidden;text-overflow:ellipsis;">${taxEscH(r.productName||'-')}</td>
+                        <td style="font-weight:700;max-width:170px;overflow:hidden;text-overflow:ellipsis;">${taxEscH(r.productName||'-')}</td>
                         <td>${taxEscH(r.buyer||'-')}${r.buyerRealname?` <span style="font-size:10px;color:#94a3b8;">(${taxEscH(r.buyerRealname)})</span>`:''}</td>
                         <td>${taxEscH(r.seller||'-')}</td>
+                        <td style="font-size:11px;text-align:center;">${_payLbl(r)}</td>
+                        <td style="font-size:10px;color:#64748b;">${r.pgApproval?taxEscH(r.pgApproval):'-'}</td>
                         <td style="text-align:right;font-weight:700;">${taxFmt(r.amount)}</td>
                         <td style="text-align:right;color:#166534;font-weight:700;background:#f7fdf9;">${r.valid?taxFmt(r.payout):'-'}</td>
                         <td style="text-align:right;color:#7c3aed;font-weight:700;background:#faf9ff;">${r.valid?taxFmt(r.profit):'-'}</td>
                         <td style="text-align:right;color:${r.remain>0?'#b45309':'#cbd5e1'};font-weight:${r.remain>0?'800':'400'};background:#fffcf7;">${r.remain>0?taxFmt(r.remain):'-'}</td>
                         <td style="text-align:right;color:${r.payable>0?'#b91c1c':'#cbd5e1'};font-weight:${r.payable>0?'800':'400'};background:#fffafa;">${r.payable>0?taxFmt(r.payable):'-'}</td>
+                        <td style="text-align:center;font-size:11px;color:${r.settledAt?'#0e7490':'#cbd5e1'};background:#f7feff;">${r.settledAt?_dOnly(r.settledAt):'-'}</td>
                         <td style="text-align:center;">${aoStatusBadge(r.status)}</td>
                         <td style="text-align:center;font-size:11px;">${settledTxt}</td>
                     </tr>`;
@@ -6481,20 +6502,20 @@
                     // 1줄: 상점 운영 관련(판매자 관점) — 매출·판매자 지급액
                     const row1 = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">'
                         + '<span style="font-size:11px;font-weight:800;color:#64748b;min-width:78px;">상점 운영</span>'
-                        + chip('총 '+(T.count||rows.length)+'건 · 매출 '+(T.saleCount||0)+'건 총 금액', T.amount||0, '#eff6ff')
-                        + chip('총 정산금액(판매자 지급)', T.payout||0, '#f0fdf4', '#166534')
+                        + chip('총 '+(T.count||rows.length)+'건 · 매출 '+(T.saleCount||0)+'건 총 거래금액', T.amount||0, '#eff6ff')
+                        + chip('총 차액(판매자 지급)', T.payout||0, '#f0fdf4', '#166534')
                         + '</div>';
                     // 2줄: 관리자 전용(플랫폼) — 수수료·잔여금·정산예정·정산완료. 상점주에게는 숨김.
                     const row2 = isAdminView ? ('<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:8px;border-top:1px dashed #e2e8f0;">'
                         + '<span style="font-size:11px;font-weight:800;color:#7c3aed;min-width:78px;">관리자 전용</span>'
-                        + chip('이익금(플랫폼 수수료)', T.profit||0, '#f5f3ff', '#6d28d9')
+                        + chip('수수료(플랫폼 수익)', T.profit||0, '#f5f3ff', '#6d28d9')
                         + chip('잔여금(미정산 보관)', T.remain||0, '#fff7ed', '#b45309')
                         + chip('정산해야 할 금액(지급 예정)', T.payable||0, '#fef2f2', '#b91c1c')
                         + chip('정산완료 지급액', T.settledPayout||0, '#ecfeff', '#0e7490')
                         + '</div>') : '';
                     sumEl.innerHTML = row1 + row2;
                 }
-            }catch(e){ body.innerHTML=`<tr><td colspan="13" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+            }catch(e){ body.innerHTML=`<tr><td colspan="17" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         // 하위호환: 예전 호출부가 남아있어도 통합 원장으로 라우팅
         window.loadAdminOrdersList=function(){ return window.loadAdminLedger(); };
@@ -6564,15 +6585,29 @@
             const _bt=(window.__amBtypeLabel&&window.__amBtypeLabel[m.business_type])||m.business_type||'';
             const _row=(lbl,val)=> val?('<div style="display:flex;gap:6px;"><span style="color:#94a3b8;min-width:82px;flex:none;">'+lbl+'</span><span style="color:#0f172a;font-weight:600;word-break:break-all;">'+F(val)+'</span></div>'):'';
             const _won=v=>(Number(v)||0).toLocaleString()+'원';
+            const _canEdit = (typeof isAdmin!=='undefined') && !!isAdmin;
+            const _fld=(id,lbl,val,ph)=> '<div style="display:flex;flex-direction:column;gap:2px;"><label style="font-size:10px;color:#94a3b8;">'+lbl+'</label>'
+                +(_canEdit?('<input id="'+id+'" value="'+F(val)+'" placeholder="'+(ph||'')+'" style="padding:6px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">')
+                          :('<div style="padding:6px 8px;color:#0f172a;font-weight:600;word-break:break-all;">'+(F(val)||'-')+'</div>'))+'</div>';
+            const _btLabels=window.__amBtypeLabel||{};
+            const _btSel = _canEdit ? ('<div style="display:flex;flex-direction:column;gap:2px;"><label style="font-size:10px;color:#94a3b8;">카테고리(유형)</label><select id="mci-business_type" style="padding:6px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">'
+                + Object.keys(_btLabels).map(k=>'<option value="'+k+'" '+(m.business_type===k?'selected':'')+'>'+F(_btLabels[k])+'</option>').join('') + '</select></div>') : _fld('','카테고리(유형)',_bt);
             const memberCard='<div style="background:#f8fafc;border:1px solid var(--border-color);border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
-                +'<div style="font-weight:800;font-size:15px;margin-bottom:8px;">'+F(m.bizName||m.name)+' <span style="font-size:11px;color:#64748b;font-weight:500;">ID '+F(m.name)+' · '+F(_bt)+'</span></div>'
-                +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 18px;font-size:11.5px;">'
-                + _row('실명',m.realname)+_row('연락처',m.phone)+_row('이메일',m.email)+_row('주소',m.shipping_address)
-                + _row('상호',m.biz_company)+_row('대표자',m.biz_ceo)+_row('사업자번호',m.biz_no)+_row('사업장주소',m.biz_addr)
-                + _row('업태',m.biz_industry)+_row('종목',m.biz_item)+_row('세금계산서메일',m.tax_email)+_row('면허번호',m.license_no)
-                + _row('정산은행',m.bank)+_row('계좌번호',m.account)+_row('가입일',(m.joined_at||'').replace('T',' ').slice(0,16))+_row('승인상태',m.approval_status)
-                + _row('상점',m.storeNames)
+                +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-weight:800;font-size:15px;">'+F(m.bizName||m.name)+' <span style="font-size:11px;color:#64748b;font-weight:500;">ID '+F(m.name)+'</span></div>'+(_canEdit?'<span style="font-size:10px;color:#2563eb;background:#eff6ff;padding:2px 8px;border-radius:20px;font-weight:700;">관리자 수정 가능</span>':'')+'</div>'
+                +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;">'
+                + _fld('mci-biz_company','상호',m.biz_company,'상호명')
+                + _fld('mci-biz_ceo','성함(대표자)',m.biz_ceo||m.realname,'대표자명')
+                + _btSel
+                + _fld('mci-license_no','면허번호',m.license_no,'면허/자격 번호')
+                + _fld('mci-postal_code','우편번호',m.postal_code,'우편번호')
+                + _fld('mci-biz_addr','주소',m.biz_addr||m.shipping_address,'사업장 주소')
+                + _fld('mci-office_phone','사무실 전화',m.office_phone,'02-000-0000')
+                + _fld('mci-phone','핸드폰',m.phone,'010-0000-0000')
+                + _fld('mci-email','이메일',m.email,'name@email.com')
+                + _fld('mci-biz_no','사업자번호',m.biz_no,'000-00-00000')
                 +'</div>'
+                +(_canEdit?('<div style="text-align:right;margin-top:8px;"><button onclick="_mcSaveMemberInfo(\''+String(m.name).replace(/\x27/g,"\\x27")+'\')" style="background:#2563eb;color:#fff;border:0;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:800;cursor:pointer;">💾 회원정보 저장</button></div>'):'')
+                +'<div style="font-size:11px;color:#94a3b8;margin-top:6px;">가입일 '+((m.joined_at||'').replace('T',' ').slice(0,16)||'-')+' · 승인 '+F(m.approval_status)+(m.storeNames?(' · 상점 '+F(m.storeNames)):'')+'</div>'
                 +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border-color);font-size:11px;font-weight:700;">'
                 +'<span style="background:#eff6ff;color:#1e40af;padding:4px 10px;border-radius:8px;">판매 '+(m.sellOrders||0)+'건 · '+_won(m.sellSales)+'</span>'
                 +'<span style="background:#fff7ed;color:#b45309;padding:4px 10px;border-radius:8px;">미정산 '+_won(m.sellUnsettled)+'</span>'
@@ -6589,6 +6624,22 @@
                 render(); showToast('가입 회원 정보로 업데이트했습니다. [저장]을 눌러 반영하세요.');
             };
             window._mcUnlink=function(i){ const c=window.__mcRows[i]; if(!c) return; c.memberId=undefined; c.linked=false; c.linkedInfo=null; render(); };
+            // 🧾 관리자: 회원 기본정보 저장(상호·성함·주소·우편번호·사무실전화·핸드폰·이메일·면허번호·카테고리·사업자번호)
+            window._mcSaveMemberInfo=async function(mname){
+                const g=(id)=>{ const e=document.getElementById(id); return e?e.value.trim():undefined; };
+                const info={ biz_company:g('mci-biz_company'), biz_ceo:g('mci-biz_ceo'), biz_addr:g('mci-biz_addr'),
+                    postal_code:g('mci-postal_code'), office_phone:g('mci-office_phone'), phone:g('mci-phone'),
+                    email:g('mci-email'), license_no:g('mci-license_no'), biz_no:g('mci-biz_no'), business_type:g('mci-business_type') };
+                Object.keys(info).forEach(k=>{ if(info[k]===undefined) delete info[k]; });
+                try{
+                    const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(mname)}/info`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(info) });
+                    const d=await r.json().catch(()=>({}));
+                    if(!r.ok||!d.success){ showToast(d.error||'저장 실패'); return; }
+                    Object.assign(m, info); if(info.biz_company||info.biz_ceo) m.bizName=info.biz_company||info.biz_ceo||m.bizName;
+                    showToast('✅ 회원정보를 저장했습니다.'); render();
+                    if(window.loadAdminMembers) try{ loadAdminMembers(); }catch(_){}
+                }catch(e){ showToast('오류: '+(e.message||e)); }
+            };
             const render=()=>{
                 const joined=rows.filter(c=>c.linked).length;
                 body.innerHTML=memberCard
