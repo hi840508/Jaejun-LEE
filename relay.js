@@ -4162,13 +4162,26 @@ app.get('/api/admin/ledger', (req, res) => {
     const store = String(req.query.store || '').trim();
     const like = '%' + q + '%';
     const _revStatus = { refunded: 1, rejected: 1, cancelled: 1 };
+    // 📅 created_at이 한국어 로케일 문자열("2026. 9. 9. AM 4:31:56")로 저장된 경우가 있어 substr 월비교가 실패한다.
+    //   → ISO/한국어 로케일 모두 파싱해 정렬키(ts)·귀속월(ym)을 JS에서 안전 계산.
+    const _parseDate = (s) => {
+        if (!s) return null;
+        s = String(s).trim();
+        let m = s.match(/(\d{4})[.\-/\s]+(\d{1,2})[.\-/\s]+(\d{1,2})(?:[.\sT]+(?:(AM|PM|오전|오후)\s*)?(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+        if (!m) { const d = new Date(s); return isNaN(d) ? null : { ts: d.getTime(), ym: s.slice(0, 7) }; }
+        let [, y, mo, da, ap, hh, mi, ss] = m;
+        y = +y; mo = +mo; da = +da; hh = hh ? +hh : 0; mi = mi ? +mi : 0; ss = ss ? +ss : 0;
+        if ((ap === 'PM' || ap === '오후') && hh < 12) hh += 12;
+        if ((ap === 'AM' || ap === '오전') && hh === 12) hh = 0;
+        const d = new Date(y, mo - 1, da, hh, mi, ss);
+        return { ts: d.getTime(), ym: y + '-' + String(mo).padStart(2, '0') };
+    };
     _taxConfig((cfg) => {
-        // ── 1) 주문 원장(+ 연결 거래) ──
+        // ── 1) 주문 원장(+ 연결 거래) ── (월 필터는 JS에서 안전 처리 — SQL substr 미사용)
         let ow = `1=1`; const op = [];
         if (!sc.isAdmin) { ow += ` AND o.seller = ?`; op.push(sc.me); }
         if (status) { ow += ` AND o.status = ?`; op.push(status); }
         if (q) { ow += ` AND (o.buyer LIKE ? OR o.seller LIKE ? OR IFNULL(pr.name,'') LIKE ? OR IFNULL(s.name,'') LIKE ?)`; op.push(like, like, like, like); }
-        if (month) { ow += ` AND substr(IFNULL(t.rawDate, o.created_at),1,7) = ?`; op.push(month); }
         if (store) { ow += ` AND (s.id = ? OR IFNULL(s.name,'') LIKE ?)`; op.push(store, '%' + store + '%'); }
         db.all(`SELECT o.id, o.productId, o.buyer, o.seller, o.status, o.amount, o.tracking, o.courier,
                        o.created_at, o.delivered_at, o.confirmed_at, o.escrow_held, o.settled, o.settled_at, o.settle_month, o.txId,
@@ -4186,7 +4199,6 @@ app.get('/api/admin/ledger', (req, res) => {
             let tw = `t.id NOT IN (SELECT txId FROM product_orders WHERE txId IS NOT NULL)`; const tp = [];
             if (!sc.isAdmin) { tw += ` AND t.seller = ?`; tp.push(sc.me); }
             if (q) { tw += ` AND (t.buyer LIKE ? OR t.seller LIKE ? OR IFNULL(t.productName,'') LIKE ?)`; tp.push(like, like, like); }
-            if (month) { tw += ` AND substr(IFNULL(t.rawDate,t.date),1,7) = ?`; tp.push(month); }
             // status 필터가 걸리면(주문 상태 개념) 순수 거래행은 제외
             const skipTxns = !!status;
             const runTxns = (cb) => {
@@ -4195,19 +4207,18 @@ app.get('/api/admin/ledger', (req, res) => {
                         FROM transactions t WHERE ${tw} ORDER BY t.id DESC LIMIT 2000`, tp, (e2, txns) => cb(e2 ? [] : (txns || [])));
             };
             runTxns((txns) => {
-                const entries = [];
-                let totAmt = 0, totPayout = 0, totProfit = 0, totRemain = 0, totSettledPayout = 0, saleCount = 0;
+                let entries = [];
                 // 주문 행
                 orders.forEach(o => {
                     const amt = Number(o.amount) || 0;
                     const valid = !_revStatus[o.status] && amt > 0;
                     const calc = valid ? _settleCalc(amt, cfg) : { payout: 0, payFee: 0 };
                     const remain = (o.escrow_held > 0 && !o.settled && ['delivered', 'confirmed'].includes(o.status)) ? Number(o.escrow_held) : 0;
-                    if (valid) { totAmt += amt; totPayout += calc.payout; totProfit += calc.payFee; saleCount++; if (o.settled) totSettledPayout += calc.payout; }
-                    totRemain += remain;
+                    const rawDate = o.txDate || o.confirmed_at || o.delivered_at || o.created_at || '';
+                    const pd = _parseDate(rawDate);
                     entries.push({
                         kind: 'order', orderId: o.id, txId: o.txId || null,
-                        date: o.txDate || o.confirmed_at || o.delivered_at || o.created_at || '',
+                        date: rawDate, ts: pd ? pd.ts : 0, ym: pd ? pd.ym : '',
                         buyer: o.buyer, buyerRealname: o.buyerRealname || '', seller: o.seller,
                         storeId: o.storeId || '', storeName: o.storeName || '', storeManaged: !!o.storeManaged,
                         productName: o.productName || o.productId || '', amount: amt,
@@ -4221,10 +4232,11 @@ app.get('/api/admin/ledger', (req, res) => {
                     const amt = Number(t.amount) || 0;
                     const isSale = amt > 0 && t.productId && !t.refunded && t.purchaseType && !['refund', 'signup_bonus'].includes(t.purchaseType);
                     const calc = isSale ? _settleCalc(amt, cfg) : { payout: 0, payFee: 0 };
-                    if (isSale) { totAmt += amt; totPayout += calc.payout; totProfit += calc.payFee; saleCount++; }
+                    const rawDate = t.rawDate || t.date || '';
+                    const pd = _parseDate(rawDate);
                     entries.push({
                         kind: 'txn', orderId: null, txId: t.id,
-                        date: t.rawDate || t.date || '',
+                        date: rawDate, ts: pd ? pd.ts : 0, ym: pd ? pd.ym : '',
                         buyer: t.buyer, buyerRealname: '', seller: t.seller,
                         storeId: '', storeName: '', storeManaged: false,
                         productName: t.productName || t.productId || '', amount: amt,
@@ -4234,8 +4246,16 @@ app.get('/api/admin/ledger', (req, res) => {
                         settled: false, settleMonth: '', refunded: !!t.refunded, valid: isSale, purchaseType: t.purchaseType || ''
                     });
                 });
-                // 최신순(날짜 우선, 없으면 id)
-                entries.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || ((b.orderId || b.txId || 0) - (a.orderId || a.txId || 0)));
+                // 📅 월 필터(JS) — 로케일 문자열도 안전 반영
+                if (month) entries = entries.filter(e => e.ym === month);
+                // 최신순(파싱 타임스탬프 우선, 없으면 id)
+                entries.sort((a, b) => (b.ts - a.ts) || ((b.orderId || b.txId || 0) - (a.orderId || a.txId || 0)));
+                // 합계(필터 반영 후)
+                let totAmt = 0, totPayout = 0, totProfit = 0, totRemain = 0, totSettledPayout = 0, saleCount = 0;
+                entries.forEach(e => {
+                    if (e.valid) { totAmt += e.amount; totPayout += e.payout; totProfit += e.profit; saleCount++; if (e.settled) totSettledPayout += e.payout; }
+                    totRemain += (e.remain || 0);
+                });
                 res.json({
                     entries,
                     totals: { count: entries.length, saleCount, amount: totAmt, payout: totPayout, profit: totProfit, remain: totRemain, settledPayout: totSettledPayout },

@@ -6348,8 +6348,7 @@
         function aoStatusBadge(st){ const m=window.__aoStatusMeta[st]||{txt:st,bg:'#f4f4f5',color:'#52525b'}; return `<span style="display:inline-block;padding:3px 9px;border-radius:20px;background:${m.bg};color:${m.color};font-size:11px;font-weight:700;white-space:nowrap;">${taxEscH(m.txt)}</span>`; }
         window.loadAdminOrders=function(){
             if(!_canSalesMgmt()){ showToast('상점을 개설하면 매출 관리를 이용할 수 있어요.'); return; }
-            const mn=document.getElementById('ao-month');
-            if(mn && !mn.value){ const d=new Date(); mn.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+            // 기본은 '전체'(월 미지정) — 관리자는 모든 주문·거래가 보여야 함. 월 필터는 사용자가 선택 시에만 적용.
             loadAdminLedger();
         };
         // 🧾 통합 매출 원장 — 주문(판매 상태) + 거래내역을 한 표로. 주문#(고유)·연결 거래#·정산금액·이익금(수수료)·잔여금(미정산).
@@ -6365,7 +6364,7 @@
                 const d=await fetch(`${API_URL}/api/admin/ledger?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q.trim())}&month=${encodeURIComponent(month)}&store=${encodeURIComponent(store.trim())}`).then(r=>r.json());
                 const rows=d.entries||[]; const T=d.totals||{};
                 if(!rows.length){ body.innerHTML='<tr><td colspan="12" style="text-align:center;padding:16px;color:#94a3b8;">표시할 원장이 없습니다.</td></tr>'; if(sumEl) sumEl.style.display='none'; return; }
-                const dtF=(s)=>{ if(!s) return '-'; return String(s).replace('T',' ').substring(0,16); };
+                const dtF=(r)=>{ if(r&&r.ts){ const d=new Date(r.ts); if(!isNaN(d)){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); } } const s=r&&r.date; if(!s) return '-'; return String(s).replace('T',' ').substring(0,16); };
                 body.innerHTML=rows.map(r=>{
                     const isOrd = r.kind==='order';
                     const idCell = isOrd
@@ -6375,7 +6374,7 @@
                     const settledTxt = r.settled ? '<span style="color:#166534;font-weight:700;">정산완료</span>' : (r.remain>0 ? '<span style="color:#b45309;">보관중</span>' : '-');
                     return `<tr style="${isOrd?'':'background:#fcfcfd;'}">
                         <td style="text-align:center;font-size:11px;">${idCell}</td>
-                        <td style="font-size:11px;">${taxEscH(dtF(r.date))}</td>
+                        <td style="font-size:11px;">${taxEscH(dtF(r))}</td>
                         <td style="font-size:12px;">${store}</td>
                         <td style="font-weight:700;max-width:180px;overflow:hidden;text-overflow:ellipsis;">${taxEscH(r.productName||'-')}</td>
                         <td>${taxEscH(r.buyer||'-')}${r.buyerRealname?` <span style="font-size:10px;color:#94a3b8;">(${taxEscH(r.buyerRealname)})</span>`:''}</td>
