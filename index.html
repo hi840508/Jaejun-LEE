@@ -6351,6 +6351,54 @@
             // 기본은 '전체'(월 미지정) — 관리자는 모든 주문·거래가 보여야 함. 월 필터는 사용자가 선택 시에만 적용.
             loadAdminLedger();
         };
+        // 📅 D-day 계산 — 정산예정일(ISO)까지 남은 일수(달력일). 지났으면 D+n(경과). 오늘이면 D-DAY.
+        window._aoDdayBadge=function(dueISO){
+            if(!dueISO) return '';
+            const due=new Date(dueISO); if(isNaN(due)) return '';
+            const today=new Date(); const d0=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+            const d1=new Date(due.getFullYear(),due.getMonth(),due.getDate());
+            const diff=Math.round((d1-d0)/86400000);
+            let txt, bg, fg;
+            if(diff>0){ txt='D-'+diff; bg='#eff6ff'; fg='#1e40af'; }
+            else if(diff===0){ txt='D-DAY'; bg='#fef3c7'; fg='#92400e'; }
+            else { txt='D+'+(-diff)+' 경과'; bg='#fee2e2'; fg='#b91c1c'; }
+            return '<span style="display:inline-block;padding:2px 7px;border-radius:20px;background:'+bg+';color:'+fg+';font-size:10px;font-weight:800;">'+txt+'</span>';
+        };
+        // 정산 컬럼 셀 — 정산완료(일자) / 구매확정·미정산 시 정산예정일+D-day+정산지급 버튼(관리자) / 보관중 / -
+        window._aoSettleCell=function(r){
+            const isAdminView=(typeof isAdmin!=='undefined')?!!isAdmin:false;
+            if(r.settled){
+                let dt=''; try{ if(r.settledAt){ const d=new Date(r.settledAt); if(!isNaN(d)){ const p=n=>String(n).padStart(2,'0'); dt=p(d.getMonth()+1)+'/'+p(d.getDate()); } } }catch(_){}
+                return '<span style="color:#166534;font-weight:700;">정산완료</span>'+(dt?'<div style="font-size:10px;color:#94a3b8;">'+dt+'</div>':'');
+            }
+            if(r.settleEligible){
+                let dueTxt=''; try{ if(r.settleDueAt){ const d=new Date(r.settleDueAt); if(!isNaN(d)){ const p=n=>String(n).padStart(2,'0'); dueTxt=(d.getMonth()+1)+'/'+d.getDate(); } } }catch(_){}
+                const dday=window._aoDdayBadge(r.settleDueAt);
+                const line1='<div style="font-size:10px;color:#64748b;margin-bottom:2px;">정산예정 '+(dueTxt||'-')+' '+dday+'</div>';
+                const btn=isAdminView
+                    ? '<button onclick="settleOrderPayout(\''+String(r.seller||'').replace(/'/g,"\\'")+'\',\''+String(r.settleMonth||'').replace(/'/g,"\\'")+'\')" style="padding:4px 10px;background:var(--gradient-btn,#2563eb);color:#fff;border:0;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">💸 정산지급</button>'
+                    : '<span style="font-size:11px;color:#b45309;">지급 대기</span>';
+                return line1+btn;
+            }
+            if(r.remain>0){
+                // 아직 구매확정 전(배송완료 보관중) — 자동확정 예정일 안내
+                const dday=r.settleDueAt?window._aoDdayBadge(r.settleDueAt):'';
+                return '<span style="color:#b45309;font-weight:700;">보관중</span>'+(dday?'<div style="margin-top:2px;">'+dday+'</div>':'');
+            }
+            return '-';
+        };
+        // 💸 정산 지급 실행(관리자) — 해당 판매자의 구매확정·미정산 주문을 정산(수수료 제외 지급). 배치(판매자·월 단위).
+        window.settleOrderPayout=async function(seller, month){
+            if(!seller) return;
+            if(!confirm('['+seller+'] 판매자의 구매확정·미정산 주문을 정산 지급합니다.\n(수수료 2.7%+VAT 제외 후 판매자에게 지급)\n계속하시겠습니까?')) return;
+            try{
+                const r=await fetch(`${API_URL}/api/tax/settle`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ seller, month: month||'' }) });
+                const d=await r.json().catch(()=>({}));
+                if(!r.ok) return showToast(d.error||'정산 지급 실패');
+                showToast('✅ 정산 완료 · '+(d.count||0)+'건 · 지급액 '+taxFmt(d.payout||0)+'원');
+                loadAdminLedger();
+            }catch(e){ showToast('정산 지급 오류: '+(e.message||e)); }
+        };
         // 🧾 통합 매출 원장 — 주문(판매 상태) + 거래내역을 한 표로. 주문#(고유)·연결 거래#·정산금액·이익금(수수료)·잔여금(미정산).
         window.loadAdminLedger=async function(){
             const body=document.getElementById('ao-body'); if(!body) return;
@@ -6371,7 +6419,7 @@
                         ? `<div style="font-weight:800;color:#1e293b;">#${r.orderId}</div>${r.txId?`<div style="font-size:10px;color:#64748b;">거래 ${r.txId}</div>`:'<div style="font-size:10px;color:#cbd5e1;">미결제</div>'}`
                         : `<div style="font-weight:700;color:#64748b;">거래 ${r.txId}</div><div style="font-size:10px;color:#a3a3a3;">주문없음</div>`;
                     const store = r.storeName ? (taxEscH(r.storeName)+(r.storeManaged?' <span style="font-size:10px;color:#2563eb;">(통합)</span>':'')) : '<span style="color:#cbd5e1;">-</span>';
-                    const settledTxt = r.settled ? '<span style="color:#166534;font-weight:700;">정산완료</span>' : (r.remain>0 ? '<span style="color:#b45309;">보관중</span>' : '-');
+                    const settledTxt = _aoSettleCell(r);
                     return `<tr style="${isOrd?'':'background:#fcfcfd;'}">
                         <td style="text-align:center;font-size:11px;">${idCell}</td>
                         <td style="font-size:11px;">${taxEscH(dtF(r))}</td>

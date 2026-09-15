@@ -4216,6 +4216,9 @@ app.get('/api/admin/ledger', (req, res) => {
                     const remain = (o.escrow_held > 0 && !o.settled && ['delivered', 'confirmed'].includes(o.status)) ? Number(o.escrow_held) : 0;
                     // 정산해 주어야 할 금액 = 잔여금(보관중)에서 판매자에게 지급할 몫(수수료 제외)
                     const payable = remain > 0 ? _settleCalc(remain, cfg).payout : 0;
+                    // 💰 정산예정일 = min(구매확정+3영업일, 배송완료+5영업일). 정산지급 가능 = 구매확정·에스크로·미정산·통합관리 상점.
+                    const settleDueAt = _settleDueISO(o.confirmed_at, o.delivered_at) || '';
+                    const settleEligible = !!(o.status === 'confirmed' && o.escrow_held > 0 && !o.settled && o.storeManaged);
                     const rawDate = o.txDate || o.confirmed_at || o.delivered_at || o.created_at || '';
                     const pd = _parseDate(rawDate);
                     entries.push({
@@ -4226,7 +4229,9 @@ app.get('/api/admin/ledger', (req, res) => {
                         productName: o.productName || o.productId || '', amount: amt,
                         status: o.status, tracking: o.tracking || '', courier: o.courier || '',
                         payout: valid ? calc.payout : 0, profit: valid ? calc.payFee : 0, remain, payable,
-                        settled: !!o.settled, settleMonth: o.settle_month || '', refunded: !!o.txRefunded, valid
+                        settled: !!o.settled, settledAt: o.settled_at || '', settleMonth: o.settle_month || '',
+                        settleDueAt, settleEligible, confirmedAt: o.confirmed_at || '', deliveredAt: o.delivered_at || '',
+                        refunded: !!o.txRefunded, valid
                     });
                 });
                 // 순수 거래 행
