@@ -3291,7 +3291,7 @@ app.post('/api/order/:orderId/info', (req, res) => {
 });
 
 // ✏️ [의뢰서 양식 전체 수정] 원래 의뢰서 폼에서 품목·치식·정보를 수정. 구매자·판매자 모두 가능.
-//   금액 규칙: 아직 승인 전(status='pending')이면 재계산 금액으로 갱신 가능. 승인/결제 후에는 금액 잠금(증액분은 추가결제로).
+//   ⚠ 결제 전(status='pending' 또는 'awaiting_payment')에만 허용. 결제 후에는 수정 불가(금액 혼선 방지 — 필요 시 추가 결제 요청).
 app.post('/api/order/:orderId/edit', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     const orderId = req.params.orderId;
@@ -3299,28 +3299,22 @@ app.post('/api/order/:orderId/edit', (req, res) => {
     db.get(`SELECT buyer, seller, status, amount, form_data, buyer_info, bundle_html FROM product_orders WHERE id = ?`, [orderId], (e, ord) => {
         if (e || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if (me !== ord.buyer && me !== ord.seller && !isAdminName(me)) return res.status(403).json({ error: '해당 주문의 당사자만 수정할 수 있습니다.' });
-        if (['refunded', 'cancelled', 'rejected', 'confirmed', 'settled'].includes(ord.status)) return res.status(400).json({ error: '진행이 종료·확정된 주문은 수정할 수 없습니다.' });
+        if (!['pending', 'awaiting_payment'].includes(ord.status)) return res.status(400).json({ error: '결제 전 주문만 수정할 수 있습니다. (결제 후에는 추가 결제 요청을 이용하세요)' });
         const role = (me === ord.seller) ? 'seller' : (me === ord.buyer ? 'buyer' : 'admin');
-        const amountEditable = (ord.status === 'pending');   // 승인 전만 금액 변경 허용
         let fd = {}; try { fd = JSON.parse(ord.form_data || '{}') || {}; } catch (_) {}
         const newFd = (b.form_data && typeof b.form_data === 'object') ? b.form_data : fd;
         newFd.edits = (Array.isArray(fd.edits) ? fd.edits : []).concat([{ by: me, role, at: new Date().toISOString(), note: '의뢰서 양식 수정' }]);
         let newBi = ord.buyer_info;
         if (b.buyer_info && typeof b.buyer_info === 'object') { try { newBi = JSON.stringify(b.buyer_info); } catch (_) {} }
         const newBundle = (typeof b.bundle_html === 'string' && b.bundle_html) ? b.bundle_html : ord.bundle_html;
+        // 결제 전이므로 재계산 금액으로 그대로 갱신
         const reqAmount = Math.floor(Number(b.amount) || 0);
-        let newAmount = ord.amount;
-        let surchargeSuggested = 0;
-        if (amountEditable) {
-            if (reqAmount > 0) newAmount = reqAmount;
-        } else if (reqAmount > ord.amount) {
-            surchargeSuggested = reqAmount - ord.amount;   // 증액분 → 추가결제 안내
-        }
+        const newAmount = (reqAmount > 0) ? reqAmount : ord.amount;
         db.run(`UPDATE product_orders SET form_data = ?, buyer_info = ?, bundle_html = ?, amount = ? WHERE id = ?`,
             [JSON.stringify(newFd), newBi, newBundle, newAmount, orderId], function (ue) {
                 if (ue) return res.status(500).json({ error: ue.message });
-                try { _notifyOrderStatus(ord.buyer, ord.seller, orderId, ord.status, `✏️ [의뢰서 수정] ${role === 'seller' ? '판매자' : '구매자'}가 의뢰서를 수정했습니다.` + (amountEditable && newAmount !== ord.amount ? ` (금액 ${Number(newAmount).toLocaleString()}원)` : '')); } catch (_) {}
-                res.json({ success: true, orderId, amount: newAmount, amountEditable, surchargeSuggested });
+                try { _notifyOrderStatus(ord.buyer, ord.seller, orderId, ord.status, `✏️ [의뢰서 수정] ${role === 'seller' ? '판매자' : '구매자'}가 의뢰서를 수정했습니다.` + (newAmount !== ord.amount ? ` (금액 ${Number(newAmount).toLocaleString()}원)` : '')); } catch (_) {}
+                res.json({ success: true, orderId, amount: newAmount });
             });
     });
 });

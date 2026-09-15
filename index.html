@@ -4631,6 +4631,14 @@
                     }catch(e){ showToast('저장 실패: '+(e.message||e)); try{ fr.contentWindow.postMessage({type:'RAYCLOUD_SAVED', error:String(e.message||e)}, '*'); }catch(_){} }
                     return;
                 }
+                // 🗂 뷰어 DATA탭에서 미리보기 미지원 파일 클릭 → 공유폴더와 동일하게 OS 기본 프로그램으로 열기(없으면 연결 프로그램/다운로드)
+                if(ev.data.type==='RAYCLOUD_OPEN_EXTERNAL'){
+                    const url=ev.data.url, name=ev.data.name||'file';
+                    try{ const resp=await fetch(url); const blob=await resp.blob(); const f=new File([blob], name, { type: blob.type||'application/octet-stream' });
+                        await window.rcOpenExternalFile(f, name);
+                    }catch(e){ showToast('파일 열기 실패: '+(e.message||e)); }
+                    return;
+                }
                 if(ev.data.type!=='RAYCLOUD_PICK_ROOT') return;
                 const id = ev.data.id;
                 try{ if(id==='__add__'){ if(R.pick) await R.pick(); } else if(R.setActiveRoot){ await R.setActiveRoot(id); } }catch(_){}
@@ -5124,6 +5132,25 @@
             // 웹(비앱): OS 연동 불가 → 원본을 조용히 저장(다운로드)해 기본 프로그램으로 열 수 있게
             try{ const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=name||'file'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}} ,60000); showToast('원본을 저장했습니다. 저장된 파일을 기본 프로그램으로 열 수 있어요.'); }catch(_){ showToast('저장 실패'); }
             try{ modal.style.display='none'; }catch(_){}
+        };
+        // 🗂 미리보기 불가 파일 → (앱) OS 기본 프로그램으로 바로 열기 → 없으면 연결 프로그램 창 → 그래도 안되면 원본 저장. (웹) 원본 저장.
+        //   공유폴더의 _sfOpenUnsupported와 동일한 동작을 모달 없이 수행(뷰어 DATA탭 등에서 재사용).
+        window.rcOpenExternalFile = async function(f, name){
+            name = name || 'file';
+            const isApp = !!(window.rayApp && window.rayApp.openFile);
+            const _dl = ()=>{ try{ const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}} ,60000); showToast('원본을 저장했습니다. 저장된 파일을 기본 프로그램으로 열 수 있어요.'); }catch(_){ showToast('저장 실패'); } };
+            if(isApp){
+                try{
+                    showToast('기본 프로그램으로 여는 중…');
+                    const bytes=new Uint8Array(await f.arrayBuffer());
+                    let res=await window.rayApp.openFile(name, bytes, false);
+                    if(res && res.ok) return;
+                    if(res && res.noAssoc){ showToast('연결 프로그램 선택 창을 엽니다…'); res=await window.rayApp.openFile(name, bytes, true); if(res && res.ok) return; }
+                    _dl();
+                }catch(e){ _dl(); }
+                return;
+            }
+            _dl();
         };
         // 📤 폴더 파일 간편 공유(친구 선택 후 전송)
         window.rcShareFromFolder = function(name){ try{ openShareRecipientPicker([name]); }catch(e){ showToast('공유 실패'); } };
@@ -8255,12 +8282,11 @@
                         acts += _obtn('승인','#059669',`approvePendingOrder('${o.id}','${(o.productName||'').replace(/'/g,"\\'")}',${Number(o.amount||0)})`);
                         acts += _obtn('거절','#dc2626',`rejectPendingOrder('${o.id}')`);
                     }
-                    // 🧾 의뢰서 수정(판매자도 추가정보 기입 가능) — 종료 전 상태 공통
-                    const _editBtn = _obtn('✏️ 의뢰서','#7c3aed',`editOrderInfo('${o.id}')`);
-                    if(o.status === 'approved') acts = _editBtn + _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
-                    else if(o.status === 'shipping') acts = _editBtn + _obtn('송장 수정','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
-                    else if(o.status === 'delivered') acts = _editBtn;
-                    else if(o.status === 'awaiting_payment') acts = _editBtn;
+                    // 🧾 의뢰서 수정은 결제 전(awaiting_payment)에만 — 결제 후(approved 이후)에는 노출하지 않음
+                    if(o.status === 'approved') acts = _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
+                    else if(o.status === 'shipping') acts = _obtn('송장 수정','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
+                    else if(o.status === 'delivered') acts = '';
+                    else if(o.status === 'awaiting_payment') acts = _obtn('✏️ 의뢰서','#7c3aed',`editOrderInfo('${o.id}')`);
                     // ⚠ 환불 수락은 '구매자가 환불 요청(refund_requested)'한 경우에만 노출
                     else if(o.status === 'refund_requested') acts = _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     h += `<div style="background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:12px 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; cursor:pointer; transition:0.2s;"
@@ -8942,8 +8968,8 @@
                 // 버튼
                 +'<div style="display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px;">'
                 +  '<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="openRxPreview(\''+esc(o.id)+'\')">📄 상세·인쇄</button>'
-                +  '<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="editOrderInfo(\''+esc(o.id)+'\')">✏️ 의뢰서 수정</button>'
-                +  (_rxcIsSeller?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;color:#b45309;border-color:#f59e0b;" onclick="requestSurcharge(\''+esc(o.id)+'\')">💳 추가 결제 요청</button>':'')
+                +  (['pending','awaiting_payment'].indexOf(o.status)>=0?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="editOrderInfo(\''+esc(o.id)+'\')">✏️ 의뢰서 수정</button>':'')
+                +  (_rxcIsSeller && ['confirmed','settled','refunded','cancelled','rejected'].indexOf(o.status)<0?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;color:#b45309;border-color:#f59e0b;" onclick="requestSurcharge(\''+esc(o.id)+'\')">💳 추가 결제 요청</button>':'')
                 +  (o.orderId||o.id?'<button class="btn btn-outline" style="padding:7px 14px;font-size:12px;" onclick="_rxcOpenChat(\''+String((_rxcIsSeller?o.buyer:o.seller)||'').replace(/'/g,"\\'")+'\',\'room_ord_'+esc(o.id)+'\')">💬 대화방 열기</button>':'')
                 +'</div>'
                 +'</div>';
@@ -8954,6 +8980,7 @@
         window.editOrderInfo=async function(orderId){
             let o={}; try{ o=await fetch(`${API_URL}/api/order/${encodeURIComponent(orderId)}`).then(r=>r.json()); }catch(_){}
             if(!o||!o.id){ showToast('주문을 불러올 수 없습니다.'); return; }
+            if(!['pending','awaiting_payment'].includes(o.status)){ showToast('결제 전 주문만 수정할 수 있습니다. 금액 변경이 필요하면 판매자가 [추가 결제 요청]을 이용하세요.'); return; }
             let fd={}, bi={}; try{ fd=JSON.parse(o.form_data||'{}')||{}; }catch(_){} try{ bi=JSON.parse(o.buyer_info||'{}')||{}; }catch(_){}
             const hasRx = Array.isArray(fd.items) && fd.items.length;
             if(!hasRx){ showToast('이 주문은 상세/간편 의뢰서 양식이 아니어서 양식 수정이 지원되지 않습니다.'); return; }
@@ -8967,7 +8994,7 @@
                 product:{ id:o.productId, name:o.productName||'', storeId:storeId, storeCategory:'dental_lab' },
                 seller:o.seller, amount:Number(o.amount)||0, storeId:storeId, storeName:(storeName||oi.clinic||''),
                 mode:mode, rxItems:items, attachFiles:[], items:fd.items, preselectName:'',
-                editOrderId:o.id, editStatus:o.status, editAmountLocked:(o.status!=='pending'), _editOrderInfo:oi
+                editOrderId:o.id, editStatus:o.status, _editOrderInfo:oi
             };
             if(mode==='detail'){ if(window.openDetailRxForm) openDetailRxForm(); }
             else { if(window.openSimpleRxForm) openSimpleRxForm(); }
@@ -8976,9 +9003,6 @@
                 s('rx-oi-doctor', oi.doctor); s('rx-oi-patient', oi.patientName); s('rx-oi-birth', oi.birth);
                 s('rx-oi-gender', oi.gender); s('rx-oi-chart', oi.chartNo); s('rx-oi-due', oi.dueDate);
                 if(oi.dueAmPm && window.rxSetAmPm) rxSetAmPm(oi.dueAmPm==='오후'?'pm':'am');
-                if(window.rxOrderState && window.rxOrderState.editAmountLocked){
-                    const t=document.getElementById('rx-total'); if(t&&t.parentNode){ const n=document.createElement('div'); n.style.cssText='font-size:11px;color:#b45309;font-weight:700;margin-top:2px;'; n.textContent='※ 승인/결제 후에는 금액이 고정됩니다. 증액분은 판매자가 추가 결제로 요청합니다.'; t.parentNode.appendChild(n); }
-                }
             }, 80);
         };
         window.submitOrderInfoEdit=async function(orderId){
@@ -15295,7 +15319,7 @@ pdfjsScript,
                         })()}
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
                             ${p.orderId ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openRxPreview('${p.orderId}')">📋 의뢰서</button>` : `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openUniversalViewer && window.openUniversalViewer('${p.productId}', true)">미리보기</button>`}
-                            ${(p.orderId && !['confirmed','settled','refunded','cancelled','rejected'].includes(p.orderStatus)) ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.editOrderInfo('${p.orderId}')">✏️ 수정</button>` : ''}
+                            ${(p.orderId && ['pending','awaiting_payment'].includes(p.orderStatus)) ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.editOrderInfo('${p.orderId}')">✏️ 수정</button>` : ''}
                             ${hasPdf ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.openPackagePdf('${p.productId}')">주문서 PDF 보기</button>` : ''}
                             ${p.is_package ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.placeAdditionalOrder('${p.productId}')">추가 주문 / 재주문</button>` : ''}
                             ${['confirmed','settled','rejected','cancelled','refunded'].includes(p.orderStatus) ? '' : (p.orderId
@@ -16913,12 +16937,7 @@ pdfjsScript,
                         const d=await r.json().catch(()=>({}));
                         if(!r.ok) return showToast(d.error||'의뢰서 수정 실패');
                         if(window.rxCloseOverlay) rxCloseOverlay('rx-form-modal');
-                        showToast('✅ 의뢰서가 수정되었습니다.'+(d.amountEditable&&Number(d.amount||0)>0?(' (금액 '+Number(d.amount).toLocaleString()+'원)'):''));
-                        if(d.surchargeSuggested>0){
-                            const amISeller = !!(currentUser && currentUser.name===st.seller);
-                            if(amISeller){ if(confirm('수정으로 금액이 '+Number(d.surchargeSuggested).toLocaleString()+'원 증가했습니다.\n구매자에게 추가 결제를 요청할까요?')){ if(window.requestSurcharge) requestSurcharge(st.editOrderId); } }
-                            else showToast('금액이 '+Number(d.surchargeSuggested).toLocaleString()+'원 증가했습니다. 판매자가 추가 결제를 요청할 수 있습니다.');
-                        }
+                        showToast('✅ 의뢰서가 수정되었습니다.'+(Number(d.amount||0)>0?(' (금액 '+Number(d.amount).toLocaleString()+'원)'):''));
                         try{ if(window.loadMyPurchases) loadMyPurchases(); }catch(_){}
                         try{ if(window.loadMySalesOrders) loadMySalesOrders(); }catch(_){}
                         try{ if(document.getElementById('rxc-ov')){ const ov=document.getElementById('rxc-ov'); ov.remove(); } }catch(_){}
