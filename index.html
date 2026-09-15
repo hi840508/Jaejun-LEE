@@ -8255,10 +8255,12 @@
                         acts += _obtn('승인','#059669',`approvePendingOrder('${o.id}','${(o.productName||'').replace(/'/g,"\\'")}',${Number(o.amount||0)})`);
                         acts += _obtn('거절','#dc2626',`rejectPendingOrder('${o.id}')`);
                     }
-                    // 🧾 의뢰서 목록·수정(판매자도 열람/추가정보 기입 가능) 버튼 공통
-                    else if(o.status === 'approved') acts = _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
-                    else if(o.status === 'shipping') acts = _obtn('송장 수정','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
-                    else if(o.status === 'delivered') acts = '';
+                    // 🧾 의뢰서 수정(판매자도 추가정보 기입 가능) — 종료 전 상태 공통
+                    const _editBtn = _obtn('✏️ 의뢰서','#7c3aed',`editOrderInfo('${o.id}')`);
+                    if(o.status === 'approved') acts = _editBtn + _obtn('배송 등록','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
+                    else if(o.status === 'shipping') acts = _editBtn + _obtn('송장 수정','#2563eb',`openShippingModal('${o.id}')`) + _obtn('배송 완료','#3730a3',`setOrderStatus('${o.id}','delivered')`);
+                    else if(o.status === 'delivered') acts = _editBtn;
+                    else if(o.status === 'awaiting_payment') acts = _editBtn;
                     // ⚠ 환불 수락은 '구매자가 환불 요청(refund_requested)'한 경우에만 노출
                     else if(o.status === 'refund_requested') acts = _obtn('환불 수락','#dc2626',`setOrderStatus('${o.id}','refunded')`);
                     h += `<div style="background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:12px 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; cursor:pointer; transition:0.2s;"
@@ -15285,6 +15287,7 @@ pdfjsScript,
                         })()}
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
                             ${p.orderId ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openRxPreview('${p.orderId}')">📋 의뢰서</button>` : `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.openUniversalViewer && window.openUniversalViewer('${p.productId}', true)">미리보기</button>`}
+                            ${(p.orderId && !['confirmed','settled','refunded','cancelled','rejected'].includes(p.orderStatus)) ? `<button class="btn btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.editOrderInfo('${p.orderId}')">✏️ 수정</button>` : ''}
                             ${hasPdf ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.openPackagePdf('${p.productId}')">주문서 PDF 보기</button>` : ''}
                             ${p.is_package ? `<button class="btn btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="window.placeAdditionalOrder('${p.productId}')">추가 주문 / 재주문</button>` : ''}
                             ${['confirmed','settled','rejected','cancelled','refunded'].includes(p.orderStatus) ? '' : (p.orderId
@@ -16892,10 +16895,10 @@ pdfjsScript,
                     const hasContent = st.items.some(it=>(it.name||'').trim() || (it.teeth||[]).length);
                     if(!hasContent) return showToast('품목명 또는 치식을 입력해 주세요.');
                 }
-                if(!confirm(`📤 ${st.mode==='simple'?'간편':'상세'} 의뢰서를 ${st.seller}님(기공소)에게 보냅니다.\n\n결제 예정: ${st.mode==='detail'?won(st.amount):'금액 미정'}\n(기공소가 채팅에서 승인하면 진행됩니다)\n\n계속하시겠습니까?`)) return;
-                // 💳 결제수단 선택(금액 확정된 상세 의뢰서만). 간편(금액 미정)은 잔액으로 간주 — 승인 시점 결제.
-                let pay = { method:'balance' };
-                if(Number(st.amount) > 0) { try { pay = await window.pgPay(st.amount); } catch(_) { return; } }
+                if(!confirm(`📤 ${st.mode==='simple'?'간편':'상세'} 의뢰서를 ${st.seller}님(기공소)에게 보냅니다.\n\n결제 예정: ${st.mode==='detail'?won(st.amount):'금액 미정'}\n\n⚠ 지금은 결제되지 않습니다. 기공소가 주문을 수락(승인)한 뒤 결제하시면 진행됩니다.\n\n계속하시겠습니까?`)) return;
+                // 💳 [중요] 제출 시점에는 결제하지 않는다. 기공소가 승인(awaiting_payment)한 뒤 구매자가 결제 → 에스크로.
+                //   상세(금액 확정)/간편(금액 미정) 모두 'pending'으로만 접수. 선결제 유도 제거.
+                const pay = { method:'balance' };
                 showToast('의뢰서 전송 중...');
 
                 // 첨부 파일 base64
