@@ -8791,8 +8791,12 @@
             const gong=esc(o.seller||'-'); const wonjang=esc(bi.name||o.buyer||'-'); const patient=esc(bi.patient||fd.patient||'-'); const chart=esc(bi.chart||fd.chart||bi.chartNo||'-');
             const price=Number(o.amount||0);
             const _v=(x)=> (x&&String(x).trim())?esc(x):'-';
-            const detailRows=[['치식',rx.teeth],['보철 종류',rx.prosthesis],['재질',rx.material],['쉐이드',rx.shade],['교합(대합치)',rx.occlusion],['마진',rx.margin],['보험 여부',rx.insurance]]
+            let detailRows=[['주문 유형',rx.orderType],['치식',rx.teeth],['연결 타입',rx.connection],['보철 종류',rx.prosthesis],['재질',rx.material],['교합(대합치)',rx.occlusion],['마진',rx.margin],['보험 여부',rx.insurance]]
                 .map(([k,v])=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid #f1f5f9;"><span style="color:#2563eb;font-weight:700;">'+k+'</span><span style="color:#0f172a;font-weight:600;text-align:right;">'+_v(v)+'</span></div>').join('');
+            // 🦷 치식별 세부 정보(픽스처/쉐이드/헥사/보험)
+            const _pt=Array.isArray(rx.perTooth)?rx.perTooth:[];
+            if(_pt.length){ detailRows+='<div style="border-top:1px solid #f1f5f9;padding-top:6px;margin-top:4px;"><div style="color:#2563eb;font-weight:800;font-size:11px;margin-bottom:4px;">치식별 세부</div>'
+                + _pt.map(t=>'<div style="font-size:11px;color:#334155;padding:3px 0;">#'+esc(t.tooth)+' — '+[t.fixture?('픽스처 '+esc(t.fixture)):'', t.shade?('쉐이드 '+esc(t.shade)):'', t.hexa?esc(t.hexa):'', t.ins?'<b style="color:#166534;">보험</b>':''].filter(Boolean).join(' · ')+'</div>').join('') + '</div>'; }
             return '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.06);margin:0 auto 16px;max-width:1000px;overflow:hidden;border:1px solid #e8eef5;">'
                 // 헤더
                 +'<div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #eef2f7;background:#f8fbff;">'
@@ -8809,8 +8813,8 @@
                 // 본문 (보철/치식/재질 + 가격) + 상세
                 +'<div style="display:flex;flex-wrap:wrap;gap:14px;padding:14px 16px;">'
                 +  '<div style="flex:1;min-width:280px;border:2px solid #dbeafe;border-radius:10px;padding:12px 14px;">'
-                +    '<div style="font-weight:800;font-size:14px;color:#0f172a;">'+_v(rx.prosthesis||'제작')+(rx.teeth?' · 치식 '+esc(rx.teeth):'')+'</div>'
-                +    '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">'+(rx.material?'<span style="background:#fef9c3;color:#854d0e;padding:3px 10px;border-radius:16px;font-size:12px;font-weight:800;">'+esc(rx.material)+'</span>':'')+(rx.shade?'<span style="background:#e0f2fe;color:#075985;padding:3px 10px;border-radius:16px;font-size:12px;font-weight:800;">쉐이드 '+esc(rx.shade)+'</span>':'')+(rx.insurance?'<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:16px;font-size:12px;font-weight:800;">'+esc(rx.insurance)+'</span>':'')+'</div>'
+                +    '<div style="font-weight:800;font-size:14px;color:#0f172a;">'+(rx.orderType?esc(rx.orderType)+' · ':'')+_v(rx.prosthesis||'제작')+(rx.teeth?' · 치식 '+esc(rx.teeth):'')+'</div>'
+                +    '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">'+(rx.material?'<span style="background:#fef9c3;color:#854d0e;padding:3px 10px;border-radius:16px;font-size:12px;font-weight:800;">'+esc(rx.material)+'</span>':'')+(rx.connection?'<span style="background:#ede9fe;color:#5b21b6;padding:3px 10px;border-radius:16px;font-size:12px;font-weight:800;">'+esc(rx.connection)+'</span>':'')+(rx.insurance?'<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:16px;font-size:12px;font-weight:800;">'+esc(rx.insurance)+'</span>':'')+'</div>'
                 +    '<div style="margin-top:12px;text-align:right;"><span style="color:#2563eb;font-weight:800;">품목 가격</span> <b style="font-size:18px;color:#0f172a;">'+(price?price.toLocaleString():((st==='pending')?'미정':'0'))+'</b><span style="color:#64748b;"> 원</span></div>'
                 +  '</div>'
                 +  '<div style="width:280px;max-width:100%;background:#f8fbff;border:1px solid #e0eaf5;border-radius:10px;padding:12px 14px;"><div style="font-weight:800;color:#0f172a;margin-bottom:4px;">품목 상세 정보</div>'+detailRows+'</div>'
@@ -12213,21 +12217,41 @@ pdfjsScript,
                 </div>`;
 
             // 🦷 기공 의뢰 상세 — 순서대로 입력(치식→보철종류→재질→쉐이드→교합→마진→보험여부)
-            const _rxdSel = (id, i, label, opts) => {
+            const _rxdSel = (id, label, opts) => {
                 const o = ['<option value="">선택</option>'].concat(opts.map(v=>`<option value="${v}">${v}</option>`)).join('');
-                return `<div class="rxd-cell" style="display:flex;flex-direction:column;gap:4px;"><label style="font-size:11px;color:var(--text-sub);font-weight:700;">${label}</label><select id="${id}" class="rxd-f" data-i="${i}" style="padding:8px 10px;border:1px solid var(--border-color);border-radius:7px;font-size:12px;background:#fff;">${o}</select></div>`;
+                return `<div style="display:flex;flex-direction:column;gap:4px;"><label style="font-size:11px;color:var(--text-sub);font-weight:700;">${label}</label><select id="${id}" style="padding:8px 10px;border:1px solid var(--border-color);border-radius:7px;font-size:12px;background:#fff;">${o}</select></div>`;
             };
             const _isLabForm = (product && (product.storeCategory === 'dental_lab' || product.category === 'dental_lab' || product.rx_form));
+            const _fdiUpper=[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28];
+            const _fdiLower=[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
+            const _toothBtns=(arr)=>arr.map(n=>'<button type="button" class="rxd-tooth" data-t="'+n+'" style="width:30px;height:36px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;font-size:11px;font-weight:700;color:#334155;cursor:pointer;flex:none;">'+n+'</button>').join('');
             const rxDetailBox = !_isLabForm ? '' : `
-                <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin-bottom:8px;">🦷 기공 의뢰 상세 <span style="font-weight:500;color:var(--text-sub);font-size:12px;">(순서대로 입력하면 다음 항목이 열립니다 · 선택)</span></div>
-                <div id="rxd-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:14px;">
-                    <div class="rxd-cell" style="display:flex;flex-direction:column;gap:4px;"><label style="font-size:11px;color:var(--text-sub);font-weight:700;">치식 (치아 번호)</label><input id="rxd-teeth" class="rxd-f" data-i="0" placeholder="예: 16, 26, 36" style="padding:8px 10px;border:1px solid var(--border-color);border-radius:7px;font-size:12px;"></div>
-                    ${_rxdSel('rxd-prosth', 1, '보철 종류', ['크라운','브릿지','인레이/온레이','라미네이트','임플란트 보철','틀니(의치)','코핑','기타'])}
-                    ${_rxdSel('rxd-material', 2, '재질', ['지르코니아','e.max(글라스세라믹)','PFM','골드','메탈','PMMA(임시)','레진','기타'])}
-                    ${_rxdSel('rxd-shade', 3, '쉐이드(Shade)', ['A1','A2','A3','A3.5','A4','B1','B2','B3','B4','C1','C2','C3','C4','D2','D3','D4','BL1','BL2','BL3','BL4','기타'])}
-                    ${_rxdSel('rxd-occlusion', 4, '교합 (대합치)', ['자연치','보철물','임플란트','대합치 없음','기타'])}
-                    ${_rxdSel('rxd-margin', 5, '마진', ['숄더(Shoulder)','챔퍼(Chamfer)','나이프엣지','라운드 숄더','기타'])}
-                    ${_rxdSel('rxd-insurance', 6, '보험 여부', ['급여(보험)','비급여'])}
+                <div style="font-size:15px; font-weight:900; color:var(--primary); margin-bottom:10px;">🦷 상세 의뢰서 <span style="font-weight:500;color:var(--text-sub);font-size:12px;">(치식·보철 선택 + 치식별 세부정보)</span></div>
+                <div style="background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:14px;">
+                    <div style="font-size:11px;font-weight:800;color:#475569;margin-bottom:6px;">주문 유형</div>
+                    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+                        ${['신규 제작','리메이크','리페어'].map((t,idx)=>'<label class="rxd-otype" data-v="'+t+'" style="flex:1;min-width:96px;text-align:center;padding:9px;border:2px solid '+(idx===0?'var(--primary)':'#e2e8f0')+';border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;background:'+(idx===0?'var(--primary-soft)':'#fff')+';">'+t+'</label>').join('')}
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
+                        <span style="font-size:11px;font-weight:800;color:#475569;">치식 선택 <span style="color:var(--danger);">*</span></span>
+                        <span style="display:flex;gap:6px;"><button type="button" id="rxd-upper" style="font-size:11px;padding:4px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">상악 선택</button><button type="button" id="rxd-lower" style="font-size:11px;padding:4px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">하악 선택</button><button type="button" id="rxd-clear" style="font-size:11px;padding:4px 9px;border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;">초기화</button></span>
+                    </div>
+                    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px;overflow-x:auto;margin-bottom:12px;">
+                        <div style="display:flex;gap:2px;justify-content:center;margin-bottom:4px;">${_toothBtns(_fdiUpper)}</div>
+                        <div style="display:flex;gap:2px;justify-content:center;">${_toothBtns(_fdiLower)}</div>
+                        <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:8px;">선택된 치식: <b id="rxd-teeth-sel" style="color:#2563eb;">-</b></div>
+                    </div>
+                    <input type="hidden" id="rxd-teeth" value="">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                        ${_rxdSel('rxd-connection', '연결 타입', ['Single','브릿지(Bridge)','풀아치(Full Arch)','기타'])}
+                        ${_rxdSel('rxd-prosth', '보철 종류', ['크라운','브릿지','인레이/온레이','라미네이트','임플란트 보철','틀니(의치)','코핑','기타'])}
+                        ${_rxdSel('rxd-material', '재질', ['지르코니아','e.max(글라스세라믹)','PFM','골드','메탈','PMMA(임시)','레진','기타'])}
+                        ${_rxdSel('rxd-occlusion', '교합 (대합치)', ['자연치','보철물','임플란트','대합치 없음','기타'])}
+                        ${_rxdSel('rxd-margin', '마진', ['숄더(Shoulder)','챔퍼(Chamfer)','나이프엣지','라운드 숄더','기타'])}
+                        ${_rxdSel('rxd-insurance', '보험 여부', ['급여(보험)','비급여'])}
+                    </div>
+                    <div style="font-size:11px;font-weight:800;color:#475569;margin:14px 0 6px;">치식별 세부 정보 <span style="font-weight:500;color:#94a3b8;">(치식을 선택하면 자동 생성 · 픽스처/쉐이드/헥사/보험)</span></div>
+                    <div id="rxd-pertooth"></div>
                 </div>`;
 
             body.innerHTML = `
@@ -12274,12 +12298,41 @@ pdfjsScript,
                 <div id="order-buyer-files-list" style="margin-top:8px;"></div>
             `;
 
-            // 🦷 기공 의뢰 상세 — 순차 입력: 앞 항목을 채워야 다음 항목이 활성화(회원가입 순차입력과 동일 UX)
-            (function _rxdSeqInit(){
-                const fs = Array.from(document.querySelectorAll('#rxd-grid .rxd-f')); if(!fs.length) return;
-                const refresh = ()=>{ for(let i=1;i<fs.length;i++){ const prev=String(fs[i-1].value||'').trim(); fs[i].disabled = !prev; const cell=fs[i].closest('.rxd-cell'); if(cell) cell.style.opacity = fs[i].disabled ? '0.45' : '1'; } };
-                fs.forEach(f=>{ f.addEventListener('input', refresh); f.addEventListener('change', refresh); });
-                refresh();
+            // 🦷 상세 의뢰서 — 치식 차트 선택 + 치식별 세부정보(픽스처/쉐이드/헥사/보험) 동적 생성 + 주문유형 라디오
+            (function _rxdInit(){
+                const chart=document.getElementById('rxd-chart')||document; const teethHidden=document.getElementById('rxd-teeth');
+                if(!teethHidden) return;
+                const selected=new Set(); const perTooth={};   // perTooth[t]={shade,fixture,hexa,ins}
+                const SHADES=['A1','A2','A3','A3.5','A4','B1','B2','B3','B4','C1','C2','C3','C4','D2','D3','D4','BL1','BL2','BL3','BL4'];
+                const paintTooth=(b)=>{ const on=selected.has(+b.dataset.t); b.style.background=on?'#2563eb':'#fff'; b.style.color=on?'#fff':'#334155'; b.style.borderColor=on?'#2563eb':'#cbd5e1'; };
+                const renderPerTooth=()=>{
+                    const host=document.getElementById('rxd-pertooth'); if(!host) return;
+                    const list=Array.from(selected).sort((a,b)=>a-b);
+                    if(!list.length){ host.innerHTML='<div style="font-size:11px;color:#94a3b8;padding:8px;">치식을 선택하면 치식별 입력칸이 생성됩니다.</div>'; return; }
+                    host.innerHTML='<div style="display:flex;gap:6px;font-size:10px;font-weight:800;color:#94a3b8;padding:0 4px 4px;"><span style="width:38px;">치식</span><span style="flex:1;">픽스처</span><span style="flex:1;">쉐이드</span><span style="flex:1;">헥사</span><span style="width:44px;text-align:center;">보험</span></div>'
+                        + list.map(t=>{ const d=perTooth[t]||{};
+                            return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">'
+                            +'<span style="width:38px;font-weight:800;color:#2563eb;">#'+t+'</span>'
+                            +'<input class="rxd-pt" data-t="'+t+'" data-k="fixture" value="'+(d.fixture||'').replace(/"/g,"&quot;")+'" placeholder="픽스처" style="flex:1;min-width:0;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;">'
+                            +'<select class="rxd-pt" data-t="'+t+'" data-k="shade" style="flex:1;min-width:0;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;"><option value="">쉐이드</option>'+SHADES.map(s=>'<option '+(d.shade===s?'selected':'')+'>'+s+'</option>').join('')+'</select>'
+                            +'<select class="rxd-pt" data-t="'+t+'" data-k="hexa" style="flex:1;min-width:0;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;"><option value="">헥사</option>'+['헥사','논헥사','알수없음'].map(h=>'<option '+(d.hexa===h?'selected':'')+'>'+h+'</option>').join('')+'</select>'
+                            +'<label style="width:44px;text-align:center;"><input type="checkbox" class="rxd-pt" data-t="'+t+'" data-k="ins" '+(d.ins?'checked':'')+' style="width:15px;height:15px;" title="보험 적용"></label>'
+                            +'</div>';
+                        }).join('');
+                    host.querySelectorAll('.rxd-pt').forEach(el=>el.addEventListener('input',()=>{ const t=+el.dataset.t,k=el.dataset.k; perTooth[t]=perTooth[t]||{}; perTooth[t][k]=(k==='ins')?el.checked:el.value; }));
+                    host.querySelectorAll('select.rxd-pt').forEach(el=>el.addEventListener('change',()=>{ const t=+el.dataset.t,k=el.dataset.k; perTooth[t]=perTooth[t]||{}; perTooth[t][k]=el.value; }));
+                };
+                const sync=()=>{ const list=Array.from(selected).sort((a,b)=>a-b); teethHidden.value=list.join(', '); const lbl=document.getElementById('rxd-teeth-sel'); if(lbl) lbl.textContent=list.length?list.join(', '):'-'; renderPerTooth(); };
+                document.querySelectorAll('.rxd-tooth').forEach(b=>{ paintTooth(b); b.addEventListener('click',()=>{ const t=+b.dataset.t; if(selected.has(t))selected.delete(t); else selected.add(t); paintTooth(b); sync(); }); });
+                const pick=(arr)=>{ arr.forEach(t=>selected.add(t)); document.querySelectorAll('.rxd-tooth').forEach(paintTooth); sync(); };
+                const up=document.getElementById('rxd-upper'); if(up) up.onclick=()=>pick(_fdiUpper);
+                const lo=document.getElementById('rxd-lower'); if(lo) lo.onclick=()=>pick(_fdiLower);
+                const cl=document.getElementById('rxd-clear'); if(cl) cl.onclick=()=>{ selected.clear(); document.querySelectorAll('.rxd-tooth').forEach(paintTooth); sync(); };
+                // 주문 유형 라디오
+                window.__rxdOrderType='신규 제작';
+                document.querySelectorAll('.rxd-otype').forEach(el=>el.addEventListener('click',()=>{ window.__rxdOrderType=el.dataset.v; document.querySelectorAll('.rxd-otype').forEach(x=>{ const on=(x===el); x.style.border='2px solid '+(on?'var(--primary)':'#e2e8f0'); x.style.background=on?'var(--primary-soft)':'#fff'; }); }));
+                window.__rxdPerTooth=perTooth;   // 제출 시 접근
+                sync();
             })();
 
             const obDz = document.getElementById('order-buyer-dropzone');
@@ -12417,10 +12470,14 @@ pdfjsScript,
             const memoRaw = (document.getElementById('order-buyer-memo').value || '').trim();
             // 🦷 기공 의뢰 상세 캡처 → 의뢰서 메모 상단에 요약 + form_data에 구조화 저장
             const _rxg = (id)=>{ const e=document.getElementById(id); return e? String(e.value||'').trim() : ''; };
-            const rxDetail = { teeth:_rxg('rxd-teeth'), prosthesis:_rxg('rxd-prosth'), material:_rxg('rxd-material'), shade:_rxg('rxd-shade'), occlusion:_rxg('rxd-occlusion'), margin:_rxg('rxd-margin'), insurance:_rxg('rxd-insurance') };
-            const _rxLabels = { teeth:'치식', prosthesis:'보철종류', material:'재질', shade:'쉐이드', occlusion:'교합(대합치)', margin:'마진', insurance:'보험여부' };
-            const rxSummary = Object.keys(_rxLabels).filter(k=>rxDetail[k]).map(k=>_rxLabels[k]+': '+rxDetail[k]).join(' · ');
-            const memo = rxSummary ? ('🦷 기공 의뢰 상세 — ' + rxSummary + (memoRaw ? ('\n\n' + memoRaw) : '')) : memoRaw;
+            const _pt = window.__rxdPerTooth || {};
+            const perTooth = Object.keys(_pt).map(t=>Object.assign({tooth:+t}, _pt[t])).filter(x=>x.shade||x.fixture||x.hexa||x.ins).sort((a,b)=>a.tooth-b.tooth);
+            const rxDetail = { orderType:(window.__rxdOrderType||''), teeth:_rxg('rxd-teeth'), connection:_rxg('rxd-connection'), prosthesis:_rxg('rxd-prosth'), material:_rxg('rxd-material'), occlusion:_rxg('rxd-occlusion'), margin:_rxg('rxd-margin'), insurance:_rxg('rxd-insurance'), perTooth };
+            const _rxLabels = { orderType:'주문유형', teeth:'치식', connection:'연결타입', prosthesis:'보철종류', material:'재질', occlusion:'교합(대합치)', margin:'마진', insurance:'보험여부' };
+            const _rxSumFlat = Object.keys(_rxLabels).filter(k=>rxDetail[k]).map(k=>_rxLabels[k]+': '+rxDetail[k]).join(' · ');
+            const _ptSum = perTooth.length ? ('\n치식별: ' + perTooth.map(x=>'#'+x.tooth+'('+[x.shade?('쉐이드 '+x.shade):'', x.fixture?('픽스처 '+x.fixture):'', x.hexa||'', x.ins?'보험':''].filter(Boolean).join('/')+')').join(', ')) : '';
+            const rxSummary = _rxSumFlat + _ptSum;
+            const memo = rxSummary.trim() ? ('🦷 기공 의뢰 상세 — ' + rxSummary + (memoRaw ? ('\n\n' + memoRaw) : '')) : memoRaw;
             const pdfText = window.orderFormState.pdfFilledData || '';
             const buyerInfo = {
                 name: (document.getElementById('order-buyer-name').value || '').trim(),
