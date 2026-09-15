@@ -1729,10 +1729,21 @@
                         <button class="btn btn-success" style="padding:9px 18px;" onclick="issueBulkSettled()"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 선택 업체 일괄 발행</button>
                         <button class="btn btn-outline" style="padding:9px 16px;" onclick="issueSettledAdminRevenueTax()">세금계산서 발행</button>
                     </div>
+                    <div style="font-size:11px;color:#64748b;margin-bottom:6px;">🧾 각 거래처(서브 가맹점)별로 <b>정산완료 거래 건이 품목 라인으로</b> 표시됩니다. 업체 헤더의 [발행·PDF]를 누르면 해당 업체의 <b>모든 거래 항목</b>이 세금계산서 품목으로 자동 입력됩니다.</div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;">
-                            <thead><tr><th><input type="checkbox" id="settled-check-all" onclick="toggleAllSettled(this)"></th><th>거래처 (상호)</th><th>건수</th><th>매출</th><th>수수료(VAT포함)</th><th>지급액</th><th>정산완료일</th><th>세금계산서</th></tr></thead>
-                            <tbody id="settled-body"><tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [발행 대상 불러오기]를 누르세요.</td></tr></tbody>
+                            <thead><tr>
+                                <th style="width:34px;"><input type="checkbox" id="settled-check-all" onclick="toggleAllSettled(this)"></th>
+                                <th style="text-align:left;">거래처 · 거래 항목</th>
+                                <th>사업자번호</th>
+                                <th style="text-align:right;">공급가액</th>
+                                <th style="text-align:right;">세액(VAT)</th>
+                                <th style="text-align:right;">수수료 합계</th>
+                                <th style="text-align:right;">지급액</th>
+                                <th>정산완료일</th>
+                                <th>발행</th>
+                            </tr></thead>
+                            <tbody id="settled-body"><tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [발행 대상 불러오기]를 누르세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -6635,41 +6646,73 @@
             if(range){ const from=taxG('inv-from'), to=taxG('inv-to'); if(!from&&!to){ showToast('시작일 또는 종료일을 선택하세요.'); return; } qs='from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to); periodLabel=(from||'')+'~'+(to||''); }
             else { const month=taxG('inv-month'); qs='month='+encodeURIComponent(month); periodLabel=month; }
             window.__invPeriodLabel=periodLabel;
-            body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             try{
                 const d=await fetch(`${API_URL}/api/admin/tax/settled?${qs}`).then(r=>r.json());
                 window.taxSettled=d.vendors||[];
                 window.taxSettledAdminRevenue=d.adminRevenue||0; renderSettledAdminRevenue();
-                if(!window.taxSettled.length){ body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;line-height:1.7;">해당 기간에 <b>발행 대상</b>이 없습니다.<br><span style="font-size:11px;">· 아직 <b>정산(지급)</b>을 완료한 매출이 없거나<br>· 정산완료 매출을 <b>이미 모두 세금계산서 발행</b>했을 수 있습니다. (발행 이력은 아래에서 확인)<br>· 정산 전이라면 <b>정산</b> 화면에서 먼저 지급을 완료하세요.</span></td></tr>'; return; }
-                body.innerHTML=window.taxSettled.map((v,i)=>`<tr>
-                    <td style="text-align:center;"><input type="checkbox" class="settled-vsel" data-i="${i}"></td>
-                    <td style="font-weight:700;min-width:180px;">
-                        <div style="font-weight:900;">${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span></div>
-                        ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:2px;">${taxEscH(v.brands)}</div>`:''}
-                    </td>
-                    <td style="text-align:center;">${v.count}</td>
-                    <td style="text-align:right;">${taxFmt(v.salesTotal)}</td>
-                    <td style="text-align:right;color:#b45309;">${taxFmt(v.payFee)}</td>
-                    <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
-                    <td style="font-size:11px;">${taxEscH((v.settledAt||'').replace('T',' ').substring(0,16))}</td>
-                    <td style="text-align:center;"><button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" onclick="issueSettledOne(${i})">발행·PDF</button></td>
-                </tr>`).join('');
-            }catch(e){ body.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+                if(!window.taxSettled.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;line-height:1.7;">해당 기간에 <b>발행 대상</b>이 없습니다.<br><span style="font-size:11px;">· 아직 <b>정산(지급)</b>을 완료한 매출이 없거나<br>· 정산완료 매출을 <b>이미 모두 세금계산서 발행</b>했을 수 있습니다. (발행 이력은 아래에서 확인)<br>· 정산 전이라면 <b>정산</b> 화면에서 먼저 지급을 완료하세요.</span></td></tr>'; return; }
+                const _dt=(s)=>taxEscH((s||'').replace('T',' ').substring(0,10));
+                const _bizFmt=(s)=>{ s=taxDigits(s); return s.length===10?(s.slice(0,3)+'-'+s.slice(3,5)+'-'+s.slice(5)):(s||''); };
+                body.innerHTML=window.taxSettled.map((v,i)=>{
+                    const ready = !!(taxDigits(v.bizNo).length>=10);
+                    // 업체(서브가맹점) 헤더 행 — 합계 + 발행 버튼
+                    const headRow=`<tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
+                        <td style="text-align:center;"><input type="checkbox" class="settled-vsel" data-i="${i}"></td>
+                        <td style="font-weight:800;min-width:200px;">
+                            <div style="font-weight:900;font-size:13px;">${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span> <span style="font-size:10px;color:#64748b;font-weight:600;">· ${v.count}건</span></div>
+                            ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:1px;">🏪 ${taxEscH(v.brands)}</div>`:''}
+                            ${v.taxEmail?`<div style="font-size:10px;color:#94a3b8;margin-top:1px;">📧 ${taxEscH(v.taxEmail)}</div>`:''}
+                        </td>
+                        <td style="text-align:center;font-size:11px;">${ready?_bizFmt(v.bizNo):'<span style="color:#dc2626;font-weight:700;">미등록 ⚠</span>'}</td>
+                        <td style="text-align:right;font-weight:800;">${taxFmt(v.fee)}</td>
+                        <td style="text-align:right;font-weight:800;color:#b45309;">${taxFmt(v.vat)}</td>
+                        <td style="text-align:right;font-weight:900;color:#7c3aed;">${taxFmt(v.payFee)}</td>
+                        <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
+                        <td style="font-size:11px;">${_dt(v.settledAt)}</td>
+                        <td style="text-align:center;"><button class="btn ${ready?'btn-success':'btn-outline'}" style="padding:5px 12px;font-size:11px;" onclick="issueSettledOne(${i})"${ready?'':' title="사업자번호 미등록 — 발행 전 회원정보에서 등록 권장"'}>발행·PDF</button></td>
+                    </tr>`;
+                    // 거래 항목(주문 건별) 행 — 세금계산서 품목 라인 미리보기
+                    const itemRows=(v.items||[]).map(it=>`<tr style="font-size:11px;color:#475569;">
+                        <td></td>
+                        <td style="padding-left:18px;"><span style="color:#94a3b8;">↳ 주문 #${it.orderId}</span> ${taxEscH(it.productName||'')}</td>
+                        <td style="text-align:center;color:#64748b;">${taxEscH(it.buyerRealname||it.buyer||'-')}</td>
+                        <td style="text-align:right;">${taxFmt(it.fee)}</td>
+                        <td style="text-align:right;color:#b45309;">${taxFmt(it.vat)}</td>
+                        <td style="text-align:right;color:#7c3aed;">${taxFmt(it.payFee)}</td>
+                        <td style="text-align:right;color:#166534;">${taxFmt(it.payout)}</td>
+                        <td style="font-size:10px;color:#94a3b8;">${_dt(it.settledAt)}</td>
+                        <td style="text-align:center;color:#cbd5e1;">매출 ${taxFmt(it.amount)}</td>
+                    </tr>`).join('');
+                    return headRow+itemRows;
+                }).join('');
+            }catch(e){ body.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:16px;color:#dc2626;">로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         // 발행 기간(월별/기간별) — label(적요·batchMonth), writeDate(발행일), mm(품목 월칸)
         function _invPeriod(){
             if(taxG('inv-range-mode')==='range'){ const from=taxG('inv-from'), to=taxG('inv-to'); const label=(from||'')+'~'+(to||''); return { label, writeDate:(to||from||''), mm:(to||from||'').slice(5,7) }; }
             const m=taxG('inv-month'); return { label:m, writeDate:(m?m+'-01':''), mm:(m||'').slice(5,7) };
         }
-        // 정산완료 업체 발행 버튼 → 폼 프리필 오픈
+        // 정산완료 업체 발행 버튼 → 폼 프리필 오픈 (각 거래 건을 세금계산서 품목 라인으로 자동 입력)
         window.issueSettledOne=function(i){
             const v=window.taxSettled[i]; if(!v) return;
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const P=_invPeriod();
+            const _mm=(iso)=>{ const s=(iso||'').slice(5,7); return s||P.mm; };
+            const _dd=(iso)=>{ const s=(iso||'').slice(8,10); return s||''; };
+            // 각 정산완료 거래(주문)를 1개 품목 라인으로 — 상품명·주문#·구매자 표기 + 건별 공급가/세액/합계
+            let items=(v.items&&v.items.length)?v.items.map(it=>({
+                month:_mm(it.settledAt||it.confirmedAt), day:_dd(it.settledAt||it.confirmedAt),
+                name:`${it.productName||('주문 #'+it.orderId)} (주문#${it.orderId}·${it.buyerRealname||it.buyer||'구매자'}) 플랫폼 수수료`,
+                spec:'', qty:1, supplyAmount:it.fee, taxAmount:it.vat, totalAmount:it.payFee, remark:'매출 '+taxFmt(it.amount)+'원'
+            })):[{ month:P.mm, name:P.label+' 플랫폼 이용 수수료', qty:1, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }];
+            if(items.length>16){ // 세금계산서 품목 한도(16) 초과 → 합산 1줄로 폴백 안내
+                showToast('거래 '+items.length+'건 → 품목 한도(16) 초과로 1줄 합산 발행됩니다.');
+                items=[{ month:P.mm, name:P.label+' 플랫폼 이용 수수료 ('+v.count+'건 합산)', qty:v.count, supplyAmount:v.fee, taxAmount:v.vat, totalAmount:v.payFee }];
+            }
             openTaxInvoiceForm({
                 supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'', ceoName:v.bizCeo||'', address:v.bizAddr||'', bizType:v.bizIndustry||'', bizClass:v.bizItem||'', email:v.taxEmail||'' }, seller:v.seller,
-                items:[{ month:P.mm, name:P.label+' 플랫폼 이용 수수료', qty:1, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }],
-                writeDate:P.writeDate, batchMonth:P.label
+                items, writeDate:P.writeDate, batchMonth:P.label
             });
         };
         window.issueBulkSettled=async function(){
@@ -6690,10 +6733,29 @@
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const P=_invPeriod(); const rev=window.taxSettledAdminRevenue||0;
             if(rev<=0){ showToast('발행할 정산완료 Admin 수수료 매출이 없습니다.'); return; }
+            const vendors=window.taxSettled||[];
+            const _mm=(iso)=>{ const s=(iso||'').slice(5,7); return s||P.mm; };
+            const _dd=(iso)=>{ const s=(iso||'').slice(8,10); return s||''; };
+            const totalOrders=vendors.reduce((s,v)=>s+((v.items&&v.items.length)||0),0);
+            let items;
+            if(totalOrders>0 && totalOrders<=16){
+                // 거래(주문) 건별 — 각 항목: 업체·상품·주문#, 수수료(공급가/세액/합계)
+                items=[];
+                vendors.forEach(v=>(v.items||[]).forEach(it=>items.push({
+                    month:_mm(it.settledAt), day:_dd(it.settledAt),
+                    name:`${v.bizName||v.seller} · ${it.productName||('주문#'+it.orderId)} (주문#${it.orderId}) 수수료`,
+                    spec:'', qty:1, supplyAmount:it.fee, taxAmount:it.vat, totalAmount:it.payFee, remark:'매출 '+taxFmt(it.amount)
+                })));
+            } else if(vendors.length && vendors.length<=16){
+                // 업체(서브가맹점)별 합산 — 각 항목: 업체명, N건, 수수료 합계
+                items=vendors.map(v=>({ month:P.mm, name:`${v.bizName||v.seller} 플랫폼 수수료 (${v.count}건)`, spec:'', qty:v.count, supplyAmount:v.fee, taxAmount:v.vat, totalAmount:v.payFee, remark:'매출 '+taxFmt(v.salesTotal) }));
+            } else {
+                // 초과 시 전체 합산 1줄
+                items=[{ month:P.mm, name:P.label+' 거래/결제 수수료 매출(정산완료분)', qty:1, totalAmount:rev }];
+            }
             openTaxInvoiceForm({
                 supplier, recipient:supplier, seller:'(Admin)',
-                items:[{ month:P.mm, name:P.label+' 거래/결제 수수료 매출(정산완료분)', qty:1, totalAmount:rev }],
-                writeDate:P.writeDate, batchMonth:P.label, invoiceType:'admin_revenue'
+                items, writeDate:P.writeDate, batchMonth:P.label, invoiceType:'admin_revenue'
             });
         };
 

@@ -4515,25 +4515,55 @@ app.get('/api/admin/tax/settled', (req, res) => {
             where += ` AND o.seller NOT IN (SELECT seller FROM tax_invoices WHERE batchMonth=? AND (issueStatus IS NULL OR issueStatus NOT IN ('canceled','error')))`; params.push(month);
         }
         if (owner) { where += ` AND o.seller=?`; params.push(owner); }
-        db.all(`SELECT o.seller, COUNT(*) cnt, SUM(o.escrow_held) salesTotal, MAX(o.settled_at) settledAt,
+        // 🧾 [배민식 서브가맹점] 정산완료 '주문 건별'로 조회 → 각 업체(seller)의 거래 항목을 세금계산서 품목 라인으로 노출.
+        db.all(`SELECT o.id, o.seller, o.escrow_held, o.settled_at, o.settle_month, o.confirmed_at, o.buyer,
+                    pr.name productName,
+                    (SELECT realname FROM users WHERE name=o.buyer) buyerRealname,
                     su.realname sellerRealname, su.biz_no su_bizno, su.biz_company su_company, su.biz_ceo su_ceo,
                     su.biz_addr su_addr, su.biz_industry su_industry, su.biz_item su_item, su.tax_email su_taxemail, su.email su_email,
-                    GROUP_CONCAT(DISTINCT p.storeId) storeIds,
-                    GROUP_CONCAT(DISTINCT s.name) brands,
-                    GROUP_CONCAT(DISTINCT s.bizNo) bizNos
+                    s.id storeId, s.name storeName, s.bizNo storeBizNo
                 FROM product_orders o
+                LEFT JOIN products pr ON pr.id = o.productId
                 LEFT JOIN products p ON p.id = o.productId
                 LEFT JOIN stores s ON p.storeId = s.id
                 LEFT JOIN users su ON su.name = o.seller
-                WHERE ${where} GROUP BY o.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
+                WHERE ${where} ORDER BY o.seller ASC, o.settled_at DESC, o.id DESC`, params, (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
-            const vendors = (rows || []).map(r => Object.assign({
-                seller: r.seller, count: r.cnt, settledAt: r.settledAt || '',
-                bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
-                bizNo: r.su_bizno || (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
-                bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '', taxEmail: r.su_taxemail || r.su_email || '',
-                storeIds: r.storeIds || '', brands: r.brands || ''
-            }, _settleCalc(r.salesTotal, cfg)));
+            rows = rows || [];
+            // seller별 그룹핑 + 주문 건별 수수료(세금계산서 품목)
+            const map = new Map();
+            rows.forEach(r => {
+                let v = map.get(r.seller);
+                if (!v) {
+                    v = {
+                        seller: r.seller, count: 0, salesTotal: 0, fee: 0, vat: 0, payFee: 0, payout: 0, settledAt: '',
+                        bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.storeName || '') || r.seller,
+                        bizNo: r.su_bizno || r.storeBizNo || '',
+                        bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '',
+                        taxEmail: r.su_taxemail || r.su_email || '', storeIds: '', brands: '', items: [], _brandSet: new Set(), _storeSet: new Set()
+                    };
+                    map.set(r.seller, v);
+                }
+                const amt = Number(r.escrow_held) || 0;
+                const c = _settleCalc(amt, cfg);   // 주문 건별 수수료(공급가=fee, 세액=vat, 합계=payFee)
+                v.count++; v.salesTotal += amt; v.fee += c.fee; v.vat += c.vat; v.payFee += c.payFee; v.payout += c.payout;
+                if (r.settled_at && (!v.settledAt || r.settled_at > v.settledAt)) v.settledAt = r.settled_at;
+                if (r.storeName) v._brandSet.add(r.storeName);
+                if (r.storeId) v._storeSet.add(r.storeId);
+                v.items.push({
+                    orderId: r.id, productName: r.productName || ('주문 #' + r.id), buyer: r.buyer || '', buyerRealname: r.buyerRealname || '',
+                    storeName: r.storeName || '', amount: amt, fee: c.fee, vat: c.vat, payFee: c.payFee, payout: c.payout,
+                    settledAt: r.settled_at || '', settleMonth: r.settle_month || '', confirmedAt: r.confirmed_at || ''
+                });
+            });
+            const vendors = Array.from(map.values()).map(v => {
+                v.brands = Array.from(v._brandSet).join(', ');
+                v.storeIds = Array.from(v._storeSet).join(',');
+                delete v._brandSet; delete v._storeSet;
+                // 하위호환 별칭(기존 프론트 필드명)
+                v.commissionTotal = v.fee; v.vatOnFees = v.vat;
+                return v;
+            }).sort((a, b) => b.salesTotal - a.salesTotal);
             const adminRevenue = vendors.reduce((s, v) => s + (v.payFee || 0), 0);
             res.json({ month, config: cfg, vendors, adminRevenue });
         });
