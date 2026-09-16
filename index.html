@@ -1849,6 +1849,22 @@
                 </div>
             </div>
 
+            <!-- 🏥 상점 운영자 전용: 거래처 관리(별도 화면) — 본인 거래처 조회·추가·수정 -->
+            <div id="tab-my-clinics" class="tab-content">
+                <div class="smnav-host"></div>
+                <div class="panel" style="padding:14px 16px;">
+                    <div class="sm-head">
+                        <h3 style="font-size:17px;font-weight:900;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg> 거래처 관리</h3>
+                        <div class="sm-filters">
+                            <button class="btn btn-outline" onclick="mycAddRow()">＋ 거래처 추가</button>
+                            <button class="btn" style="background:var(--gradient-btn);color:#fff;font-weight:800;" onclick="mycSave()">저장</button>
+                        </div>
+                    </div>
+                    <div style="font-size:12px;color:#64748b;line-height:1.6;margin-top:4px;">우리 상점의 <b>거래처(치과 등)</b>를 등록·관리합니다. 여기서 입력한 정보는 관리자 회원 정보에도 자동 반영됩니다. 상호·전화·주소 등이 일치하는 <b>가입 회원</b>은 자동으로 후보로 표시됩니다.</div>
+                    <div id="myc-list" style="margin-top:12px;"><div style="text-align:center;color:#94a3b8;padding:20px;">불러오는 중…</div></div>
+                </div>
+            </div>
+
             <!-- 👑 Admin 전용: 매출 관리 = 전체 주문(판매 상태) + 전체 거래내역(매출 거래 원장) -->
             <div id="tab-admin-orders" class="tab-content">
                 <div class="smnav-host"></div>
@@ -6913,8 +6929,8 @@
                      + '<button class="smn-btn" data-nav="tax" onclick="goSettle()">'+S.won+' 정산</button>'
                      + '<button class="smn-btn" data-nav="invoice" onclick="goInvoice()">'+S.file+' 세금계산서</button>';
             } else {
-                // 🏪 상점 운영자: 거래처 관리 + (본인) 매출 관리만
-                btns = '<button class="smn-btn" data-nav="my-clinics" onclick="openMyClinics()">'+S.users+' 거래처 관리</button>'
+                // 🏪 상점 운영자: 거래처 관리(별도 화면) + (본인) 매출 관리만
+                btns = '<button class="smn-btn" data-nav="my-clinics" onclick="switchTab(\'my-clinics\')">'+S.users+' 거래처 관리</button>'
                      + '<button class="smn-btn" data-nav="admin-orders" onclick="switchTab(\'admin-orders\')">'+S.chart+' 매출 관리</button>';
             }
             return '<div class="smnav">'
@@ -6923,7 +6939,60 @@
                 + '</div>';
         };
         // 🏪 상점 운영자: 본인 거래처 관리(모달) — 가입 정보 기반 후보 매칭 + 거래처 편집
-        window.openMyClinics = function(){ try{ if(typeof currentUser!=='undefined' && currentUser && currentUser.name && window.openMemberClinics){ openMemberClinics(currentUser.name); } else { showToast('로그인 정보를 확인해 주세요.'); } }catch(e){ showToast('거래처 관리 열기 실패: '+(e.message||e)); } };
+        // 🏥 상점 운영자 전용 거래처 관리(별도 화면) — 본인 거래처 조회·추가·수정 (관리자 회원정보와 동일 데이터로 동기화)
+        window.loadMyClinics = async function(){
+            if(typeof currentUser==='undefined' || !currentUser || !currentUser.name) return;
+            const listEl=document.getElementById('myc-list'); if(!listEl) return;
+            listEl.innerHTML='<div style="text-align:center;color:#94a3b8;padding:20px;">불러오는 중…</div>';
+            let data=null;
+            try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(currentUser.name)}/clinics`); data=await r.json(); if(!r.ok) throw new Error(data.error||'로드 실패'); }
+            catch(e){ listEl.innerHTML='<div style="color:#dc2626;padding:16px;">'+taxEscH(e.message||'로드 실패')+'</div>'; return; }
+            window.__mycRows=(data.clinics||[]).map(c=>Object.assign({},c));
+            _mycRender();
+        };
+        function _mycRender(){
+            const listEl=document.getElementById('myc-list'); if(!listEl) return;
+            const rows=window.__mycRows||[]; const F=(s)=>taxEscH(s||'');
+            if(!rows.length){ listEl.innerHTML='<div style="text-align:center;color:#94a3b8;padding:24px;border:1px dashed #e2e8f0;border-radius:12px;">등록된 거래처가 없습니다. 위 <b>[＋ 거래처 추가]</b> 버튼으로 등록하세요.</div>'; return; }
+            const _in=(i,k,ph,val,w)=>'<input data-mi="'+i+'" data-mk="'+k+'" value="'+F(val)+'" placeholder="'+ph+'" style="'+(w?('width:'+w+';'):'flex:1;min-width:120px;')+'padding:7px 9px;border:1px solid #e5e7eb;border-radius:7px;font-size:12px;">';
+            listEl.innerHTML=rows.map((c,i)=>{
+                let matchBox='';
+                if(c.linked && c.linkedInfo){ const li=c.linkedInfo;
+                    matchBox='<div style="margin-top:6px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;font-size:11px;color:#065f46;">'
+                        +'<b>✅ 가입 회원 연결됨: '+F(li.bizName||li.name)+'</b> <span style="color:#059669;">(ID: '+F(li.name)+')</span>'
+                        +' <button onclick="mycUnlink('+i+')" style="margin-left:6px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">연결 해제</button></div>';
+                } else if((c.candidates||[]).length){
+                    matchBox='<div style="margin-top:6px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 10px;">'
+                        +'<div style="font-size:11px;font-weight:800;color:#9a3412;margin-bottom:5px;">🔎 가입 회원 후보 '+c.candidates.length+'건 — 확인 후 선택</div>'
+                        +c.candidates.map(cd=>{ const enc=encodeURIComponent(JSON.stringify(cd));
+                            return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:5px 0;border-top:1px solid #ffedd5;">'
+                            +'<div style="font-size:11px;color:#7c2d12;line-height:1.5;"><b>'+F(cd.bizName||cd.name)+'</b>'+(cd.phone?' · ☎ '+F(cd.phone):'')+(cd.addr?' · 📍 '+F(cd.addr):'')+' <span style="color:#166534;">(일치: '+F((cd.matchFields||[]).join(', '))+')</span></div>'
+                            +'<button onclick="mycApplyCandidate('+i+',\''+enc+'\')" style="flex:none;border:0;background:#16a34a;color:#fff;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;">이 회원으로 채우기</button></div>';
+                        }).join('')+'</div>';
+                } else { matchBox='<div style="margin-top:4px;font-size:11px;color:#94a3b8;">일치하는 가입 회원 후보가 없습니다(미가입).</div>'; }
+                return '<div style="border:1px solid #eef2f7;border-radius:12px;padding:10px 12px;margin-bottom:10px;background:#fbfdff;">'
+                    +'<div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">'
+                    +'<div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:6px;">'
+                    +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+_in(i,'name','거래처 상호',c.name)+_in(i,'phone','전화번호',c.phone,'140px')+'</div>'
+                    +'<input data-mi="'+i+'" data-mk="addr" value="'+F(c.addr)+'" placeholder="주소(선택)" style="padding:7px 9px;border:1px solid #e5e7eb;border-radius:7px;font-size:12px;">'
+                    +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+_in(i,'ceo','대표자(선택)',c.ceo,'130px')+_in(i,'bizNo','사업자번호(선택)',c.bizNo,'150px')+_in(i,'email','이메일(선택)',c.email)+'</div>'
+                    +'</div>'
+                    +'<button onclick="mycDel('+i+')" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;flex:none;">✕</button>'
+                    +'</div>'+matchBox+'</div>';
+            }).join('');
+            listEl.querySelectorAll('input[data-mi]').forEach(inp=>inp.addEventListener('input',()=>{ const i=+inp.dataset.mi,k=inp.dataset.mk; if(window.__mycRows[i]) window.__mycRows[i][k]=inp.value; }));
+        }
+        window.mycAddRow=function(){ window.__mycRows=window.__mycRows||[]; window.__mycRows.push({name:'',phone:'',addr:'',ceo:'',email:'',bizNo:''}); _mycRender(); };
+        window.mycDel=function(i){ if(!window.__mycRows) return; window.__mycRows.splice(i,1); _mycRender(); };
+        window.mycApplyCandidate=function(i,enc){ let cand={}; try{ cand=JSON.parse(decodeURIComponent(enc)); }catch(_){} const c=window.__mycRows[i]; if(!c) return; c.name=cand.bizName||cand.storeName||c.name; c.phone=cand.phone||c.phone; c.addr=cand.addr||c.addr; c.ceo=cand.ceo||''; c.bizNo=cand.bizNo||''; c.email=cand.email||''; c.memberId=cand.name; c.linked=true; c.linkedInfo=cand; _mycRender(); showToast('가입 회원 정보로 채웠습니다. [저장]을 눌러 반영하세요.'); };
+        window.mycUnlink=function(i){ const c=window.__mycRows[i]; if(!c) return; c.memberId=undefined; c.linked=false; c.linkedInfo=null; _mycRender(); };
+        window.mycSave=async function(){
+            if(typeof currentUser==='undefined'||!currentUser||!currentUser.name) return;
+            const rows=(window.__mycRows||[]).map(c=>({ name:(c.name||'').trim(), phone:(c.phone||'').trim(), addr:(c.addr||'').trim(), ceo:(c.ceo||'').trim(), email:(c.email||'').trim(), bizNo:(c.bizNo||'').trim()||undefined, memberId:c.memberId||undefined })).filter(c=>c.name||c.phone);
+            if(rows.some(c=>c.name && !c.phone)){ showToast('거래처 전화번호를 입력해 주세요.'); return; }
+            try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(currentUser.name)}/clinics`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics:rows})}); const d=await r.json(); if(!r.ok||!d.success){ showToast(d.error||'저장 실패'); return; } showToast('✅ 거래처 '+d.count+'건 저장됨'); loadMyClinics(); }
+            catch(e){ showToast('오류: '+(e.message||e)); }
+        };
         function _mountSalesNav(){ document.querySelectorAll('.smnav-host').forEach(function(h){ if(!h.dataset.mounted){ h.innerHTML=window._SALES_NAV_HTML(); h.dataset.mounted='1'; } }); }
         function _setSalesNavActive(id){ document.querySelectorAll('.smn-btn').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-nav')===id); }); }
         function switchTab(id, _fromHistory) {
@@ -6982,8 +7051,9 @@
             if(id === 'sales-mgmt') { loadMySalesOrders(); }
             // 🔒 회원 관리·정산·세금계산서는 관리자 전용 — 상점주가 접근 시 매출 관리로 우회
             if((id === 'admin-members' || id === 'tax' || id === 'invoice') && !isAdmin){ showToast('이 기능은 관리자 전용입니다. (상점주는 매출 관리 이용)'); return switchTab('admin-orders'); }
-            // 🧭 영업 관리 4개 탭: 상단 고정 네비 심고 활성 표시 + 권한별 버튼 노출
-            if(id === 'tax' || id === 'invoice' || id === 'admin-members' || id === 'admin-orders'){ try{ _mountSalesNav(); _setSalesNavActive(id); _applyOpsVisibility(); }catch(_){} }
+            // 🧭 영업 관리 탭: 상단 고정 네비 심고 활성 표시 + 권한별 버튼 노출
+            if(id === 'tax' || id === 'invoice' || id === 'admin-members' || id === 'admin-orders' || id === 'my-clinics'){ try{ _mountSalesNav(); _setSalesNavActive(id); _applyOpsVisibility(); }catch(_){} }
+            if(id === 'my-clinics') { if(typeof loadMyClinics==='function') loadMyClinics(); }
             if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
             if(id === 'invoice') { if(typeof loadAdminInvoice==='function') loadAdminInvoice(); }
             if(id === 'admin-members') { if(typeof loadAdminMembers==='function') loadAdminMembers(); }
