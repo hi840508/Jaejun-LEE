@@ -1853,13 +1853,7 @@
             <div id="tab-my-clinics" class="tab-content">
                 <div class="smnav-host"></div>
                 <div class="panel" style="padding:14px 16px;">
-                    <div class="sm-head">
-                        <h3 style="font-size:17px;font-weight:900;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg> 거래처 관리</h3>
-                        <div class="sm-filters">
-                            <button class="btn btn-outline" onclick="mycAddRow()">＋ 거래처 추가</button>
-                            <button class="btn" style="background:var(--gradient-btn);color:#fff;font-weight:800;" onclick="mycSave()">저장</button>
-                        </div>
-                    </div>
+                    <h3 style="font-size:17px;font-weight:900;margin:0;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg> 거래처 관리</h3>
                     <div style="font-size:12px;color:#64748b;line-height:1.6;margin-top:4px;">우리 상점의 <b>거래처(치과 등)</b>를 등록·관리합니다. 여기서 입력한 정보는 관리자 회원 정보에도 자동 반영됩니다. 상호·전화·주소 등이 일치하는 <b>가입 회원</b>은 자동으로 후보로 표시됩니다.</div>
                     <div id="myc-list" style="margin-top:12px;"><div style="text-align:center;color:#94a3b8;padding:20px;">불러오는 중…</div></div>
                 </div>
@@ -6700,53 +6694,16 @@
                 }catch(e){ showToast('오류: '+(e.message||e)); }
             };
             const render=()=>{
-                const joined=rows.filter(c=>c.linked).length;
                 body.innerHTML=memberCard
-                    +'<div style="font-weight:800;font-size:14px;margin:4px 0 8px;">🏥 거래처 <span style="font-weight:500;color:#94a3b8;font-size:12px;">(총 '+rows.length+'곳 · 연결됨 '+joined+')</span></div>'
-                    +'<div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.6;">아래 <b>후보군</b>은 입력 정보(상호·전화·주소·사업자번호 등)가 하나라도 일치하는 가입 회원입니다. 알맞은 후보의 <b>[이 회원으로 업데이트]</b>를 누르면 그 회원의 <b>전체 가입정보</b>로 채워집니다. 확인 후 <b>[저장]</b>하세요.</div>'
-                    +'<div id="mc-list"></div>'
-                    +'<button id="mc-add" style="margin:2px 0 12px;padding:8px 12px;border:1px dashed #93c5fd;background:#fff;color:#2563eb;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">＋ 거래처 추가</button>'
-                    +'<div style="display:flex;gap:8px;"><button id="mc-cancel" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button><button id="mc-save" style="flex:2;padding:11px;border:0;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">저장</button></div>';
-                const list=body.querySelector('#mc-list');
-                list.innerHTML=rows.length? rows.map((c,i)=>{
-                    // 연결됨 박스 or 후보군
-                    let matchBox='';
-                    if(c.linked && c.linkedInfo){ const li=c.linkedInfo;
-                        matchBox='<div style="margin-top:6px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;font-size:11px;color:#065f46;">'
-                            +'<div style="font-weight:800;">✅ 가입 회원 연결됨: '+F(li.bizName||li.name)+' <span style="color:#059669;">(ID: '+F(li.name)+')</span></div>'
-                            +'<div style="margin-top:3px;color:#047857;">'+[li.storeName?('상점 '+F(li.storeName)):'', li.bizNo?('사업자 '+F(li.bizNo)):'', li.ceo?('대표 '+F(li.ceo)):'', li.phone?('☎ '+F(li.phone)):'', li.addr?('📍 '+F(li.addr)):'', li.email?('✉ '+F(li.email)):''].filter(Boolean).join(' · ')+'</div>'
-                            +'<button onclick="_mcUnlink('+i+')" style="margin-top:6px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;">연결 해제</button></div>';
-                    } else if((c.candidates||[]).length){
-                        matchBox='<div style="margin-top:6px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 10px;">'
-                            +'<div style="font-size:11px;font-weight:800;color:#9a3412;margin-bottom:6px;">🔎 가입 회원 후보 '+c.candidates.length+'건 — 확인 후 선택</div>'
-                            +c.candidates.map(cd=>{ const enc=encodeURIComponent(JSON.stringify(cd));
-                                return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid #ffedd5;">'
-                                +'<div style="font-size:11px;color:#7c2d12;line-height:1.5;"><b>'+F(cd.bizName||cd.name)+'</b> <span style="color:#c2410c;">(ID: '+F(cd.name)+')</span>'
-                                +(cd.storeName?' · 상점 '+F(cd.storeName):'')+(cd.phone?' · ☎ '+F(cd.phone):'')+(cd.addr?' · 📍 '+F(cd.addr):'')+(cd.bizNo?' · 사업자 '+F(cd.bizNo):'')+(cd.ceo?' · 대표 '+F(cd.ceo):'')+(cd.email?' · ✉ '+F(cd.email):'')
-                                +'<br><span style="font-size:10px;color:#166534;">일치: '+F((cd.matchFields||[]).join(', '))+'</span></div>'
-                                +'<button onclick="_mcApplyCandidate('+i+',\''+enc+'\')" style="flex:none;border:0;background:#16a34a;color:#fff;border-radius:7px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;">이 회원으로 업데이트</button></div>';
-                            }).join('')+'</div>';
-                    } else {
-                        matchBox='<div style="margin-top:4px;font-size:11px;color:#94a3b8;">일치하는 가입 회원 후보가 없습니다(미가입).</div>';
-                    }
-                    return '<div style="margin-bottom:10px;border:1px solid #eef2f7;border-radius:10px;padding:9px;background:#fbfdff;">'
-                    +'<div style="display:flex;gap:6px;align-items:flex-start;">'
-                    +'<div style="flex:1;display:flex;flex-direction:column;gap:5px;">'
-                    +'<div style="display:flex;gap:6px;flex-wrap:wrap;"><input data-i="'+i+'" data-k="name" value="'+F(c.name)+'" placeholder="거래처 이름" style="flex:1;min-width:120px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;"><input data-i="'+i+'" data-k="phone" value="'+F(c.phone)+'" placeholder="전화번호" style="width:130px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;"></div>'
-                    +'<input data-i="'+i+'" data-k="addr" value="'+F(c.addr)+'" placeholder="주소(선택)" style="padding:7px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">'
-                    +'</div>'
-                    +'<button data-del="'+i+'" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;flex:none;">✕</button></div>'
-                    +matchBox+'</div>';
-                }).join('') : '<div style="padding:14px;text-align:center;color:#94a3b8;">등록된 거래처가 없습니다.</div>';
-                list.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',()=>{ const i=+inp.dataset.i,k=inp.dataset.k; rows[i][k]=inp.value; }));
-                list.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ rows.splice(+b.dataset.del,1); render(); });
-                body.querySelector('#mc-add').onclick=()=>{ rows.push({name:'',phone:'',addr:''}); render(); };
+                    +'<div style="font-weight:800;font-size:14px;margin:8px 0 6px;">🏥 거래처 관리 <span style="font-weight:500;color:#94a3b8;font-size:12px;">(총 '+rows.length+'곳)</span></div>'
+                    +'<div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.6;">거래처를 <b>검색·추가·수정</b>할 수 있습니다. 상호·전화·주소가 일치하는 <b>가입 회원 후보</b>가 있으면 [이 회원으로 채우기]로 연결하세요. 연결된 거래처는 편집이 잠기며, <b>연결 해제</b> 후 편집할 수 있습니다.</div>'
+                    +'<div id="mc-clinic-editor"></div>'
+                    +'<div style="margin-top:12px;"><button id="mc-cancel" style="width:100%;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">닫기</button></div>';
                 { const sb=body.querySelector('#mc-sales'); if(sb) sb.onclick=()=>{ ov.remove(); viewMemberSales(name); }; }
                 body.querySelector('#mc-cancel').onclick=()=>ov.remove();
-                body.querySelector('#mc-save').onclick=async()=>{
-                    const payload=rows.map(c=>({ name:c.name, phone:c.phone, addr:c.addr, ceo:c.ceo, email:c.email, bizNo:c.bizNo, memberId:c.memberId }));
-                    try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(name)}/clinics`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics:payload})}); const d=await r.json(); if(!r.ok||!d.success){ showToast(d.error||'저장 실패'); return; } showToast('거래처 '+d.count+'건 저장됨'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
-                };
+                window.renderClinicEditor(body.querySelector('#mc-clinic-editor'), rows, async function(clean){
+                    try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(name)}/clinics`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics:clean})}); const d=await r.json(); if(!r.ok||!d.success){ showToast(d.error||'저장 실패'); return; } showToast('거래처 '+d.count+'건 저장됨'); ov.remove(); }catch(e){ showToast('오류: '+(e.message||e)); }
+                });
             };
             render();
         };
@@ -6938,8 +6895,73 @@
                 + btns
                 + '</div>';
         };
-        // 🏪 상점 운영자: 본인 거래처 관리(모달) — 가입 정보 기반 후보 매칭 + 거래처 편집
-        // 🏥 상점 운영자 전용 거래처 관리(별도 화면) — 본인 거래처 조회·추가·수정 (관리자 회원정보와 동일 데이터로 동기화)
+        // 🏥 [공용] 거래처 편집기 — 상점운영자 화면과 관리자 회원 모달이 동일하게 사용.
+        //   기능: 검색 · 추가 · 편집(상호/전화/주소+주소검색/대표자/사업자번호/이메일) · 가입회원 후보매칭 · 연결/연결해제 · 저장.
+        //   연결된 거래처는 편집 잠금(연결 해제 후 편집). rows는 전달된 배열을 직접 갱신, onSave(cleanRows) 호출.
+        window.renderClinicEditor = function(hostEl, rows, onSave){
+            if(!hostEl) return; const F=(s)=>taxEscH(s||'');
+            hostEl.__ceRows = rows; hostEl.__ceSearch = hostEl.__ceSearch || '';
+            const _fld=(i,k,ph,val,w,locked)=>'<input data-ce="field" data-i="'+i+'" data-k="'+k+'" value="'+F(val)+'" placeholder="'+ph+'" '+(locked?'disabled':'')+' style="'+(w?('width:'+w+';'):'flex:1;min-width:120px;')+'padding:7px 9px;border:1px solid #e5e7eb;border-radius:7px;font-size:12px;'+(locked?'background:#f1f5f9;color:#64748b;':'')+'">';
+            function rowsHtml(){
+                const q=(hostEl.__ceSearch||'').trim().toLowerCase();
+                const list=rows.map((c,i)=>({c,i})).filter(({c})=>!q || ((c.name||'')+' '+(c.phone||'')+' '+(c.addr||'')+' '+(c.ceo||'')).toLowerCase().indexOf(q)>=0);
+                if(!list.length) return '<div style="text-align:center;color:#94a3b8;padding:22px;border:1px dashed #e2e8f0;border-radius:12px;">'+(rows.length?'검색 결과가 없습니다.':'등록된 거래처가 없습니다. 아래 <b>[＋ 거래처 추가]</b>로 등록하세요.')+'</div>';
+                return list.map(({c,i})=>{
+                    const locked=!!c.linked;
+                    let matchBox='';
+                    if(locked && c.linkedInfo){ const li=c.linkedInfo;
+                        matchBox='<div style="margin-top:6px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;font-size:11px;color:#065f46;">'
+                            +'🔒 <b>가입 회원 연결됨: '+F(li.bizName||li.name)+'</b> <span style="color:#059669;">(ID: '+F(li.name)+')</span> · 편집하려면 연결을 해제하세요.'
+                            +' <button data-ce="unlink" data-i="'+i+'" style="margin-left:6px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">연결 해제</button></div>';
+                    } else if((c.candidates||[]).length){
+                        matchBox='<div style="margin-top:6px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 10px;">'
+                            +'<div style="font-size:11px;font-weight:800;color:#9a3412;margin-bottom:5px;">🔎 가입 회원 후보 '+c.candidates.length+'건 — 확인 후 선택</div>'
+                            +c.candidates.map(cd=>{ const enc=encodeURIComponent(JSON.stringify(cd));
+                                return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:5px 0;border-top:1px solid #ffedd5;">'
+                                +'<div style="font-size:11px;color:#7c2d12;line-height:1.5;"><b>'+F(cd.bizName||cd.name)+'</b>'+(cd.phone?' · ☎ '+F(cd.phone):'')+(cd.addr?' · 📍 '+F(cd.addr):'')+' <span style="color:#166534;">(일치: '+F((cd.matchFields||[]).join(', '))+')</span></div>'
+                                +'<button data-ce="apply" data-i="'+i+'" data-cand="'+enc+'" style="flex:none;border:0;background:#16a34a;color:#fff;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;">이 회원으로 채우기</button></div>';
+                            }).join('')+'</div>';
+                    } else { matchBox='<div style="margin-top:4px;font-size:11px;color:#94a3b8;">일치하는 가입 회원 후보가 없습니다(미가입).</div>'; }
+                    const addrRow = '<div style="display:flex;gap:6px;">'+_fld(i,'addr','주소(선택)',c.addr,'',locked)
+                        +(locked?'':'<button data-ce="addr" data-i="'+i+'" style="flex:none;border:1px solid #cbd5e1;background:#f1f5f9;border-radius:7px;padding:0 12px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;white-space:nowrap;">🔍 주소</button>')+'</div>';
+                    return '<div class="ce-row" data-i="'+i+'" style="border:1px solid #eef2f7;border-radius:12px;padding:10px 12px;margin-bottom:10px;background:#fbfdff;">'
+                        +'<div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">'
+                        +'<div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:6px;">'
+                        +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+_fld(i,'name','거래처 상호',c.name,'',locked)+_fld(i,'phone','전화번호',c.phone,'140px',locked)+'</div>'
+                        +addrRow
+                        +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+_fld(i,'ceo','대표자(선택)',c.ceo,'130px',locked)+_fld(i,'bizNo','사업자번호(선택)',c.bizNo,'150px',locked)+_fld(i,'email','이메일(선택)',c.email,'',locked)+'</div>'
+                        +'</div>'
+                        +'<button data-ce="del" data-i="'+i+'" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;flex:none;">✕</button>'
+                        +'</div>'+matchBox+'</div>';
+                }).join('');
+            }
+            function paint(){
+                hostEl.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">'
+                    +'<input class="ce-search" value="'+F(hostEl.__ceSearch)+'" placeholder="🔍 거래처 검색 (상호·전화·주소·대표자)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
+                    +'<div class="ce-rows">'+rowsHtml()+'</div>'
+                    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:12px;border-top:1px solid #eef2f7;">'
+                    +'<button data-ce="add" class="btn btn-outline" style="padding:9px 16px;">＋ 거래처 추가</button>'
+                    +'<button data-ce="save" class="btn" style="padding:9px 20px;background:var(--gradient-btn);color:#fff;font-weight:800;">저장</button></div>';
+                const s=hostEl.querySelector('.ce-search'); if(s){ s.oninput=()=>{ hostEl.__ceSearch=s.value; const rc=hostEl.querySelector('.ce-rows'); if(rc) rc.innerHTML=rowsHtml(); }; }
+            }
+            hostEl.__ceRowsHtml = rowsHtml;
+            hostEl.__ceRepaint = function(){ const rc=hostEl.querySelector('.ce-rows'); if(rc && hostEl.__ceRowsHtml) rc.innerHTML=hostEl.__ceRowsHtml(); };
+            if(!hostEl.__ceWired){
+                hostEl.__ceWired=true;
+                hostEl.addEventListener('input', e=>{ const t=e.target; if(t.dataset && t.dataset.ce==='field'){ const i=+t.dataset.i,k=t.dataset.k; const rr=hostEl.__ceRows; if(rr&&rr[i]) rr[i][k]=t.value; } });
+                hostEl.addEventListener('click', e=>{ const b=e.target.closest('[data-ce]'); if(!b) return; const act=b.dataset.ce, i=+b.dataset.i; const rr=hostEl.__ceRows; if(!rr) return;
+                    if(act==='add'){ rr.push({name:'',phone:'',addr:'',ceo:'',email:'',bizNo:''}); hostEl.__ceRepaint(); }
+                    else if(act==='del'){ rr.splice(i,1); hostEl.__ceRepaint(); }
+                    else if(act==='unlink'){ const c=rr[i]; if(c){ c.memberId=undefined; c.linked=false; c.linkedInfo=null; } hostEl.__ceRepaint(); }
+                    else if(act==='apply'){ let cand={}; try{ cand=JSON.parse(decodeURIComponent(b.dataset.cand)); }catch(_){} const c=rr[i]; if(c){ c.name=cand.bizName||cand.storeName||c.name; c.phone=cand.phone||c.phone; c.addr=cand.addr||c.addr; c.ceo=cand.ceo||''; c.bizNo=cand.bizNo||''; c.email=cand.email||''; c.memberId=cand.name; c.linked=true; c.linkedInfo=cand; } hostEl.__ceRepaint(); showToast('가입 회원 정보로 채웠습니다. [저장]을 눌러 반영하세요.'); }
+                    else if(act==='addr'){ if(window._openDaumPostcode) window._openDaumPostcode(function(data){ const c=rr[i]; if(!c) return; let ad=data.roadAddress||data.jibunAddress||data.address||''; if(data.buildingName) ad+=' ('+data.buildingName+')'; c.addr=ad; const inp=hostEl.querySelector('.ce-row[data-i="'+i+'"] input[data-k="addr"]'); if(inp) inp.value=c.addr; }); }
+                    else if(act==='save'){ if(typeof hostEl.__ceSave==='function'){ const clean=(rr||[]).map(c=>({ name:(c.name||'').trim(), phone:(c.phone||'').trim(), addr:(c.addr||'').trim(), ceo:(c.ceo||'').trim(), email:(c.email||'').trim(), bizNo:(c.bizNo||'').trim()||undefined, memberId:c.memberId||undefined })).filter(c=>c.name||c.phone); if(clean.some(c=>c.name && !c.phone)){ showToast('거래처 전화번호를 입력해 주세요.'); return; } hostEl.__ceSave(clean); } }
+                });
+            }
+            hostEl.__ceSave = onSave;
+            paint();
+        };
+        // 🏥 상점 운영자 전용 거래처 관리(별도 화면)
         window.loadMyClinics = async function(){
             if(typeof currentUser==='undefined' || !currentUser || !currentUser.name) return;
             const listEl=document.getElementById('myc-list'); if(!listEl) return;
@@ -6947,51 +6969,11 @@
             let data=null;
             try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(currentUser.name)}/clinics`); data=await r.json(); if(!r.ok) throw new Error(data.error||'로드 실패'); }
             catch(e){ listEl.innerHTML='<div style="color:#dc2626;padding:16px;">'+taxEscH(e.message||'로드 실패')+'</div>'; return; }
-            window.__mycRows=(data.clinics||[]).map(c=>Object.assign({},c));
-            _mycRender();
-        };
-        function _mycRender(){
-            const listEl=document.getElementById('myc-list'); if(!listEl) return;
-            const rows=window.__mycRows||[]; const F=(s)=>taxEscH(s||'');
-            if(!rows.length){ listEl.innerHTML='<div style="text-align:center;color:#94a3b8;padding:24px;border:1px dashed #e2e8f0;border-radius:12px;">등록된 거래처가 없습니다. 위 <b>[＋ 거래처 추가]</b> 버튼으로 등록하세요.</div>'; return; }
-            const _in=(i,k,ph,val,w)=>'<input data-mi="'+i+'" data-mk="'+k+'" value="'+F(val)+'" placeholder="'+ph+'" style="'+(w?('width:'+w+';'):'flex:1;min-width:120px;')+'padding:7px 9px;border:1px solid #e5e7eb;border-radius:7px;font-size:12px;">';
-            listEl.innerHTML=rows.map((c,i)=>{
-                let matchBox='';
-                if(c.linked && c.linkedInfo){ const li=c.linkedInfo;
-                    matchBox='<div style="margin-top:6px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;font-size:11px;color:#065f46;">'
-                        +'<b>✅ 가입 회원 연결됨: '+F(li.bizName||li.name)+'</b> <span style="color:#059669;">(ID: '+F(li.name)+')</span>'
-                        +' <button onclick="mycUnlink('+i+')" style="margin-left:6px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">연결 해제</button></div>';
-                } else if((c.candidates||[]).length){
-                    matchBox='<div style="margin-top:6px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 10px;">'
-                        +'<div style="font-size:11px;font-weight:800;color:#9a3412;margin-bottom:5px;">🔎 가입 회원 후보 '+c.candidates.length+'건 — 확인 후 선택</div>'
-                        +c.candidates.map(cd=>{ const enc=encodeURIComponent(JSON.stringify(cd));
-                            return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:5px 0;border-top:1px solid #ffedd5;">'
-                            +'<div style="font-size:11px;color:#7c2d12;line-height:1.5;"><b>'+F(cd.bizName||cd.name)+'</b>'+(cd.phone?' · ☎ '+F(cd.phone):'')+(cd.addr?' · 📍 '+F(cd.addr):'')+' <span style="color:#166534;">(일치: '+F((cd.matchFields||[]).join(', '))+')</span></div>'
-                            +'<button onclick="mycApplyCandidate('+i+',\''+enc+'\')" style="flex:none;border:0;background:#16a34a;color:#fff;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;">이 회원으로 채우기</button></div>';
-                        }).join('')+'</div>';
-                } else { matchBox='<div style="margin-top:4px;font-size:11px;color:#94a3b8;">일치하는 가입 회원 후보가 없습니다(미가입).</div>'; }
-                return '<div style="border:1px solid #eef2f7;border-radius:12px;padding:10px 12px;margin-bottom:10px;background:#fbfdff;">'
-                    +'<div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">'
-                    +'<div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:6px;">'
-                    +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+_in(i,'name','거래처 상호',c.name)+_in(i,'phone','전화번호',c.phone,'140px')+'</div>'
-                    +'<input data-mi="'+i+'" data-mk="addr" value="'+F(c.addr)+'" placeholder="주소(선택)" style="padding:7px 9px;border:1px solid #e5e7eb;border-radius:7px;font-size:12px;">'
-                    +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+_in(i,'ceo','대표자(선택)',c.ceo,'130px')+_in(i,'bizNo','사업자번호(선택)',c.bizNo,'150px')+_in(i,'email','이메일(선택)',c.email)+'</div>'
-                    +'</div>'
-                    +'<button onclick="mycDel('+i+')" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;flex:none;">✕</button>'
-                    +'</div>'+matchBox+'</div>';
-            }).join('');
-            listEl.querySelectorAll('input[data-mi]').forEach(inp=>inp.addEventListener('input',()=>{ const i=+inp.dataset.mi,k=inp.dataset.mk; if(window.__mycRows[i]) window.__mycRows[i][k]=inp.value; }));
-        }
-        window.mycAddRow=function(){ window.__mycRows=window.__mycRows||[]; window.__mycRows.push({name:'',phone:'',addr:'',ceo:'',email:'',bizNo:''}); _mycRender(); };
-        window.mycDel=function(i){ if(!window.__mycRows) return; window.__mycRows.splice(i,1); _mycRender(); };
-        window.mycApplyCandidate=function(i,enc){ let cand={}; try{ cand=JSON.parse(decodeURIComponent(enc)); }catch(_){} const c=window.__mycRows[i]; if(!c) return; c.name=cand.bizName||cand.storeName||c.name; c.phone=cand.phone||c.phone; c.addr=cand.addr||c.addr; c.ceo=cand.ceo||''; c.bizNo=cand.bizNo||''; c.email=cand.email||''; c.memberId=cand.name; c.linked=true; c.linkedInfo=cand; _mycRender(); showToast('가입 회원 정보로 채웠습니다. [저장]을 눌러 반영하세요.'); };
-        window.mycUnlink=function(i){ const c=window.__mycRows[i]; if(!c) return; c.memberId=undefined; c.linked=false; c.linkedInfo=null; _mycRender(); };
-        window.mycSave=async function(){
-            if(typeof currentUser==='undefined'||!currentUser||!currentUser.name) return;
-            const rows=(window.__mycRows||[]).map(c=>({ name:(c.name||'').trim(), phone:(c.phone||'').trim(), addr:(c.addr||'').trim(), ceo:(c.ceo||'').trim(), email:(c.email||'').trim(), bizNo:(c.bizNo||'').trim()||undefined, memberId:c.memberId||undefined })).filter(c=>c.name||c.phone);
-            if(rows.some(c=>c.name && !c.phone)){ showToast('거래처 전화번호를 입력해 주세요.'); return; }
-            try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(currentUser.name)}/clinics`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics:rows})}); const d=await r.json(); if(!r.ok||!d.success){ showToast(d.error||'저장 실패'); return; } showToast('✅ 거래처 '+d.count+'건 저장됨'); loadMyClinics(); }
-            catch(e){ showToast('오류: '+(e.message||e)); }
+            const rows=(data.clinics||[]).map(c=>Object.assign({},c));
+            window.renderClinicEditor(listEl, rows, async function(clean){
+                try{ const r=await fetch(`${API_URL}/api/admin/members/${encodeURIComponent(currentUser.name)}/clinics`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clinics:clean})}); const d=await r.json(); if(!r.ok||!d.success){ showToast(d.error||'저장 실패'); return; } showToast('✅ 거래처 '+d.count+'건 저장됨'); loadMyClinics(); }
+                catch(e){ showToast('오류: '+(e.message||e)); }
+            });
         };
         function _mountSalesNav(){ document.querySelectorAll('.smnav-host').forEach(function(h){ if(!h.dataset.mounted){ h.innerHTML=window._SALES_NAV_HTML(); h.dataset.mounted='1'; } }); }
         function _setSalesNavActive(id){ document.querySelectorAll('.smn-btn').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-nav')===id); }); }
