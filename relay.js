@@ -4602,7 +4602,12 @@ app.get('/api/admin/tax/sales', (req, res) => {
 app.get('/api/admin/tax/settlement', (req, res) => {
     if (!requireAdmin(req, res)) return;
     const month = String(req.query.month || '').slice(0, 7);
-    const owner = String(req.query.owner || '').trim();   // 특정 상점주만(선택)
+    const owner = String(req.query.owner || '').trim();   // 특정 대금지급처(상점주)만(선택)
+    // 📅 정산예정일(지급 예정일) 기준 조회: dueFrom~dueTo(YYYY-MM-DD). today=1이면 '오늘까지 지급 대상'(오늘·경과).
+    const dueFrom = String(req.query.dueFrom || '').slice(0, 10);
+    let dueTo = String(req.query.dueTo || '').slice(0, 10);
+    const todayOnly = String(req.query.today || '') === '1';
+    if (todayOnly) { const d = new Date(Date.now() + 9 * 3600 * 1000); dueTo = d.toISOString().slice(0, 10); }   // KST 오늘
     _taxConfig((cfg) => {
         let where = `o.status='confirmed' AND o.escrow_held>0 AND o.settled=0`; const params = [];
         if (month) { where += ` AND o.settle_month=?`; params.push(month); }
@@ -4611,6 +4616,7 @@ app.get('/api/admin/tax/settlement', (req, res) => {
                     MAX(o.confirmed_at) lastConfirmedAt, MIN(o.confirmed_at) firstConfirmedAt, MIN(o.delivered_at) firstDeliveredAt,
                     su.realname sellerRealname, su.biz_no su_bizno, su.biz_company su_company, su.biz_ceo su_ceo,
                     su.biz_addr su_addr, su.biz_industry su_industry, su.biz_item su_item, su.tax_email su_taxemail, su.email su_email,
+                    su.bank su_bank, su.account su_account, IFNULL(su.business_type,'individual') su_btype, su.phone su_phone,
                     GROUP_CONCAT(DISTINCT p.storeId) storeIds,
                     GROUP_CONCAT(DISTINCT s.name) brands,
                     GROUP_CONCAT(DISTINCT s.bizNo) bizNos
@@ -4620,7 +4626,8 @@ app.get('/api/admin/tax/settlement', (req, res) => {
                 LEFT JOIN users su ON su.name = o.seller
                 WHERE ${where} GROUP BY o.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
-            const vendors = (rows || []).map(r => {
+            const nowISO = new Date().toISOString();
+            let vendors = (rows || []).map(r => {
                 // 정산예정일 = min(구매확정일+3영업일, 배송완료일+5영업일). 상점 집계라 가장 임박한 확정건 기준.
                 const settleDue = _settleDueISO(r.firstConfirmedAt, r.firstDeliveredAt);
                 return Object.assign({
@@ -4628,13 +4635,21 @@ app.get('/api/admin/tax/settlement', (req, res) => {
                     bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
                     bizNo: r.su_bizno || (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
                     bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '', taxEmail: r.su_taxemail || r.su_email || '',
+                    bank: r.su_bank || '', account: r.su_account || '', businessType: r.su_btype || '', phone: r.su_phone || '',
                     storeIds: r.storeIds || '', brands: r.brands || '',
                     confirmedAt: r.lastConfirmedAt || '', firstConfirmedAt: r.firstConfirmedAt || '', firstDeliveredAt: r.firstDeliveredAt || '',
-                    settleDueAt: settleDue || '', settleDuePassed: settleDue ? (settleDue <= new Date().toISOString()) : false
+                    settleDueAt: settleDue || '', settleDueDate: settleDue ? settleDue.slice(0, 10) : '', settleDuePassed: settleDue ? (settleDue <= nowISO) : false
                 }, _settleCalc(r.salesTotal, cfg));
             });
+            // 📅 정산예정일(지급예정일) 기간 필터 — JS에서 date만 비교
+            if (dueFrom) vendors = vendors.filter(v => v.settleDueDate && v.settleDueDate >= dueFrom);
+            if (dueTo) vendors = vendors.filter(v => v.settleDueDate && v.settleDueDate <= dueTo);
+            // 지급예정일 오름차순(임박순) → 일별 지급 계획 보기 편하게
+            vendors.sort((a, b) => String(a.settleDueDate || '9999').localeCompare(String(b.settleDueDate || '9999')) || (b.payout - a.payout));
             const adminRevenue = vendors.reduce((s, v) => s + (v.payFee || 0), 0);   // 거래 수수료 = Admin 매출
-            res.json({ month, config: cfg, vendors, adminRevenue });
+            const totalPayout = vendors.reduce((s, v) => s + (v.payout || 0), 0);    // 지급해야 할 총액
+            const totalSales = vendors.reduce((s, v) => s + (v.salesTotal || 0), 0);
+            res.json({ month, config: cfg, vendors, adminRevenue, totalPayout, totalSales, count: vendors.length });
         });
     });
 });

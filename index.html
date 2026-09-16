@@ -1667,18 +1667,20 @@
                     <div style="font-size:11px;color:#94a3b8;margin-top:6px;">총 수수료 = 매출 × 수수료율(2.7%) + 그 VAT(10%=0.27%) = <b>2.97%</b> · 지급액 = 매출 − 총 수수료 · 원단위 이하 버림 · (예: 10,000원 → 수수료 270 + VAT 27 = 297, 지급 9,703원)</div>
                 </div>
                 <div class="panel" style="padding:14px;">
-                    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
-                        <div class="input-group" style="width:170px;"><label>정산 월</label><input id="tax-month" type="month"></div>
-                        <div class="input-group" style="width:200px;"><label>거래처 (판매자 ID, 선택)</label><input id="tax-owner" placeholder="특정 거래처만 · 비우면 전체" onkeydown="if(event.key==='Enter')loadSettlement()"></div>
-                        <button class="btn btn-secondary" style="padding:9px 16px;" onclick="loadSettlement()">미정산 목록</button>
-                        <button class="btn btn-outline" style="padding:9px 14px;" onclick="(function(){var o=document.getElementById('tax-owner'); if(o)o.value=''; loadSettlement();})()">전체 보기</button>
-                        <div style="flex:1;"></div>
-                        <span id="settle-owner-badge" style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:#f8fafc;color:#475569;display:none;"></span>
+                    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px;">
+                        <button class="btn" style="padding:9px 16px;background:var(--gradient-btn);color:#fff;font-weight:800;" onclick="loadSettlementToday()">📅 오늘 지급 대상</button>
+                        <div class="input-group" style="width:150px;"><label>지급예정일 시작</label><input id="tax-due-from" type="date" onchange="loadSettlement()"></div>
+                        <div class="input-group" style="width:150px;"><label>지급예정일 종료</label><input id="tax-due-to" type="date" onchange="loadSettlement()"></div>
+                        <div class="input-group" style="width:150px;"><label>정산 월(귀속)</label><input id="tax-month" type="month" onchange="loadSettlement()"></div>
+                        <div class="input-group" style="width:180px;"><label>대금지급처 (판매자 ID)</label><input id="tax-owner" placeholder="특정 지급처만 · 비우면 전체" onkeydown="if(event.key==='Enter')loadSettlement()"></div>
+                        <button class="btn btn-secondary" style="padding:9px 16px;" onclick="loadSettlement()">조회</button>
+                        <button class="btn btn-outline" style="padding:9px 14px;" onclick="clearSettlementFilters()">전체(필터 해제)</button>
                     </div>
+                    <div id="settle-sum" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;"></div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;">
-                            <thead><tr><th>거래처 (상호/실명·ID·브랜드·상품)</th><th>건수</th><th>매출</th><th>수수료(VAT포함)</th><th>지급액</th><th>구매확정 / 정산예정일</th><th>정산</th></tr></thead>
-                            <tbody id="settlement-body"><tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8;">월을 선택하고 [미정산 목록]을 누르세요.</td></tr></tbody>
+                            <thead><tr><th>대금지급처 (상호/실명·ID·브랜드)</th><th>건수</th><th style="text-align:right;">매출</th><th style="text-align:right;">수수료<br><span style="font-size:9px;font-weight:400;">VAT포함</span></th><th style="text-align:right;">지급액</th><th>거래은행</th><th>계좌번호</th><th>지급예정일</th><th>정산</th></tr></thead>
+                            <tbody id="settlement-body"><tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">[오늘 지급 대상] 또는 기간·지급처를 선택하고 [조회]를 누르세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -6061,20 +6063,35 @@
         };
         window.taxAdminRevenue=0;
         function renderAdminRevenue(){ const b=document.getElementById('admin-revenue-badge'); if(b) b.textContent='Admin 수수료 매출: '+taxFmt(window.taxAdminRevenue)+'원'; }
+        // 📅 오늘 지급 대상(오늘·경과) 빠른 조회
+        window.loadSettlementToday=function(){ const f=document.getElementById('tax-due-from'), t=document.getElementById('tax-due-to'); if(f)f.value=''; if(t)t.value=''; window.__settleToday=true; loadSettlement(); };
+        window.clearSettlementFilters=function(){ ['tax-due-from','tax-due-to','tax-month','tax-owner'].forEach(id=>{ const e=document.getElementById(id); if(e)e.value=''; }); window.__settleToday=false; loadSettlement(); };
         window.loadSettlement=async function(){
             const month=taxG('tax-month'); const body=document.getElementById('settlement-body'); if(!body) return;
-            const owner=(taxG('tax-owner')||'').trim();   // 🏥 거래처별 조회(비우면 전체)
-            const ownBadge=document.getElementById('settle-owner-badge');
-            if(ownBadge){ if(owner){ ownBadge.style.display=''; ownBadge.textContent='거래처 필터: '+owner; } else { ownBadge.style.display='none'; } }
-            body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            const owner=(taxG('tax-owner')||'').trim();   // 🏥 대금지급처(판매자)별 조회(비우면 전체)
+            const dueFrom=taxG('tax-due-from'), dueTo=taxG('tax-due-to');
+            const today = !!window.__settleToday && !dueFrom && !dueTo;
+            window.__settleToday=false;   // 1회성
+            const sumEl=document.getElementById('settle-sum');
+            body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             try{
-                const d=await fetch(`${API_URL}/api/admin/tax/settlement?month=${encodeURIComponent(month)}${owner?('&owner='+encodeURIComponent(owner)):''}`).then(r=>r.json());
+                let qs='month='+encodeURIComponent(month);
+                if(owner) qs+='&owner='+encodeURIComponent(owner);
+                if(today){ qs+='&today=1'; } else { if(dueFrom) qs+='&dueFrom='+encodeURIComponent(dueFrom); if(dueTo) qs+='&dueTo='+encodeURIComponent(dueTo); }
+                const d=await fetch(`${API_URL}/api/admin/tax/settlement?${qs}`).then(r=>r.json());
                 window.taxSettlement=d.vendors||[];
                 window.taxAdminRevenue=d.adminRevenue||0; renderAdminRevenue();
-                if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:#94a3b8;">해당 월 정산 대상(구매확정·미정산) 매출이 없습니다.</td></tr>'; return; }
+                // 요약: 지급 대상 수 + 지급 총액(오늘/기간)
+                if(sumEl){ sumEl.style.display='flex';
+                    const _lbl = today?'오늘까지 지급 대상':(dueFrom||dueTo?('지급예정 '+(dueFrom||'~')+'~'+(dueTo||'~')):(month?(month+' 귀속'):'전체'));
+                    sumEl.innerHTML='<span style="font-size:12px;font-weight:800;padding:9px 15px;border-radius:9px;background:#eff6ff;color:#1e40af;">'+_lbl+' · <b>'+(d.count||0)+'곳</b></span>'
+                        +'<span style="font-size:12px;font-weight:800;padding:9px 15px;border-radius:9px;background:#f0fdf4;color:#166534;">지급해야 할 총액 <b>'+taxFmt(d.totalPayout||0)+'원</b></span>'
+                        +'<span style="font-size:12px;font-weight:800;padding:9px 15px;border-radius:9px;background:#f5f3ff;color:#6d28d9;">수수료(플랫폼) <b>'+taxFmt(d.adminRevenue||0)+'원</b></span>';
+                }
+                if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">조건에 맞는 정산 대상(구매확정·미정산)이 없습니다.</td></tr>'; return; }
                 const _d=(iso)=>{ if(!iso) return '-'; try{ return new Date(iso).toLocaleDateString('ko-KR',{year:'2-digit',month:'2-digit',day:'2-digit'}); }catch(_){ return '-'; } };
                 body.innerHTML=window.taxSettlement.map((v,i)=>`<tr>
-                    <td style="font-weight:700;min-width:200px;">
+                    <td style="font-weight:700;min-width:180px;">
                         <div style="font-weight:900;">${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span></div>
                         ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:2px;">${taxEscH(v.brands)}</div>`:''}
                     </td>
@@ -6082,13 +6099,12 @@
                     <td style="text-align:right;">${taxFmt(v.salesTotal)}</td>
                     <td style="text-align:right;color:#b45309;">${taxFmt(v.payFee)}</td>
                     <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
-                    <td style="text-align:center;font-size:11px;white-space:nowrap;">
-                        <div style="color:#64748b;">확정 ${_d(v.firstConfirmedAt)}</div>
-                        <div style="font-weight:800;color:${v.settleDuePassed?'#dc2626':'#0f766e'};">정산예정 ${_d(v.settleDueAt)}${v.settleDuePassed?' ⚠️':''}</div>
-                    </td>
+                    <td style="font-size:12px;">${v.bank?taxEscH(v.bank):'<span style="color:#dc2626;">미등록</span>'}</td>
+                    <td style="font-size:12px;font-weight:700;">${v.account?taxEscH(v.account):'<span style="color:#dc2626;">미등록 ⚠</span>'}</td>
+                    <td style="text-align:center;font-size:11px;white-space:nowrap;font-weight:800;color:${v.settleDuePassed?'#dc2626':'#0f766e'};">${_d(v.settleDueAt)}${v.settleDuePassed?' ⚠️':''}</td>
                     <td style="text-align:center;"><button class="btn btn-success" style="padding:4px 10px;font-size:11px;" onclick="settleVendor(${i})">정산 지급</button></td>
                 </tr>`).join('');
-            }catch(e){ body.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+            }catch(e){ body.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         window.toggleAllVendors=function(cb){ document.querySelectorAll('.tax-vsel').forEach(x=>x.checked=cb.checked); };
         // 💰 정산 지급 — 지급액(매출−결제수수료)을 Admin→상점주 이체 후 해당 주문 정산완료 처리
