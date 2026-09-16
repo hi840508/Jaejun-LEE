@@ -6091,41 +6091,33 @@
                 if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="14" style="text-align:center;padding:16px;color:#94a3b8;">조건에 맞는 정산 대상(구매확정·미정산)이 없습니다.</td></tr>'; return; }
                 const _d=(iso)=>{ if(!iso) return '-'; try{ return new Date(iso).toLocaleDateString('ko-KR',{year:'2-digit',month:'2-digit',day:'2-digit'}); }catch(_){ return '-'; } };
                 const _dt=(iso)=>{ if(!iso) return '-'; try{ const x=new Date(iso); if(!isNaN(x)){ const p=n=>String(n).padStart(2,'0'); return x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate())+' '+p(x.getHours())+':'+p(x.getMinutes())+':'+p(x.getSeconds()); } }catch(_){} return String(iso).replace('T',' ').slice(0,19); };
-                body.innerHTML=window.taxSettlement.map((v,i)=>{
-                    const acct = (v.bank||v.account)?taxEscH([v.bank,v.account].filter(Boolean).join(' ')):'<span style="color:#dc2626;">미등록 ⚠</span>';
-                    // 판매자(대금지급처) 헤더 행 — 집계 + 은행·계좌 + 정산 지급 버튼
-                    const head=`<tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
-                        <td colspan="6" style="font-weight:800;min-width:220px;">
-                            <div style="font-weight:900;font-size:13px;">🏢 ${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span> <span style="font-size:10px;color:#64748b;font-weight:600;">· ${v.count}건</span></div>
-                            ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:1px;">🏪 ${taxEscH(v.brands)}</div>`:''}
-                        </td>
-                        <td style="text-align:right;font-weight:800;">${taxFmt(v.salesTotal)}</td>
-                        <td style="text-align:right;font-weight:800;color:#b45309;">${taxFmt(v.payFee)}</td>
-                        <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
-                        <td style="text-align:right;color:#b45309;">${taxFmt(v.salesTotal)}</td>
-                        <td style="text-align:center;font-size:11px;white-space:nowrap;font-weight:800;color:${v.settleDuePassed?'#dc2626':'#0f766e'};">${_d(v.settleDueAt)}${v.settleDuePassed?' ⚠️':''}</td>
-                        <td style="text-align:center;color:#cbd5e1;">-</td>
-                        <td style="font-size:12px;font-weight:700;color:#0f766e;">🏦 ${acct}</td>
-                        <td style="text-align:center;"><button class="btn btn-success" style="padding:5px 12px;font-size:11px;" onclick="settleVendor(${i})">정산 지급</button></td>
-                    </tr>`;
-                    // 주문 건별 상세 행
-                    const items=(v.items||[]).map(it=>`<tr style="font-size:11px;color:#475569;">
-                        <td style="text-align:center;"><span style="color:#94a3b8;">↳</span> #${it.orderId}${it.txId?`<div style="font-size:9px;color:#94a3b8;">거래 ${it.txId}</div>`:''}</td>
-                        <td style="white-space:nowrap;">${taxEscH(_dt(it.orderDate))}</td>
-                        <td>${it.storeName?taxEscH(it.storeName):'-'}</td>
-                        <td style="font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;">${taxEscH(it.productName||'-')}</td>
-                        <td>${taxEscH(it.buyerRealname||it.buyer||'-')}</td>
-                        <td>${taxEscH(v.seller||'-')}</td>
-                        <td style="text-align:right;">${taxFmt(it.amount)}</td>
-                        <td style="text-align:right;color:#b45309;">${taxFmt(it.payFee)}</td>
-                        <td style="text-align:right;color:#166534;font-weight:700;">${taxFmt(it.payout)}</td>
-                        <td style="text-align:right;color:#b45309;">${taxFmt(it.remain)}</td>
-                        <td style="text-align:right;color:#0f766e;">${taxFmt(it.payout)}<div style="font-size:9px;color:#94a3b8;">${_d(it.settleDueAt)}</div></td>
-                        <td style="text-align:center;color:#cbd5e1;">-</td>
-                        <td></td><td></td>
-                    </tr>`).join('');
-                    return head+items;
-                }).join('');
+                // 📋 주문 1건 = 한 줄(플랫). 같은 판매자의 첫 행에만 [정산 지급] 버튼(판매자 배치 정산).
+                let flat='';
+                window.taxSettlement.forEach((v,i)=>{
+                    // account 필드에 이미 은행명이 포함(예: "우리 1002338118610") → 중복 방지 위해 account 우선, 없으면 bank
+                    const acct = v.account ? taxEscH(v.account) : (v.bank ? taxEscH(v.bank) : '<span style="color:#dc2626;">미등록 ⚠</span>');
+                    const items=(v.items&&v.items.length)?v.items:[{ orderId:'-', orderDate:'', productName:'', buyer:'', storeName:'', amount:v.salesTotal, fee:v.fee, vat:v.vat, payFee:v.payFee, payout:v.payout, remain:v.salesTotal, settleDueAt:v.settleDueAt }];
+                    items.forEach((it,j)=>{
+                        const firstOfSeller=(j===0);
+                        flat+=`<tr>
+                            <td style="text-align:center;font-size:11px;">#${it.orderId}${it.txId?`<div style="font-size:9px;color:#94a3b8;">거래 ${it.txId}</div>`:''}</td>
+                            <td style="font-size:11px;white-space:nowrap;">${taxEscH(_dt(it.orderDate))}</td>
+                            <td style="font-size:12px;">${it.storeName?taxEscH(it.storeName):'-'}</td>
+                            <td style="font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;">${taxEscH(it.productName||'-')}</td>
+                            <td style="font-size:12px;">${taxEscH(it.buyerRealname||it.buyer||'-')}</td>
+                            <td style="font-size:12px;">${taxEscH(v.bizName||v.seller)}<div style="font-size:9px;color:#94a3b8;">${taxEscH(v.seller)}</div></td>
+                            <td style="text-align:right;font-weight:700;">${taxFmt(it.amount)}</td>
+                            <td style="text-align:right;color:#b45309;">${taxFmt(it.payFee)}</td>
+                            <td style="text-align:right;color:#166534;font-weight:700;">${taxFmt(it.payout)}</td>
+                            <td style="text-align:right;color:#b45309;">${taxFmt(it.remain)}</td>
+                            <td style="text-align:right;color:#0f766e;white-space:nowrap;">${taxFmt(it.payout)}<div style="font-size:9px;font-weight:700;color:${v.settleDuePassed?'#dc2626':'#94a3b8'};">${_d(it.settleDueAt)}${v.settleDuePassed?' ⚠️':''}</div></td>
+                            <td style="text-align:center;color:#cbd5e1;">-</td>
+                            <td style="font-size:12px;font-weight:700;color:#0f766e;white-space:nowrap;">🏦 ${acct}</td>
+                            <td style="text-align:center;">${firstOfSeller?`<button class="btn btn-success" style="padding:5px 12px;font-size:11px;" onclick="settleVendor(${i})" title="이 판매자 ${v.count}건 일괄 정산 지급">정산 지급${v.count>1?(' ('+v.count+'건)'):''}</button>`:'<span style="font-size:10px;color:#cbd5e1;">↑ 위 버튼</span>'}</td>
+                        </tr>`;
+                    });
+                });
+                body.innerHTML=flat;
             }catch(e){ body.innerHTML=`<tr><td colspan="14" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         window.toggleAllVendors=function(cb){ document.querySelectorAll('.tax-vsel').forEach(x=>x.checked=cb.checked); };
@@ -6782,7 +6774,7 @@
                         <td style="font-weight:800;min-width:200px;">
                             <div style="font-weight:900;font-size:13px;">${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span> <span style="font-size:10px;color:#64748b;font-weight:600;">· ${v.count}건</span></div>
                             ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:1px;">🏪 ${taxEscH(v.brands)}</div>`:''}
-                            <div style="font-size:10px;margin-top:1px;">🏦 ${(v.bank||v.account)?('<span style="color:#0f766e;font-weight:700;">'+taxEscH(v.bank||'-')+' '+taxEscH(v.account||'')+'</span>'):'<span style="color:#dc2626;font-weight:700;">계좌 미등록 ⚠</span>'}</div>
+                            <div style="font-size:10px;margin-top:1px;">🏦 ${(v.account||v.bank)?('<span style="color:#0f766e;font-weight:700;">'+taxEscH(v.account||v.bank)+'</span>'):'<span style="color:#dc2626;font-weight:700;">계좌 미등록 ⚠</span>'}</div>
                             ${v.taxEmail?`<div style="font-size:10px;color:#94a3b8;margin-top:1px;">📧 ${taxEscH(v.taxEmail)}</div>`:''}
                         </td>
                         <td style="text-align:center;font-size:11px;">${ready?_bizFmt(v.bizNo):'<span style="color:#dc2626;font-weight:700;">미등록 ⚠</span>'}</td>
