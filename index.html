@@ -1859,6 +1859,34 @@
                 </div>
             </div>
 
+            <!-- 🏪 상점 운영자 전용: 세금·정산 (배민 사장님 광장식) — 본인 수수료 세금계산서 + 월별 정산 내역 -->
+            <div id="tab-my-tax" class="tab-content">
+                <div class="smnav-host"></div>
+                <div class="panel" style="padding:14px 16px;">
+                    <h3 style="font-size:17px;font-weight:900;margin:0;"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg> 세금·정산</h3>
+                    <div style="font-size:12px;color:#64748b;line-height:1.6;margin-top:4px;">플랫폼이 우리 상점에 발행한 <b>이용 수수료 세금계산서</b>와 <b>월별 정산 내역</b>을 확인합니다. 수수료 세금계산서는 부가세 신고 시 <b>매입세액공제</b> 자료입니다.</div>
+                    <div id="mytax-sum" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"></div>
+                </div>
+                <div class="panel" style="padding:14px;">
+                    <h4 style="font-size:15px;font-weight:900;margin:0 0 10px;">월별 정산 내역</h4>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;">
+                            <thead><tr><th>귀속월</th><th style="text-align:center;">건수</th><th style="text-align:right;">매출</th><th style="text-align:right;">수수료<br><span style="font-size:9px;font-weight:400;">VAT포함</span></th><th style="text-align:right;">정산 지급액</th><th style="text-align:center;">지급 상태</th><th>지급일</th></tr></thead>
+                            <tbody id="mytax-months"><tr><td colspan="7" style="text-align:center;padding:18px;color:#94a3b8;">불러오는 중…</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel" style="padding:14px;">
+                    <h4 style="font-size:15px;font-weight:900;margin:0 0 10px;">수수료 세금계산서 <span style="font-size:12px;font-weight:500;color:#94a3b8;">(매입 · 부가세 신고자료)</span></h4>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;">
+                            <thead><tr><th>발행일</th><th>귀속월</th><th>공급자(플랫폼)</th><th style="text-align:right;">공급가액</th><th style="text-align:right;">세액</th><th style="text-align:right;">합계</th><th style="text-align:center;">상태</th><th style="text-align:center;">보기/PDF</th></tr></thead>
+                            <tbody id="mytax-invoices"><tr><td colspan="8" style="text-align:center;padding:18px;color:#94a3b8;">불러오는 중…</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <!-- 👑 Admin 전용: 매출 관리 = 전체 주문(판매 상태) + 전체 거래내역(매출 거래 원장) -->
             <div id="tab-admin-orders" class="tab-content">
                 <div class="smnav-host"></div>
@@ -6886,9 +6914,10 @@
                      + '<button class="smn-btn" data-nav="tax" onclick="goSettle()">'+S.won+' 정산</button>'
                      + '<button class="smn-btn" data-nav="invoice" onclick="goInvoice()">'+S.file+' 세금계산서</button>';
             } else {
-                // 🏪 상점 운영자: 거래처 관리(별도 화면) + (본인) 매출 관리만
+                // 🏪 상점 운영자: 거래처 관리 + 매출 관리 + 세금·정산
                 btns = '<button class="smn-btn" data-nav="my-clinics" onclick="switchTab(\'my-clinics\')">'+S.users+' 거래처 관리</button>'
-                     + '<button class="smn-btn" data-nav="admin-orders" onclick="switchTab(\'admin-orders\')">'+S.chart+' 매출 관리</button>';
+                     + '<button class="smn-btn" data-nav="admin-orders" onclick="switchTab(\'admin-orders\')">'+S.chart+' 매출 관리</button>'
+                     + '<button class="smn-btn" data-nav="my-tax" onclick="switchTab(\'my-tax\')">'+S.file+' 세금·정산</button>';
             }
             return '<div class="smnav">'
                 + '<span class="smn-title">'+S.brief+' 영업 관리</span>'
@@ -6975,6 +7004,52 @@
                 catch(e){ showToast('오류: '+(e.message||e)); }
             });
         };
+        // 🏪 [서브 가맹점] 상점 운영자 세금·정산 화면 — 본인 수수료 세금계산서 + 월별 정산 내역
+        window.__myTax = { invoices: [] };
+        window.loadMyTax = async function(){
+            const sEl=document.getElementById('mytax-sum'), mEl=document.getElementById('mytax-months'), iEl=document.getElementById('mytax-invoices');
+            if(!mEl) return;
+            mEl.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중…</td></tr>';
+            let d=null;
+            try{ d=await fetch(`${API_URL}/api/my/tax/summary`).then(r=>r.json()); }
+            catch(e){ mEl.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:#dc2626;">로드 실패</td></tr>'; return; }
+            const T=d.totals||{}; window.__myTax.invoices=d.invoices||[];
+            const _m=(iso)=>{ if(!iso) return '-'; try{ const x=new Date(iso); if(!isNaN(x)){ const p=n=>String(n).padStart(2,'0'); return x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate()); } }catch(_){} return String(iso).slice(0,10); };
+            // 요약 카드
+            if(sEl){ const chip=(l,v,c,tc)=>'<div style="flex:1;min-width:150px;background:'+(c||'#f8fafc')+';border:1px solid #e2e8f0;border-radius:10px;padding:11px 13px;"><div style="font-size:11px;color:#64748b;">'+l+'</div><div style="font-size:18px;font-weight:900;color:'+(tc||'#0f172a')+';">'+taxFmt(v)+'원</div></div>';
+                sEl.innerHTML=chip('총 매출('+(T.count||0)+'건)',T.sales||0,'#eff6ff','#1e40af')+chip('총 수수료(VAT포함)',T.fee||0,'#f5f3ff','#6d28d9')+chip('정산 지급 완료',T.paid||0,'#f0fdf4','#166534')+chip('정산 예정(미지급)',T.unpaid||0,'#fff7ed','#b45309'); }
+            // 월별 정산
+            const months=d.months||[];
+            mEl.innerHTML=months.length? months.map(m=>{
+                const done=(m.paidCount>=m.count && m.count>0);
+                const st= done?'<span style="color:#166534;font-weight:700;">지급완료</span>':(m.paidCount>0?'<span style="color:#b45309;">일부지급 '+m.paidCount+'/'+m.count+'</span>':'<span style="color:#94a3b8;">정산대기</span>');
+                return '<tr><td style="font-weight:700;">'+taxEscH(m.month)+'</td><td style="text-align:center;">'+m.count+'</td><td style="text-align:right;">'+taxFmt(m.sales)+'</td><td style="text-align:right;color:#b45309;">'+taxFmt(m.fee)+'</td><td style="text-align:right;font-weight:800;color:#166534;">'+taxFmt(m.payout)+'</td><td style="text-align:center;font-size:11px;">'+st+'</td><td style="font-size:11px;">'+(m.lastPaidAt?_m(m.lastPaidAt):'-')+'</td></tr>';
+            }).join('') : '<tr><td colspan="7" style="text-align:center;padding:16px;color:#94a3b8;">정산 내역이 없습니다.</td></tr>';
+            // 세금계산서
+            if(iEl){ const inv=d.invoices||[];
+                const _stLbl=(s)=>({issued:'발행완료',draft:'작성중',failed:'실패',nts_sent:'국세청 전송',nts_sent_mock:'테스트',not_sent:'미전송'})[s]||s||'-';
+                iEl.innerHTML=inv.length? inv.map((v,i)=>'<tr><td style="font-size:11px;">'+taxEscH(_m(v.created_at))+'</td><td>'+taxEscH(v.batchMonth||'-')+'</td><td>'+taxEscH(v.supplierName||'-')+'</td><td style="text-align:right;">'+taxFmt(v.supplyAmount)+'</td><td style="text-align:right;color:#b45309;">'+taxFmt(v.taxAmount)+'</td><td style="text-align:right;font-weight:800;">'+taxFmt(v.totalAmount)+'</td><td style="text-align:center;font-size:11px;">'+taxEscH(_stLbl(v.issueStatus))+'</td><td style="text-align:center;"><button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" onclick="myTaxPrint('+i+')">📄 보기/PDF</button></td></tr>').join('')
+                    : '<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8;line-height:1.7;">발행된 수수료 세금계산서가 없습니다.<br><span style="font-size:11px;">정산 완료 후 플랫폼이 월 단위로 발행합니다.</span></td></tr>';
+            }
+        };
+        // 📄 본인 수수료 세금계산서 미리보기/인쇄(PDF)
+        window.myTaxPrint = function(i){
+            const v=(window.__myTax.invoices||[])[i]; if(!v){ showToast('세금계산서를 찾을 수 없습니다.'); return; }
+            const bizFmt=s=>{ s=String(s||'').replace(/\D/g,''); return s.length===10?(s.slice(0,3)+'-'+s.slice(3,5)+'-'+s.slice(5)):s; };
+            const html='<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>세금계산서</title>'
+                +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;padding:24px;color:#111;}h1{text-align:center;font-size:22px;margin:0 0 4px;}.sub{text-align:center;color:#666;font-size:12px;margin-bottom:14px;}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;}th,td{border:1px solid #333;padding:6px 8px;}th{background:#f1f5f9;}.r{text-align:right;}.c{text-align:center;}.amt{font-size:16px;font-weight:900;}@media print{.noprint{display:none;}}</style></head><body>'
+                +'<h1>전자세금계산서</h1><div class="sub">관리번호 '+taxEscH(v.invoiceNo||'-')+' · '+taxEscH((v.created_at||'').slice(0,10))+' · 플랫폼 이용 수수료</div>'
+                +'<table><tr><th style="width:14%;">구분</th><th>공급자(플랫폼)</th><th>공급받는자(우리 상점)</th></tr>'
+                +'<tr><th>등록번호</th><td>'+bizFmt(v.supplierBizNo)+'</td><td>'+bizFmt(v.recipientBizNo)+'</td></tr>'
+                +'<tr><th>상호</th><td>'+taxEscH(v.supplierName||'')+'</td><td>'+taxEscH(v.recipientName||'')+'</td></tr></table>'
+                +'<table><tr><th class="r" colspan="4">합계금액 '+taxFmt(v.totalAmount)+' (공급가액 '+taxFmt(v.supplyAmount)+' · 세액 '+taxFmt(v.taxAmount)+')</th></tr>'
+                +'<tr><th>품목</th><th class="r">공급가액</th><th class="r">세액</th><th class="r">합계</th></tr>'
+                +'<tr><td>'+taxEscH((v.batchMonth||'')+' 플랫폼 이용 수수료')+'</td><td class="r">'+taxFmt(v.supplyAmount)+'</td><td class="r">'+taxFmt(v.taxAmount)+'</td><td class="r amt">'+taxFmt(v.totalAmount)+'</td></tr></table>'
+                +'<p style="color:#666;font-size:11px;text-align:center;">본 세금계산서는 Alpha K 정산 시스템에서 발행되었습니다. 부가세 신고 시 매입세액공제 자료로 사용하세요.</p>'
+                +'<div class="noprint" style="text-align:center;margin-top:16px;"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;font-weight:700;background:#2563eb;color:#fff;border:0;border-radius:8px;cursor:pointer;">PDF로 저장 / 인쇄</button></div></body></html>';
+            if(typeof _printHtmlViaIframe==='function') _printHtmlViaIframe(html);
+            else { const w=window.open('','_blank'); if(w){ w.document.write(html); w.document.close(); } else showToast('팝업이 차단되었습니다.'); }
+        };
         function _mountSalesNav(){ document.querySelectorAll('.smnav-host').forEach(function(h){ if(!h.dataset.mounted){ h.innerHTML=window._SALES_NAV_HTML(); h.dataset.mounted='1'; } }); }
         function _setSalesNavActive(id){ document.querySelectorAll('.smn-btn').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-nav')===id); }); }
         function switchTab(id, _fromHistory) {
@@ -7034,8 +7109,9 @@
             // 🔒 회원 관리·정산·세금계산서는 관리자 전용 — 상점주가 접근 시 매출 관리로 우회
             if((id === 'admin-members' || id === 'tax' || id === 'invoice') && !isAdmin){ showToast('이 기능은 관리자 전용입니다. (상점주는 매출 관리 이용)'); return switchTab('admin-orders'); }
             // 🧭 영업 관리 탭: 상단 고정 네비 심고 활성 표시 + 권한별 버튼 노출
-            if(id === 'tax' || id === 'invoice' || id === 'admin-members' || id === 'admin-orders' || id === 'my-clinics'){ try{ _mountSalesNav(); _setSalesNavActive(id); _applyOpsVisibility(); }catch(_){} }
+            if(id === 'tax' || id === 'invoice' || id === 'admin-members' || id === 'admin-orders' || id === 'my-clinics' || id === 'my-tax'){ try{ _mountSalesNav(); _setSalesNavActive(id); _applyOpsVisibility(); }catch(_){} }
             if(id === 'my-clinics') { if(typeof loadMyClinics==='function') loadMyClinics(); }
+            if(id === 'my-tax') { if(typeof loadMyTax==='function') loadMyTax(); }
             if(id === 'tax') { if(typeof loadAdminTax==='function') loadAdminTax(); }
             if(id === 'invoice') { if(typeof loadAdminInvoice==='function') loadAdminInvoice(); }
             if(id === 'admin-members') { if(typeof loadAdminMembers==='function') loadAdminMembers(); }
