@@ -1679,8 +1679,8 @@
                     <div id="settle-sum" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;"></div>
                     <div style="overflow-x:auto;">
                         <table class="history-table" style="background:#fff;">
-                            <thead><tr><th>대금지급처 (상호/실명·ID·브랜드)</th><th>건수</th><th style="text-align:right;">매출</th><th style="text-align:right;">수수료<br><span style="font-size:9px;font-weight:400;">VAT포함</span></th><th style="text-align:right;">지급액</th><th>거래은행</th><th>계좌번호</th><th>지급예정일</th><th>정산</th></tr></thead>
-                            <tbody id="settlement-body"><tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">[오늘 지급 대상] 또는 기간·지급처를 선택하고 [조회]를 누르세요.</td></tr></tbody>
+                            <thead><tr><th>주문#/거래#</th><th>주문일시</th><th>거래처(상점)</th><th>거래품목</th><th>구매자</th><th>판매자</th><th style="text-align:right;">거래금액</th><th style="text-align:right;">수수료<br><span style="font-size:9px;font-weight:400;">VAT포함</span></th><th style="text-align:right;">지급액</th><th style="text-align:right;">잔여금</th><th style="text-align:right;">정산예정<br><span style="font-size:9px;font-weight:400;">예정일</span></th><th>지급일자</th><th>계좌번호<br><span style="font-size:9px;font-weight:400;">은행 포함</span></th><th>정산</th></tr></thead>
+                            <tbody id="settlement-body"><tr><td colspan="14" style="text-align:center;padding:20px;color:#94a3b8;">[오늘 지급 대상] 또는 기간·지급처를 선택하고 [조회]를 누르세요.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -6073,7 +6073,7 @@
             const today = !!window.__settleToday && !dueFrom && !dueTo;
             window.__settleToday=false;   // 1회성
             const sumEl=document.getElementById('settle-sum');
-            body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
+            body.innerHTML='<tr><td colspan="14" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             try{
                 let qs='month='+encodeURIComponent(month);
                 if(owner) qs+='&owner='+encodeURIComponent(owner);
@@ -6088,23 +6088,45 @@
                         +'<span style="font-size:12px;font-weight:800;padding:9px 15px;border-radius:9px;background:#f0fdf4;color:#166534;">지급해야 할 총액 <b>'+taxFmt(d.totalPayout||0)+'원</b></span>'
                         +'<span style="font-size:12px;font-weight:800;padding:9px 15px;border-radius:9px;background:#f5f3ff;color:#6d28d9;">수수료(플랫폼) <b>'+taxFmt(d.adminRevenue||0)+'원</b></span>';
                 }
-                if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">조건에 맞는 정산 대상(구매확정·미정산)이 없습니다.</td></tr>'; return; }
+                if(!window.taxSettlement.length){ body.innerHTML='<tr><td colspan="14" style="text-align:center;padding:16px;color:#94a3b8;">조건에 맞는 정산 대상(구매확정·미정산)이 없습니다.</td></tr>'; return; }
                 const _d=(iso)=>{ if(!iso) return '-'; try{ return new Date(iso).toLocaleDateString('ko-KR',{year:'2-digit',month:'2-digit',day:'2-digit'}); }catch(_){ return '-'; } };
-                body.innerHTML=window.taxSettlement.map((v,i)=>`<tr>
-                    <td style="font-weight:700;min-width:180px;">
-                        <div style="font-weight:900;">${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span></div>
-                        ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:2px;">${taxEscH(v.brands)}</div>`:''}
-                    </td>
-                    <td style="text-align:center;">${v.count}</td>
-                    <td style="text-align:right;">${taxFmt(v.salesTotal)}</td>
-                    <td style="text-align:right;color:#b45309;">${taxFmt(v.payFee)}</td>
-                    <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
-                    <td style="font-size:12px;">${v.bank?taxEscH(v.bank):'<span style="color:#dc2626;">미등록</span>'}</td>
-                    <td style="font-size:12px;font-weight:700;">${v.account?taxEscH(v.account):'<span style="color:#dc2626;">미등록 ⚠</span>'}</td>
-                    <td style="text-align:center;font-size:11px;white-space:nowrap;font-weight:800;color:${v.settleDuePassed?'#dc2626':'#0f766e'};">${_d(v.settleDueAt)}${v.settleDuePassed?' ⚠️':''}</td>
-                    <td style="text-align:center;"><button class="btn btn-success" style="padding:4px 10px;font-size:11px;" onclick="settleVendor(${i})">정산 지급</button></td>
-                </tr>`).join('');
-            }catch(e){ body.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
+                const _dt=(iso)=>{ if(!iso) return '-'; try{ const x=new Date(iso); if(!isNaN(x)){ const p=n=>String(n).padStart(2,'0'); return x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate())+' '+p(x.getHours())+':'+p(x.getMinutes())+':'+p(x.getSeconds()); } }catch(_){} return String(iso).replace('T',' ').slice(0,19); };
+                body.innerHTML=window.taxSettlement.map((v,i)=>{
+                    const acct = (v.bank||v.account)?taxEscH([v.bank,v.account].filter(Boolean).join(' ')):'<span style="color:#dc2626;">미등록 ⚠</span>';
+                    // 판매자(대금지급처) 헤더 행 — 집계 + 은행·계좌 + 정산 지급 버튼
+                    const head=`<tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
+                        <td colspan="6" style="font-weight:800;min-width:220px;">
+                            <div style="font-weight:900;font-size:13px;">🏢 ${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span> <span style="font-size:10px;color:#64748b;font-weight:600;">· ${v.count}건</span></div>
+                            ${v.brands?`<div style="font-size:11px;color:#2563eb;margin-top:1px;">🏪 ${taxEscH(v.brands)}</div>`:''}
+                        </td>
+                        <td style="text-align:right;font-weight:800;">${taxFmt(v.salesTotal)}</td>
+                        <td style="text-align:right;font-weight:800;color:#b45309;">${taxFmt(v.payFee)}</td>
+                        <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
+                        <td style="text-align:right;color:#b45309;">${taxFmt(v.salesTotal)}</td>
+                        <td style="text-align:center;font-size:11px;white-space:nowrap;font-weight:800;color:${v.settleDuePassed?'#dc2626':'#0f766e'};">${_d(v.settleDueAt)}${v.settleDuePassed?' ⚠️':''}</td>
+                        <td style="text-align:center;color:#cbd5e1;">-</td>
+                        <td style="font-size:12px;font-weight:700;color:#0f766e;">🏦 ${acct}</td>
+                        <td style="text-align:center;"><button class="btn btn-success" style="padding:5px 12px;font-size:11px;" onclick="settleVendor(${i})">정산 지급</button></td>
+                    </tr>`;
+                    // 주문 건별 상세 행
+                    const items=(v.items||[]).map(it=>`<tr style="font-size:11px;color:#475569;">
+                        <td style="text-align:center;"><span style="color:#94a3b8;">↳</span> #${it.orderId}${it.txId?`<div style="font-size:9px;color:#94a3b8;">거래 ${it.txId}</div>`:''}</td>
+                        <td style="white-space:nowrap;">${taxEscH(_dt(it.orderDate))}</td>
+                        <td>${it.storeName?taxEscH(it.storeName):'-'}</td>
+                        <td style="font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;">${taxEscH(it.productName||'-')}</td>
+                        <td>${taxEscH(it.buyerRealname||it.buyer||'-')}</td>
+                        <td>${taxEscH(v.seller||'-')}</td>
+                        <td style="text-align:right;">${taxFmt(it.amount)}</td>
+                        <td style="text-align:right;color:#b45309;">${taxFmt(it.payFee)}</td>
+                        <td style="text-align:right;color:#166534;font-weight:700;">${taxFmt(it.payout)}</td>
+                        <td style="text-align:right;color:#b45309;">${taxFmt(it.remain)}</td>
+                        <td style="text-align:right;color:#0f766e;">${taxFmt(it.payout)}<div style="font-size:9px;color:#94a3b8;">${_d(it.settleDueAt)}</div></td>
+                        <td style="text-align:center;color:#cbd5e1;">-</td>
+                        <td></td><td></td>
+                    </tr>`).join('');
+                    return head+items;
+                }).join('');
+            }catch(e){ body.innerHTML=`<tr><td colspan="14" style="text-align:center;padding:16px;color:#dc2626;">정산 로드 실패: ${taxEscH(e.message||'')}</td></tr>`; }
         };
         window.toggleAllVendors=function(cb){ document.querySelectorAll('.tax-vsel').forEach(x=>x.checked=cb.checked); };
         // 💰 정산 지급 — 지급액(매출−결제수수료)을 Admin→상점주 이체 후 해당 주문 정산완료 처리

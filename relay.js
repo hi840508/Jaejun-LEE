@@ -4612,34 +4612,58 @@ app.get('/api/admin/tax/settlement', (req, res) => {
         let where = `o.status='confirmed' AND o.escrow_held>0 AND o.settled=0`; const params = [];
         if (month) { where += ` AND o.settle_month=?`; params.push(month); }
         if (owner) { where += ` AND o.seller=?`; params.push(owner); }
-        db.all(`SELECT o.seller, COUNT(*) cnt, SUM(o.escrow_held) salesTotal,
-                    MAX(o.confirmed_at) lastConfirmedAt, MIN(o.confirmed_at) firstConfirmedAt, MIN(o.delivered_at) firstDeliveredAt,
+        // 🧾 주문 건별로 조회 → 판매자(대금지급처)별로 그룹핑 + 각 주문을 items 라인으로(매출관리 표와 동일 상세)
+        db.all(`SELECT o.id, o.txId, o.seller, o.escrow_held, o.created_at, o.confirmed_at, o.delivered_at, o.settle_month,
+                    pr.name productName, o.buyer, (SELECT realname FROM users WHERE name=o.buyer) buyerRealname,
                     su.realname sellerRealname, su.biz_no su_bizno, su.biz_company su_company, su.biz_ceo su_ceo,
                     su.biz_addr su_addr, su.biz_industry su_industry, su.biz_item su_item, su.tax_email su_taxemail, su.email su_email,
                     su.bank su_bank, su.account su_account, IFNULL(su.business_type,'individual') su_btype, su.phone su_phone,
-                    GROUP_CONCAT(DISTINCT p.storeId) storeIds,
-                    GROUP_CONCAT(DISTINCT s.name) brands,
-                    GROUP_CONCAT(DISTINCT s.bizNo) bizNos
+                    s.id storeId, s.name storeName, s.bizNo storeBizNo, IFNULL(s.admin_managed,0) storeManaged,
+                    t.rawDate txDate
                 FROM product_orders o
+                LEFT JOIN products pr ON pr.id = o.productId
                 LEFT JOIN products p ON p.id = o.productId
                 LEFT JOIN stores s ON p.storeId = s.id
                 LEFT JOIN users su ON su.name = o.seller
-                WHERE ${where} GROUP BY o.seller ORDER BY salesTotal DESC`, params, (err, rows) => {
+                LEFT JOIN transactions t ON t.id = o.txId
+                WHERE ${where} ORDER BY o.seller ASC, o.confirmed_at ASC, o.id ASC`, params, (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
             const nowISO = new Date().toISOString();
-            let vendors = (rows || []).map(r => {
-                // 정산예정일 = min(구매확정일+3영업일, 배송완료일+5영업일). 상점 집계라 가장 임박한 확정건 기준.
-                const settleDue = _settleDueISO(r.firstConfirmedAt, r.firstDeliveredAt);
-                return Object.assign({
-                    seller: r.seller, count: r.cnt,
-                    bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.brands ? String(r.brands).split(',')[0] : '') || r.seller,
-                    bizNo: r.su_bizno || (r.bizNos ? String(r.bizNos).split(',')[0] : ''),
-                    bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '', taxEmail: r.su_taxemail || r.su_email || '',
-                    bank: r.su_bank || '', account: r.su_account || '', businessType: r.su_btype || '', phone: r.su_phone || '',
-                    storeIds: r.storeIds || '', brands: r.brands || '',
-                    confirmedAt: r.lastConfirmedAt || '', firstConfirmedAt: r.firstConfirmedAt || '', firstDeliveredAt: r.firstDeliveredAt || '',
-                    settleDueAt: settleDue || '', settleDueDate: settleDue ? settleDue.slice(0, 10) : '', settleDuePassed: settleDue ? (settleDue <= nowISO) : false
-                }, _settleCalc(r.salesTotal, cfg));
+            const map = new Map();
+            (rows || []).forEach(r => {
+                let v = map.get(r.seller);
+                if (!v) {
+                    v = {
+                        seller: r.seller, count: 0, salesTotal: 0, fee: 0, vat: 0, payFee: 0, payout: 0,
+                        bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.storeName || '') || r.seller,
+                        bizNo: r.su_bizno || r.storeBizNo || '',
+                        bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '', taxEmail: r.su_taxemail || r.su_email || '',
+                        bank: r.su_bank || '', account: r.su_account || '', businessType: r.su_btype || '', phone: r.su_phone || '',
+                        storeIds: '', brands: '', firstConfirmedAt: r.confirmed_at || '', firstDeliveredAt: r.delivered_at || '',
+                        items: [], _brandSet: new Set()
+                    };
+                    map.set(r.seller, v);
+                }
+                const amt = Number(r.escrow_held) || 0;
+                const c = _settleCalc(amt, cfg);
+                v.count++; v.salesTotal += amt; v.fee += c.fee; v.vat += c.vat; v.payFee += c.payFee; v.payout += c.payout;
+                if (r.storeName) v._brandSet.add(r.storeName);
+                if (r.confirmed_at && (!v.firstConfirmedAt || r.confirmed_at < v.firstConfirmedAt)) v.firstConfirmedAt = r.confirmed_at;
+                if (r.delivered_at && (!v.firstDeliveredAt || r.delivered_at < v.firstDeliveredAt)) v.firstDeliveredAt = r.delivered_at;
+                const itemDue = _settleDueISO(r.confirmed_at, r.delivered_at);
+                v.items.push({
+                    orderId: r.id, txId: r.txId || null, orderDate: r.txDate || r.confirmed_at || r.created_at || '',
+                    productName: r.productName || ('주문 #' + r.id), buyer: r.buyer || '', buyerRealname: r.buyerRealname || '',
+                    storeName: r.storeName || '', storeManaged: !!r.storeManaged, amount: amt, fee: c.fee, vat: c.vat, payFee: c.payFee, payout: c.payout,
+                    remain: amt, settleDueAt: itemDue || '', settledAt: ''
+                });
+            });
+            let vendors = Array.from(map.values()).map(v => {
+                v.brands = Array.from(v._brandSet).join(', '); delete v._brandSet;
+                const settleDue = _settleDueISO(v.firstConfirmedAt, v.firstDeliveredAt);
+                v.settleDueAt = settleDue || ''; v.settleDueDate = settleDue ? settleDue.slice(0, 10) : ''; v.settleDuePassed = settleDue ? (settleDue <= nowISO) : false;
+                v.commissionTotal = v.fee; v.vatOnFees = v.vat;   // 하위호환
+                return v;
             });
             // 📅 정산예정일(지급예정일) 기간 필터 — JS에서 date만 비교
             if (dueFrom) vendors = vendors.filter(v => v.settleDueDate && v.settleDueDate >= dueFrom);
