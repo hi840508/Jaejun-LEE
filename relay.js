@@ -4678,6 +4678,7 @@ app.get('/api/admin/tax/settled', (req, res) => {
                     (SELECT realname FROM users WHERE name=o.buyer) buyerRealname,
                     su.realname sellerRealname, su.biz_no su_bizno, su.biz_company su_company, su.biz_ceo su_ceo,
                     su.biz_addr su_addr, su.biz_industry su_industry, su.biz_item su_item, su.tax_email su_taxemail, su.email su_email,
+                    su.bank su_bank, su.account su_account,
                     s.id storeId, s.name storeName, s.bizNo storeBizNo
                 FROM product_orders o
                 LEFT JOIN products pr ON pr.id = o.productId
@@ -4697,7 +4698,7 @@ app.get('/api/admin/tax/settled', (req, res) => {
                         bizName: (r.su_company && r.su_company.trim()) || (r.sellerRealname && r.sellerRealname.trim()) || (r.storeName || '') || r.seller,
                         bizNo: r.su_bizno || r.storeBizNo || '',
                         bizCeo: r.su_ceo || r.sellerRealname || '', bizAddr: r.su_addr || '', bizIndustry: r.su_industry || '', bizItem: r.su_item || '',
-                        taxEmail: r.su_taxemail || r.su_email || '', storeIds: '', brands: '', items: [], _brandSet: new Set(), _storeSet: new Set()
+                        taxEmail: r.su_taxemail || r.su_email || '', bank: r.su_bank || '', account: r.su_account || '', storeIds: '', brands: '', items: [], _brandSet: new Set(), _storeSet: new Set()
                     };
                     map.set(r.seller, v);
                 }
