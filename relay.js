@@ -4681,16 +4681,20 @@ app.get('/api/admin/tax/settlement', (req, res) => {
 //   플랫폼(공급자)이 가맹점(공급받는자)에게 발행한 '플랫폼 이용 수수료' 세금계산서 = 가맹점의 매입세금계산서(부가세 매입세액공제 자료).
 app.get('/api/my/tax/summary', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
+    // 귀속월 파싱(ISO "2026-09-.." / 한국어 로케일 "2026. 9. .." 모두 지원)
+    const _ymOf = (s) => { if (!s) return ''; s = String(s); const m = s.match(/(\d{4})[.\-/\s]+(\d{1,2})/); return m ? (m[1] + '-' + String(+m[2]).padStart(2, '0')) : s.slice(0, 7); };
     _taxConfig((cfg) => {
-        db.all(`SELECT o.escrow_held, o.settled, o.settled_at, o.settle_month, o.confirmed_at
-                FROM product_orders o WHERE o.seller=? AND o.status IN ('confirmed','settled') AND o.escrow_held>0`, [me], (e, orders) => {
+        // 💰 에스크로에 잡힌(=구매자 결제 완료) 모든 진행 주문 포함: 결제완료(approved)·배송중·배송완료·구매확정·정산완료.
+        //   settled=1 이면 '지급완료', 아니면 '정산 예정(대기)'.
+        db.all(`SELECT o.escrow_held, o.status, o.settled, o.settled_at, o.settle_month, o.confirmed_at, o.created_at
+                FROM product_orders o WHERE o.seller=? AND o.escrow_held>0 AND o.status IN ('approved','shipping','delivered','confirmed','settled')`, [me], (e, orders) => {
             if (e) return res.status(500).json({ error: e.message });
             orders = orders || [];
             const byMonth = {};
             let totSales = 0, totFee = 0, totPayout = 0, totPaid = 0, cnt = 0, paidCnt = 0;
             orders.forEach(o => {
                 const amt = Number(o.escrow_held) || 0; const c = _settleCalc(amt, cfg);
-                const mkey = o.settle_month || (o.confirmed_at || '').slice(0, 7) || '기타';
+                const mkey = o.settle_month || _ymOf(o.confirmed_at) || _ymOf(o.created_at) || '기타';
                 const m = byMonth[mkey] || (byMonth[mkey] = { month: mkey, count: 0, sales: 0, fee: 0, payout: 0, paidCount: 0, paidAmount: 0, lastPaidAt: '' });
                 m.count++; m.sales += amt; m.fee += c.payFee; m.payout += c.payout;
                 totSales += amt; totFee += c.payFee; totPayout += c.payout; cnt++;
