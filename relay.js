@@ -953,6 +953,28 @@ function initTables() {
         db.run(`ALTER TABLE users ADD COLUMN card_pw TEXT`, () => {});   // (선택) 회원가입 시 카드 비밀번호 4자리 — 실 PG 대비 저장만, 현재 미검증
         db.run(`ALTER TABLE users ADD COLUMN postal_code TEXT`, () => {});    // 🏷 우편번호
         db.run(`ALTER TABLE users ADD COLUMN office_phone TEXT`, () => {});   // ☎ 사무실 전화번호(phone=핸드폰)
+        // 💳 [KICC PG 대비] 실 PG(KICC 이지페이 등) 취소·환불 시 필요한 거래 고유번호(TID) 저장. pg_approval=승인번호와 별개.
+        db.run(`ALTER TABLE transactions ADD COLUMN pg_tid TEXT`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN pg_tid TEXT`, () => {});
+        // 💳 [KICC PG 대비] 결제 세션 상태 추적(멱등·재조회·정산 대사용). 리다이렉트/결제창 비동기 흐름의 단일 진실원천.
+        //   status: requested(결제요청·창오픈) → authorized(승인토큰 수신) → approved(최종승인/매입) → failed | canceled | expired
+        db.run(`CREATE TABLE IF NOT EXISTS pg_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT DEFAULT 'mock',        -- mock | kicc
+            mode TEXT DEFAULT 'mock',            -- mock | test | live
+            moid TEXT UNIQUE,                    -- 가맹점 주문번호(멱등 키). 우리 생성.
+            orderId INTEGER,                     -- product_orders.id (없을 수 있음: 즉시결제)
+            buyer TEXT, seller TEXT,
+            amount INTEGER DEFAULT 0,
+            currency TEXT DEFAULT 'KRW',
+            status TEXT DEFAULT 'requested',
+            tid TEXT,                            -- PG 거래 고유번호(취소용)
+            approvalNo TEXT,                     -- 카드 승인번호
+            pay_method TEXT DEFAULT 'card',
+            fail_reason TEXT,
+            raw TEXT,                            -- PG 원응답 JSON(감사·대사)
+            created_at TEXT, updated_at TEXT, approved_at TEXT, canceled_at TEXT
+        )`, () => {});
 
         // 🚀 [v8+] 전역 설정 (Admin 권한 비밀번호 등) — 초기값 'mars'
         db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`, () => {
@@ -963,6 +985,10 @@ function initTables() {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('open_categories', 'dental_clinic,dental_lab')`, () => {});
             // 💳 [PG] 카드결제 모드 — 기본 mock(4자리 비번이면 승인). 실 PG 계약 후 'live'로 전환하면 _pgAuthorize의 live 분기만 구현하면 됨.
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('pg_mode', 'mock')`, () => {});
+            // 💳 [KICC PG 대비] PG사 선택 + 모드 + 가맹점ID. ⚠ 비밀키(라이선스키/서명키)는 settings가 아니라 반드시 환경변수(KICC_LICENSE_KEY)로만 보관.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('pg_provider', 'mock')`, () => {});   // mock | kicc
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('kicc_mode', 'test')`, () => {});    // test | live
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('kicc_mid', '')`, () => {});         // KICC 상점(가맹점) ID
             // ☁️ 클라우드 미러 백업 서비스 on/off — 기본 '0'(중지). 관리자 화면에서 켜고 끈다.
             //    중지 중에는 새 백업(켜기·업로드)만 막고, 이미 올라간 파일의 목록·복원은 계속 허용한다
             //    (회원이 이미 맡긴 데이터를 못 꺼내는 상태를 만들지 않기 위함).
@@ -1114,29 +1140,109 @@ function isAdminName(name) { return !!name && ADMIN_USERS.has(name); }
 // [PG 카드결제 심(seam)] — 실 PG(아임포트/토스/나이스페이 등) 연동 시 이 함수 + settings.pg_mode 만 손대면 됨.
 //  개념: '카드 결제'는 외부 카드에서 자금이 나오므로 구매자 지갑은 차감하지 않고, 수취인(판매자/Admin)에게만 입금(PG 승인 성공 시).
 //  현재 mock: 카드 비밀번호 4자리(아무 4자리)면 승인 성공. (팍스빌 mock 패턴과 동일한 어댑터 구조)
-let PG_MODE = 'mock';
+let PG_MODE = 'mock';         // mock | live (레거시 스위치)
+let PG_PROVIDER = 'mock';     // mock | kicc
+let KICC_MODE = 'test';       // test | live
+let KICC_MID = '';
 function loadPgMode() {
-    db.get(`SELECT value FROM settings WHERE key='pg_mode'`, [], (e, row) => {
-        if (row && row.value) PG_MODE = String(row.value).trim() || 'mock';
+    db.all(`SELECT key,value FROM settings WHERE key IN ('pg_mode','pg_provider','kicc_mode','kicc_mid')`, [], (e, rows) => {
+        const m = {}; (rows || []).forEach(r => m[r.key] = r.value);
+        if (m.pg_mode) PG_MODE = String(m.pg_mode).trim() || 'mock';
+        if (m.pg_provider) PG_PROVIDER = String(m.pg_provider).trim() || 'mock';
+        if (m.kicc_mode) KICC_MODE = String(m.kicc_mode).trim() || 'test';
+        KICC_MID = String(m.kicc_mid || '').trim();
     });
 }
 setTimeout(loadPgMode, 500);
-// 결제 승인 판정(동기). 성공 시 { ok:true, approvalNo, method:'card' }. 실패 시 { ok:false, error }.
+// 🔐 PG 비밀키는 절대 DB/클라이언트에 두지 않는다. 환경변수(KICC_LICENSE_KEY)로만 주입.
+function _kiccLicenseKey() { return process.env.KICC_LICENSE_KEY || ''; }
+// 🆔 가맹점 주문번호(멱등 키) — 재시도/중복 리다이렉트에도 한 번만 승인되게 하는 단일 키.
+function _pgMoid(orderId) { return 'AK' + (orderId ? ('O' + orderId) : '') + '-' + Date.now().toString(36) + '-' + crypto.randomBytes(3).toString('hex'); }
+
+// ── [PG 어댑터 seam] ─────────────────────────────────────────────────────────
+//  mock(현행): 서버측 4자리 비번 즉시 승인(_pgAuthorize).
+//  KICC(이지페이/실PG): '리다이렉트/결제창' 비동기 2단계 — ①prepare(결제요청) → 결제창 → ②approve(승인/매입).
+//    카드 원문(번호/비번)은 우리 서버가 절대 만지지 않음(PCI). 아래는 계약·API 수령 후 구현할 스텁.
+//  ⚠ 현재 KICC 스텁은 미구현 상태로 명시적 에러를 반환한다(사일런트 통과 금지).
 function _pgAuthorize({ payer, amount, method, cardPw }) {
     if (method !== 'card') return { ok: false, error: '카드 결제가 아닙니다.' };
+    // KICC(실 PG)는 동기 승인이 불가 — 반드시 prepare/approve(리다이렉트) 흐름을 써야 함.
+    if (PG_PROVIDER === 'kicc') {
+        return { ok: false, redirectRequired: true, error: 'KICC 결제는 결제창(리다이렉트) 승인 흐름이 필요합니다. /api/pg/prepare → 결제창 → /api/pg/approve 를 사용하세요.' };
+    }
     if (PG_MODE !== 'live') {
         // ── mock: 실제 카드사 대조 없이 4자리 숫자면 승인 ──
         if (!/^\d{4}$/.test(String(cardPw == null ? '' : cardPw))) return { ok: false, error: '카드 비밀번호(4자리)를 확인하세요.' };
         return { ok: true, mock: true, approvalNo: 'PGMOCK-' + Date.now(), method: 'card' };
     }
-    // ── live: 실 PG사 승인 API 호출 위치(계약 후 구현) ──
-    // TODO(live): 실제 PG 결제창 승인/캡처 API 호출 후 결과 매핑. 예)
-    //   const r = await fetch(process.env.PG_API_BASE + '/payments/authorize', { method:'POST',
-    //       headers:{ Authorization:`Bearer ${process.env.PG_API_KEY}` },
-    //       body: JSON.stringify({ amount, payer, ... }) });
-    //   const d = await r.json(); return r.ok ? { ok:true, approvalNo:d.tid, method:'card', raw:d } : { ok:false, error:d.message };
     return { ok: false, error: '실 PG(pg_mode=live) 연동이 아직 설정되지 않았습니다.' };
 }
+// 🏦 [KICC 스텁] 결제요청 준비 — 결제창에 넘길 파라미터 생성(가맹점ID·주문번호·금액·서명·returnUrl). API 수령 후 실제 서명/필드 채움.
+async function _pgKiccPrepare({ orderId, buyer, seller, amount }) {
+    if (!KICC_MID || !_kiccLicenseKey()) return { ok: false, error: 'KICC 미설정(kicc_mid/KICC_LICENSE_KEY).' };
+    // TODO(KICC): 이지페이 표준결제 요청 파라미터 + SHA-256 서명 생성, pg_payments(requested) insert, 결제창 URL/폼필드 반환.
+    return { ok: false, error: 'KICC prepare 미구현 — API 수령 후 구현.' };
+}
+// 🏦 [KICC 스텁] 승인/매입 — 결제창 복귀(returnUrl) 후 서버가 승인 API 호출(멱등). 금액·서명 검증 필수.
+async function _pgKiccApprove({ moid, authToken, amount }) {
+    if (!KICC_MID || !_kiccLicenseKey()) return { ok: false, error: 'KICC 미설정.' };
+    // TODO(KICC): 승인요청 API 호출 → 응답 서명검증 → 서버 기록 금액과 일치 확인 → pg_payments(approved)/tid 저장.
+    return { ok: false, error: 'KICC approve 미구현 — API 수령 후 구현.' };
+}
+// 🏦 [KICC 스텁] 취소/환불 — 원거래 TID로 전체/부분 취소. 당일취소/매입취소 규칙 구분.
+async function _pgKiccCancel({ tid, amount, reason }) {
+    if (!KICC_MID || !_kiccLicenseKey()) return { ok: false, error: 'KICC 미설정.' };
+    // TODO(KICC): 취소 API 호출(원TID·취소금액·사유) → 응답 검증 → 기록.
+    return { ok: false, error: 'KICC cancel 미구현 — API 수령 후 구현.' };
+}
+// 💳 ===== [KICC PG 연동 스캐폴딩 라우트] — API 수령 전 골격만. 실동작은 mock 유지, kicc는 명시적 미구현 응답. =====
+//  ① prepare: 결제요청(멱등 moid 발급 + pg_payments requested 기록) → 클라가 결제창을 연다.
+app.post('/api/pg/prepare', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const orderId = req.body.orderId ? Number(req.body.orderId) : null;
+    const amount = Math.floor(Number(req.body.amount) || 0);
+    if (!(amount > 0)) return res.status(400).json({ error: '금액을 확인하세요.' });
+    if (PG_PROVIDER !== 'kicc') return res.status(400).json({ error: '현재 PG는 mock입니다. 카드결제는 기존 흐름(pgPay)을 사용하세요.' });
+    // 🔒 금액은 서버가 주문에서 재확정해야 함(클라 변조 방지) — orderId가 있으면 그 amount로 강제.
+    const now = new Date().toISOString(); const moid = _pgMoid(orderId);
+    db.run(`INSERT INTO pg_payments (provider, mode, moid, orderId, buyer, amount, status, pay_method, created_at, updated_at) VALUES ('kicc', ?, ?, ?, ?, ?, 'requested', 'card', ?, ?)`,
+        [KICC_MODE, moid, orderId, me, amount, now, now], async function (ie) {
+            if (ie) return res.status(500).json({ error: ie.message });
+            const p = await _pgKiccPrepare({ orderId, buyer: me, amount });
+            if (!p.ok) return res.status(501).json({ error: p.error, moid });   // 501: 미구현
+            res.json({ ok: true, moid, ...p });
+        });
+});
+//  ② approve: 결제창 복귀 후 서버 승인(멱등). authToken/moid로 KICC 승인 API 호출 → pg_payments approved.
+app.post('/api/pg/approve', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const moid = String(req.body.moid || '').trim();
+    if (!moid) return res.status(400).json({ error: 'moid가 없습니다.' });
+    db.get(`SELECT * FROM pg_payments WHERE moid=?`, [moid], async (e, pay) => {
+        if (e || !pay) return res.status(404).json({ error: '결제 세션을 찾을 수 없습니다.' });
+        if (pay.status === 'approved') return res.json({ ok: true, already: true, approvalNo: pay.approvalNo, tid: pay.tid });   // 멱등
+        const out = await _pgKiccApprove({ moid, authToken: req.body.authToken, amount: pay.amount });
+        if (!out.ok) return res.status(501).json({ error: out.error });   // 미구현
+        // TODO(KICC): 승인 성공 시 pg_payments approved 갱신 + 해당 주문 결제완료 처리(에스크로) 트리거.
+        res.json({ ok: true, ...out });
+    });
+});
+//  ③ return: 결제창이 브라우저를 되돌려보내는 landing(returnUrl). KICC 콘솔에 등록할 공개 URL.
+app.all('/api/pg/kicc/return', (req, res) => {
+    // 결제창(팝업/리다이렉트)에서 부모창으로 결과 전달 후 닫힘. 실제 승인은 서버 approve에서 수행.
+    const payload = Object.assign({}, req.query, req.body);
+    const safe = JSON.stringify(payload).replace(/</g, '\\u003c');
+    res.set('Content-Type', 'text/html; charset=utf-8').send(
+        '<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;padding:24px;text-align:center;">'
+        + '<p>결제 처리 중… 이 창은 자동으로 닫힙니다.</p>'
+        + '<script>try{var d=' + safe + ';if(window.opener){window.opener.postMessage({type:"KICC_RETURN",data:d},"*");}else if(window.parent!==window){window.parent.postMessage({type:"KICC_RETURN",data:d},"*");}}catch(e){}setTimeout(function(){try{window.close();}catch(_){}} ,300);</script></body>');
+});
+//  ④ webhook: KICC 서버 알림(비동기 상태변경). 서명검증 후 pg_payments 갱신. 지금은 로그+200만.
+app.post('/api/pg/kicc/webhook', (req, res) => {
+    try { console.log('[KICC webhook]', JSON.stringify(req.body || {}).slice(0, 500)); } catch (_) {}
+    // TODO(KICC): 서명검증 → moid로 pg_payments 조회 → 상태 반영(approved/canceled). 검증 실패 시 무시.
+    res.json({ ok: true });
+});
 // 💰 [에스크로] 자금이 귀속되는 Admin 계정(첫 관리자, 기본 hi840508). 구매 대금 보관·정산 지급의 주체.
 function _adminAccount() { const a = ADMIN_USERS.values().next().value; return a || 'hi840508'; }
 function requireAdmin(req, res) {
