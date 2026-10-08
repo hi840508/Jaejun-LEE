@@ -4573,6 +4573,15 @@
             await Promise.all(workers);
             return out;
         }
+        // 🖼 [지연 썸네일] 이미지 파일을 작은 jpeg dataURL 로 축소(보이는 카드에만 요청 → 한 번만 디코드).
+        function _rcImgThumb(file, max){
+            return new Promise((res)=>{ try{
+                const u=URL.createObjectURL(file); const img=new Image();
+                img.onload=()=>{ try{ const s=Math.min(1, max/Math.max(img.width||1,img.height||1)); const w=Math.max(1,Math.round((img.width||1)*s)), h=Math.max(1,Math.round((img.height||1)*s)); const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); const d=c.toDataURL('image/jpeg',0.72); URL.revokeObjectURL(u); res(d); }catch(_){ try{URL.revokeObjectURL(u);}catch(e){} res(''); } };
+                img.onerror=()=>{ try{URL.revokeObjectURL(u);}catch(e){} res(''); };
+                img.src=u;
+            }catch(_){ res(''); } });
+        }
         function _rcCatOf(n){
             if(RC_DCM_RE.test(n)) return 'DICOM';
             if(RC_3D_RE.test(n)) return '3D';
@@ -4828,6 +4837,20 @@
                         try{ const us=[]; if(payload.urls) us.push.apply(us,payload.urls); if(payload.url) us.push(payload.url); if(payload.texUrls) us.push.apply(us,payload.texUrls); (window.__rcViewerUrls=window.__rcViewerUrls||[]).push.apply(window.__rcViewerUrls, us); }catch(_){}
                         reply(payload);
                     }catch(e){ reply(null, String((e&&e.message)||e)); }
+                    return;
+                }
+                // 🖼 [지연 썸네일] 서랍에서 보이는 이미지/DICOM 카드만 작은 미리보기 요청 → 생성해 돌려준다.
+                if(ev.data.type==='RAYCLOUD_REQUEST_THUMB'){
+                    const ref=ev.data.ref||{}; const pa=Array.isArray(ref.pathArr)?ref.pathArr:[]; const fn=ref.fname; const mid=ev.data.mid;
+                    const reply=(thumb)=>{ try{ post({ type:'RAYCLOUD_THUMB', mid:mid, thumb:thumb||'' }); }catch(_){} };
+                    if(!fn){ reply(''); return; }
+                    try{
+                        const f=await R.getFileAt(pa, fn); if(!f){ reply(''); return; }
+                        const low=String(fn).toLowerCase(); let thumb='';
+                        if(RC_DCM_RE.test(low)){ if(R.dicomImage){ try{ thumb=await R.dicomImage(f, 240)||''; }catch(_){ thumb=''; } } }
+                        else if(RC_IMG_RE.test(low)){ thumb=await _rcImgThumb(f, 240); }
+                        reply(thumb);
+                    }catch(e){ reply(''); }
                     return;
                 }
                 if(ev.data.type!=='RAYCLOUD_PICK_ROOT') return;
