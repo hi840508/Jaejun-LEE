@@ -824,6 +824,15 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
     if (err) console.error("데이터베이스 연결 실패:", err);
     else console.log("데이터베이스 원장 연결 성공");
 });
+// ⚡ [동시접속 대비] SQLite 동시성 튜닝 — WAL: 쓰기 중에도 읽기 동시 허용(기존 delete=전체잠금 직렬화 해소).
+//   busy_timeout: 경합 시 즉시 SQLITE_BUSY 에러 대신 대기. synchronous=NORMAL: WAL에서 안전+성능 균형.
+db.serialize(() => {
+    db.run("PRAGMA journal_mode = WAL");
+    db.run("PRAGMA synchronous = NORMAL");
+    db.run("PRAGMA busy_timeout = 5000");
+    db.run("PRAGMA wal_autocheckpoint = 1000");   // WAL 파일 과다증가 방지(약 4MB마다 체크포인트)
+    db.get("PRAGMA journal_mode", [], (e, r) => { if (r) console.log("💾 SQLite journal_mode =", r.journal_mode); });
+});
 
 function initTables() {
     db.serialize(() => {
