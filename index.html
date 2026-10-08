@@ -3136,6 +3136,7 @@
                         setEarthToken(data.token);   // 🔐 세션 토큰 저장
                         loginSuccess(data);
                         setTimeout(function(){ try{ window._rcOfferSetupOnce(true); }catch(_){} }, 1200);
+                        setTimeout(function(){ try{ window._offerBackupCardAfterSignup && window._offerBackupCardAfterSignup(); }catch(_){} }, 2200);   // ☁️ 백업 카드 등록(선택)
                     }
                 } else {
                     showToast(data.error);
@@ -4236,6 +4237,46 @@
             return { status, enable, backupAll, autoMirror, list, restoreAll, restoreOne, del, uploadOne };
         })();
 
+        // ☁️🔁 클라우드 버튼 진입점 — 구독 상태로 흐름 결정: 구독중/카드결제 비활성 → 백업패널, 미구독 → 구독 안내.
+        window.openCloudBackup = async function(){
+            let st; try{ st = await fetch(`${API_URL}/api/mirror/subscription`, { credentials:'include' }).then(r=>r.json()); }catch(_){ st=null; }
+            if(!st || !st.billingEnabled) return openMirrorPanel();   // 카드결제(PG) 비활성 → 기존 흐름
+            if(st.active) return openMirrorPanel();                    // 이미 구독중 → 백업/복원
+            _openBackupSubscribeModal(st);                            // 미구독 → 구독 안내
+        };
+        // ☁️🔁 백업 구독 안내 모달
+        window._openBackupSubscribeModal = function(st){
+            const price = Number(st.price)||9900;
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4650;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            const cardLine = st.hasCard
+                ? `<div style="font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;margin-bottom:14px;">결제 카드: <b>${(st.issuerName||'카드')} ${st.cardMaskNo||''}</b></div>`
+                : `<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:14px;">등록된 결제 카드가 없습니다. 카드 등록 후 자동으로 구독이 시작됩니다.</div>`;
+            const btnLabel = st.hasCard ? `월 ${price.toLocaleString()}원 구독 시작` : `카드 등록하고 구독 시작`;
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:420px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
+                +'<div style="font-weight:800;font-size:18px;margin-bottom:6px;">☁️ 공유폴더 데이터 백업 서비스</div>'
+                +'<div style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:14px;">공유폴더의 파일을 클라우드(R2)에 자동 백업합니다. 디스크 고장·기기 분실·랜섬웨어 시에도 안전하게 복원할 수 있습니다.</div>'
+                +`<div style="font-size:26px;font-weight:900;margin-bottom:4px;">월 ${price.toLocaleString()}<span style="font-size:15px;font-weight:700;">원</span></div>`
+                +'<div style="font-size:11px;color:#94a3b8;margin-bottom:14px;">매월 자동 결제 · 언제든 지갑에서 해지 가능'+(st.sim?' · (시뮬레이터: 실제 청구 없음)':'')+'</div>'
+                +cardLine
+                +'<button id="_bk-go" style="width:100%;padding:13px;border:none;border-radius:10px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer;margin-bottom:8px;">'+btnLabel+'</button>'
+                +'<button id="_bk-cancel" style="width:100%;padding:9px;border:none;background:transparent;color:#64748b;cursor:pointer;">나중에</button>'
+                +'</div>';
+            document.body.appendChild(ov); ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
+            ov.querySelector('#_bk-cancel').onclick=()=>ov.remove();
+            ov.querySelector('#_bk-go').onclick=async()=>{
+                const go=ov.querySelector('#_bk-go'); go.disabled=true; go.textContent='처리 중…';
+                try{
+                    if(!st.hasCard){ await window.registerBilling({goodsName:'공유폴더 백업 카드등록'}); }   // 카드 먼저 등록
+                    const r=await fetch(`${API_URL}/api/mirror/subscribe`, { method:'POST', credentials:'include' });
+                    const d=await r.json().catch(()=>({}));
+                    if(!r.ok||!d.ok){ if(d.needCard){ go.disabled=false; go.textContent=btnLabel; return showToast('카드 등록이 필요합니다.'); } throw new Error(d.error||'구독 실패'); }
+                    ov.remove();
+                    showToast('✅ 백업 구독이 시작되었습니다'+(d.firstCharge&&d.firstCharge.ok?` · 월 ${price.toLocaleString()}원 결제 완료`:''));
+                    try{ if(window.openMirrorPanel) openMirrorPanel(); }catch(_){}   // 바로 백업 패널 열기
+                    try{ if(window.RCMirror && RCMirror.backupAll) RCMirror.backupAll(); }catch(_){}
+                }catch(e){ go.disabled=false; go.textContent=btnLabel; showToast(e.message||'구독 취소'); }
+            };
+        };
         window.openMirrorPanel = async function(){
             const fmt=(b)=>{ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
             const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -4931,7 +4972,7 @@
 
                 // 닫기·메뉴는 상단바(캡처 영역)의 표준 햄버거/로고로 통일 — X 버튼 제거. switchTab이 공유폴더를 닫고 전환.
                 const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } };
-                const mir=ov.querySelector('#_sf-mirror'); if(mir) mir.onclick=()=>{ try{ if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} };
+                const mir=ov.querySelector('#_sf-mirror'); if(mir) mir.onclick=()=>{ try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} };
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); path = i<0?[]:path.slice(0,i+1); render(); }));
                 const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else { close(); } };
@@ -12881,6 +12922,29 @@ pdfjsScript,
             if(action==='cancel' && !confirm('이 구독을 해지할까요?')) return;
             try{ await window.subscriptionAction(id, action); showToast(action==='charge-now'?'청구 완료':action==='cancel'?'해지됨':action==='pause'?'일시정지됨':'재개됨'); loadBillingUI(); }
             catch(e){ showToast(e.message||'처리 실패'); }
+        };
+        // ☁️ 가입 직후 백업 카드 등록 안내(선택) — 카드결제 활성 + 카드 미보유일 때만 1회.
+        window._offerBackupCardAfterSignup = async function(){
+            try{
+                const cfg = await fetch(`${API_URL}/api/pg/public-config`, { credentials:'include' }).then(r=>r.json()).catch(()=>({}));
+                if(!cfg.billingEnabled) return;
+                const cards = await window.listBilling().catch(()=>[]);
+                if(cards && cards.length) return;   // 이미 카드 있음
+                const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4680;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+                ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:420px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
+                    +'<div style="font-weight:800;font-size:18px;margin-bottom:6px;">☁️ 공유폴더 백업 카드 등록</div>'
+                    +'<div style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:16px;">공유폴더 데이터 백업 서비스를 위해 결제 카드를 미리 등록해 두면, 공유폴더에서 <b>클라우드 버튼</b>만 눌러 바로 백업을 시작할 수 있습니다. (등록만 하며 지금 청구되지 않습니다)</div>'
+                    +'<button id="_bkc-go" style="width:100%;padding:13px;border:none;border-radius:10px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer;margin-bottom:8px;">카드 등록하기</button>'
+                    +'<button id="_bkc-skip" style="width:100%;padding:9px;border:none;background:transparent;color:#64748b;cursor:pointer;">나중에 (지갑에서 가능)</button>'
+                    +'</div>';
+                document.body.appendChild(ov); ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
+                ov.querySelector('#_bkc-skip').onclick=()=>ov.remove();
+                ov.querySelector('#_bkc-go').onclick=async()=>{
+                    const g=ov.querySelector('#_bkc-go'); g.disabled=true; g.textContent='처리 중…';
+                    try{ const r=await window.registerBilling({goodsName:'공유폴더 백업 카드등록'}); ov.remove(); showToast('카드 등록 완료: '+(r.issuerName||'')+' '+(r.cardMaskNo||'')); }
+                    catch(e){ g.disabled=false; g.textContent='카드 등록하기'; showToast(e.message||'카드 등록 취소'); }
+                };
+            }catch(_){}
         };
 
         async function buyAsset(id, name, amount, seller, purchaseType) {

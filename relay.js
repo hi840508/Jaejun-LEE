@@ -977,6 +977,7 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS billing_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, billKey TEXT, issuerName TEXT, issuerCode TEXT, cardMaskNo TEXT, payMethodTypeCode TEXT, label TEXT, status TEXT DEFAULT 'active', created_at TEXT, updated_at TEXT)`, () => {});
         // 🔁 [정기결제 구독] 빌키 기반 자동 반복청구 스케줄. intervalType: monthly|weekly|daily, nextChargeAt(ISO) 도래 시 크론이 청구. status: active|paused|canceled|failed.
         db.run(`CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, billingId INTEGER, seller TEXT, amount INTEGER, goodsName TEXT, intervalType TEXT DEFAULT 'monthly', intervalCount INTEGER DEFAULT 1, nextChargeAt TEXT, status TEXT DEFAULT 'active', failCount INTEGER DEFAULT 0, lastChargedAt TEXT, lastPgCno TEXT, label TEXT, created_at TEXT, updated_at TEXT)`, () => {});
+        db.run(`ALTER TABLE subscriptions ADD COLUMN kind TEXT DEFAULT 'generic'`, () => {});   // 🔁 구독 종류: generic | backup(공유폴더 백업)
         // 💳 [KICC PG 대비] 결제 세션 상태 추적(멱등·재조회·정산 대사용). 리다이렉트/결제창 비동기 흐름의 단일 진실원천.
         //   status: requested(결제요청·창오픈) → authorized(승인토큰 수신) → approved(최종승인/매입) → failed | canceled | expired
         db.run(`CREATE TABLE IF NOT EXISTS pg_payments (
@@ -1019,6 +1020,8 @@ function initTables() {
             //    중지 중에는 새 백업(켜기·업로드)만 막고, 이미 올라간 파일의 목록·복원은 계속 허용한다
             //    (회원이 이미 맡긴 데이터를 못 꺼내는 상태를 만들지 않기 위함).
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('mirror_enabled', '0')`, () => {});
+            // ☁️ [공유폴더 백업 구독] 월 구독료(원). 관리자 변경 가능.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('backup_sub_price', '9900')`, () => {});
         });
 
         // 🧾 전자세금계산서 이력 + 정산 기본 변수(모두 settings로 변경 가능): VAT율 10%, 결제수수료율 2.7%, SW 월사용료 10000원
@@ -2929,6 +2932,58 @@ app.post('/api/mirror/enable', (req, res) => {
         if (e) return res.status(500).json({ error: e.message });
         res.json({ ok: true, enabled: !!on });
     });
+});
+// ☁️🔁 [공유폴더 백업 구독] 상태 — 구독여부·월요금·등록카드·결제가능 플래그. 클라우드 버튼이 이걸로 흐름을 결정.
+app.get('/api/mirror/subscription', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.get(`SELECT * FROM subscriptions WHERE owner=? AND kind='backup' AND status IN ('active','paused','failed') ORDER BY id DESC LIMIT 1`, [me], (e, sub) => {
+        db.get(`SELECT id, cardMaskNo, issuerName FROM billing_keys WHERE owner=? AND status='active' ORDER BY id DESC LIMIT 1`, [me], (e2, card) => {
+            db.get(`SELECT value FROM settings WHERE key='backup_sub_price'`, [], (e3, row) => {
+                const price = Math.floor(Number(row && row.value) || 9900);
+                res.json({ active: !!(sub && sub.status === 'active'), status: sub ? sub.status : null, subId: sub ? sub.id : null, nextChargeAt: sub ? sub.nextChargeAt : null, price, hasCard: !!card, cardMaskNo: card ? card.cardMaskNo : '', issuerName: card ? card.issuerName : '', billingEnabled: PG_PROVIDER === 'kicc' });
+            });
+        });
+    });
+});
+// ☁️🔁 구독 시작 — 등록카드로 월 구독 생성 + 즉시 1회 결제 + 미러(백업) 활성화. 카드 없으면 needCard.
+app.post('/api/mirror/subscribe', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (PG_PROVIDER !== 'kicc') return res.status(400).json({ error: '카드결제(PG)가 활성화되어야 백업 구독을 이용할 수 있습니다.' });
+    db.get(`SELECT * FROM billing_keys WHERE owner=? AND status='active' ORDER BY id DESC LIMIT 1`, [me], (e, card) => {
+        if (e) return res.status(500).json({ error: e.message });
+        if (!card) return res.status(409).json({ error: '등록된 결제 카드가 없습니다. 먼저 카드를 등록하세요.', needCard: true });
+        db.get(`SELECT id FROM subscriptions WHERE owner=? AND kind='backup' AND status='active'`, [me], (e2, ex) => {
+            if (ex) { db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,1) ON CONFLICT(userName) DO UPDATE SET enabled=1`, [me]); return res.json({ ok: true, already: true, subId: ex.id, enabled: true }); }
+            db.get(`SELECT value FROM settings WHERE key='backup_sub_price'`, [], (e3, row) => {
+                const amount = Math.floor(Number(row && row.value) || 9900); const now = new Date(); const next = _addIntervalISO(now.toISOString(), 'monthly', 1);
+                db.run(`INSERT INTO subscriptions (owner, billingId, seller, amount, goodsName, intervalType, intervalCount, nextChargeAt, status, kind, label, created_at, updated_at) VALUES (?,?,?,?,?, 'monthly', 1, ?, 'active', 'backup', ?, ?, ?)`,
+                    [me, card.id, _adminAccount(), amount, 'RAYCloud 공유폴더 백업 서비스', next, '공유폴더 백업 구독', now.toISOString(), now.toISOString()], function (ie) {
+                        if (ie) return res.status(500).json({ error: ie.message });
+                        const subId = this.lastID;
+                        db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,1) ON CONFLICT(userName) DO UPDATE SET enabled=1`, [me]);   // 백업 즉시 활성화
+                        _billingCharge({ billingId: card.id, amount, goodsName: 'RAYCloud 공유폴더 백업 서비스', seller: _adminAccount(), subscriptionId: subId }, (err, out) => {
+                            if (err) { db.run(`UPDATE subscriptions SET failCount=1, updated_at=? WHERE id=?`, [new Date().toISOString(), subId]); return res.json({ ok: true, subId, enabled: true, firstCharge: { ok: false, error: err.message } }); }
+                            db.run(`UPDATE subscriptions SET lastChargedAt=?, lastPgCno=? WHERE id=?`, [new Date().toISOString(), out.tid || null, subId]);
+                            res.json({ ok: true, subId, enabled: true, firstCharge: { ok: true, amount: out.amount, approvalNo: out.approvalNo } });
+                        });
+                    });
+            });
+        });
+    });
+});
+// ☁️🔁 구독 해지 — 백업 구독 취소 + 미러 비활성(복원/목록은 계속 가능).
+app.post('/api/mirror/unsubscribe', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.run(`UPDATE subscriptions SET status='canceled', updated_at=? WHERE owner=? AND kind='backup' AND status IN ('active','paused','failed')`, [new Date().toISOString(), me], function () {
+        db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,0) ON CONFLICT(userName) DO UPDATE SET enabled=0`, [me], () => res.json({ ok: true }));
+    });
+});
+// ☁️ [관리자] 백업 월 구독료 설정
+app.post('/api/admin/backup-price', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const price = Math.floor(Number(req.body.price) || 0);
+    if (!(price >= 0)) return res.status(400).json({ error: '금액을 확인하세요.' });
+    db.run(`INSERT INTO settings(key,value) VALUES('backup_sub_price',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(price)], () => res.json({ ok: true, price }));
 });
 app.post('/api/mirror/upload-url', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
