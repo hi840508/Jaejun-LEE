@@ -4642,27 +4642,24 @@
             const folderNm=(pathArr&&pathArr.length)?pathArr[pathArr.length-1]:'Home';
             const openable=siblings.filter(n=>!!_rcCatOf(n));
             const items=[];
+            // ⚡ [온디맨드] 파일 blob/썸네일을 '미리 읽지 않는다'. 메타데이터(이름·종류·날짜)만 즉시 전송 →
+            //    서랍에서 '클릭한 파일만' 그때 부모에 요청(RAYCLOUD_REQUEST_OPEN)해서 로드한다. 폴더에 파일이 많아도 즉시 표시.
+            //    payload.ref = {pathArr, fname} 만 담고 urls/url 은 비운다(클릭 시 _rcPayloadFor 로 생성).
             const dcms=openable.filter(n=>RC_DCM_RE.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
             if(dcms.length>=2){
-                const urls=[]; const gotd=await _rcMapLimit(dcms,6,n=>_rcBlobFor(R,pathArr,n)); gotd.forEach(u=>{ if(u)urls.push(u); });
                 const dmt=Math.max.apply(null,dcms.map(_mtimeOf).concat(0));
-                if(urls.length) items.push({ name:'CT 시리즈 ('+dcms.length+'장)', cat:'2D', date:_fmtDate(dmt), time:_fmtTime(dmt), folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_DICOM', urls:urls, name:'CT Series ('+dcms.length+')' } });
+                items.push({ name:'CT 시리즈 ('+dcms.length+'장)', cat:'2D', date:_fmtDate(dmt), time:_fmtTime(dmt), folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_DICOM', name:'CT Series ('+dcms.length+')', ref:{ pathArr:pathArr, fname:dcms[0] } } });
             } else if(dcms.length===1){
-                // 🩻 단일 DICOM = 파노라마/2D → 파노라믹 Arch 영역(vpPano)에 열리도록 2D 이미지로 디코드
-                let durl=''; try{ const f=await R.getFileAt(pathArr,dcms[0]); if(f&&R.dicomImage) durl=await R.dicomImage(f,2400); }catch(_){}
-                if(!durl) durl=await _rcBlobFor(R,pathArr,dcms[0]);
-                if(durl) items.push({ name:dcms[0], cat:'2D', date:_fmtDate(_mtimeOf(dcms[0])), time:_fmtTime(_mtimeOf(dcms[0])), folder:folderNm, thumb:(/^data:image/.test(durl)?durl:''), payload:{ type:'RAYCLOUD_LOAD_2D', url:durl, name:dcms[0] } });
+                // 🩻 단일 DICOM = 파노라마/2D → 클릭 시 2D 디코드(_rcPayloadFor)
+                items.push({ name:dcms[0], cat:'2D', date:_fmtDate(_mtimeOf(dcms[0])), time:_fmtTime(_mtimeOf(dcms[0])), folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_2D', name:dcms[0], ref:{ pathArr:pathArr, fname:dcms[0] } } });
             }
-            // ⚡ 폴더 파일이 많아도 빠르게: 순차 await(파일 수만큼 왕복) → 동시성 8 병렬 처리.
-            const others = openable.filter(n => _rcCatOf(n) !== 'DICOM');
-            const built = await _rcMapLimit(others, 8, async (n)=>{
-                const cat=_rcCatOf(n); const u=await _rcBlobFor(R,pathArr,n); if(!u) return null;
-                const mt=_mtimeOf(n); const dt=_fmtDate(mt); const tm=_fmtTime(mt);
-                if(cat==='3D') return { name:n, cat:'3D', date:dt, time:tm, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[n] } };
-                if(cat==='PICTURE') return { name:n, cat:'PICTURE', date:dt, time:tm, folder:folderNm, thumb:u, payload:{ type:'RAYCLOUD_LOAD_2D', url:u, name:n } };
-                return { name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:dt, time:tm, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', url:u, name:n } };
-            });
-            built.forEach(it=>{ if(it) items.push(it); });
+            for(const n of openable){
+                const cat=_rcCatOf(n); if(cat==='DICOM') continue;
+                const mt=_mtimeOf(n); const dt=_fmtDate(mt); const tm=_fmtTime(mt); const ref={ pathArr:pathArr, fname:n };
+                if(cat==='3D') items.push({ name:n, cat:'3D', date:dt, time:tm, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_MESH', names:[n], ref:ref } });
+                else if(cat==='PICTURE') items.push({ name:n, cat:'PICTURE', date:dt, time:tm, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_2D', name:n, ref:ref } });
+                else items.push({ name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:dt, time:tm, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', name:n, ref:ref } });
+            }
             try{ post({ type:'RAYCLOUD_MANIFEST', items:items }); }catch(_){}
             return items.length;
         }
@@ -4816,6 +4813,21 @@
                     try{ const resp=await fetch(url); const blob=await resp.blob(); const f=new File([blob], name, { type: blob.type||'application/octet-stream' });
                         await window.rcOpenExternalFile(f, name);
                     }catch(e){ showToast('파일 열기 실패: '+(e.message||e)); }
+                    return;
+                }
+                // ⚡ [온디맨드] 서랍에서 파일 클릭 → 그 파일만 지금 읽어 payload 생성해 돌려준다(RAYCLOUD_RESOLVED).
+                if(ev.data.type==='RAYCLOUD_REQUEST_OPEN'){
+                    const ref=ev.data.ref||{}; const pa=Array.isArray(ref.pathArr)?ref.pathArr:[]; const fn=ref.fname; const mid=ev.data.mid;
+                    const reply=(payload,error)=>{ try{ post({ type:'RAYCLOUD_RESOLVED', mid:mid, payload:payload||null, error:error||null }); }catch(_){} };
+                    if(!fn){ reply(null,'파일 정보가 없습니다.'); return; }
+                    try{
+                        const cur=await R.listAt(pa)||{};
+                        const sibs=(cur.files||[]).map(f=> typeof f==='string'?f:((f&&f.fname)||(f&&f.name)||'')).filter(Boolean);
+                        const payload=await _rcPayloadFor(R, pa, fn, sibs);
+                        if(!payload){ reply(null,'열 수 없는 형식입니다.'); return; }
+                        try{ const us=[]; if(payload.urls) us.push.apply(us,payload.urls); if(payload.url) us.push(payload.url); if(payload.texUrls) us.push.apply(us,payload.texUrls); (window.__rcViewerUrls=window.__rcViewerUrls||[]).push.apply(window.__rcViewerUrls, us); }catch(_){}
+                        reply(payload);
+                    }catch(e){ reply(null, String((e&&e.message)||e)); }
                     return;
                 }
                 if(ev.data.type!=='RAYCLOUD_PICK_ROOT') return;
