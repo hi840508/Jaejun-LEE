@@ -965,6 +965,18 @@ function initTables() {
         // 💳 [KICC PG 대비] 실 PG(KICC 이지페이 등) 취소·환불 시 필요한 거래 고유번호(TID) 저장. pg_approval=승인번호와 별개.
         db.run(`ALTER TABLE transactions ADD COLUMN pg_tid TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN pg_tid TEXT`, () => {});
+        // 💸 [정산 자동 지급] 정산금은 인앱 잔액 적립이 아니라 '판매자 등록계좌로 직접 지급'된다. 그 지급 기록(원장).
+        //   status: paid(지급처리) | failed. auto=1이면 정산예정일 도래로 자동지급. items=포함 주문 상세, orderIds=정산된 주문 id들.
+        db.run(`CREATE TABLE IF NOT EXISTS payouts (id INTEGER PRIMARY KEY AUTOINCREMENT, seller TEXT, amount INTEGER, bank TEXT, account TEXT, accountHolder TEXT, salesTotal INTEGER, payFee INTEGER, month TEXT, items TEXT, orderIds TEXT, status TEXT DEFAULT 'paid', auto INTEGER DEFAULT 0, date TEXT, rawDate TEXT, paid_at TEXT)`, () => {});
+        // 🏦 [펌뱅킹/오픈뱅킹] 실 이체 추적: provider(mock|openbanking|firmbanking), transfer_ref(은행 거래고유번호), fail_reason.
+        //   status 의미 — manual/paid(기록·완료) | requested(이체요청 전송) | failed(이체실패, 재시도 가능).
+        db.run(`ALTER TABLE payouts ADD COLUMN provider TEXT DEFAULT 'mock'`, () => {});
+        db.run(`ALTER TABLE payouts ADD COLUMN transfer_ref TEXT`, () => {});
+        db.run(`ALTER TABLE payouts ADD COLUMN fail_reason TEXT`, () => {});
+        // 🔁 [정기결제] 빌링키 보관 — 🔐 billKey는 카드 토큰과 동급 민감정보: 서버에만 저장, 클라이언트엔 마스킹카드만 노출.
+        db.run(`CREATE TABLE IF NOT EXISTS billing_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, billKey TEXT, issuerName TEXT, issuerCode TEXT, cardMaskNo TEXT, payMethodTypeCode TEXT, label TEXT, status TEXT DEFAULT 'active', created_at TEXT, updated_at TEXT)`, () => {});
+        // 🔁 [정기결제 구독] 빌키 기반 자동 반복청구 스케줄. intervalType: monthly|weekly|daily, nextChargeAt(ISO) 도래 시 크론이 청구. status: active|paused|canceled|failed.
+        db.run(`CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, billingId INTEGER, seller TEXT, amount INTEGER, goodsName TEXT, intervalType TEXT DEFAULT 'monthly', intervalCount INTEGER DEFAULT 1, nextChargeAt TEXT, status TEXT DEFAULT 'active', failCount INTEGER DEFAULT 0, lastChargedAt TEXT, lastPgCno TEXT, label TEXT, created_at TEXT, updated_at TEXT)`, () => {});
         // 💳 [KICC PG 대비] 결제 세션 상태 추적(멱등·재조회·정산 대사용). 리다이렉트/결제창 비동기 흐름의 단일 진실원천.
         //   status: requested(결제요청·창오픈) → authorized(승인토큰 수신) → approved(최종승인/매입) → failed | canceled | expired
         db.run(`CREATE TABLE IF NOT EXISTS pg_payments (
@@ -998,6 +1010,11 @@ function initTables() {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('pg_provider', 'mock')`, () => {});   // mock | kicc
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('kicc_mode', 'test')`, () => {});    // test | live
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('kicc_mid', '')`, () => {});         // KICC 상점(가맹점) ID
+            // 💸 [정산 자동지급] 정산예정일 도래 시 판매자 등록계좌로 자동 지급할지 여부 — ⚠ 기본 OFF('0'). 관리자가 켜야 자동 집행.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_payout_enabled', '0')`, () => {});
+            // 🏦 [펌뱅킹/오픈뱅킹] 실 계좌이체 공급자 — mock(기록만) | openbanking(금결원 오픈뱅킹) | firmbanking(은행 펌뱅킹). 기본 mock.
+            //    ⚠ 인증키/시크릿(client_secret, 공동인증서, 이체비밀번호 등)은 settings 금지 — 반드시 환경변수로만 보관.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('bank_provider', 'mock')`, () => {});
             // ☁️ 클라우드 미러 백업 서비스 on/off — 기본 '0'(중지). 관리자 화면에서 켜고 끈다.
             //    중지 중에는 새 백업(켜기·업로드)만 막고, 이미 올라간 파일의 목록·복원은 계속 허용한다
             //    (회원이 이미 맡긴 데이터를 못 꺼내는 상태를 만들지 않기 위함).
@@ -1153,87 +1170,273 @@ let PG_MODE = 'mock';         // mock | live (레거시 스위치)
 let PG_PROVIDER = 'mock';     // mock | kicc
 let KICC_MODE = 'test';       // test | live
 let KICC_MID = '';
+let KICC_API_BASE_CFG = '';
+let AUTO_PAYOUT_ENABLED = false;   // 💸 정산 자동지급 ON/OFF (기본 OFF)
+let BANK_PROVIDER = 'mock';        // 🏦 mock | openbanking | firmbanking
 function loadPgMode() {
-    db.all(`SELECT key,value FROM settings WHERE key IN ('pg_mode','pg_provider','kicc_mode','kicc_mid')`, [], (e, rows) => {
+    db.all(`SELECT key,value FROM settings WHERE key IN ('pg_mode','pg_provider','kicc_mode','kicc_mid','kicc_api_base','auto_payout_enabled','bank_provider')`, [], (e, rows) => {
         const m = {}; (rows || []).forEach(r => m[r.key] = r.value);
         if (m.pg_mode) PG_MODE = String(m.pg_mode).trim() || 'mock';
         if (m.pg_provider) PG_PROVIDER = String(m.pg_provider).trim() || 'mock';
         if (m.kicc_mode) KICC_MODE = String(m.kicc_mode).trim() || 'test';
         KICC_MID = String(m.kicc_mid || '').trim();
+        KICC_API_BASE_CFG = String(m.kicc_api_base || '').trim();
+        AUTO_PAYOUT_ENABLED = String(m.auto_payout_enabled || '0').trim() === '1';
+        if (m.bank_provider) BANK_PROVIDER = String(m.bank_provider).trim() || 'mock';
     });
 }
 setTimeout(loadPgMode, 500);
-// 🔐 PG 비밀키는 절대 DB/클라이언트에 두지 않는다. 환경변수(KICC_LICENSE_KEY)로만 주입.
-function _kiccLicenseKey() { return process.env.KICC_LICENSE_KEY || ''; }
-// 🆔 가맹점 주문번호(멱등 키) — 재시도/중복 리다이렉트에도 한 번만 승인되게 하는 단일 키.
+// 🔐 PG 비밀키/해시키는 절대 DB/클라이언트에 두지 않는다. 환경변수로만 주입.
+function _kiccLicenseKey() { return process.env.KICC_LICENSE_KEY || ''; }   // (취소 msgAuthValue 등 무결성 해시용)
+// 🌐 KICC(이지페이 v9) API 도메인 — 환경변수 > 설정 > 모드별 기본. ⚠ 실제 도메인은 KICC 발급 매뉴얼로 최종 확인.
+function _kiccApiBase() {
+    if (process.env.KICC_API_BASE) return process.env.KICC_API_BASE.replace(/\/+$/, '');
+    if (KICC_API_BASE_CFG) return KICC_API_BASE_CFG.replace(/\/+$/, '');
+    return KICC_MODE === 'live' ? 'https://pgapi.easypay.co.kr' : 'https://testpgapi.easypay.co.kr';
+}
+// 🆔 가맹점 주문/거래번호(멱등 키) — 재시도/중복 리다이렉트에도 한 번만 승인되게 하는 단일 키.
 function _pgMoid(orderId) { return 'AK' + (orderId ? ('O' + orderId) : '') + '-' + Date.now().toString(36) + '-' + crypto.randomBytes(3).toString('hex'); }
+function _yyyymmdd() { const d = new Date(Date.now() + 9 * 3600 * 1000); return d.toISOString().slice(0, 10).replace(/-/g, ''); }
+// 🔤 KICC 금지 특수문자 제거(' " < > \ ; | & 줄바꿈) + 길이 제한. goodsName/reviseMessage 등 자유입력 필드에 적용.
+function _kiccSafe(s, max, fallback) { s = String(s == null ? '' : s).replace(/['"<>\\;|&\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim(); if (max && s.length > max) s = s.slice(0, max); return s || (fallback || ''); }
+// 🧪 시뮬레이터 모드 — KICC 자격증명 없이 전체 흐름(결제창→복귀→승인→주문확정)을 로컬에서 재현. kicc_mode='sim' 또는 kicc_mid가 'SIM'으로 시작.
+function _kiccIsSim() { return KICC_MODE === 'sim' || /^SIM/i.test(KICC_MID); }
 
 // ── [PG 어댑터 seam] ─────────────────────────────────────────────────────────
-//  mock(현행): 서버측 4자리 비번 즉시 승인(_pgAuthorize).
-//  KICC(이지페이/실PG): '리다이렉트/결제창' 비동기 2단계 — ①prepare(결제요청) → 결제창 → ②approve(승인/매입).
-//    카드 원문(번호/비번)은 우리 서버가 절대 만지지 않음(PCI). 아래는 계약·API 수령 후 구현할 스텁.
-//  ⚠ 현재 KICC 스텁은 미구현 상태로 명시적 에러를 반환한다(사일런트 통과 금지).
+//  mock(현행 기본): 서버측 4자리 비번 즉시 승인(_pgAuthorize).
+//  KICC(이지페이 v9): '결제창(리다이렉트)' 비동기 2단계 — ①거래등록(webpay)→authPageUrl→결제창→returnUrl(authorizationId)→②승인(approval).
+//    카드 원문(번호/비번)은 우리 서버가 절대 만지지 않음(PCI). 서명: 등록/승인은 mallId+IP 기반(해시 불요), 취소는 msgAuthValue 필요.
 function _pgAuthorize({ payer, amount, method, cardPw }) {
     if (method !== 'card') return { ok: false, error: '카드 결제가 아닙니다.' };
-    // KICC(실 PG)는 동기 승인이 불가 — 반드시 prepare/approve(리다이렉트) 흐름을 써야 함.
     if (PG_PROVIDER === 'kicc') {
-        return { ok: false, redirectRequired: true, error: 'KICC 결제는 결제창(리다이렉트) 승인 흐름이 필요합니다. /api/pg/prepare → 결제창 → /api/pg/approve 를 사용하세요.' };
+        return { ok: false, redirectRequired: true, error: 'KICC 결제는 결제창(리다이렉트) 흐름이 필요합니다. /api/pg/prepare → 결제창 → /api/pg/approve 를 사용하세요.' };
     }
     if (PG_MODE !== 'live') {
-        // ── mock: 실제 카드사 대조 없이 4자리 숫자면 승인 ──
         if (!/^\d{4}$/.test(String(cardPw == null ? '' : cardPw))) return { ok: false, error: '카드 비밀번호(4자리)를 확인하세요.' };
         return { ok: true, mock: true, approvalNo: 'PGMOCK-' + Date.now(), method: 'card' };
     }
     return { ok: false, error: '실 PG(pg_mode=live) 연동이 아직 설정되지 않았습니다.' };
 }
-// 🏦 [KICC 스텁] 결제요청 준비 — 결제창에 넘길 파라미터 생성(가맹점ID·주문번호·금액·서명·returnUrl). API 수령 후 실제 서명/필드 채움.
-async function _pgKiccPrepare({ orderId, buyer, seller, amount }) {
-    if (!KICC_MID || !_kiccLicenseKey()) return { ok: false, error: 'KICC 미설정(kicc_mid/KICC_LICENSE_KEY).' };
-    // TODO(KICC): 이지페이 표준결제 요청 파라미터 + SHA-256 서명 생성, pg_payments(requested) insert, 결제창 URL/폼필드 반환.
-    return { ok: false, error: 'KICC prepare 미구현 — API 수령 후 구현.' };
+// 공통 JSON POST (Node18+ 전역 fetch, 20초 타임아웃)
+async function _kiccPost(pathUrl, body) {
+    const url = _kiccApiBase() + pathUrl;
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 20000);
+    try {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(body), signal: ctrl.signal });
+        const text = await r.text(); let j = {}; try { j = JSON.parse(text); } catch (_) {}
+        return { httpOk: r.ok, status: r.status, data: j, raw: text };
+    } catch (e) { const aborted = (e && (e.name === 'AbortError')); return { httpOk: false, timeout: aborted, error: aborted ? '응답 시간 초과' : ((e && e.message) || 'network') }; }
+    finally { clearTimeout(t); }
 }
-// 🏦 [KICC 스텁] 승인/매입 — 결제창 복귀(returnUrl) 후 서버가 승인 API 호출(멱등). 금액·서명 검증 필수.
-async function _pgKiccApprove({ moid, authToken, amount }) {
-    if (!KICC_MID || !_kiccLicenseKey()) return { ok: false, error: 'KICC 미설정.' };
-    // TODO(KICC): 승인요청 API 호출 → 응답 서명검증 → 서버 기록 금액과 일치 확인 → pg_payments(approved)/tid 저장.
-    return { ok: false, error: 'KICC approve 미구현 — API 수령 후 구현.' };
+// 🏦 거래조회(상태조회) — 승인 타임아웃 등 '모호 상태'에서 실제 결과를 재확인(망취소 판단 근거). 규격: POST /api/trades/retrieveTransaction, 전일~당일만.
+async function _pgKiccInquiry({ shopTransactionId, transactionDate }) {
+    if (_kiccIsSim()) return { ok: true, found: false, raw: { sim: true } };
+    if (!KICC_MID) return { ok: false, error: 'KICC 미설정.' };
+    const body = { mallId: KICC_MID, shopTransactionId, transactionDate: transactionDate || _yyyymmdd() };   // msgAuthValue 불필요
+    const r = await _kiccPost('/api/trades/retrieveTransaction', body);
+    if (!r.httpOk || !r.data) return { ok: false, error: r.error || '거래조회 실패', raw: r.data };
+    return { ok: true, found: (r.data.resCd === '0000'), pgCno: r.data.pgCno, amount: Number(r.data.amount) || 0, status: r.data.statusCode || '', raw: r.data };
 }
-// 🏦 [KICC 스텁] 취소/환불 — 원거래 TID로 전체/부분 취소. 당일취소/매입취소 규칙 구분.
-async function _pgKiccCancel({ tid, amount, reason }) {
-    if (!KICC_MID || !_kiccLicenseKey()) return { ok: false, error: 'KICC 미설정.' };
-    // TODO(KICC): 취소 API 호출(원TID·취소금액·사유) → 응답 검증 → 기록.
-    return { ok: false, error: 'KICC cancel 미구현 — API 수령 후 구현.' };
+// 🏦 망취소(Net-Cancel) — 승인요청이 타임아웃/불명확할 때, 거래조회로 승인여부 확인 후 승인됐다면 즉시 취소(중복과금 방지). PG 심사 필수.
+async function _pgKiccNetCancel({ shopTransactionId, transactionDate, reason }) {
+    try {
+        const q = await _pgKiccInquiry({ shopTransactionId, transactionDate });
+        if (!q.ok || !q.found || !q.pgCno) return { ok: false, needManual: true, error: '거래조회 불가 — 수기 확인 필요' };
+        const c = await _pgKiccCancel({ shopTransactionId: shopTransactionId + 'NC', pgCno: q.pgCno, amount: 0, reason: reason || '망취소' });
+        return c.ok ? { ok: true, canceled: true, pgCno: q.pgCno } : { ok: false, needManual: true, error: c.error };
+    } catch (e) { return { ok: false, needManual: true, error: (e && e.message) || 'net-cancel 오류' }; }
 }
-// 💳 ===== [KICC PG 연동 스캐폴딩 라우트] — API 수령 전 골격만. 실동작은 mock 유지, kicc는 명시적 미구현 응답. =====
-//  ① prepare: 결제요청(멱등 moid 발급 + pg_payments requested 기록) → 클라가 결제창을 연다.
+// 🏦 ① 거래등록(webpay) → authPageUrl. payMethodTypeCode: '00'=일반, '81'=정기결제(빌링키) 인증.
+async function _pgKiccRegister({ shopOrderNo, amount, returnUrl, goodsName, deviceType, payMethodTypeCode }) {
+    if (_kiccIsSim()) {   // 🧪 시뮬레이터: 우리 서버의 가짜 결제창 URL 반환
+        const q = new URLSearchParams({ moid: shopOrderNo, amount: String(amount || 0), g: goodsName || '결제', pm: payMethodTypeCode || '00' });
+        return { ok: true, authPageUrl: PG_PUBLIC_BASE + '/api/pg/kicc/sim?' + q.toString(), sim: true, raw: { sim: true } };
+    }
+    if (!KICC_MID) return { ok: false, error: 'KICC 미설정(kicc_mid).' };
+    const body = {
+        mallId: KICC_MID, shopOrderNo, amount: Number(amount),
+        payMethodTypeCode: (payMethodTypeCode || '00'), currency: '00', clientTypeCode: '00',
+        returnUrl, deviceTypeCode: (deviceType === 'mobile' ? 'mobile' : 'pc'),
+        orderInfo: { goodsName: _kiccSafe(goodsName, 100, '결제') }   // 금지특수문자 제거
+    };
+    const r = await _kiccPost('/api/ep9/trades/webpay', body);
+    if (!r.httpOk || !r.data || r.data.resCd !== '0000') return { ok: false, error: (r.data && r.data.resMsg) || r.error || ('거래등록 실패(' + (r.status || '') + ')'), raw: r.data };
+    return { ok: true, authPageUrl: r.data.authPageUrl, raw: r.data };
+}
+// 🏦 ② 승인요청(approval) — returnUrl에서 받은 authorizationId로 매입 확정(멱등: shopTransactionId).
+async function _pgKiccApprove({ shopTransactionId, authorizationId, shopOrderNo }) {
+    if (_kiccIsSim()) {   // 🧪 시뮬레이터: authorizationId='SIM-<moid>-<amount>' 에서 금액 복원해 가짜 승인
+        const parts = String(authorizationId || '').split('-'); const amt = Number(parts[parts.length - 1]) || 0;
+        return { ok: true, pgCno: 'SIMTID' + Date.now(), amount: amt, approvalNo: 'SIM' + Math.floor(Math.random() * 1e6), payMethodTypeCode: '00', cardNo: '1234-****-****-5678', raw: { sim: true } };
+    }
+    if (!KICC_MID) return { ok: false, error: 'KICC 미설정.' };
+    const body = { mallId: KICC_MID, shopTransactionId, authorizationId, shopOrderNo, approvalReqDate: _yyyymmdd() };
+    const r = await _kiccPost('/api/ep9/trades/approval', body);
+    if (!r.httpOk || !r.data || r.data.resCd !== '0000') return { ok: false, timeout: !!r.timeout, error: (r.data && r.data.resMsg) || r.error || '승인 실패', raw: r.data };
+    const pi = r.data.paymentInfo || {}, ci = pi.cardInfo || {};
+    // 🔐 응답 무결성 검증: msgAuthValue = HmacSHA256(pgCno + "|" + amount + "|" + transactionDate), 해시키=KICC_LICENSE_KEY.
+    //   ⚠ 인코딩(hex/base64)이 규격에 미명시 → 둘 다 비교, 불일치 시 경고만(결제는 진행). 규격 확인 후 strict 차단으로 승격.
+    const key = _kiccLicenseKey();
+    if (key && r.data.msgAuthValue && r.data.transactionDate) {
+        try {
+            const msg = `${r.data.pgCno}|${r.data.amount}|${r.data.transactionDate}`;
+            const hex = crypto.createHmac('sha256', key).update(msg).digest('hex');
+            const b64 = crypto.createHmac('sha256', key).update(msg).digest('base64');
+            if (String(r.data.msgAuthValue) !== hex && String(r.data.msgAuthValue) !== b64) console.warn('[KICC] 승인응답 msgAuthValue 불일치(인코딩 규격 확인 필요) moid=', shopOrderNo);
+        } catch (_) {}
+    }
+    const approvalNo = ci.approvalNo || pi.approvalNo || '';   // 승인번호는 paymentInfo.cardInfo.approvalNo
+    return { ok: true, pgCno: r.data.pgCno, amount: Number(r.data.amount) || 0, approvalNo, payMethodTypeCode: pi.payMethodTypeCode || '', cardNo: ci.cardNo || '', statusCode: r.data.statusCode || '', transactionDate: r.data.transactionDate || '', raw: r.data };
+}
+// 🔁 [정기결제] 빌키 발급 — payMethodTypeCode=81 인증 후 authorizationId로 빌키 발급. 응답 빌키 = paymentInfo.cardInfo.cardNo.
+async function _pgKiccIssueBillKey({ shopTransactionId, authorizationId, shopOrderNo }) {
+    if (_kiccIsSim()) return { ok: true, billKey: 'SIMBILL' + Date.now(), issuerName: '시뮬카드', issuerCode: '00', cardMaskNo: '1234-****-****-5678', payMethodTypeCode: '81', raw: { sim: true } };
+    if (!KICC_MID) return { ok: false, error: 'KICC 미설정.' };
+    const body = { mallId: KICC_MID, shopTransactionId, authorizationId, shopOrderNo, approvalReqDate: _yyyymmdd() };   // 요청 해시 불요
+    const r = await _kiccPost('/api/ep9/trades/approval', body);
+    if (!r.httpOk || !r.data || r.data.resCd !== '0000') return { ok: false, timeout: !!r.timeout, error: (r.data && r.data.resMsg) || r.error || '빌키 발급 실패', raw: r.data };
+    const ci = (r.data.paymentInfo || {}).cardInfo || {};
+    if (!ci.cardNo) return { ok: false, error: '빌키(cardNo) 응답 누락', raw: r.data };
+    return { ok: true, billKey: ci.cardNo, issuerName: ci.issuerName || '', issuerCode: ci.issuerCode || '', cardMaskNo: ci.cardMaskNo || '', payMethodTypeCode: (r.data.paymentInfo || {}).payMethodTypeCode || '81', raw: r.data };
+}
+// 🔁 [정기결제] 빌키로 결제승인(배치) — POST /api/trades/approval/batch, 빌키는 payMethodInfo.billKeyMethodInfo.batchKey.
+async function _pgKiccBillingApprove({ shopTransactionId, shopOrderNo, amount, goodsName, billKey, installmentMonth }) {
+    if (_kiccIsSim()) return { ok: true, pgCno: 'SIMBTID' + Date.now(), amount: Number(amount) || 0, approvalNo: 'SIMB' + Math.floor(Math.random() * 1e6), statusCode: 'TS03', raw: { sim: true } };
+    if (!KICC_MID) return { ok: false, error: 'KICC 미설정.' };
+    if (!billKey) return { ok: false, error: '빌키가 없습니다.' };
+    const body = {
+        mallId: KICC_MID, shopTransactionId, shopOrderNo, approvalReqDate: _yyyymmdd(),
+        amount: Number(amount), currency: '00', orderInfo: { goodsName: _kiccSafe(goodsName, 100, '정기결제') },
+        payMethodInfo: { billKeyMethodInfo: { batchKey: billKey }, cardMethodInfo: { installmentMonth: Number(installmentMonth) || 0 } }
+    };
+    const r = await _kiccPost('/api/trades/approval/batch', body);
+    if (!r.httpOk || !r.data || r.data.resCd !== '0000') return { ok: false, timeout: !!r.timeout, error: (r.data && r.data.resMsg) || r.error || '정기결제 승인 실패', raw: r.data };
+    const pi = r.data.paymentInfo || {}, ci = pi.cardInfo || {};
+    return { ok: true, pgCno: r.data.pgCno, amount: Number(r.data.amount) || 0, approvalNo: ci.approvalNo || pi.approvalNo || '', statusCode: r.data.statusCode || '', transactionDate: r.data.transactionDate || '', raw: r.data };
+}
+// 🏦 ③ 취소/환불(revise) — 원거래 pgCno로 전체취소(reviseTypeCode '40'). ⚠ msgAuthValue(무결성 해시)는 KICC 메시지인증 규격 확인 후 생성 필요.
+async function _pgKiccCancel({ shopTransactionId, pgCno, amount, reason, methodKind }) {
+    if (_kiccIsSim()) return { ok: true, cancelPgCno: 'SIMC' + Date.now(), cancelAmount: Number(amount) || 0, remainAmount: 0, raw: { sim: true } };
+    if (!KICC_MID) return { ok: false, error: 'KICC 미설정.' };
+    const key = _kiccLicenseKey();
+    if (!key) return { ok: false, error: 'KICC 해시키(KICC_LICENSE_KEY 환경변수) 미설정 — 취소 불가.' };
+    // 🔐 취소 무결성 해시: HmacSHA256( pgCno + "|" + shopTransactionId ), hex. (규격서 확인값)
+    const msgAuthValue = crypto.createHmac('sha256', key).update(`${pgCno}|${shopTransactionId}`).digest('hex');
+    // reviseTypeCode: 40=전체취소 / 32=카드 부분취소 / 33=계좌·휴대폰 부분취소.
+    const partial = Number(amount) > 0;
+    const reviseTypeCode = partial ? (methodKind === 'bank_or_phone' ? '33' : '32') : '40';
+    const body = { mallId: KICC_MID, shopTransactionId, pgCno, reviseTypeCode, cancelReqDate: _yyyymmdd(), msgAuthValue, reviseMessage: _kiccSafe(reason, 100, '') };
+    if (partial) body.amount = Number(amount);
+    const r = await _kiccPost('/api/trades/revise', body);
+    if (!r.httpOk || !r.data || r.data.resCd !== '0000') return { ok: false, error: (r.data && r.data.resMsg) || r.error || '취소 실패', raw: r.data };
+    return { ok: true, cancelPgCno: r.data.cancelPgCno, cancelAmount: Number(r.data.cancelAmount) || 0, remainAmount: Number(r.data.remainAmount) || 0, raw: r.data };
+}
+// 💳 카드 결제 성공 → 주문 결제완료(에스크로) 확정. /api/order/pay 카드분기와 동일 효과(멱등). cb(err, {ok|already})
+function _pgFinalizeOrderPaid(orderId, info, cb) {
+    db.get(`SELECT * FROM product_orders WHERE id=?`, [orderId], (e, ord) => {
+        if (e || !ord) return cb && cb(new Error('주문을 찾을 수 없음'));
+        if (['approved', 'shipping', 'delivered', 'confirmed', 'settled'].includes(ord.status)) return cb && cb(null, { already: true });
+        if (!['awaiting_payment', 'pending'].includes(ord.status)) return cb && cb(new Error('결제 가능 상태가 아닙니다.'));
+        const amount = ord.amount || 0; const admin = _adminAccount(); const date = new Date().toLocaleString('ko-KR');
+        db.get(`SELECT name FROM products WHERE id=?`, [ord.productId], (e3, pr) => {
+            const pName = (pr && pr.name) || ord.productId;
+            db.serialize(() => {
+                db.run('BEGIN IMMEDIATE');
+                db.run(`UPDATE product_orders SET status='approved', pay_method='card', pg_approval=?, pg_tid=? WHERE id=? AND status IN ('awaiting_payment','pending')`,
+                    [info.approvalNo || null, info.pgCno || null, orderId], function (fe) {
+                        if (fe) { db.run('ROLLBACK'); return cb && cb(fe); }
+                        if (this.changes === 0) { db.run('ROLLBACK'); return cb && cb(null, { already: true }); }
+                        db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, pay_method, pg_approval, pg_tid) VALUES (?,?,?,?,?,'original',?,?,'card',?,?)`,
+                            [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date, info.approvalNo || null, info.pgCno || null], function (ie) {
+                                if (ie) { db.run('ROLLBACK'); return cb && cb(ie); }
+                                const txId = this.lastID;
+                                db.run(`UPDATE product_orders SET txId=?, escrow_held=? WHERE id=?`, [txId, amount, orderId]);
+                                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, admin]);   // 카드 자금 → Admin 보관(에스크로)
+                                db.run('COMMIT', () => { try { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', `💳 [카드 결제 완료] ${amount.toLocaleString()}원 결제가 완료되었습니다. 판매자가 상품을 준비합니다.`); } catch (_) {} cb && cb(null, { ok: true, txId }); });
+                            });
+                    });
+            });
+        });
+    });
+}
+// 💳 ===== [KICC PG(이지페이 v9) 연동 라우트] — pg_provider=kicc 에서만 동작. 기본(mock)에는 영향 없음. =====
+const PG_PUBLIC_BASE = (process.env.PG_PUBLIC_BASE || 'https://earth.rayaox.com').replace(/\/+$/, '');
+// KICC 노티(웹훅) 발신 IP 허용목록(공통 보안가이드 확인값: 운영 3 + 개발 1). Cloudflare 경유 시 cf-connecting-ip로 원 IP 확인.
+const KICC_WEBHOOK_IPS = new Set(['203.233.72.150', '203.233.72.151', '61.33.211.180', '61.33.205.151']);
+function _kiccRealIp(req) { return String(req.headers['cf-connecting-ip'] || (req.headers['x-forwarded-for'] || '').split(',')[0] || req.ip || '').trim(); }
+//  ① prepare: 거래등록(webpay) → authPageUrl. 금액은 서버가 주문에서 재확정(클라 변조 방지).
 app.post('/api/pg/prepare', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
-    const orderId = req.body.orderId ? Number(req.body.orderId) : null;
-    const amount = Math.floor(Number(req.body.amount) || 0);
-    if (!(amount > 0)) return res.status(400).json({ error: '금액을 확인하세요.' });
     if (PG_PROVIDER !== 'kicc') return res.status(400).json({ error: '현재 PG는 mock입니다. 카드결제는 기존 흐름(pgPay)을 사용하세요.' });
-    // 🔒 금액은 서버가 주문에서 재확정해야 함(클라 변조 방지) — orderId가 있으면 그 amount로 강제.
-    const now = new Date().toISOString(); const moid = _pgMoid(orderId);
-    db.run(`INSERT INTO pg_payments (provider, mode, moid, orderId, buyer, amount, status, pay_method, created_at, updated_at) VALUES ('kicc', ?, ?, ?, ?, ?, 'requested', 'card', ?, ?)`,
-        [KICC_MODE, moid, orderId, me, amount, now, now], async function (ie) {
-            if (ie) return res.status(500).json({ error: ie.message });
-            const p = await _pgKiccPrepare({ orderId, buyer: me, amount });
-            if (!p.ok) return res.status(501).json({ error: p.error, moid });   // 501: 미구현
-            res.json({ ok: true, moid, ...p });
+    const orderId = req.body.orderId ? Number(req.body.orderId) : null;
+    const payMethodTypeCode = (String(req.body.payMethodTypeCode || '').trim() === '81') ? '81' : '00';
+    const deviceType = (String(req.body.deviceType || 'pc') === 'mobile') ? 'mobile' : 'pc';
+    // orderId가 있으면 주문의 실제 금액/판매자/상태를 서버가 강제. 없으면 body.amount(정기결제 인증 등).
+    const proceed = (amount, seller, goodsName) => {
+        if (!(amount > 0) && payMethodTypeCode !== '81') return res.status(400).json({ error: '금액을 확인하세요.' });
+        const now = new Date().toISOString(); const moid = _pgMoid(orderId);
+        db.run(`INSERT INTO pg_payments (provider, mode, moid, orderId, buyer, seller, amount, status, pay_method, created_at, updated_at) VALUES ('kicc', ?, ?, ?, ?, ?, ?, 'requested', 'card', ?, ?)`,
+            [KICC_MODE, moid, orderId, me, seller || null, amount || 0, now, now], async function (ie) {
+                if (ie) return res.status(500).json({ error: ie.message });
+                const r = await _pgKiccRegister({ shopOrderNo: moid, amount: amount || 0, returnUrl: PG_PUBLIC_BASE + '/api/pg/kicc/return', goodsName, deviceType, payMethodTypeCode });
+                if (!r.ok) { db.run(`UPDATE pg_payments SET status='error', fail_reason=?, updated_at=? WHERE moid=?`, [String(r.error).slice(0, 200), new Date().toISOString(), moid]); return res.status(502).json({ error: r.error, moid }); }
+                db.run(`UPDATE pg_payments SET raw=?, updated_at=? WHERE moid=?`, [JSON.stringify(r.raw || {}).slice(0, 4000), new Date().toISOString(), moid]);
+                res.json({ ok: true, moid, authPageUrl: r.authPageUrl, payMethodTypeCode });
+            });
+    };
+    if (orderId) {
+        db.get(`SELECT o.*, p.name AS pName FROM product_orders o LEFT JOIN products p ON p.id=o.productId WHERE o.id=?`, [orderId], (e, ord) => {
+            if (e || !ord) return res.status(404).json({ error: '주문을 찾을 수 없습니다.' });
+            if (ord.buyer !== me) return res.status(403).json({ error: '본인 주문만 결제할 수 있습니다.' });
+            if (!['awaiting_payment', 'pending'].includes(ord.status)) return res.status(409).json({ error: '결제 가능 상태가 아닙니다.' });
+            proceed(Math.floor(ord.amount || 0), ord.seller, ord.pName || '주문결제');
         });
+    } else {
+        proceed(Math.floor(Number(req.body.amount) || 0), null, (req.body.goodsName || (payMethodTypeCode === '81' ? '정기결제 등록' : '결제')));
+    }
 });
-//  ② approve: 결제창 복귀 후 서버 승인(멱등). authToken/moid로 KICC 승인 API 호출 → pg_payments approved.
+//  ② approve: returnUrl에서 받은 authorizationId로 서버 승인(멱등). 성공 시 금액검증 후 주문 결제완료(에스크로) 확정.
 app.post('/api/pg/approve', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     const moid = String(req.body.moid || '').trim();
+    const authorizationId = String(req.body.authorizationId || req.body.authToken || '').trim();
     if (!moid) return res.status(400).json({ error: 'moid가 없습니다.' });
+    if (!authorizationId) return res.status(400).json({ error: '인증정보(authorizationId)가 없습니다.' });
     db.get(`SELECT * FROM pg_payments WHERE moid=?`, [moid], async (e, pay) => {
         if (e || !pay) return res.status(404).json({ error: '결제 세션을 찾을 수 없습니다.' });
+        if (pay.buyer !== me) return res.status(403).json({ error: '본인 결제만 승인할 수 있습니다.' });
         if (pay.status === 'approved') return res.json({ ok: true, already: true, approvalNo: pay.approvalNo, tid: pay.tid });   // 멱등
-        const out = await _pgKiccApprove({ moid, authToken: req.body.authToken, amount: pay.amount });
-        if (!out.ok) return res.status(501).json({ error: out.error });   // 미구현
-        // TODO(KICC): 승인 성공 시 pg_payments approved 갱신 + 해당 주문 결제완료 처리(에스크로) 트리거.
-        res.json({ ok: true, ...out });
+        const out = await _pgKiccApprove({ shopTransactionId: moid, authorizationId, shopOrderNo: moid });
+        if (!out.ok) {
+            // ⏱ 승인 타임아웃/네트워크 단절 = 모호 상태 → 망취소(거래조회 후 승인됐으면 즉시 취소)로 중복과금 방지.
+            if (out.timeout) {
+                _pgKiccNetCancel({ shopTransactionId: moid, transactionDate: _yyyymmdd(), reason: '승인 응답 타임아웃 망취소' }).then((nc) => {
+                    const st = (nc && nc.ok) ? 'canceled' : 'ambiguous';   // ambiguous = 수기 확인 필요
+                    db.run(`UPDATE pg_payments SET status=?, fail_reason=?, updated_at=? WHERE moid=?`, [st, '승인 타임아웃' + (nc && nc.needManual ? '·망취소 실패(수기확인)' : '·망취소'), new Date().toISOString(), moid]);
+                }).catch(() => {});
+                return res.status(504).json({ error: '결제 승인 응답이 지연되었습니다. 중복결제 방지를 위해 취소 처리 중이니 잠시 후 결제내역을 확인하세요.' });
+            }
+            db.run(`UPDATE pg_payments SET status='error', fail_reason=?, updated_at=? WHERE moid=?`, [String(out.error).slice(0, 200), new Date().toISOString(), moid]); return res.status(502).json({ error: out.error });
+        }
+        // 🔒 금액 재검증 — 승인금액이 주문/요청 금액과 다르면 즉시 취소하고 거부.
+        if (pay.amount > 0 && Number(out.amount) !== Number(pay.amount)) {
+            try { await _pgKiccCancel({ shopTransactionId: moid + 'X', pgCno: out.pgCno, amount: out.amount, reason: '금액불일치 자동취소' }); } catch (_) {}
+            db.run(`UPDATE pg_payments SET status='error', fail_reason='금액불일치', updated_at=? WHERE moid=?`, [new Date().toISOString(), moid]);
+            return res.status(409).json({ error: '결제 금액이 일치하지 않아 취소되었습니다.' });
+        }
+        const now = new Date().toISOString();
+        db.run(`UPDATE pg_payments SET status='approved', tid=?, approvalNo=?, pay_method=?, approved_at=?, updated_at=?, raw=? WHERE moid=?`,
+            [out.pgCno || null, out.approvalNo || null, out.payMethodTypeCode || 'card', now, now, JSON.stringify(out.raw || {}).slice(0, 4000), moid], () => {
+                // 주문 결제완료(에스크로) 확정 — orderId가 있을 때만.
+                if (pay.orderId) {
+                    _pgFinalizeOrderPaid(pay.orderId, { pgCno: out.pgCno, approvalNo: out.approvalNo }, (fe, fr) => {
+                        if (fe) return res.json({ ok: true, warn: '승인됐으나 주문반영 실패: ' + fe.message, approvalNo: out.approvalNo, tid: out.pgCno });
+                        res.json({ ok: true, approvalNo: out.approvalNo, tid: out.pgCno, order: (fr && fr.ok) ? 'paid' : (fr && fr.already) ? 'already' : 'ok' });
+                    });
+                } else {
+                    res.json({ ok: true, approvalNo: out.approvalNo, tid: out.pgCno, billing: out.payMethodTypeCode === '81' });
+                }
+            });
     });
 });
 //  ③ return: 결제창이 브라우저를 되돌려보내는 landing(returnUrl). KICC 콘솔에 등록할 공개 URL.
@@ -1246,11 +1449,304 @@ app.all('/api/pg/kicc/return', (req, res) => {
         + '<p>결제 처리 중… 이 창은 자동으로 닫힙니다.</p>'
         + '<script>try{var d=' + safe + ';if(window.opener){window.opener.postMessage({type:"KICC_RETURN",data:d},"*");}else if(window.parent!==window){window.parent.postMessage({type:"KICC_RETURN",data:d},"*");}}catch(e){}setTimeout(function(){try{window.close();}catch(_){}} ,300);</script></body>');
 });
-//  ④ webhook: KICC 서버 알림(비동기 상태변경). 서명검증 후 pg_payments 갱신. 지금은 로그+200만.
+//  ④ webhook(노티): KICC 서버 비동기 알림. IP 허용목록 + 멱등(pgCno/moid)으로 안전 처리 후 반드시 {resCd:"0000"} 응답.
 app.post('/api/pg/kicc/webhook', (req, res) => {
-    try { console.log('[KICC webhook]', JSON.stringify(req.body || {}).slice(0, 500)); } catch (_) {}
-    // TODO(KICC): 서명검증 → moid로 pg_payments 조회 → 상태 반영(approved/canceled). 검증 실패 시 무시.
-    res.json({ ok: true });
+    const ip = _kiccRealIp(req);
+    const body = req.body || {};
+    try { console.log('[KICC webhook]', ip, JSON.stringify(body).slice(0, 500)); } catch (_) {}
+    const trusted = KICC_WEBHOOK_IPS.has(ip);
+    if (!trusted) console.warn('[KICC webhook] 신뢰되지 않은 IP:', ip, '(Cloudflare 경유면 cf-connecting-ip 확인) — 데이터 대조로만 처리');
+    const moid = String(body.shopOrderNo || body.shopTransactionId || '').trim();
+    const pgCno = String(body.pgCno || '').trim();
+    // 거래상태코드로 판별(규격): TS03 매입요청 · TS02 승인취소 · ES04 가상계좌 입금완료 · RF02 환불완료.
+    const statusCode = String(body.statusCode || '').trim().toUpperCase();
+    const isCancel = (statusCode === 'TS02' || statusCode === 'RF02');
+    const isDeposit = (statusCode === 'ES04');   // 가상계좌 입금완료 → 결제확정
+    const finish = () => res.json({ resCd: '0000', resMsg: '정상' });   // 규격 정상응답 — 재전송(3분·최대10회) 방지
+    if (!moid) return finish();
+    db.get(`SELECT * FROM pg_payments WHERE moid=?`, [moid], (e, pay) => {
+        if (e || !pay) return finish();
+        const nowISO = new Date().toISOString();
+        if (isCancel) {
+            if (pay.status !== 'canceled') db.run(`UPDATE pg_payments SET status='canceled', canceled_at=?, updated_at=? WHERE moid=?`, [nowISO, nowISO, moid]);
+            return finish();
+        }
+        if (isDeposit) {
+            // 가상계좌 입금완료 = 비동기 결제확정. 멱등: 이미 approved면 스킵, 아니면 확정 + 주문 에스크로 반영.
+            if (pay.status !== 'approved') {
+                db.run(`UPDATE pg_payments SET status='approved', tid=COALESCE(tid,?), approved_at=?, updated_at=? WHERE moid=?`, [pgCno || null, nowISO, nowISO, moid], () => {
+                    if (pay.orderId) _pgFinalizeOrderPaid(pay.orderId, { pgCno: pgCno || pay.tid, approvalNo: pay.approvalNo }, () => {});
+                });
+            }
+            return finish();
+        }
+        // 그 외(매입요청 TS03 등): pgCno만 보정 기록(카드 주문 확정은 동기 approve 경로에서만 → 이중처리 방지).
+        if (pay.status !== 'approved') db.run(`UPDATE pg_payments SET tid=COALESCE(tid,?), updated_at=? WHERE moid=?`, [pgCno || null, nowISO, moid]);
+        finish();
+    });
+});
+// 🔁 [정기결제] 빌키 청구 공용 헬퍼 — 라우트(수동)·구독크론(자동) 공용. orderId면 주문확정, 아니면 거래내역 기록(인앱 잔액 변동 없음·카드 통과). cb(err,{amount,approvalNo,tid,moid})
+function _billingCharge(opts, cb) {
+    const billingId = Number(opts.billingId) || 0;
+    db.get(`SELECT * FROM billing_keys WHERE id=? AND status='active'`, [billingId], (e, bk) => {
+        if (e || !bk) return cb && cb(new Error('유효한 빌링키를 찾을 수 없습니다.'));
+        const amount = Math.floor(Number(opts.amount) || 0);
+        if (!(amount > 0)) return cb && cb(new Error('청구 금액을 확인하세요.'));
+        const moid = _pgMoid(opts.orderId || null); const now = new Date().toISOString();
+        db.run(`INSERT INTO pg_payments (provider, mode, moid, orderId, buyer, seller, amount, status, pay_method, created_at, updated_at) VALUES ('kicc', ?, ?, ?, ?, ?, ?, 'requested', 'billing', ?, ?)`,
+            [KICC_MODE, moid, opts.orderId || null, bk.owner, opts.seller || null, amount, now, now], async function (ie) {
+                if (ie) return cb && cb(ie);
+                const out = await _pgKiccBillingApprove({ shopTransactionId: moid, shopOrderNo: moid, amount, goodsName: opts.goodsName, billKey: bk.billKey, installmentMonth: 0 });
+                if (!out.ok) { db.run(`UPDATE pg_payments SET status='error', fail_reason=?, updated_at=? WHERE moid=?`, [String(out.error).slice(0, 200), new Date().toISOString(), moid]); return cb && cb(new Error(out.error)); }
+                const n2 = new Date().toISOString();
+                db.run(`UPDATE pg_payments SET status='approved', tid=?, approvalNo=?, approved_at=?, updated_at=?, raw=? WHERE moid=?`, [out.pgCno || null, out.approvalNo || null, n2, n2, JSON.stringify(out.raw || {}).slice(0, 4000), moid]);
+                if (opts.orderId) { _pgFinalizeOrderPaid(opts.orderId, { pgCno: out.pgCno, approvalNo: out.approvalNo }, () => cb && cb(null, { amount: out.amount, approvalNo: out.approvalNo, tid: out.pgCno, moid })); }
+                else {
+                    const dateStr = new Date().toLocaleString('ko-KR');
+                    db.run(`INSERT INTO transactions (buyer, seller, productName, amount, purchaseType, rawDate, date, pay_method, pg_approval, pg_tid) VALUES (?,?,?,?,?,?,?, 'card', ?, ?)`,
+                        [bk.owner, opts.seller || 'Alpha K(Root)', opts.goodsName || '정기결제', amount, (opts.subscriptionId ? 'subscription' : 'billing'), now, dateStr, out.approvalNo || null, out.pgCno || null], () => cb && cb(null, { amount: out.amount, approvalNo: out.approvalNo, tid: out.pgCno, moid }));
+                }
+            });
+    });
+}
+// 📅 다음 청구일 계산(앵커=이전 청구예정일 기준, 드리프트 방지). 월말 안전은 JS 롤오버에 위임.
+function _addIntervalISO(fromISO, type, count) {
+    const d = new Date(fromISO); count = Number(count) || 1;
+    if (type === 'weekly') d.setDate(d.getDate() + 7 * count);
+    else if (type === 'daily') d.setDate(d.getDate() + count);
+    else d.setMonth(d.getMonth() + count);   // monthly 기본
+    return d.toISOString();
+}
+// 🔁 [구독 자동청구 크론] nextChargeAt 도래한 active 구독을 빌키로 청구. 실패 3회 누적 시 중단(failed), 그 전엔 1일 뒤 재시도. pg_provider=kicc에서만 동작.
+function _subscriptionSweep() {
+    try {
+        if (PG_PROVIDER !== 'kicc') return;   // mock(기본)에선 자동청구 없음
+        const nowISO = new Date().toISOString();
+        db.all(`SELECT * FROM subscriptions WHERE status='active' AND nextChargeAt IS NOT NULL AND nextChargeAt<=? ORDER BY id LIMIT 50`, [nowISO], (e, rows) => {
+            if (e || !rows || !rows.length) return;
+            rows.forEach(sub => {
+                _billingCharge({ billingId: sub.billingId, amount: sub.amount, goodsName: sub.goodsName, seller: sub.seller, subscriptionId: sub.id }, (err, out) => {
+                    const now = new Date();
+                    if (err) {
+                        const fc = (sub.failCount || 0) + 1;
+                        if (fc >= 3) { db.run(`UPDATE subscriptions SET status='failed', failCount=?, updated_at=? WHERE id=?`, [fc, now.toISOString(), sub.id]); console.warn('[구독 자동청구 중단(3회 실패)]', sub.id, err.message); }
+                        else { db.run(`UPDATE subscriptions SET failCount=?, nextChargeAt=?, updated_at=? WHERE id=?`, [fc, _addIntervalISO(now.toISOString(), 'daily', 1), now.toISOString(), sub.id]); console.warn('[구독 자동청구 실패·재시도 예약]', sub.id, err.message); }
+                    } else {
+                        db.run(`UPDATE subscriptions SET failCount=0, lastChargedAt=?, lastPgCno=?, nextChargeAt=?, updated_at=? WHERE id=?`,
+                            [now.toISOString(), out.tid || null, _addIntervalISO(sub.nextChargeAt, sub.intervalType, sub.intervalCount), now.toISOString(), sub.id]);
+                        console.log('[구독 자동청구]', sub.id, out.amount + '원', '→ 다음', sub.intervalType);
+                    }
+                });
+            });
+        });
+    } catch (_) {}
+}
+setTimeout(_subscriptionSweep, 60 * 1000);
+setInterval(_subscriptionSweep, 60 * 60 * 1000);
+
+// 🔁 ===== [정기결제(빌링)] 빌키 발급 → 보관 → 빌키로 청구 =====
+//  ① issue: 81-인증(prepare payMethodTypeCode=81) 복귀 후 authorizationId로 빌키 발급 + 서버 보관. 🔐 빌키는 클라에 반환하지 않음(마스킹카드만).
+app.post('/api/pg/billing/issue', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (PG_PROVIDER !== 'kicc') return res.status(400).json({ error: '현재 PG는 mock입니다.' });
+    const moid = String(req.body.moid || '').trim();
+    const authorizationId = String(req.body.authorizationId || req.body.authToken || '').trim();
+    if (!moid || !authorizationId) return res.status(400).json({ error: 'moid/authorizationId가 필요합니다.' });
+    db.get(`SELECT * FROM pg_payments WHERE moid=?`, [moid], async (e, pay) => {
+        if (e || !pay) return res.status(404).json({ error: '결제 세션을 찾을 수 없습니다.' });
+        if (pay.buyer !== me) return res.status(403).json({ error: '본인 요청만 처리할 수 있습니다.' });
+        const out = await _pgKiccIssueBillKey({ shopTransactionId: moid, authorizationId, shopOrderNo: moid });
+        if (!out.ok) { db.run(`UPDATE pg_payments SET status='error', fail_reason=?, updated_at=? WHERE moid=?`, [String(out.error).slice(0, 200), new Date().toISOString(), moid]); return res.status(502).json({ error: out.error }); }
+        const now = new Date().toISOString();
+        db.run(`INSERT INTO billing_keys (owner, billKey, issuerName, issuerCode, cardMaskNo, payMethodTypeCode, label, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?, 'active', ?, ?)`,
+            [me, out.billKey, out.issuerName, out.issuerCode, out.cardMaskNo, out.payMethodTypeCode, (out.issuerName || '카드') + ' ' + (out.cardMaskNo || ''), now, now], function (ie) {
+                if (ie) return res.status(500).json({ error: ie.message });
+                db.run(`UPDATE pg_payments SET status='billing_registered', tid=?, updated_at=? WHERE moid=?`, [out.billKey ? 'BILL' : null, now, moid]);
+                // 🔐 billKey는 응답에서 제외 — billingId·마스킹카드만.
+                res.json({ ok: true, billingId: this.lastID, cardMaskNo: out.cardMaskNo, issuerName: out.issuerName });
+            });
+    });
+});
+//  ② list: 내 빌링키 목록(마스킹). 빌키 원문은 절대 미노출.
+app.get('/api/pg/billing/list', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.all(`SELECT id, issuerName, cardMaskNo, payMethodTypeCode, label, status, created_at FROM billing_keys WHERE owner=? AND status='active' ORDER BY id DESC`, [me], (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        res.json(rows || []);
+    });
+});
+//  ③ charge: 보관된 빌키로 정기 청구(배치승인). 본인 빌키 또는 관리자만. orderId 있으면 주문 에스크로 확정.
+app.post('/api/pg/billing/charge', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const billingId = Number(req.body.billingId) || 0;
+    const orderId = req.body.orderId ? Number(req.body.orderId) : null;
+    if (!billingId) return res.status(400).json({ error: 'billingId가 필요합니다.' });
+    db.get(`SELECT * FROM billing_keys WHERE id=? AND status='active'`, [billingId], (e, bk) => {
+        if (e || !bk) return res.status(404).json({ error: '유효한 빌링키를 찾을 수 없습니다.' });
+        if (bk.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '본인 빌링키만 청구할 수 있습니다.' });
+        const done = (err, out) => err ? res.status(502).json({ error: err.message }) : res.json({ ok: true, billingId, amount: out.amount, approvalNo: out.approvalNo, tid: out.tid, moid: out.moid });
+        if (orderId) {
+            db.get(`SELECT o.*, p.name AS pName FROM product_orders o LEFT JOIN products p ON p.id=o.productId WHERE o.id=?`, [orderId], (oe, ord) => {
+                if (oe || !ord) return res.status(404).json({ error: '주문을 찾을 수 없습니다.' });
+                if (ord.buyer !== bk.owner) return res.status(403).json({ error: '빌링키 소유자의 주문이 아닙니다.' });
+                if (!['awaiting_payment', 'pending'].includes(ord.status)) return res.status(409).json({ error: '결제 가능 상태가 아닙니다.' });
+                _billingCharge({ billingId, amount: ord.amount, seller: ord.seller, goodsName: ord.pName || '정기결제', orderId }, done);
+            });
+        } else {
+            _billingCharge({ billingId, amount: req.body.amount, seller: null, goodsName: req.body.goodsName || '정기결제' }, done);
+        }
+    });
+});
+// 🔁 ===== [정기결제 구독] 생성·목록·일시정지·재개·해지·즉시청구 =====
+//  create: 빌키 기반 구독 생성. intervalType monthly|weekly|daily, firstChargeNow=true면 즉시 1회 청구 후 다음주기 예약.
+app.post('/api/pg/subscriptions', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const billingId = Number(req.body.billingId) || 0;
+    const amount = Math.floor(Number(req.body.amount) || 0);
+    const intervalType = ['monthly', 'weekly', 'daily'].includes(String(req.body.intervalType)) ? String(req.body.intervalType) : 'monthly';
+    const intervalCount = Math.max(1, Math.floor(Number(req.body.intervalCount) || 1));
+    const goodsName = _kiccSafe(req.body.goodsName, 100, '정기구독');
+    const seller = req.body.seller ? String(req.body.seller) : null;
+    if (!billingId || !(amount > 0)) return res.status(400).json({ error: 'billingId와 금액을 확인하세요.' });
+    db.get(`SELECT * FROM billing_keys WHERE id=? AND status='active'`, [billingId], (e, bk) => {
+        if (e || !bk) return res.status(404).json({ error: '유효한 빌링키를 찾을 수 없습니다.' });
+        if (bk.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '본인 빌링키로만 구독할 수 있습니다.' });
+        const now = new Date();
+        const firstNow = (req.body.firstChargeNow === true || String(req.body.firstChargeNow) === 'true');
+        const nextAt = firstNow ? _addIntervalISO(now.toISOString(), intervalType, intervalCount) : (req.body.nextChargeAt ? new Date(req.body.nextChargeAt).toISOString() : _addIntervalISO(now.toISOString(), intervalType, intervalCount));
+        db.run(`INSERT INTO subscriptions (owner, billingId, seller, amount, goodsName, intervalType, intervalCount, nextChargeAt, status, label, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?, 'active', ?, ?, ?)`,
+            [bk.owner, billingId, seller, amount, goodsName, intervalType, intervalCount, nextAt, goodsName, now.toISOString(), now.toISOString()], function (ie) {
+                if (ie) return res.status(500).json({ error: ie.message });
+                const subId = this.lastID;
+                if (firstNow) { _billingCharge({ billingId, amount, seller, goodsName, subscriptionId: subId }, (err, out) => {
+                    if (err) { db.run(`UPDATE subscriptions SET failCount=1, updated_at=? WHERE id=?`, [new Date().toISOString(), subId]); return res.json({ ok: true, id: subId, nextChargeAt: nextAt, firstCharge: { ok: false, error: err.message } }); }
+                    db.run(`UPDATE subscriptions SET lastChargedAt=?, lastPgCno=? WHERE id=?`, [new Date().toISOString(), out.tid || null, subId]);
+                    res.json({ ok: true, id: subId, nextChargeAt: nextAt, firstCharge: { ok: true, approvalNo: out.approvalNo, amount: out.amount } });
+                }); }
+                else res.json({ ok: true, id: subId, nextChargeAt: nextAt });
+            });
+    });
+});
+app.get('/api/pg/subscriptions', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const all = isAdminName(me) && (req.query.all === '1' || req.query.all === 'true');
+    const sql = all ? `SELECT * FROM subscriptions ORDER BY id DESC LIMIT 500` : `SELECT * FROM subscriptions WHERE owner=? ORDER BY id DESC`;
+    db.all(sql, all ? [] : [me], (e, rows) => e ? res.status(500).json({ error: e.message }) : res.json(rows || []));
+});
+function _subAction(req, res, apply) {
+    const me = requireUser(req, res); if (!me) return;
+    const id = Number(req.params.id) || 0;
+    db.get(`SELECT * FROM subscriptions WHERE id=?`, [id], (e, sub) => {
+        if (e || !sub) return res.status(404).json({ error: '구독을 찾을 수 없습니다.' });
+        if (sub.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '본인 구독만 변경할 수 있습니다.' });
+        apply(sub);
+    });
+}
+app.post('/api/pg/subscriptions/:id/pause', (req, res) => _subAction(req, res, (sub) => db.run(`UPDATE subscriptions SET status='paused', updated_at=? WHERE id=?`, [new Date().toISOString(), sub.id], () => res.json({ ok: true, status: 'paused' }))));
+app.post('/api/pg/subscriptions/:id/resume', (req, res) => _subAction(req, res, (sub) => { const next = (sub.nextChargeAt && new Date(sub.nextChargeAt) > new Date()) ? sub.nextChargeAt : _addIntervalISO(new Date().toISOString(), sub.intervalType, sub.intervalCount); db.run(`UPDATE subscriptions SET status='active', failCount=0, nextChargeAt=?, updated_at=? WHERE id=?`, [next, new Date().toISOString(), sub.id], () => res.json({ ok: true, status: 'active', nextChargeAt: next })); }));
+app.post('/api/pg/subscriptions/:id/cancel', (req, res) => _subAction(req, res, (sub) => db.run(`UPDATE subscriptions SET status='canceled', updated_at=? WHERE id=?`, [new Date().toISOString(), sub.id], () => res.json({ ok: true, status: 'canceled' }))));
+app.post('/api/pg/subscriptions/:id/charge-now', (req, res) => _subAction(req, res, (sub) => {
+    if (sub.status === 'canceled') return res.status(409).json({ error: '해지된 구독입니다.' });
+    _billingCharge({ billingId: sub.billingId, amount: sub.amount, seller: sub.seller, goodsName: sub.goodsName, subscriptionId: sub.id }, (err, out) => {
+        if (err) return res.status(502).json({ error: err.message });
+        db.run(`UPDATE subscriptions SET lastChargedAt=?, lastPgCno=?, failCount=0, updated_at=? WHERE id=?`, [new Date().toISOString(), out.tid || null, new Date().toISOString(), sub.id]);
+        res.json({ ok: true, amount: out.amount, approvalNo: out.approvalNo, tid: out.tid });
+    });
+}));
+//  ④ delete: 빌링키 비활성(로컬). ⚠ KICC 빌키 삭제 API는 규격 확인 후 연동.
+app.post('/api/pg/billing/delete', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const billingId = Number(req.body.billingId) || 0;
+    db.get(`SELECT owner FROM billing_keys WHERE id=?`, [billingId], (e, bk) => {
+        if (e || !bk) return res.status(404).json({ error: '빌링키를 찾을 수 없습니다.' });
+        if (bk.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '본인 빌링키만 삭제할 수 있습니다.' });
+        db.run(`UPDATE billing_keys SET status='deleted', updated_at=? WHERE id=?`, [new Date().toISOString(), billingId], () => res.json({ ok: true }));
+    });
+});
+// 🧪 [시뮬레이터 결제창] kicc_mode=sim 에서 _pgKiccRegister가 가리키는 가짜 KICC 결제창. 승인/취소 버튼으로 실제 KICC UI를 대체.
+app.get('/api/pg/kicc/sim', (req, res) => {
+    const moid = String(req.query.moid || ''); const amount = Number(req.query.amount) || 0; const g = String(req.query.g || '결제');
+    const ret = PG_PUBLIC_BASE + '/api/pg/kicc/return';
+    const authId = 'SIM-' + moid + '-' + amount;
+    const okUrl = ret + '?resCd=0000&authorizationId=' + encodeURIComponent(authId) + '&shopOrderNo=' + encodeURIComponent(moid);
+    const noUrl = ret + '?resCd=USER_CANCEL&resMsg=' + encodeURIComponent('사용자 취소') + '&shopOrderNo=' + encodeURIComponent(moid);
+    const esc = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+    res.set('Content-Type', 'text/html; charset=utf-8').send(
+        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        + '<body style="font-family:system-ui,sans-serif;margin:0;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;">'
+        + '<div style="background:#fff;border-radius:16px;padding:26px;width:320px;max-width:92vw;box-shadow:0 12px 40px rgba(0,0,0,.18);">'
+        + '<div style="font-size:13px;color:#ef4444;font-weight:700;letter-spacing:1px;margin-bottom:6px;">● KICC 결제 시뮬레이터 (TEST)</div>'
+        + '<div style="font-size:17px;font-weight:800;margin-bottom:2px;">' + esc(g) + '</div>'
+        + '<div style="font-size:26px;font-weight:800;margin:10px 0 18px;">' + amount.toLocaleString() + '<span style="font-size:15px;font-weight:600;">원</span></div>'
+        + '<div style="font-size:12px;color:#64748b;margin-bottom:16px;">실제 KICC 결제창을 대체하는 테스트 화면입니다. 아래 버튼으로 승인/취소를 시뮬레이션합니다.</div>'
+        + '<a href="' + esc(okUrl) + '" style="display:block;text-align:center;padding:13px;border-radius:10px;background:#6366f1;color:#fff;font-weight:800;text-decoration:none;margin-bottom:10px;">결제 승인(성공)</a>'
+        + '<a href="' + esc(noUrl) + '" style="display:block;text-align:center;padding:11px;border-radius:10px;background:#f1f5f9;color:#64748b;font-weight:700;text-decoration:none;">결제 취소</a>'
+        + '</div></body>');
+});
+// ⚙️ [관리자] PG 설정 조회/전환 — DB 직접편집 없이 mock↔kicc, test/sim/live, mid/api_base 변경. 🔐 비밀키(KICC_LICENSE_KEY)는 env 전용이라 여기서 다루지 않음.
+app.get('/api/admin/pg/config', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ pg_provider: PG_PROVIDER, kicc_mode: KICC_MODE, kicc_mid: KICC_MID, kicc_api_base: KICC_API_BASE_CFG, api_base_effective: _kiccApiBase(), sim: _kiccIsSim(), has_license_key: !!_kiccLicenseKey() });
+});
+app.post('/api/admin/pg/config', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const allow = ['pg_provider', 'kicc_mode', 'kicc_mid', 'kicc_api_base'];
+    const entries = Object.entries(req.body || {}).filter(([k]) => allow.includes(k)).map(([k, v]) => [k, String(v == null ? '' : v).trim()]);
+    if (!entries.length) return res.status(400).json({ error: '변경할 항목이 없습니다.' });
+    let n = 0; entries.forEach(([k, v]) => db.run(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [k, v], () => {
+        if (++n === entries.length) { loadPgMode(); setTimeout(() => res.json({ ok: true, pg_provider: PG_PROVIDER, kicc_mode: KICC_MODE, kicc_mid: KICC_MID, kicc_api_base: KICC_API_BASE_CFG, sim: _kiccIsSim() }), 200); }
+    }));
+});
+// 🔎 [공개] 로그인 사용자용 결제 가용성 플래그 — 비밀값 없음. 정기결제/구독 UI 노출 판단용.
+app.get('/api/pg/public-config', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    res.json({ provider: PG_PROVIDER, billingEnabled: PG_PROVIDER === 'kicc', sim: _kiccIsSim() });
+});
+// 💸 [관리자] 정산 자동지급 설정 — auto_payout_enabled(ON/OFF, 기본 OFF) + bank_provider(mock|openbanking|firmbanking).
+app.get('/api/admin/payout/config', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ auto_payout_enabled: AUTO_PAYOUT_ENABLED, bank_provider: BANK_PROVIDER,
+        has_openbanking_key: !!(process.env.OPENBANKING_CLIENT_ID && process.env.OPENBANKING_CLIENT_SECRET),
+        has_firmbanking_key: !!process.env.FIRMBANKING_ENDPOINT });
+});
+app.post('/api/admin/payout/config', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const out = {};
+    if (req.body.auto_payout_enabled !== undefined) out.auto_payout_enabled = (req.body.auto_payout_enabled === true || String(req.body.auto_payout_enabled) === '1' || String(req.body.auto_payout_enabled) === 'true') ? '1' : '0';
+    if (req.body.bank_provider !== undefined) { const p = String(req.body.bank_provider).trim(); out.bank_provider = ['mock', 'openbanking', 'firmbanking'].includes(p) ? p : 'mock'; }
+    const entries = Object.entries(out);
+    if (!entries.length) return res.status(400).json({ error: '변경할 항목이 없습니다.' });
+    let n = 0; entries.forEach(([k, v]) => db.run(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [k, v], () => {
+        if (++n === entries.length) { loadPgMode(); setTimeout(() => res.json({ ok: true, auto_payout_enabled: AUTO_PAYOUT_ENABLED, bank_provider: BANK_PROVIDER }), 200); }
+    }));
+});
+// 💸 [관리자] 정산 지급 내역 조회 — 상태/월 필터. 실패분 재시도 대상 확인용.
+app.get('/api/admin/payouts', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const status = String(req.query.status || '').trim();
+    let where = '1=1'; const params = [];
+    if (status) { where += ' AND status=?'; params.push(status); }
+    db.all(`SELECT * FROM payouts WHERE ${where} ORDER BY id DESC LIMIT 500`, params, (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        res.json((rows || []).map(r => { let items = []; try { items = JSON.parse(r.items || '[]'); } catch (_) {} return Object.assign({}, r, { itemsObj: items }); }));
+    });
+});
+// 💸 [관리자] 실패한 이체 재시도 — 에스크로 재차감 없이 이체만 재전송(멱등: 이미 paid면 스킵).
+app.post('/api/admin/payout/retry', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const id = Number(req.body.id) || 0;
+    if (!id) return res.status(400).json({ error: 'payout id가 없습니다.' });
+    db.get(`SELECT * FROM payouts WHERE id=?`, [id], async (e, p) => {
+        if (e || !p) return res.status(404).json({ error: '지급 기록을 찾을 수 없습니다.' });
+        if (p.status === 'paid') return res.json({ ok: true, already: true, status: 'paid' });
+        if (BANK_PROVIDER === 'mock') { db.run(`UPDATE payouts SET status='paid', paid_at=?, fail_reason=NULL WHERE id=?`, [new Date().toISOString(), id]); return res.json({ ok: true, status: 'paid', mock: true }); }
+        try {
+            const tr = await _bankTransfer({ bank: p.bank, account: p.account, holder: p.accountHolder, amount: p.amount, memo: 'Alpha K 정산 ' + (p.month || '') + ' 재시도', payoutId: id });
+            const st = tr.ok ? 'paid' : 'failed';
+            db.run(`UPDATE payouts SET status=?, transfer_ref=?, fail_reason=?, paid_at=? WHERE id=?`, [st, tr.ref || p.transfer_ref || null, tr.ok ? null : (tr.error || '이체 실패'), tr.ok ? new Date().toISOString() : null, id]);
+            res.json({ ok: tr.ok, status: st, error: tr.ok ? null : tr.error });
+        } catch (ex) { const msg = String((ex && ex.message) || ex).slice(0, 200); db.run(`UPDATE payouts SET status='failed', fail_reason=? WHERE id=?`, [msg, id]); res.status(502).json({ ok: false, status: 'failed', error: msg }); }
+    });
 });
 // 💰 [에스크로] 자금이 귀속되는 Admin 계정(첫 관리자, 기본 hi840508). 구매 대금 보관·정산 지급의 주체.
 function _adminAccount() { const a = ADMIN_USERS.values().next().value; return a || 'hi840508'; }
@@ -2237,7 +2733,10 @@ app.post('/api/admin/approve', (req, res) => {
     else { res.status(400).json({ error: '알 수 없는 승인 유형입니다.' }); }
 });
 
+// ⛔ [폐지] 회원 간 송금 — 정산 자동지급(등록계좌 직접) 전환에 따라 폐지됨.
 app.post('/api/transfer', (req, res) => {
+    return res.status(410).json({ error: '회원 간 송금 기능은 종료되었습니다.' });
+    // eslint-disable-next-line no-unreachable
     const sender = requireUser(req, res); if (!sender) return;   // ★신원=토큰(본문 sender 무시) → 타인 명의 송금 차단
     const amount = Math.floor(Number(req.body.amount) || 0);
     const receiver = String(req.body.receiver || '');
@@ -3511,6 +4010,34 @@ function _autoConfirmSweep() {
 setTimeout(_autoConfirmSweep, 30 * 1000);
 setInterval(_autoConfirmSweep, 60 * 60 * 1000);
 
+// 💸 [정산 자동 지급] 정산예정일(제4조: 구매확정+3영업일 / 배송완료+5영업일 중 선도래)이 도래한 확정·미정산 주문을
+//   판매자 등록계좌로 자동 지급(_executeSettlement auto). 계좌 미등록 상점은 보류(에스크로 유지)하고 다음 주기에 재시도.
+function _autoPayoutSweep() {
+    try {
+        if (!AUTO_PAYOUT_ENABLED) return;   // 💸 기본 OFF — 관리자가 켜야 자동 집행(끄면 수동 정산만).
+        db.all(`SELECT id, seller, confirmed_at, delivered_at FROM product_orders WHERE status='confirmed' AND escrow_held>0 AND settled=0`, [], (e, rows) => {
+            if (e || !rows || !rows.length) return;
+            const nowMs = Date.now();
+            const dueBySeller = {};   // seller -> [orderId...]
+            rows.forEach(r => {
+                const dueISO = _settleDueISO(r.confirmed_at, r.delivered_at);
+                if (!dueISO) return;
+                if (new Date(dueISO).getTime() <= nowMs) { (dueBySeller[r.seller] = dueBySeller[r.seller] || []).push(r.id); }
+            });
+            const sellers = Object.keys(dueBySeller);
+            if (!sellers.length) return;
+            sellers.forEach(seller => {
+                _executeSettlement(seller, { orderIds: dueBySeller[seller], auto: true }, (err, out) => {
+                    if (err) { if (err.code !== 'ACCOUNT_MISSING') console.warn('[정산 자동지급 실패]', seller, err.message); else console.log('[정산 자동지급 보류] 계좌 미등록:', seller); return; }
+                    if (out && out.count) console.log(`[정산 자동지급] ${seller} ${out.count}건 ${out.payout.toLocaleString()}원 → 등록계좌`);
+                });
+            });
+        });
+    } catch (_) {}
+}
+setTimeout(_autoPayoutSweep, 45 * 1000);
+setInterval(_autoPayoutSweep, 60 * 60 * 1000);
+
 // 🚀 [v6] 단일 주문 조회 (orderId 기준; 채팅 카드 클릭 시 사용)
 app.get('/api/order/:orderId', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
@@ -3880,7 +4407,10 @@ function generateECCInverseSignature(checkId, secretKey, amount) {
     } catch(e){return '';}
 }
 
+// ⛔ [폐지] 보안수표(QR) 발행 — 완전 종료.
 app.post('/api/check/issue', (req, res) => {
+    return res.status(410).json({ error: '보안수표(QR) 기능은 종료되었습니다.' });
+    // eslint-disable-next-line no-unreachable
     const issuer = requireUser(req, res); if (!issuer) return;   // ★신원=토큰(본문 issuer 무시)
     const amount = Number(req.body.amount) || 0;
     if (amount <= 0) return res.status(400).json({ error: '발행 금액이 올바르지 않습니다.' });
@@ -3899,7 +4429,10 @@ app.post('/api/check/issue', (req, res) => {
     });
 });
 
+// ⛔ [폐지] 보안수표(QR) 회수 — 완전 종료.
 app.post('/api/check/redeem', (req, res) => {
+    return res.status(410).json({ error: '보안수표(QR) 기능은 종료되었습니다.' });
+    // eslint-disable-next-line no-unreachable
     const redeemer = requireUser(req, res); if (!redeemer) return;   // ★신원=토큰(본문 redeemer 무시)
     const { checkId, secretKey } = req.body;
     let query = `SELECT * FROM qr_checks WHERE id = ? AND is_used = 0`; let params = [checkId];
@@ -4105,6 +4638,7 @@ app.get('/api/transactions/:name', async (req, res) => {
         const tfs = await new Promise(r => db.all(`SELECT * FROM transfers WHERE sender=? OR receiver=?`, [name, name], (e, rows) => r(rows||[])));
         const dps = await new Promise(r => db.all(`SELECT * FROM deposits WHERE user_name=?`, [name], (e, rows) => r(rows||[])));
         const wds = await new Promise(r => db.all(`SELECT * FROM withdrawals WHERE name=?`, [name], (e, rows) => r(rows||[])));
+        const pos = await new Promise(r => db.all(`SELECT * FROM payouts WHERE seller=? ORDER BY id DESC`, [name], (e, rows) => r(rows||[])));
 
         let history = [];
         txs.forEach(t => {
@@ -4158,6 +4692,11 @@ app.get('/api/transactions/:name', async (req, res) => {
         });
         dps.forEach(d => history.push({ type: `입금 신청 (${d.status})`, date: d.date, rawDate: d.rawDate || d.date, amount: d.amount, seller: 'Alpha K(Root)' }));
         wds.forEach(w => history.push({ type: `출금 집행 완료`, date: w.date, rawDate: w.rawDate || w.date, amount: w.amount, seller: '지정 등록 계좌' }));
+        // 💸 정산 지급(등록계좌 직접 입금) — 어떤 항목의 정산인지 상세(items)와 함께 하나의 기록으로 표시
+        pos.forEach(p => { let items = []; try { items = JSON.parse(p.items || '[]'); } catch (_) {}
+            history.push({ type: '정산 지급', date: p.date, rawDate: p.rawDate || p.date, amount: p.amount,
+                seller: 'Alpha K(Root)', sender: 'Alpha K(Root)', receiver: name,
+                settle: { month: p.month || '', salesTotal: p.salesTotal || 0, payFee: p.payFee || 0, payout: p.amount || 0, items, bank: p.bank || '', account: p.account || '', auto: !!p.auto } }); });
 
         // 🚀 최신순 정렬 (rawDate 우선)
         history.sort((a,b) => {
@@ -4902,50 +5441,106 @@ app.get('/api/admin/tax/settled', (req, res) => {
         });
     });
 });
-// 💰 Admin: 정산 실행 — 확정·미정산 주문의 지급액(매출−결제수수료)을 Admin→상점주 계정으로 이체, 주문 settled=1. 수수료는 Admin 매출로 잔류.
-app.post('/api/tax/settle', (req, res) => {
-    if (!requireAdmin(req, res)) return;
-    const seller = String(req.body.seller || '').trim();
-    const month = String(req.body.month || '').slice(0, 7);
-    if (!seller) return res.status(400).json({ error: '정산 대상 상점(seller)이 없습니다.' });
+// ── [펌뱅킹/오픈뱅킹 이체 어댑터 seam] ───────────────────────────────────────
+//  정산금(payout)을 판매자 등록계좌로 실제 이체. provider별 분기. 🔐 인증키/시크릿은 환경변수 전용.
+//  반환 {ok, status('paid'|'failed'), ref(은행 거래고유번호), error}. mock은 '기록만'(운영자 수동이체 전제)로 paid 처리.
+async function _bankTransfer({ bank, account, holder, amount, memo, payoutId }) {
+    if (BANK_PROVIDER === 'openbanking') return _bankOpenBanking({ bank, account, holder, amount, memo, payoutId });
+    if (BANK_PROVIDER === 'firmbanking') return _bankFirmBanking({ bank, account, holder, amount, memo, payoutId });
+    return { ok: true, status: 'paid', ref: 'MOCK-' + Date.now() };   // mock: 실 이체 없음(운영자 수동 송금 전제)
+}
+// 🏦 [금결원 오픈뱅킹] 설계: 토큰(client_credentials 2-legged) → 출금이체(POST /v2.0/transfer/withdraw/fin_num) → 입금이체(/deposit).
+//   필요: 이용기관 등록·출금계좌(모계좌) 등록·일/건 한도. 🔐 OPENBANKING_CLIENT_ID/SECRET/ACCESS_TOKEN·출금계좌 fintech_use_num 은 env.
+//   ⚠ 실호출은 계약·키 수령 후 구현. 현재는 미구현 명시 에러(사일런트 성공 금지).
+async function _bankOpenBanking(_p) {
+    if (!process.env.OPENBANKING_CLIENT_ID || !process.env.OPENBANKING_CLIENT_SECRET) return { ok: false, status: 'failed', error: '오픈뱅킹 미설정(OPENBANKING_CLIENT_ID/SECRET env).' };
+    // TODO(오픈뱅킹): ①토큰 ②예금주조회(inquiry/receive) ③출금이체(모계좌→) ④입금이체(→판매자계좌) ⑤결과 ref 반환.
+    return { ok: false, status: 'failed', error: '오픈뱅킹 이체 미구현 — 이용기관 등록·키 수령 후 구현.' };
+}
+// 🏦 [은행 펌뱅킹] 설계: 은행 전용선/보안매체(공동인증서·이체전용 비밀번호)로 대량이체(급여/정산 지급) 전문 전송.
+//   은행별 규격 상이(국민/신한/우리/기업 등). 🔐 FIRMBANKING_CERT_PATH/PW·이체비밀번호는 env·보안저장소.
+//   ⚠ 실호출은 은행 계약·단말 세팅 후 구현.
+async function _bankFirmBanking(_p) {
+    if (!process.env.FIRMBANKING_ENDPOINT) return { ok: false, status: 'failed', error: '펌뱅킹 미설정(FIRMBANKING_ENDPOINT env).' };
+    return { ok: false, status: 'failed', error: '펌뱅킹 이체 미구현 — 은행 계약·보안매체 세팅 후 구현.' };
+}
+// 💸 [정산 자동 지급] 정산 실행 공용 헬퍼 — 확정·미정산 주문의 지급액(매출−결제수수료)을 에스크로(Admin 보관)에서 차감하고
+//   판매자 '등록계좌로 직접 지급'(payouts 원장 기록). 인앱 잔액 적립 없음. 수수료는 Admin 수익으로 잔류. 주문 settled=1.
+//   opts: { month?, orderIds?(제한), auto?(자동지급 여부) }. cb(err, {count, payout, ...}). 계좌 미등록이면 err.code='ACCOUNT_MISSING'(지급 보류, 에스크로 유지).
+function _executeSettlement(seller, opts, cb) {
+    opts = opts || {};
     _taxConfig((cfg) => {
         let where = `o.status='confirmed' AND o.escrow_held>0 AND o.settled=0 AND o.seller=?`; const params = [seller];
-        if (month) { where += ` AND o.settle_month=?`; params.push(month); }
-        db.all(`SELECT o.id, o.escrow_held, o.buyer, pr.name AS productName FROM product_orders o LEFT JOIN products pr ON pr.id = o.productId WHERE ${where}`, params, (e, rows) => {
-            if (e) return res.status(500).json({ error: e.message });
-            if (!rows || !rows.length) return res.status(400).json({ error: '정산할 구매확정 주문이 없습니다.' });
+        if (opts.month) { where += ` AND o.settle_month=?`; params.push(opts.month); }
+        if (opts.orderIds && opts.orderIds.length) { where += ` AND o.id IN (${opts.orderIds.map(() => '?').join(',')})`; params.push(...opts.orderIds); }
+        db.all(`SELECT o.id, o.escrow_held, o.buyer, o.settle_month, pr.name AS productName FROM product_orders o LEFT JOIN products pr ON pr.id = o.productId WHERE ${where}`, params, (e, rows) => {
+            if (e) return cb && cb(e);
+            if (!rows || !rows.length) return cb && cb(null, { count: 0 });
             const salesTotal = rows.reduce((s, r) => s + (r.escrow_held || 0), 0);
             const calc = _settleCalc(salesTotal, cfg);
             const admin = _adminAccount();
             const payout = calc.payout;
             const ids = rows.map(r => r.id);
             const raw = new Date().toISOString();
-            // 💰 정산 입금 상세(거래내역에서 '어떤 항목의 정산인지' 표시용): 포함된 판매 항목 리스트
-            const settleMemo = JSON.stringify({ kind: 'settlement', month: month || '', salesTotal, payFee: calc.payFee, payout,
-                items: rows.map(r => ({ orderId: r.id, name: r.productName || r.id, buyer: r.buyer, amount: r.escrow_held || 0 })) });
-            // 💰 Admin 본인 상점도 동일 규칙: 수수료(≈2.97%)를 떼고 지급액만 정산하고, 수수료는 플랫폼(Admin) 수익으로 잔류·기록.
-            //   (판매자==Admin이면 아래 지급 이체가 자기→자기라 잔액 순변화 0이지만, payout/수수료가 거래내역에 정확히 남는다.)
-            db.serialize(() => {
-                db.run('BEGIN IMMEDIATE');
-                // 이중 정산 차단: settled=0 조건부 플립을 먼저 수행(이미 정산됐으면 this.changes===0 → 롤백).
-                db.run(`UPDATE product_orders SET settled = 1, settled_at = ? WHERE settled = 0 AND id IN (${ids.map(() => '?').join(',')})`, [raw, ...ids], function(fe) {
-                    if (fe) { db.run('ROLLBACK'); return res.status(500).json({ error: fe.message }); }
-                    if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '이미 정산된 주문입니다.' }); }
-                    db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [payout, admin, payout], function(ue) {
-                        if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
-                        if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: 'Admin 보관 잔액이 부족합니다.' }); }
-                        // 판매자 계정에 실제로 입금됐는지 확인(계정 없으면 롤백) — 지급 누락/무효 이체 방지.
-                        db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [payout, seller], function(ce) {
-                            if (ce) { db.run('ROLLBACK'); return res.status(500).json({ error: ce.message }); }
-                            if (this.changes === 0) { db.run('ROLLBACK'); return res.status(404).json({ error: '정산 대상 상점 계정을 찾을 수 없습니다.' }); }
-                            const now = new Date().toLocaleString('ko-KR');
-                            db.run(`INSERT INTO transfers (sender, receiver, amount, date, rawDate, memo) VALUES (?, ?, ?, ?, ?, ?)`, [admin, seller, payout, now, raw, settleMemo]);
-                            db.run('COMMIT', () => res.json({ success: true, seller, count: rows.length, salesTotal, payFee: calc.payFee, payout, adminRevenue: calc.payFee }));
+            const month = opts.month || rows[0].settle_month || _kstMonth();
+            db.get(`SELECT realname, bank, account FROM users WHERE name = ?`, [seller], (ue0, u) => {
+                if (ue0) return cb && cb(ue0);
+                if (!u) return cb && cb(Object.assign(new Error('정산 대상 상점 계정을 찾을 수 없습니다.'), { code: 'NO_USER' }));
+                const bank = (u.bank || '').trim(), account = (u.account || '').trim(), holder = (u.realname || seller);
+                // 🏦 등록계좌 미등록이면 지급 보류 — 에스크로를 그대로 두고(주문 settled=0 유지) 계좌 등록 후 지급.
+                if (!bank || !account) return cb && cb(Object.assign(new Error('정산 대상 상점의 출금 계좌(은행/계좌번호)가 등록되지 않아 지급을 보류했습니다.'), { code: 'ACCOUNT_MISSING' }));
+                const now = new Date().toLocaleString('ko-KR');
+                const itemsJson = JSON.stringify(rows.map(r => ({ orderId: r.id, name: r.productName || r.id, buyer: r.buyer, amount: r.escrow_held || 0 })));
+                db.serialize(() => {
+                    db.run('BEGIN IMMEDIATE');
+                    // 이중 정산 차단: settled=0 조건부 플립을 먼저 수행(이미 정산됐으면 this.changes===0 → 롤백).
+                    db.run(`UPDATE product_orders SET settled = 1, settled_at = ? WHERE settled = 0 AND id IN (${ids.map(() => '?').join(',')})`, [raw, ...ids], function (fe) {
+                        if (fe) { db.run('ROLLBACK'); return cb && cb(fe); }
+                        if (this.changes === 0) { db.run('ROLLBACK'); return cb && cb(null, { count: 0, already: true }); }
+                        // 에스크로(Admin 보관)에서 지급액 차감 — 등록계좌로 직접 지급(인앱 잔액 적립 없음).
+                        db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [payout, admin, payout], function (de) {
+                            if (de) { db.run('ROLLBACK'); return cb && cb(de); }
+                            if (this.changes === 0) { db.run('ROLLBACK'); return cb && cb(Object.assign(new Error('Admin 보관(에스크로) 잔액이 부족합니다.'), { code: 'ESCROW_SHORT' })); }
+                            // 🏦 이체 상태 초기값: mock은 '기록만(paid)', 실 공급자는 'requested'(커밋 후 이체 시도).
+                            const initStatus = (BANK_PROVIDER === 'mock') ? 'paid' : 'requested';
+                            db.run(`INSERT INTO payouts (seller, amount, bank, account, accountHolder, salesTotal, payFee, month, items, orderIds, status, provider, auto, date, rawDate, paid_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                                [seller, payout, bank, account, holder, salesTotal, calc.payFee, month, itemsJson, JSON.stringify(ids), initStatus, BANK_PROVIDER, opts.auto ? 1 : 0, now, raw, (initStatus === 'paid' ? raw : null)], function (ie) {
+                                    if (ie) { db.run('ROLLBACK'); return cb && cb(ie); }
+                                    const payoutId = this.lastID;
+                                    db.run('COMMIT', async () => {
+                                        try { console.log(`[정산 지급${opts.auto ? '(자동)' : ''}] ${seller} ${payout.toLocaleString()}원 → ${bank} ${account} (provider=${BANK_PROVIDER})`); } catch (_) {}
+                                        const base = { count: rows.length, salesTotal, payFee: calc.payFee, payout, bank, account, holder, payoutId };
+                                        if (BANK_PROVIDER === 'mock') return cb && cb(null, Object.assign(base, { status: 'paid' }));
+                                        // 🏦 실 계좌이체 시도(에스크로는 이미 차감됨 — 실패 시 status=failed로 두고 재시도 경로 제공, 재차감 없음).
+                                        try {
+                                            const tr = await _bankTransfer({ bank, account, holder, amount: payout, memo: 'Alpha K 정산 ' + month, payoutId });
+                                            const st = tr.ok ? 'paid' : 'failed';
+                                            db.run(`UPDATE payouts SET status=?, transfer_ref=?, fail_reason=?, paid_at=? WHERE id=?`, [st, tr.ref || null, tr.ok ? null : (tr.error || '이체 실패'), tr.ok ? new Date().toISOString() : null, payoutId]);
+                                            cb && cb(null, Object.assign(base, { status: st, transferRef: tr.ref || null, transferError: tr.ok ? null : tr.error }));
+                                        } catch (ex) {
+                                            const msg = String((ex && ex.message) || ex).slice(0, 200);
+                                            db.run(`UPDATE payouts SET status='failed', fail_reason=? WHERE id=?`, [msg, payoutId]);
+                                            cb && cb(null, Object.assign(base, { status: 'failed', transferError: msg }));
+                                        }
+                                    });
+                                });
                         });
                     });
                 });
             });
         });
+    });
+}
+// 💰 Admin: 정산 실행(수동) — 등록계좌 직접 지급 방식. 자금은 에스크로→지급(인앱 잔액 미적립).
+app.post('/api/tax/settle', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const seller = String(req.body.seller || '').trim();
+    const month = String(req.body.month || '').slice(0, 7);
+    if (!seller) return res.status(400).json({ error: '정산 대상 상점(seller)이 없습니다.' });
+    _executeSettlement(seller, { month: month || null, auto: false }, (e, r) => {
+        if (e) return res.status(e.code === 'ACCOUNT_MISSING' ? 409 : 400).json({ error: e.message, code: e.code || null });
+        if (!r || !r.count) return res.status(400).json({ error: '정산할 구매확정 주문이 없습니다.' });
+        res.json({ success: true, seller, count: r.count, salesTotal: r.salesTotal, payFee: r.payFee, payout: r.payout, adminRevenue: r.payFee, bank: r.bank, account: r.account });
     });
 });
 // Admin: 발행 이력 전체(월/업체 필터)

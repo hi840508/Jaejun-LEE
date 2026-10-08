@@ -1519,26 +1519,46 @@
                     </div>
                 </div>
 
-                <div class="panel">
-                    <h4 style="margin-bottom:15px; font-size:14px;">QR 입/출금</h4>
-                    <div class="grid-2col">
-                        <div style="background:#f8fafc; padding:15px; border-radius:12px; border:1px solid var(--border-color);">
-                            <div class="input-group"><input type="number" id="wallet-check-amount" placeholder="발행할 금액 (원)"></div>
-                            <button class="btn" style="width: 100%;" onclick="issueWalletCheck()">통합 보증 수표 생성</button>
-                            <div id="wallet-qr-output" style="display:none; margin-top:15px; text-align:center;">
-                                <canvas id="wallet-fancy-canvas" style="max-width:100%; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.05);"></canvas>
-                                <button class="btn btn-outline" style="width:100%; margin-top:10px; padding:8px; font-size:12px;" onclick="downloadFancyQR()">수표 이미지 로컬 저장</button>
-                            </div>
-                        </div>
-                        <div style="background:#fff; padding:15px; border-radius:12px; border:1px solid var(--border-color);">
-                            <div class="input-group"><label>QR 수표 이미지 스캔</label><input type="file" id="wallet-check-file" accept="image/*" onchange="redeemWalletQRFile(event)"></div>
-                            <div style="text-align:center; font-size:12px; color:var(--text-sub); margin:5px 0;">또는 핀키 직접 입력</div>
-                            <div class="input-group"><input type="text" id="wallet-check-input" placeholder="보안키 6자리"></div>
-                            <button class="btn btn-secondary" style="width: 100%;" onclick="redeemWalletQRKey()">코드 검증 후 충전</button>
-                        </div>
+                <!-- 💸 정산 자동 지급 안내 (판매 상점에만 노출) -->
+                <div class="panel" id="payout-info-panel" style="display:none; border:1px solid #c7d2fe; background:#eef2ff;">
+                    <h4 style="margin-bottom:8px; font-size:14px; color:#3730a3;">💸 정산은 등록계좌로 자동 지급됩니다</h4>
+                    <div style="font-size:13px; color:#475569; line-height:1.6;">
+                        구매확정 후 정산예정일(제4조: 구매확정+3영업일 또는 배송완료+5영업일 중 빠른 날)이 되면,
+                        수수료(2.7%)를 제외한 금액이 <b>가입 시 등록한 은행 계좌로 자동 입금</b>됩니다. (별도 출금 신청 불필요)
+                        <div style="margin-top:8px;">입금 계좌: <b id="payout-account-info">등록된 계좌 없음</b></div>
+                        <div style="margin-top:6px; font-size:12px; color:#64748b;">지급 내역은 아래 <b>거래/정산 내역</b>에서 확인할 수 있습니다.</div>
                     </div>
                 </div>
-                
+
+                <!-- 💳 정기결제 · 구독 관리 (카드결제 PG 활성 시 노출) -->
+                <div class="panel" id="billing-panel" style="display:none;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+                        <h4 style="font-size:15px; font-weight:900;">💳 정기결제 · 구독</h4>
+                        <button class="btn btn-outline" style="padding:7px 14px; font-size:12px;" onclick="billingRegisterCard()">+ 카드 등록</button>
+                    </div>
+                    <div id="billing-cards" style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;"></div>
+                    <!-- 구독 추가 폼 -->
+                    <div id="sub-add-box" style="display:none; background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:14px;">
+                        <div style="font-weight:800; font-size:13px; margin-bottom:8px;">구독 추가</div>
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; align-items:end;">
+                            <div class="input-group" style="margin:0;"><label style="font-size:11px;">결제 카드</label><select id="sub-billing-id"></select></div>
+                            <div class="input-group" style="margin:0;"><label style="font-size:11px;">상품명</label><input id="sub-goods" placeholder="예: 프리미엄 구독"></div>
+                            <div class="input-group" style="margin:0;"><label style="font-size:11px;">금액(원)</label><input id="sub-amount" type="number" inputmode="numeric" placeholder="9900"></div>
+                            <div class="input-group" style="margin:0;"><label style="font-size:11px;">주기</label><select id="sub-interval"><option value="monthly">매월</option><option value="weekly">매주</option><option value="daily">매일</option></select></div>
+                            <div class="input-group" style="margin:0;"><label style="font-size:11px;">주기 배수</label><input id="sub-count" type="number" inputmode="numeric" value="1" min="1"></div>
+                            <label style="display:flex; align-items:center; gap:6px; font-size:12px; white-space:nowrap;"><input type="checkbox" id="sub-first-now"> 지금 1회 즉시 청구</label>
+                            <button class="btn btn-success" style="padding:9px; font-size:13px;" onclick="billingCreateSubscription()">구독 시작</button>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="history-table" style="background:#fff;">
+                            <thead><tr><th>상품</th><th style="text-align:right;">금액</th><th>주기</th><th>다음 청구일</th><th style="text-align:center;">상태</th><th style="text-align:center;">관리</th></tr></thead>
+                            <tbody id="sub-tbody"><tr><td colspan="6" style="text-align:center; padding:16px; color:#94a3b8;">구독이 없습니다.</td></tr></tbody>
+                        </table>
+                    </div>
+                    <div id="billing-note" style="font-size:11px; color:#94a3b8; margin-top:8px;"></div>
+                </div>
+
                 <div class="panel" id="admin-deposit-panel" style="display: none; border: 1px solid var(--danger); background:#fff5f5;">
                     <h4 style="color:var(--danger); font-size:14px;">[Admin] 입출금 승인 통합 관리소</h4>
                     <div style="overflow-x: auto; margin-top: 10px;">
@@ -1682,6 +1702,30 @@
                         <button class="btn btn-outline" style="padding:9px 16px;" onclick="saveTaxConfig()">변수 저장</button>
                     </div>
                     <div style="font-size:11px;color:#94a3b8;margin-top:6px;">총 수수료 = 매출 × 수수료율(2.7%) + 그 VAT(10%=0.27%) = <b>2.97%</b> · 지급액 = 매출 − 총 수수료 · 원단위 이하 버림 · (예: 10,000원 → 수수료 270 + VAT 27 = 297, 지급 9,703원)</div>
+                </div>
+                <!-- 💸 정산 자동지급 설정 (관리자) -->
+                <div class="panel" style="padding:14px; border:1px solid #c7d2fe; background:#eef2ff;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                        <div>
+                            <h4 style="font-size:15px;font-weight:900;color:#3730a3;">💸 정산 자동지급 설정</h4>
+                            <div style="font-size:12px;color:#64748b;margin-top:3px;">켜면 정산예정일 도래 주문을 판매자 등록계좌로 <b>자동 지급</b>합니다. (기본: 꺼짐 · 꺼진 상태에선 [정산] 버튼으로 수동 지급)</div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:800; font-size:13px;">
+                                <input type="checkbox" id="auto-payout-toggle" onchange="savePayoutConfig()" style="width:18px; height:18px; cursor:pointer;">
+                                <span id="auto-payout-label">자동지급 OFF</span>
+                            </label>
+                            <div class="input-group" style="width:190px; margin:0;">
+                                <label style="font-size:11px;">이체 방식</label>
+                                <select id="bank-provider-select" onchange="savePayoutConfig()">
+                                    <option value="mock">기록만(수동 이체)</option>
+                                    <option value="openbanking">오픈뱅킹(자동이체)</option>
+                                    <option value="firmbanking">펌뱅킹(자동이체)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="payout-config-note" style="font-size:11px;color:#b45309;margin-top:8px;"></div>
                 </div>
                 <div class="panel" style="padding:14px;">
                     <div class="sm-head" style="margin-bottom:10px;">
@@ -6120,7 +6164,35 @@
         // 📅 오늘 지급 대상(오늘·경과) 빠른 조회
         window.loadSettlementToday=function(){ const f=document.getElementById('tax-due-from'), t=document.getElementById('tax-due-to'); if(f)f.value=''; if(t)t.value=''; window.__settleToday=true; loadSettlement(); };
         window.clearSettlementFilters=function(){ ['tax-due-from','tax-due-to','tax-month','tax-owner'].forEach(id=>{ const e=document.getElementById(id); if(e)e.value=''; }); window.__settleToday=false; loadSettlement(); };
+        // 💸 정산 자동지급 설정 로드/저장 (관리자)
+        window.loadPayoutConfig=async function(){
+            const tg=document.getElementById('auto-payout-toggle'); if(!tg) return;
+            try{
+                const r=await fetch(`${API_URL}/api/admin/payout/config`); const d=await r.json().catch(()=>({}));
+                if(!r.ok) return;
+                tg.checked = !!d.auto_payout_enabled;
+                const lbl=document.getElementById('auto-payout-label'); if(lbl){ lbl.textContent='자동지급 '+(d.auto_payout_enabled?'ON':'OFF'); lbl.style.color=d.auto_payout_enabled?'#166534':'#64748b'; }
+                const sel=document.getElementById('bank-provider-select'); if(sel) sel.value=d.bank_provider||'mock';
+                const note=document.getElementById('payout-config-note');
+                if(note){ let msg='';
+                    if((d.bank_provider==='openbanking')&&!d.has_openbanking_key) msg='⚠ 오픈뱅킹 키(OPENBANKING_CLIENT_ID/SECRET) 미설정 — 자동이체가 실패합니다.';
+                    else if((d.bank_provider==='firmbanking')&&!d.has_firmbanking_key) msg='⚠ 펌뱅킹(FIRMBANKING_ENDPOINT) 미설정 — 자동이체가 실패합니다.';
+                    else if(d.bank_provider==='mock'&&d.auto_payout_enabled) msg='ℹ 이체 방식이 "기록만"입니다 — 지급은 기록되지만 실제 이체는 운영자가 수동으로 해야 합니다.';
+                    note.textContent=msg; }
+            }catch(e){}
+        };
+        window.savePayoutConfig=async function(){
+            const tg=document.getElementById('auto-payout-toggle'); const sel=document.getElementById('bank-provider-select'); if(!tg) return;
+            try{
+                const r=await fetch(`${API_URL}/api/admin/payout/config`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ auto_payout_enabled: tg.checked?'1':'0', bank_provider: sel?sel.value:'mock' }) });
+                const d=await r.json().catch(()=>({}));
+                if(!r.ok) return showToast(d.error||'설정 저장 실패');
+                showToast('정산 자동지급 '+(d.auto_payout_enabled?'ON':'OFF')+' · 이체: '+(d.bank_provider==='mock'?'기록만':d.bank_provider));
+                loadPayoutConfig();
+            }catch(e){ showToast('설정 저장 오류'); }
+        };
         window.loadSettlement=async function(){
+            try{ loadPayoutConfig(); }catch(_){}
             const month=taxG('tax-month'); const body=document.getElementById('settlement-body'); if(!body) return;
             const owner=(taxG('tax-owner')||'').trim();   // 🏥 대금지급처(판매자)별 조회(비우면 전체)
             const dueFrom=taxG('tax-due-from'), dueTo=taxG('tax-due-to');
@@ -6528,12 +6600,12 @@
         // 💸 정산 지급 실행(관리자) — 해당 판매자의 구매확정·미정산 주문을 정산(수수료 제외 지급). 배치(판매자·월 단위).
         window.settleOrderPayout=async function(seller, month){
             if(!seller) return;
-            if(!confirm('['+seller+'] 판매자의 구매확정·미정산 주문을 정산 지급합니다.\n(수수료 2.7%+VAT 제외 후 판매자에게 지급)\n계속하시겠습니까?')) return;
+            if(!confirm('['+seller+'] 판매자의 구매확정·미정산 주문을 정산 지급합니다.\n(수수료 2.7%+VAT 제외 후 판매자 등록계좌로 직접 지급)\n계속하시겠습니까?')) return;
             try{
                 const r=await fetch(`${API_URL}/api/tax/settle`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ seller, month: month||'' }) });
                 const d=await r.json().catch(()=>({}));
                 if(!r.ok) return showToast(d.error||'정산 지급 실패');
-                showToast('✅ 정산 완료 · '+(d.count||0)+'건 · 지급액 '+taxFmt(d.payout||0)+'원');
+                showToast('✅ 정산 지급 완료 · '+(d.count||0)+'건 · '+((d.bank||'')+' '+(d.account||'')).trim()+'로 '+taxFmt(d.payout||0)+'원');
                 loadAdminLedger();
             }catch(e){ showToast('정산 지급 오류: '+(e.message||e)); }
         };
@@ -7823,7 +7895,16 @@
             }, 150);
         }
 
-        async function updateUserBalance() { if(!currentUser) return; try { const res = await fetch(`${API_URL}/api/users/${currentUser.name}`); const data = await res.json(); currentUser.balance = Number(data.balance) || 0; document.getElementById('display-balance').innerText = currentUser.balance.toLocaleString(); } catch(e){} }
+        async function updateUserBalance() { if(!currentUser) return; try { const res = await fetch(`${API_URL}/api/users/${currentUser.name}`); const data = await res.json(); currentUser.balance = Number(data.balance) || 0; document.getElementById('display-balance').innerText = currentUser.balance.toLocaleString(); if(data.bank!==undefined) currentUser.bank=data.bank; if(data.account!==undefined) currentUser.account=data.account; try{ _updatePayoutPanel(); }catch(_){} try{ if(window.loadBillingUI) loadBillingUI(); }catch(_){}} catch(e){} }
+        // 💸 정산 자동지급 안내 패널 — 판매 상점 보유 시 노출 + 등록계좌 표시
+        function _updatePayoutPanel(){
+            const panel = document.getElementById('payout-info-panel'); if(!panel) return;
+            const hasStore = !!(window.myBrandStores && window.myBrandStores.length) || !!isAdmin;
+            panel.style.display = hasStore ? '' : 'none';
+            const el = document.getElementById('payout-account-info');
+            if(el){ const b=(currentUser&&currentUser.bank)||'', a=(currentUser&&currentUser.account)||'';
+                el.innerHTML = (b||a) ? (b+' '+a) : '<span style="color:#dc2626;">등록된 계좌 없음 — 내 정보에서 은행/계좌를 등록하세요 ⚠</span>'; }
+        }
         
         // 🚀 출금 제약조건: 10000원 이상 / 단위 가동
         function executeDeposit() { const amount = parseInt(document.getElementById('modal-deposit-amount').value, 10); if(isNaN(amount) || amount <= 0) return showToast("금액 산정 오류"); fetch(`${API_URL}/api/deposit/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userName: currentUser.name, senderName: currentUser.name, amount }) }).then(res => { if(res.ok) { showToast("입금 확인 신청 완료"); document.getElementById('modal-deposit-amount').value = ''; closeModal('deposit-modal'); } }); }
@@ -12602,6 +12683,163 @@ pdfjsScript,
             return new Promise((resolve, reject)=> _pgFlow(amount, resolve, reject));
         };
 
+        // 💳 [KICC 실PG] 카드 결제창(리다이렉트) 흐름 — pg_provider=kicc 에서만 사용.
+        //   ① /api/pg/prepare(거래등록)→authPageUrl ② 결제창 open ③ returnUrl→postMessage(KICC_RETURN) ④ /api/pg/approve(승인=주문확정)
+        //   orderId가 있으면 서버가 주문금액/판매자를 강제하고 승인 성공 시 에스크로까지 확정한다.
+        //   payMethodTypeCode:'81' → 정기결제(빌링키) 인증. resolve({approvalNo,tid,order}) / reject(취소·실패).
+        window.payByKicc = function(orderId, opts){
+            opts = opts || {};
+            const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            return new Promise(async (resolve, reject)=>{
+                let moid='';
+                try {
+                    const pr = await fetch(`${API_URL}/api/pg/prepare`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+                        body: JSON.stringify({ orderId: orderId||null, amount: Number(opts.amount)||0, goodsName: opts.goodsName||'', payMethodTypeCode: opts.payMethodTypeCode||'00', deviceType: isMobile?'mobile':'pc' }) });
+                    const pd = await pr.json().catch(()=>({}));
+                    if(!pr.ok || !pd.ok || !pd.authPageUrl){ reject(new Error(pd.error||'결제창을 열 수 없습니다.')); return; }
+                    moid = pd.moid;
+                    const w = window.open(pd.authPageUrl, 'kicc_pay', isMobile?'width=500,height=850,menubar=no,toolbar=no':'width=720,height=680,menubar=no,toolbar=no');
+                    if(!w){ reject(new Error('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.')); return; }
+                    let done=false;
+                    const onMsg = async (ev)=>{
+                        if(!ev || !ev.data || ev.data.type!=='KICC_RETURN') return;
+                        const d = ev.data.data || {};
+                        const authorizationId = d.authorizationId || d.authToken || '';
+                        const resCd = d.resCd || d.resultCode || '';
+                        window.removeEventListener('message', onMsg); clearInterval(poll); done=true; try{ w.close(); }catch(_){}
+                        if((resCd && resCd!=='0000') || !authorizationId){ reject(new Error(d.resMsg||'결제가 취소되었거나 인증에 실패했습니다.')); return; }
+                        try {
+                            const ar = await fetch(`${API_URL}/api/pg/approve`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ moid, authorizationId }) });
+                            const ad = await ar.json().catch(()=>({}));
+                            if(!ar.ok || !ad.ok){ reject(new Error(ad.error||'결제 승인에 실패했습니다.')); return; }
+                            resolve(ad);
+                        } catch(e){ reject(e); }
+                    };
+                    window.addEventListener('message', onMsg);
+                    const poll = setInterval(()=>{ if(!done && w.closed){ clearInterval(poll); window.removeEventListener('message', onMsg); reject(new Error('결제가 취소되었습니다.')); } }, 700);
+                } catch(e){ reject(e); }
+            });
+        };
+
+        // 🔁 [정기결제] 빌키 등록 — 81-인증 결제창 → 복귀 → 서버가 빌키 발급·보관. resolve({billingId, cardMaskNo, issuerName}). 🔐 빌키 원문은 서버 전용.
+        window.registerBilling = function(opts){
+            opts = opts || {};
+            const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            return new Promise(async (resolve, reject)=>{
+                let moid='';
+                try {
+                    const pr = await fetch(`${API_URL}/api/pg/prepare`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+                        body: JSON.stringify({ amount: 0, goodsName: opts.goodsName||'정기결제 카드등록', payMethodTypeCode:'81', deviceType: isMobile?'mobile':'pc' }) });
+                    const pd = await pr.json().catch(()=>({}));
+                    if(!pr.ok || !pd.ok || !pd.authPageUrl){ reject(new Error(pd.error||'카드등록 창을 열 수 없습니다.')); return; }
+                    moid = pd.moid;
+                    const w = window.open(pd.authPageUrl, 'kicc_billing', isMobile?'width=500,height=850':'width=720,height=680,menubar=no,toolbar=no');
+                    if(!w){ reject(new Error('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.')); return; }
+                    let done=false;
+                    const onMsg = async (ev)=>{
+                        if(!ev || !ev.data || ev.data.type!=='KICC_RETURN') return;
+                        const d = ev.data.data || {}; const authorizationId = d.authorizationId || d.authToken || ''; const resCd = d.resCd || '';
+                        window.removeEventListener('message', onMsg); clearInterval(poll); done=true; try{ w.close(); }catch(_){}
+                        if((resCd && resCd!=='0000') || !authorizationId){ reject(new Error(d.resMsg||'카드 등록이 취소되었습니다.')); return; }
+                        try {
+                            const ar = await fetch(`${API_URL}/api/pg/billing/issue`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ moid, authorizationId }) });
+                            const ad = await ar.json().catch(()=>({}));
+                            if(!ar.ok || !ad.ok){ reject(new Error(ad.error||'빌키 발급에 실패했습니다.')); return; }
+                            resolve(ad);
+                        } catch(e){ reject(e); }
+                    };
+                    window.addEventListener('message', onMsg);
+                    const poll = setInterval(()=>{ if(!done && w.closed){ clearInterval(poll); window.removeEventListener('message', onMsg); reject(new Error('카드 등록이 취소되었습니다.')); } }, 700);
+                } catch(e){ reject(e); }
+            });
+        };
+        // 🔁 보관된 빌키로 정기 청구. chargeBilling(billingId, {amount, orderId, goodsName})
+        window.chargeBilling = function(billingId, opts){
+            opts = opts || {};
+            return fetch(`${API_URL}/api/pg/billing/charge`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+                body: JSON.stringify({ billingId, amount: opts.amount||0, orderId: opts.orderId||null, goodsName: opts.goodsName||'' }) })
+                .then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok) throw new Error(d.error||'정기결제 청구 실패'); return d; });
+        };
+        // 🔁 내 빌키 목록(마스킹)
+        window.listBilling = function(){ return fetch(`${API_URL}/api/pg/billing/list`, { credentials:'include' }).then(r=>r.json()); };
+        // 🔁 [구독] 생성/목록/정지/재개/해지/즉시청구 — 크론이 nextChargeAt 도래 시 자동청구.
+        window.createSubscription = function(opts){
+            opts = opts || {};
+            return fetch(`${API_URL}/api/pg/subscriptions`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+                body: JSON.stringify({ billingId:opts.billingId, amount:opts.amount, goodsName:opts.goodsName||'', intervalType:opts.intervalType||'monthly', intervalCount:opts.intervalCount||1, firstChargeNow:!!opts.firstChargeNow, seller:opts.seller||null, nextChargeAt:opts.nextChargeAt||null }) })
+                .then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok) throw new Error(d.error||'구독 생성 실패'); return d; });
+        };
+        window.listSubscriptions = function(all){ return fetch(`${API_URL}/api/pg/subscriptions`+(all?'?all=1':''), { credentials:'include' }).then(r=>r.json()); };
+        window.subscriptionAction = function(id, action){ // action: pause|resume|cancel|charge-now
+            return fetch(`${API_URL}/api/pg/subscriptions/${id}/${action}`, { method:'POST', credentials:'include' })
+                .then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok) throw new Error(d.error||'처리 실패'); return d; });
+        };
+        // 🔁 ===== [정기결제·구독 관리 UI] =====
+        window._billingEnabled = false;
+        window.loadBillingUI = async function(){
+            const panel = document.getElementById('billing-panel'); if(!panel) return;
+            try{
+                const cfg = await fetch(`${API_URL}/api/pg/public-config`, { credentials:'include' }).then(r=>r.json()).catch(()=>({}));
+                window._billingEnabled = !!cfg.billingEnabled;
+                if(!cfg.billingEnabled){ panel.style.display='none'; return; }
+                panel.style.display='';
+                const note = document.getElementById('billing-note'); if(note) note.textContent = cfg.sim ? '※ 현재 시뮬레이터(sim) 모드 — 실제 청구되지 않습니다.' : '';
+                const cards = await window.listBilling().catch(()=>[]);
+                const sel = document.getElementById('sub-billing-id');
+                const cardsBox = document.getElementById('billing-cards');
+                const esc = s => String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+                if(!cards.length){ cardsBox.innerHTML = '<div style="font-size:12px; color:#94a3b8;">등록된 결제 카드가 없습니다. [+ 카드 등록]을 눌러 추가하세요.</div>'; document.getElementById('sub-add-box').style.display='none'; }
+                else {
+                    cardsBox.innerHTML = cards.map(c=>`<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; background:#f8fafc; border:1px solid var(--border-color); border-radius:8px; padding:8px 12px;"><span style="font-size:13px;"><b>${esc(c.issuerName||'카드')}</b> <span style="color:#64748b;">${esc(c.cardMaskNo||'')}</span></span><button class="btn btn-outline" style="padding:3px 10px; font-size:11px;" onclick="billingDeleteCard(${c.id})">삭제</button></div>`).join('');
+                    document.getElementById('sub-add-box').style.display='';
+                    if(sel) sel.innerHTML = cards.map(c=>`<option value="${c.id}">${esc((c.issuerName||'카드')+' '+(c.cardMaskNo||''))}</option>`).join('');
+                }
+                const subs = await window.listSubscriptions().catch(()=>[]);
+                const tb = document.getElementById('sub-tbody');
+                const badge = (st)=>{ const m={active:['#166534','#dcfce7','진행중'],paused:['#64748b','#f1f5f9','일시정지'],canceled:['#64748b','#f1f5f9','해지'],failed:['#b91c1c','#fee2e2','실패중단']}; const v=m[st]||['#64748b','#f1f5f9',st]; return `<span style="color:${v[0]}; background:${v[1]}; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700;">${v[2]}</span>`; };
+                const typeLbl = {monthly:'매월',weekly:'매주',daily:'매일'};
+                if(!subs.length){ tb.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:16px; color:#94a3b8;">구독이 없습니다.</td></tr>'; }
+                else tb.innerHTML = subs.map(s=>{
+                    const next = s.nextChargeAt ? new Date(s.nextChargeAt).toLocaleDateString('ko-KR') : '-';
+                    const per = (typeLbl[s.intervalType]||s.intervalType)+(s.intervalCount>1?(' x'+s.intervalCount):'');
+                    let act='';
+                    if(s.status==='active'){ act = `<button class="btn btn-outline" style="padding:3px 8px; font-size:11px;" onclick="subAct(${s.id},'charge-now')">즉시청구</button> <button class="btn btn-outline" style="padding:3px 8px; font-size:11px;" onclick="subAct(${s.id},'pause')">일시정지</button> <button class="btn btn-outline" style="padding:3px 8px; font-size:11px; color:#b91c1c;" onclick="subAct(${s.id},'cancel')">해지</button>`; }
+                    else if(s.status==='paused'){ act = `<button class="btn btn-outline" style="padding:3px 8px; font-size:11px; color:#166534;" onclick="subAct(${s.id},'resume')">재개</button> <button class="btn btn-outline" style="padding:3px 8px; font-size:11px; color:#b91c1c;" onclick="subAct(${s.id},'cancel')">해지</button>`; }
+                    else if(s.status==='failed'){ act = `<button class="btn btn-outline" style="padding:3px 8px; font-size:11px; color:#166534;" onclick="subAct(${s.id},'resume')">재개</button>`; }
+                    return `<tr><td>${esc(s.goodsName||'')}</td><td style="text-align:right;">${Number(s.amount||0).toLocaleString()}원</td><td>${per}</td><td>${next}</td><td style="text-align:center;">${badge(s.status)}</td><td style="text-align:center; white-space:nowrap;">${act||'-'}</td></tr>`;
+                }).join('');
+            }catch(e){ panel.style.display='none'; }
+        };
+        window.billingRegisterCard = async function(){
+            if(!window._billingEnabled) return showToast('카드결제(PG)가 활성화되어야 이용할 수 있습니다.');
+            try{ const r = await window.registerBilling({goodsName:'정기결제 카드등록'}); showToast('카드 등록 완료: '+(r.issuerName||'')+' '+(r.cardMaskNo||'')); loadBillingUI(); }
+            catch(e){ showToast(e.message||'카드 등록 취소'); }
+        };
+        window.billingDeleteCard = async function(id){
+            if(!confirm('이 카드를 삭제할까요? 연결된 구독은 청구가 실패할 수 있습니다.')) return;
+            try{ const r=await fetch(`${API_URL}/api/pg/billing/delete`, {method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({billingId:id})}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error); showToast('카드 삭제됨'); loadBillingUI(); }catch(e){ showToast(e.message||'삭제 실패'); }
+        };
+        window.billingCreateSubscription = async function(){
+            const billingId = Number((document.getElementById('sub-billing-id')||{}).value)||0;
+            const amount = Number((document.getElementById('sub-amount')||{}).value)||0;
+            const goodsName = (document.getElementById('sub-goods')||{}).value||'';
+            const intervalType = (document.getElementById('sub-interval')||{}).value||'monthly';
+            const intervalCount = Number((document.getElementById('sub-count')||{}).value)||1;
+            const firstChargeNow = !!(document.getElementById('sub-first-now')||{}).checked;
+            if(!billingId) return showToast('결제 카드를 선택하세요.');
+            if(!(amount>0)) return showToast('금액을 입력하세요.');
+            try{ const d = await window.createSubscription({billingId, amount, goodsName, intervalType, intervalCount, firstChargeNow});
+                showToast('구독 시작됨'+(d.firstCharge?(d.firstCharge.ok?' · 즉시청구 완료':' · 즉시청구 실패: '+d.firstCharge.error):''));
+                document.getElementById('sub-amount').value=''; document.getElementById('sub-goods').value=''; document.getElementById('sub-first-now').checked=false;
+                loadBillingUI();
+            }catch(e){ showToast(e.message||'구독 생성 실패'); }
+        };
+        window.subAct = async function(id, action){
+            if(action==='cancel' && !confirm('이 구독을 해지할까요?')) return;
+            try{ await window.subscriptionAction(id, action); showToast(action==='charge-now'?'청구 완료':action==='cancel'?'해지됨':action==='pause'?'일시정지됨':'재개됨'); loadBillingUI(); }
+            catch(e){ showToast(e.message||'처리 실패'); }
+        };
+
         async function buyAsset(id, name, amount, seller, purchaseType) {
             // 🚀 [v7p+] PDF 주문서가 있는 패키지 상품만 채팅 승인 흐름으로 라우팅
             try {
@@ -15851,8 +16089,9 @@ pdfjsScript,
                 if(h.settle && h.settle.items) {
                     const it = h.settle.items;
                     detailHtml = `<div style="display:flex; flex-direction:column; gap:3px; min-width:0;">`;
-                    detailHtml += `<b style="color:var(--primary); font-size:13px;">정산 입금${h.settle.month ? ' · ' + h.settle.month : ''} (${it.length}건)</b>`;
+                    detailHtml += `<b style="color:var(--primary); font-size:13px;">정산 지급${h.settle.auto?'(자동)':''}${h.settle.month ? ' · ' + h.settle.month : ''} (${it.length}건)</b>`;
                     detailHtml += `<span style="font-size:11px; color:var(--text-sub);">매출 ${Number(h.settle.salesTotal||0).toLocaleString()}원 − 결제수수료 ${Number(h.settle.payFee||0).toLocaleString()}원 = 지급 ${Number(h.settle.payout||h.amount).toLocaleString()}원</span>`;
+                    if(h.settle.bank||h.settle.account){ detailHtml += `<span style="font-size:11px; color:#0f766e;">🏦 ${((h.settle.bank||'')+' '+(h.settle.account||'')).trim()}로 입금</span>`; }
                     if(it.length) {
                         detailHtml += `<div style="margin-top:2px; padding:6px 8px; background:#f8fafc; border-radius:6px; font-size:11px; color:#334155; max-height:120px; overflow-y:auto;">`;
                         detailHtml += it.map(x => `<div style="display:flex; justify-content:space-between; gap:8px;"><span style="word-break:break-all;">• ${(x.name||'').replace(/</g,'&lt;')}${x.buyer?` <span style="color:#94a3b8;">(${(x.buyer||'').replace(/</g,'&lt;')})</span>`:''}</span><span style="white-space:nowrap; color:#64748b;">${Number(x.amount||0).toLocaleString()}원</span></div>`).join('');
