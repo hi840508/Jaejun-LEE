@@ -1447,10 +1447,18 @@ app.all('/api/pg/kicc/return', (req, res) => {
     // 결제창(팝업/리다이렉트)에서 부모창으로 결과 전달 후 닫힘. 실제 승인은 서버 approve에서 수행.
     const payload = Object.assign({}, req.query, req.body);
     const safe = JSON.stringify(payload).replace(/</g, '\\u003c');
+    // 결과를 여러 경로로 본 화면에 전달(팝업/탭/opener 끊김에 안전): ① localStorage ② BroadcastChannel ③ opener/parent postMessage
     res.set('Content-Type', 'text/html; charset=utf-8').send(
-        '<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;padding:24px;text-align:center;">'
-        + '<p>결제 처리 중… 이 창은 자동으로 닫힙니다.</p>'
-        + '<script>try{var d=' + safe + ';if(window.opener){window.opener.postMessage({type:"KICC_RETURN",data:d},"*");}else if(window.parent!==window){window.parent.postMessage({type:"KICC_RETURN",data:d},"*");}}catch(e){}setTimeout(function(){try{window.close();}catch(_){}} ,300);</script></body>');
+        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        + '<body style="font-family:system-ui,sans-serif;padding:40px 24px;text-align:center;color:#0f172a;">'
+        + '<div style="font-size:40px;margin-bottom:10px;">✅</div>'
+        + '<p style="font-size:15px;font-weight:700;margin:0 0 6px;">결제 확인이 완료되었습니다.</p>'
+        + '<p style="font-size:13px;color:#64748b;margin:0;">이 창은 곧 자동으로 닫힙니다. 닫히지 않으면 이 창을 닫고 원래 화면으로 돌아가세요.</p>'
+        + '<script>try{var d=' + safe + ';d.__ts=Date.now();'
+        + 'try{localStorage.setItem("KICC_RETURN",JSON.stringify(d));}catch(_){}'
+        + 'try{var bc=new BroadcastChannel("kicc_pay");bc.postMessage({type:"KICC_RETURN",data:d});setTimeout(function(){try{bc.close();}catch(_){} },500);}catch(_){}'
+        + 'try{if(window.opener)window.opener.postMessage({type:"KICC_RETURN",data:d},"*");else if(window.parent!==window)window.parent.postMessage({type:"KICC_RETURN",data:d},"*");}catch(_){}'
+        + '}catch(e){}setTimeout(function(){try{window.close();}catch(_){}} ,600);</script></body>');
 });
 //  ④ webhook(노티): KICC 서버 비동기 알림. IP 허용목록 + 멱등(pgCno/moid)으로 안전 처리 후 반드시 {resCd:"0000"} 응답.
 app.post('/api/pg/kicc/webhook', (req, res) => {
