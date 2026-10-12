@@ -1528,9 +1528,13 @@
                     </div>
                     <div style="font-size:12px; color:#94a3b8; margin-bottom:10px;">여기 등록한 카드는 <b>정기결제·구독</b>(예: 공유폴더 백업)에 자동 사용됩니다. 일반 구매·주문 결제는 <b>결제할 때마다 결제창에서 카드를 입력</b>하며, 카드를 미리 등록하지 않아도 됩니다.</div>
                     <div id="billing-cards" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 12px; background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; margin-bottom:20px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 12px; background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; margin-bottom:8px;">
                         <span style="font-size:13px;">🔐 결제 비밀번호 <span id="paypin-state" style="font-size:12px; color:#94a3b8;"></span><div style="font-size:11px; color:#94a3b8; margin-top:2px;">저장 카드로 간편결제할 때 사용합니다(6자리).</div></span>
                         <button class="btn btn-outline" style="padding:6px 12px; font-size:12px; white-space:nowrap;" onclick="managePayPin()">설정/변경</button>
+                    </div>
+                    <div id="paybio-row" style="display:none; align-items:center; justify-content:space-between; gap:10px; padding:11px 12px; background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; margin-bottom:20px;">
+                        <span style="font-size:13px;">🫆 생체인증 결제 <span id="paybio-state" style="font-size:12px; color:#94a3b8;"></span><div style="font-size:11px; color:#94a3b8; margin-top:2px;">지문·Face로 결제(결제 비밀번호 대체).</div></span>
+                        <button class="btn btn-outline" id="paybio-btn" style="padding:6px 12px; font-size:12px; white-space:nowrap;" onclick="manageBiometric()">사용</button>
                     </div>
                     <!-- 구독 관리: 구독 목록(구독은 서비스에서 시작 — 예: 공유폴더 백업 클라우드 버튼) -->
                     <h4 style="font-size:15px; font-weight:900; margin-bottom:8px;">🔁 구독 관리</h4>
@@ -12833,6 +12837,40 @@ pdfjsScript,
             return Object.assign({ moid: moid }, ad);
         };
 
+        // 🫆 [생체인증/WebAuthn] 공용 헬퍼
+        function _b64urlToBuf(s){ s=String(s||'').replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; const bin=atob(s); const b=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i); return b.buffer; }
+        function _bufToB64(buf){ const b=new Uint8Array(buf); let s=''; for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]); return btoa(s); }
+        function _bufToB64url(buf){ return _bufToB64(buf).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+        window._bioSupported = function(){ return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create); };
+        window.registerBiometric = async function(){
+            if(!window._bioSupported()){ showToast('이 기기/브라우저는 생체인증을 지원하지 않습니다.'); return false; }
+            try{
+                const ch = await fetch(`${API_URL}/api/pay/bio/register-challenge`,{method:'POST',credentials:'include'}).then(r=>r.json());
+                const cred = await navigator.credentials.create({ publicKey:{
+                    challenge: new Uint8Array(_b64urlToBuf(ch.challenge)),
+                    rp:{ id: ch.rpId, name:'Alpha K' },
+                    user:{ id: new Uint8Array(_b64urlToBuf(ch.userId)), name: ch.userName, displayName: ch.userName },
+                    pubKeyCredParams:[{type:'public-key', alg:-7},{type:'public-key', alg:-257}],
+                    authenticatorSelection:{ authenticatorAttachment:'platform', userVerification:'required', residentKey:'preferred' },
+                    timeout:60000, attestation:'none'
+                }});
+                const resp=cred.response; const pk = resp.getPublicKey ? resp.getPublicKey() : null;
+                if(!pk){ showToast('이 기기는 생체 결제 등록을 지원하지 않습니다.'); return false; }
+                const r=await fetch(`${API_URL}/api/pay/bio/register`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({ credId:_bufToB64url(cred.rawId), publicKey:_bufToB64(pk), clientDataJSON:_bufToB64(resp.clientDataJSON) })});
+                const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok){ showToast(d.error||'생체인증 등록 실패'); return false; }
+                showToast('✅ 생체인증이 등록되었습니다.'); return true;
+            }catch(e){ showToast('생체인증 등록이 취소되었습니다.'); return false; }
+        };
+        window._bioAuthAssertion = async function(){
+            try{
+                const ch = await fetch(`${API_URL}/api/pay/bio/auth-challenge`,{method:'POST',credentials:'include'}).then(r=>r.json());
+                if(!ch || !ch.challenge) return null;
+                const allow=(ch.allowCredentials||[]).map(id=>({ type:'public-key', id:new Uint8Array(_b64urlToBuf(id)) }));
+                const a = await navigator.credentials.get({ publicKey:{ challenge:new Uint8Array(_b64urlToBuf(ch.challenge)), rpId:ch.rpId, allowCredentials:allow, userVerification:'required', timeout:60000 }});
+                const resp=a.response;
+                return { credId:_bufToB64url(a.rawId), clientDataJSON:_bufToB64(resp.clientDataJSON), authenticatorData:_bufToB64(resp.authenticatorData), signature:_bufToB64(resp.signature) };
+            }catch(e){ return null; }
+        };
         // 🔢 결제 비밀번호 패드 — mode 'enter'(6자리 입력) | 'set'(설정: 입력→재입력→서버저장). resolve(pin문자열) / resolve(null=취소)
         window._payPinPad = function(mode, currentPin){
             return new Promise((resolve)=>{
@@ -12872,13 +12910,37 @@ pdfjsScript,
                 ov.addEventListener('click',(e)=>{ if(e.target===ov) close(null); });
             });
         };
-        // 💳 결제 시트(배민·쿠팡식) — 저장카드 간편결제(PIN) + 새 카드 결제. resolve(결과) / reject(취소). 주문 결제 공통 진입점.
+        // 🧾 결제 영수증 — 결제 성공 후 표시. 인쇄/저장 가능.
+        window._showReceipt = function(info){
+            info = info || {};
+            const esc = s=>String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+            const p2=n=>String(n).padStart(2,'0'); const d=new Date();
+            const dt=d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds());
+            const rowEl=(k,v)=> v? ('<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed #e8edf3;font-size:13px;"><span style="color:#64748b;">'+k+'</span><span style="font-weight:600;color:#1f2937;text-align:right;word-break:break-all;">'+esc(v)+'</span></div>') : '';
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100075;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:18px;';
+            ov.innerHTML='<div id="rcpt" style="background:#fff;width:100%;max-width:380px;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
+                +'<div style="background:#2563eb;color:#fff;text-align:center;padding:22px 16px;"><div style="font-size:34px;line-height:1;">✅</div><div style="font-size:16px;font-weight:800;margin-top:8px;">결제가 완료되었습니다</div></div>'
+                +'<div style="padding:18px 18px 8px;"><div style="text-align:center;margin-bottom:12px;"><div style="font-size:12px;color:#64748b;">'+esc(info.goodsName||'주문 결제')+'</div><div style="font-size:30px;font-weight:900;margin-top:2px;">'+Number(info.amount||0).toLocaleString()+'<span style="font-size:15px;font-weight:700;">원</span></div></div>'
+                + rowEl('결제수단', info.method||'카드결제')
+                + rowEl('카드', info.card)
+                + rowEl('승인번호', info.approvalNo)
+                + rowEl('거래번호', info.tid)
+                + rowEl('결제일시', dt)
+                + '<div style="font-size:11px;color:#94a3b8;text-align:center;margin:12px 0 4px;">Alpha K · 전자결제 영수증</div></div>'
+                +'<div style="display:flex;gap:8px;padding:0 18px 18px;"><button id="rcpt-print" style="flex:1;padding:12px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">인쇄/저장</button><button id="rcpt-ok" style="flex:2;padding:12px;border:0;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">확인</button></div>'
+                +'</div>';
+            document.body.appendChild(ov);
+            ov.querySelector('#rcpt-ok').onclick=()=>{ try{ov.remove();}catch(_){} };
+            ov.addEventListener('click',e=>{ if(e.target===ov) try{ov.remove();}catch(_){} });
+            ov.querySelector('#rcpt-print').onclick=()=>{ try{ const html=ov.querySelector('#rcpt').outerHTML; const w=window.open('','_blank','width=400,height=640'); if(w){ w.document.write('<!doctype html><meta charset="utf-8"><title>영수증</title><body style="font-family:system-ui;margin:0;padding:16px;background:#fff;">'+html+'</body>'); w.document.close(); setTimeout(()=>{ try{w.print();}catch(_){} },300); } else { showToast('팝업을 허용하면 인쇄할 수 있어요.'); } }catch(_){ showToast('인쇄를 지원하지 않는 환경입니다.'); } };
+        };
+        // 💳 결제 시트(배민·쿠팡식) — 저장카드 간편결제(PIN/생체) + 새 카드 결제. resolve(결과) / reject(취소). 주문 결제 공통 진입점.
         window.openCheckout = function(orderId, amount, goodsName){
             return new Promise(async (resolve, reject)=>{
                 let cfg={}; try{ cfg = await fetch(`${API_URL}/api/pg/public-config`, { credentials:'include' }).then(r=>r.json()); }catch(_){}
                 const billingEnabled = !!cfg.billingEnabled;
-                let cards=[], pin={hasPin:false};
-                if(billingEnabled){ try{ cards = await window.listBilling()||[]; }catch(_){ cards=[]; } try{ pin = await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){} }
+                let cards=[], pin={hasPin:false}, bio={enabled:false};
+                if(billingEnabled){ try{ cards = await window.listBilling()||[]; }catch(_){ cards=[]; } try{ pin = await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){} try{ bio = await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){} }
                 const esc=s=>String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
                 let selected = cards.length ? String(cards[0].id) : 'new';
                 const row=(id,inner)=>'<label class="co-pm" data-id="'+id+'" style="display:flex;align-items:center;gap:10px;padding:13px 12px;border:1px solid var(--border-color,#e2e8f0);border-radius:12px;margin-bottom:8px;cursor:pointer;"><input type="radio" name="co-pm" value="'+id+'" '+(String(id)===selected?'checked':'')+' style="width:18px;height:18px;">'+inner+'</label>';
@@ -12903,15 +12965,30 @@ pdfjsScript,
                     const payBtn=ov.querySelector('#co-pay');
                     try{
                         if(billingEnabled && selected!=='new'){
-                            // 💳 간편결제(저장카드 + PIN)
+                            // 💳 간편결제(저장카드) — 생체인증 우선, 실패/미지원 시 결제 비밀번호
                             const billingId=Number(selected);
+                            const _sc=cards.find(function(c){return String(c.id)===String(selected);});
+                            const resetBtn=()=>{ payBtn.disabled=false; payBtn.textContent=Number(amount||0).toLocaleString()+'원 결제하기'; };
+                            const _ok=(d)=>{ close(); try{ window._showReceipt({ goodsName:goodsName, amount:(d.amount||amount), approvalNo:d.approvalNo, tid:d.tid, method:(d.__bio?'생체인증 결제':'간편결제'), card:_sc?((_sc.issuerName||'카드')+' '+(_sc.cardMaskNo||'')):'' }); }catch(_){ showToast('✅ 결제가 완료되었습니다'); } resolve(Object.assign({via:'quickpay'}, d)); };
+                            // 1) 생체인증
+                            if(bio && bio.enabled && window._bioSupported()){
+                                const assertion = await window._bioAuthAssertion();
+                                if(assertion){
+                                    payBtn.disabled=true; payBtn.textContent='결제 중…';
+                                    const r=await fetch(`${API_URL}/api/pg/quickpay`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({orderId, billingId, bio:assertion})});
+                                    const d=await r.json().catch(()=>({}));
+                                    if(r.ok&&d.ok){ d.__bio=true; _ok(d); return; }
+                                    resetBtn(); showToast((d.error||'생체인증 결제 실패')+' — 비밀번호로 진행합니다.');
+                                }
+                            }
+                            // 2) 결제 비밀번호
                             let pinVal; if(!pin.hasPin){ pinVal = await window._payPinPad('set'); } else { pinVal = await window._payPinPad('enter'); }
                             if(pinVal===null || pinVal===undefined) return;   // 취소
                             payBtn.disabled=true; payBtn.textContent='결제 중…';
                             const r=await fetch(`${API_URL}/api/pg/quickpay`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({orderId, billingId, pin:pinVal})});
                             const d=await r.json().catch(()=>({}));
-                            if(!r.ok||!d.ok){ payBtn.disabled=false; payBtn.textContent=Number(amount||0).toLocaleString()+'원 결제하기'; showToast(d.error||'결제 실패'); return; }
-                            close(); showToast('✅ 결제가 완료되었습니다'); resolve(Object.assign({via:'quickpay'}, d)); return;
+                            if(!r.ok||!d.ok){ resetBtn(); showToast(d.error||'결제 실패'); return; }
+                            _ok(d); return;
                         }
                         // 💳 새 카드(일회성) — 결제창(KICC/시뮬) 또는 mock
                         close();
@@ -12919,13 +12996,21 @@ pdfjsScript,
                         const r=await fetch(`${API_URL}/api/order/pay`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({orderId, payMethod:'card', cardPw:pay.cardPw, pgMoid:pay.pgMoid})});
                         const d=await r.json().catch(()=>({}));
                         if(!r.ok){ showToast(d.error||'결제 실패'); reject(new Error(d.error||'결제 실패')); return; }
-                        showToast('✅ 결제가 완료되었습니다'); resolve(Object.assign({via:'onetime'}, d));
+                        try{ window._showReceipt({ goodsName:goodsName, amount:(d.amount||amount), approvalNo:(d.approvalNo||pay.approvalNo||''), tid:(d.tid||pay.tid||''), method:'카드결제' }); }catch(_){ showToast('✅ 결제가 완료되었습니다'); }
+                        resolve(Object.assign({via:'onetime'}, d));
                     }catch(e){ try{payBtn.disabled=false; payBtn.textContent=Number(amount||0).toLocaleString()+'원 결제하기';}catch(_){} showToast(e.message||'결제 오류'); }
                 };
             });
         };
 
         // 🔁 [정기결제] 빌키 등록 — 81-인증 결제창 → 복귀 → 서버가 빌키 발급·보관. resolve({billingId, cardMaskNo, issuerName}). 🔐 빌키 원문은 서버 전용.
+        // 🫆 생체인증 결제 등록/해제 (내 지갑)
+        window.manageBiometric = async function(){
+            if(!window._bioSupported()){ showToast('이 기기/브라우저는 생체인증을 지원하지 않습니다.'); return; }
+            let st={}; try{ st=await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){}
+            if(st.enabled){ if(!confirm('생체인증 결제를 해제할까요?')) return; try{ await fetch(`${API_URL}/api/pay/bio/remove`,{method:'POST',credentials:'include'}); showToast('생체인증이 해제되었습니다.'); }catch(_){} try{ loadBillingUI(); }catch(_){} return; }
+            const ok=await window.registerBiometric(); if(ok) try{ loadBillingUI(); }catch(_){}
+        };
         // 🔐 결제 비밀번호 설정/변경 (내 지갑)
         window.managePayPin = async function(){
             let st={}; try{ st=await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){}
@@ -12975,6 +13060,7 @@ pdfjsScript,
                 if(_empty) _empty.style.display='none';
                 panel.style.display='';
                 try{ const ps=await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); const pe=document.getElementById('paypin-state'); if(pe) pe.textContent = ps.locked?'(잠김 — 재설정 필요)':(ps.hasPin?'(설정됨)':'(미설정)'); }catch(_){}
+                try{ const row=document.getElementById('paybio-row'); if(row){ if(window._bioSupported && window._bioSupported()){ row.style.display='flex'; const bs=await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()); const be=document.getElementById('paybio-state'), bb=document.getElementById('paybio-btn'); if(be) be.textContent=bs.enabled?'(사용 중)':'(미설정)'; if(bb) bb.textContent=bs.enabled?'해제':'사용'; } else { row.style.display='none'; } } }catch(_){}
                 const note = document.getElementById('billing-note'); if(note) note.textContent = cfg.sim ? '※ 현재 시뮬레이터(sim) 모드 — 실제 청구되지 않습니다.' : '';
                 const cards = await window.listBilling().catch(()=>[]);
                 const cardsBox = document.getElementById('billing-cards');

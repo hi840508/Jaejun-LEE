@@ -964,6 +964,8 @@ function initTables() {
         db.run(`ALTER TABLE users ADD COLUMN office_phone TEXT`, () => {});   // ☎ 사무실 전화번호(phone=핸드폰)
         db.run(`ALTER TABLE users ADD COLUMN pay_pin_hash TEXT`, () => {});   // 💳 간편결제 비밀번호(6자리) — pbkdf2 해시(salt$hash)로만 저장
         db.run(`ALTER TABLE users ADD COLUMN pay_pin_fail INTEGER DEFAULT 0`, () => {});   // 결제PIN 연속 실패 횟수(5회 잠금)
+        // 🫆 [생체인증] 결제용 WebAuthn(플랫폼 인증기=지문/Face) 자격증명. publicKey=SPKI(base64). 결제PIN 대체.
+        db.run(`CREATE TABLE IF NOT EXISTS webauthn_creds (id INTEGER PRIMARY KEY AUTOINCREMENT, userName TEXT, credId TEXT, publicKey TEXT, created_at TEXT, UNIQUE(credId))`, () => {});
         // 💳 [KICC PG 대비] 실 PG(KICC 이지페이 등) 취소·환불 시 필요한 거래 고유번호(TID) 저장. pg_approval=승인번호와 별개.
         db.run(`ALTER TABLE transactions ADD COLUMN pg_tid TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN pg_tid TEXT`, () => {});
@@ -1680,6 +1682,41 @@ app.post('/api/pg/billing/delete', (req, res) => {
 // 🔐 PIN은 평문 저장 금지 — pbkdf2(10만회) 해시(salt$hash)로만. 5회 오류 시 잠금.
 function _makePinHash(pin) { const salt = crypto.randomBytes(8).toString('hex'); const h = crypto.pbkdf2Sync(String(pin), salt, 100000, 32, 'sha256').toString('hex'); return salt + '$' + h; }
 function _verifyPin(pin, stored) { try { const i = String(stored || '').indexOf('$'); if (i < 0) return false; const salt = stored.slice(0, i), h = stored.slice(i + 1); const c = crypto.pbkdf2Sync(String(pin), salt, 100000, 32, 'sha256').toString('hex'); const a = Buffer.from(c, 'hex'), b = Buffer.from(h, 'hex'); return a.length === b.length && crypto.timingSafeEqual(a, b); } catch (_) { return false; } }
+// 🫆 [생체인증/WebAuthn] 챌린지 저장소(사용자별, 3분 TTL) + RP ID/origin
+const BIO_CHALLENGES = new Map();   // userName -> { ch, exp }
+function _bioRpId() { try { return new URL(PG_PUBLIC_BASE).hostname; } catch (_) { return 'earth.rayaox.com'; } }
+function _bioOrigin() { return PG_PUBLIC_BASE.replace(/\/+$/, ''); }
+function _bioSetChallenge(name) { const ch = crypto.randomBytes(32).toString('base64url'); BIO_CHALLENGES.set(name, { ch, exp: Date.now() + 3 * 60 * 1000 }); return ch; }
+function _bioGetChallenge(name) { const c = BIO_CHALLENGES.get(name); if (!c || c.exp < Date.now()) { BIO_CHALLENGES.delete(name); return null; } return c.ch; }
+// 결제 생체인증 검증 — 등록된 공개키(SPKI)로 assertion 서명 검증. cb(err|null, ok)
+function _verifyBioAssertion(name, bio, cb) {
+    try {
+        bio = bio || {};
+        const issued = _bioGetChallenge(name);
+        if (!issued) return cb(new Error('생체인증 시간이 만료되었습니다. 다시 시도해 주세요.'));
+        db.get(`SELECT publicKey FROM webauthn_creds WHERE userName=? AND credId=?`, [name, String(bio.credId || '')], (e, row) => {
+            if (e || !row) return cb(new Error('등록된 생체인증 정보가 없습니다.'));
+            try {
+                const clientDataBuf = Buffer.from(String(bio.clientDataJSON || ''), 'base64');
+                const cd = JSON.parse(clientDataBuf.toString('utf8'));
+                if (cd.type !== 'webauthn.get') return cb(new Error('인증 유형 오류'));
+                if (cd.challenge !== issued) return cb(new Error('인증 챌린지 불일치'));
+                if (cd.origin !== _bioOrigin()) return cb(new Error('origin 불일치'));
+                const authData = Buffer.from(String(bio.authenticatorData || ''), 'base64');
+                const sig = Buffer.from(String(bio.signature || ''), 'base64');
+                if (authData.length < 37) return cb(new Error('인증 데이터 오류'));
+                if (!(authData[32] & 0x04)) return cb(new Error('생체(사용자 검증)가 수행되지 않았습니다.'));   // UV flag
+                const hash = crypto.createHash('sha256').update(clientDataBuf).digest();
+                const signed = Buffer.concat([authData, hash]);
+                const pub = crypto.createPublicKey({ key: Buffer.from(row.publicKey, 'base64'), format: 'der', type: 'spki' });
+                const ok = crypto.verify('sha256', signed, { key: pub, dsaEncoding: 'der' }, sig);
+                BIO_CHALLENGES.delete(name);   // 1회성
+                if (!ok) return cb(new Error('생체인증 검증에 실패했습니다.'));
+                cb(null, true);
+            } catch (ex) { cb(new Error('생체인증 처리 오류')); }
+        });
+    } catch (ex) { cb(new Error('생체인증 처리 오류')); }
+}
 // 결제 비밀번호 상태
 app.get('/api/pay/pin/status', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
@@ -1696,20 +1733,46 @@ app.post('/api/pay/pin/set', (req, res) => {
         db.run(`UPDATE users SET pay_pin_hash=?, pay_pin_fail=0 WHERE name=?`, [_makePinHash(pin), me], () => res.json({ ok: true }));
     });
 });
-// 간편결제: 저장카드 + 결제PIN으로 주문 결제(원탭). 금액은 서버가 주문에서 강제, PIN 5회 잠금.
+// 🫆 생체인증 상태 / 등록(WebAuthn 플랫폼 인증기)
+app.get('/api/pay/bio/status', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.get(`SELECT COUNT(*) c FROM webauthn_creds WHERE userName=?`, [me], (e, r) => res.json({ enabled: !!(r && r.c), rpId: _bioRpId() }));
+});
+app.post('/api/pay/bio/register-challenge', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    res.json({ challenge: _bioSetChallenge(me), rpId: _bioRpId(), userId: Buffer.from(me).toString('base64url'), userName: me });
+});
+app.post('/api/pay/bio/register', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const { credId, publicKey, clientDataJSON } = req.body || {};
+    if (!credId || !publicKey || !clientDataJSON) return res.status(400).json({ error: '등록 정보가 부족합니다.' });
+    const issued = _bioGetChallenge(me);
+    try {
+        const cd = JSON.parse(Buffer.from(String(clientDataJSON), 'base64').toString('utf8'));
+        if (cd.type !== 'webauthn.create' || !issued || cd.challenge !== issued || cd.origin !== _bioOrigin()) return res.status(400).json({ error: '생체인증 등록 검증 실패' });
+    } catch (_) { return res.status(400).json({ error: '등록 데이터 오류' }); }
+    BIO_CHALLENGES.delete(me);
+    db.run(`INSERT INTO webauthn_creds (userName, credId, publicKey, created_at) VALUES (?,?,?,?) ON CONFLICT(credId) DO UPDATE SET publicKey=excluded.publicKey`,
+        [me, String(credId), String(publicKey), new Date().toISOString()], (e) => e ? res.status(500).json({ error: e.message }) : res.json({ ok: true }));
+});
+app.post('/api/pay/bio/auth-challenge', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.all(`SELECT credId FROM webauthn_creds WHERE userName=?`, [me], (e, rows) => {
+        if (e || !rows || !rows.length) return res.status(400).json({ error: '등록된 생체인증이 없습니다.', needRegister: true });
+        res.json({ challenge: _bioSetChallenge(me), rpId: _bioRpId(), allowCredentials: rows.map(r => r.credId) });
+    });
+});
+app.post('/api/pay/bio/remove', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.run(`DELETE FROM webauthn_creds WHERE userName=?`, [me], () => res.json({ ok: true }));
+});
+// 간편결제: 저장카드 + (결제PIN 또는 생체인증)으로 주문 결제(원탭). 금액은 서버가 주문에서 강제.
 app.post('/api/pg/quickpay', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
-    const orderId = Number(req.body.orderId) || 0; const billingId = Number(req.body.billingId) || 0; const pin = String(req.body.pin || '');
+    const orderId = Number(req.body.orderId) || 0; const billingId = Number(req.body.billingId) || 0;
     if (!orderId || !billingId) return res.status(400).json({ error: '주문/카드 정보가 없습니다.' });
-    db.get(`SELECT pay_pin_hash, pay_pin_fail FROM users WHERE name=?`, [me], (ue, u) => {
-        if (ue || !u) return res.status(500).json({ error: '사용자 조회 실패' });
-        if (!u.pay_pin_hash) return res.status(400).json({ error: '결제 비밀번호가 설정되지 않았습니다.', needPin: true });
-        if ((u.pay_pin_fail || 0) >= 5) return res.status(423).json({ error: '결제 비밀번호 5회 오류로 잠겼습니다. 비밀번호를 재설정해 주세요.', locked: true });
-        if (!_verifyPin(pin, u.pay_pin_hash)) {
-            db.run(`UPDATE users SET pay_pin_fail=COALESCE(pay_pin_fail,0)+1 WHERE name=?`, [me]);
-            return res.status(401).json({ error: '결제 비밀번호가 올바르지 않습니다.', remain: Math.max(0, 4 - (u.pay_pin_fail || 0)) });
-        }
-        db.run(`UPDATE users SET pay_pin_fail=0 WHERE name=?`, [me]);
+    // 주문 결제 실행(인증 통과 후 공통)
+    const _charge = () => {
         db.get(`SELECT o.*, p.name AS pName FROM product_orders o LEFT JOIN products p ON p.id=o.productId WHERE o.id=?`, [orderId], (oe, ord) => {
             if (oe || !ord) return res.status(404).json({ error: '주문을 찾을 수 없습니다.' });
             if (ord.buyer !== me) return res.status(403).json({ error: '본인 주문만 결제할 수 있습니다.' });
@@ -1723,6 +1786,22 @@ app.post('/api/pg/quickpay', (req, res) => {
                 });
             });
         });
+    };
+    // 인증: 생체(bio) 우선, 없으면 PIN
+    if (req.body.bio) {
+        return _verifyBioAssertion(me, req.body.bio, (err) => { if (err) return res.status(401).json({ error: err.message }); _charge(); });
+    }
+    const pin = String(req.body.pin || '');
+    db.get(`SELECT pay_pin_hash, pay_pin_fail FROM users WHERE name=?`, [me], (ue, u) => {
+        if (ue || !u) return res.status(500).json({ error: '사용자 조회 실패' });
+        if (!u.pay_pin_hash) return res.status(400).json({ error: '결제 비밀번호가 설정되지 않았습니다.', needPin: true });
+        if ((u.pay_pin_fail || 0) >= 5) return res.status(423).json({ error: '결제 비밀번호 5회 오류로 잠겼습니다. 비밀번호를 재설정해 주세요.', locked: true });
+        if (!_verifyPin(pin, u.pay_pin_hash)) {
+            db.run(`UPDATE users SET pay_pin_fail=COALESCE(pay_pin_fail,0)+1 WHERE name=?`, [me]);
+            return res.status(401).json({ error: '결제 비밀번호가 올바르지 않습니다.', remain: Math.max(0, 4 - (u.pay_pin_fail || 0)) });
+        }
+        db.run(`UPDATE users SET pay_pin_fail=0 WHERE name=?`, [me]);
+        _charge();
     });
 });
 // 🧪 [시뮬레이터 결제창] kicc_mode=sim 에서 _pgKiccRegister가 가리키는 가짜 KICC 결제창. 승인/취소 버튼으로 실제 KICC UI를 대체.
