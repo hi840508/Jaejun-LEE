@@ -12578,7 +12578,8 @@ pdfjsScript,
                 const sd = await submitRes.json().catch(()=>({}));
                 if(!submitRes.ok || !sd.orderId) return showToast(sd.error||'주문 생성 실패');
                 const orderId = sd.orderId;
-                try { await window.openCheckout(orderId, price, prod.name); } catch(_){ return; }   // 💳 결제 시트(간편결제/새카드) — 취소 시 중단
+                let _coStore=''; try{ if(prod.storeId){ const s=await fetch(`${API_URL}/api/store/${prod.storeId}`).then(r=>r.json()); _coStore=(s&&s.name)||''; } }catch(_){}
+                try { await window.openCheckout(orderId, price, prod.name, { thumb: prod.thumbnail||'', store: _coStore }); } catch(_){ return; }   // 💳 결제 시트(간편결제/새카드) — 취소 시 중단
                 if(window.updateUserBalance) updateUserBalance();
                 const roomId = 'room_ord_'+orderId; currentChatRoomId = roomId;
                 let storeName=''; try { if(prod.storeId){ const s=await fetch(`${API_URL}/api/store/${prod.storeId}`).then(r=>r.json()); storeName=(s&&s.name)||''; } } catch(_){}
@@ -12910,7 +12911,15 @@ pdfjsScript,
                 ov.addEventListener('click',(e)=>{ if(e.target===ov) close(null); });
             });
         };
-        // 🧾 결제 영수증 — 결제 성공 후 표시. 인쇄/저장 가능.
+        // 💳 카드사 브랜드(로고 대용 컬러 뱃지) — 발급사명으로 매핑. {color, label}
+        window._cardBrand = function(name){
+            const n=String(name||'').toLowerCase();
+            const map=[['신한','#0046ff','신한'],['삼성','#1428a0','삼성'],['국민','#7b6300','KB'],['kb','#7b6300','KB'],['현대','#111827','현대'],['롯데','#da291c','롯데'],['우리','#0067ac','우리'],['하나','#008485','하나'],['기업','#0066b3','IBK'],['농협','#0a9b4e','NH'],['nh','#0a9b4e','NH'],['bc','#e4002b','BC'],['씨티','#1a4ea2','Citi'],['카카오','#111','kakao'],['visa','#1a1f71','VISA'],['master','#eb001b','MC'],['amex','#2e77bc','AMEX']];
+            for(const m of map){ if(n.indexOf(m[0])>=0) return {color:m[1], label:m[2]}; }
+            return {color:'#475569', label:(name||'CARD').toString().slice(0,4).toUpperCase()};
+        };
+        window._cardChip = function(issuerName){ const b=window._cardBrand(issuerName); return '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:46px;height:30px;border-radius:7px;background:'+b.color+';color:#fff;font:800 11px system-ui;padding:0 7px;flex:none;letter-spacing:.3px;">'+b.label+'</span>'; };
+        // 🧾 결제 영수증 — 결제 성공 후 표시. 이미지 저장 가능.
         window._showReceipt = function(info){
             info = info || {};
             const esc = s=>String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
@@ -12927,40 +12936,57 @@ pdfjsScript,
                 + rowEl('거래번호', info.tid)
                 + rowEl('결제일시', dt)
                 + '<div style="font-size:11px;color:#94a3b8;text-align:center;margin:12px 0 4px;">Alpha K · 전자결제 영수증</div></div>'
-                +'<div style="display:flex;gap:8px;padding:0 18px 18px;"><button id="rcpt-print" style="flex:1;padding:12px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">인쇄/저장</button><button id="rcpt-ok" style="flex:2;padding:12px;border:0;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">확인</button></div>'
+                +'<div style="display:flex;gap:8px;padding:0 18px 18px;"><button id="rcpt-save" style="flex:1;padding:12px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">이미지로 저장</button><button id="rcpt-ok" style="flex:2;padding:12px;border:0;background:#2563eb;color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">확인</button></div>'
                 +'</div>';
             document.body.appendChild(ov);
             ov.querySelector('#rcpt-ok').onclick=()=>{ try{ov.remove();}catch(_){} };
             ov.addEventListener('click',e=>{ if(e.target===ov) try{ov.remove();}catch(_){} });
-            ov.querySelector('#rcpt-print').onclick=()=>{ try{ const html=ov.querySelector('#rcpt').outerHTML; const w=window.open('','_blank','width=400,height=640'); if(w){ w.document.write('<!doctype html><meta charset="utf-8"><title>영수증</title><body style="font-family:system-ui;margin:0;padding:16px;background:#fff;">'+html+'</body>'); w.document.close(); setTimeout(()=>{ try{w.print();}catch(_){} },300); } else { showToast('팝업을 허용하면 인쇄할 수 있어요.'); } }catch(_){ showToast('인쇄를 지원하지 않는 환경입니다.'); } };
+            ov.querySelector('#rcpt-save').onclick=()=>{ try{ window._downloadReceiptImage(info, dt); }catch(_){ showToast('저장을 지원하지 않는 환경입니다.'); } };
+        };
+        // 🧾 영수증을 PNG 이미지로 저장(canvas) — WebView/모바일에서도 window.open 없이 다운로드.
+        window._downloadReceiptImage = function(info, dt){
+            info=info||{};
+            const rows=[['결제수단', info.method||'카드결제'], ['카드', info.card], ['승인번호', info.approvalNo], ['거래번호', info.tid], ['결제일시', dt]].filter(r=>r[1]);
+            const W=380, headerH=104, amtH=74, rowH=32, footH=46, H=headerH+amtH+rows.length*rowH+footH, s=2, pad=22;
+            const c=document.createElement('canvas'); c.width=W*s; c.height=H*s; const x=c.getContext('2d'); x.scale(s,s);
+            x.fillStyle='#fff'; x.fillRect(0,0,W,H);
+            x.fillStyle='#2563eb'; x.fillRect(0,0,W,headerH);
+            x.fillStyle='#fff'; x.textAlign='center'; x.font='30px system-ui'; x.fillText('✓',W/2,52);
+            x.font='bold 16px system-ui'; x.fillText('결제가 완료되었습니다',W/2,84);
+            x.fillStyle='#64748b'; x.font='12px system-ui'; x.fillText(String(info.goodsName||'주문 결제').slice(0,30),W/2,headerH+26);
+            x.fillStyle='#111827'; x.font='bold 26px system-ui'; x.fillText(Number(info.amount||0).toLocaleString()+'원',W/2,headerH+58);
+            let y=headerH+amtH+6; x.font='13px system-ui';
+            rows.forEach(r=>{ x.textAlign='left'; x.fillStyle='#64748b'; x.fillText(r[0],pad,y); x.textAlign='right'; x.fillStyle='#1f2937'; x.fillText(String(r[1]),W-pad,y); x.strokeStyle='#eef2f7'; x.lineWidth=1; x.beginPath(); x.moveTo(pad,y+10); x.lineTo(W-pad,y+10); x.stroke(); y+=rowH; });
+            x.textAlign='center'; x.fillStyle='#94a3b8'; x.font='11px system-ui'; x.fillText('Alpha K · 전자결제 영수증',W/2,H-16);
+            c.toBlob(function(b){ if(!b){ showToast('저장 실패'); return; } const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download='영수증_'+Date.now()+'.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(u); },2000); showToast('영수증 이미지를 저장했습니다.'); },'image/png');
         };
         // 💳 결제 시트(배민·쿠팡식) — 저장카드 간편결제(PIN/생체) + 새 카드 결제. resolve(결과) / reject(취소). 주문 결제 공통 진입점.
-        window.openCheckout = function(orderId, amount, goodsName){
+        window.openCheckout = function(orderId, amount, goodsName, opts){
+            opts = opts || {};
             return new Promise(async (resolve, reject)=>{
                 let cfg={}; try{ cfg = await fetch(`${API_URL}/api/pg/public-config`, { credentials:'include' }).then(r=>r.json()); }catch(_){}
                 const billingEnabled = !!cfg.billingEnabled;
                 let cards=[], pin={hasPin:false}, bio={enabled:false};
                 if(billingEnabled){ try{ cards = await window.listBilling()||[]; }catch(_){ cards=[]; } try{ pin = await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){} try{ bio = await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){} }
-                const esc=s=>String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+                const esc=s=>String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
                 let selected = cards.length ? String(cards[0].id) : 'new';
-                const row=(id,inner)=>'<label class="co-pm" data-id="'+id+'" style="display:flex;align-items:center;gap:10px;padding:13px 12px;border:1px solid var(--border-color,#e2e8f0);border-radius:12px;margin-bottom:8px;cursor:pointer;"><input type="radio" name="co-pm" value="'+id+'" '+(String(id)===selected?'checked':'')+' style="width:18px;height:18px;">'+inner+'</label>';
-                const cardRows = cards.map(c=>row(c.id,'<span style="font-size:14px;">💳 <b>'+esc(c.issuerName||'카드')+'</b> <span style="color:#64748b;">'+esc(c.cardMaskNo||'')+'</span></span>')).join('');
-                const newRow = billingEnabled ? row('new','<span style="font-size:14px;">➕ 새 카드로 결제</span>') : '';
-                const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100055;background:rgba(15,23,42,.5);display:flex;align-items:flex-end;justify-content:center;';
-                ov.innerHTML='<div style="background:#fff;width:100%;max-width:460px;border-radius:18px 18px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto;">'
-                    +'<div style="width:40px;height:4px;background:#e2e8f0;border-radius:3px;margin:0 auto 14px;"></div>'
-                    +'<div style="font-size:13px;color:#64748b;">'+esc(goodsName||'주문 결제')+'</div>'
-                    +'<div style="font-size:28px;font-weight:900;margin:2px 0 16px;">'+Number(amount||0).toLocaleString()+'<span style="font-size:16px;font-weight:700;">원</span></div>'
+                const row=(id,inner)=>'<label class="co-pm" data-id="'+id+'" style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border-color,#e2e8f0);border-radius:12px;margin-bottom:8px;cursor:pointer;"><input type="radio" name="co-pm" value="'+id+'" '+(String(id)===selected?'checked':'')+' style="width:18px;height:18px;flex:none;">'+inner+'</label>';
+                const cardRows = cards.map(c=>row(c.id, window._cardChip(c.issuerName)+'<span style="font-size:14px;min-width:0;"><b>'+esc(c.issuerName||'카드')+'</b> <span style="color:#64748b;">'+esc(c.cardMaskNo||'')+'</span></span>')).join('');
+                const newRow = billingEnabled ? row('new','<span style="display:inline-flex;align-items:center;justify-content:center;min-width:46px;height:30px;border-radius:7px;background:#eef2f7;color:#64748b;font:800 16px system-ui;flex:none;">＋</span><span style="font-size:14px;">새 카드로 결제</span>') : '';
+                const thumb = opts.thumb ? '<div style="width:46px;height:46px;border-radius:10px;flex:none;background:#f1f5f9;background-image:url(\''+String(opts.thumb).replace(/'/g,"%27")+'\');background-size:cover;background-position:center;background-repeat:no-repeat;"></div>' : '<div style="width:46px;height:46px;border-radius:10px;background:#eef2f7;display:flex;align-items:center;justify-content:center;font-size:22px;flex:none;">🧾</div>';
+                const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100055;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:18px;';
+                ov.innerHTML='<div style="background:#fff;width:100%;max-width:400px;border-radius:16px;max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
+                    +'<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #f1f5f9;position:sticky;top:0;background:#fff;"><span style="font-weight:800;font-size:15px;">결제</span><button id="co-x" title="닫기" style="background:#f1f5f9;border:0;width:30px;height:30px;border-radius:8px;font-size:16px;cursor:pointer;color:#475569;">✕</button></div>'
+                    +'<div style="padding:16px 18px 18px;">'
+                    +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">'+thumb+'<div style="min-width:0;">'+(opts.store?('<div style="font-size:12px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(opts.store)+'</div>'):'')+'<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(goodsName||'주문 결제')+'</div><div style="font-size:22px;font-weight:900;margin-top:2px;">'+Number(amount||0).toLocaleString()+'<span style="font-size:14px;font-weight:700;">원</span></div></div></div>'
                     +(billingEnabled ? ('<div style="font-weight:800;font-size:13px;margin-bottom:8px;">결제 수단</div>'+cardRows+newRow) : '<div style="font-size:13px;color:#475569;padding:4px 0 10px;">💳 카드로 결제합니다. 결제창에서 카드 정보를 입력하세요.</div>')
-                    +'<button id="co-pay" style="width:100%;padding:15px;border:0;border-radius:12px;background:#2563eb;color:#fff;font-weight:800;font-size:16px;cursor:pointer;margin-top:8px;">'+Number(amount||0).toLocaleString()+'원 결제하기</button>'
-                    +'<button id="co-cancel" style="width:100%;padding:11px;border:0;background:transparent;color:#64748b;font-weight:700;cursor:pointer;margin-top:4px;">취소</button>'
-                    +'</div>';
+                    +'<button id="co-pay" style="width:100%;padding:15px;border:0;border-radius:12px;background:#2563eb;color:#fff;font-weight:800;font-size:16px;cursor:pointer;margin-top:10px;">'+Number(amount||0).toLocaleString()+'원 결제하기</button>'
+                    +'</div></div>';
                 document.body.appendChild(ov);
                 const close=()=>{ try{ov.remove();}catch(_){} };
                 const cancel=()=>{ close(); reject(new Error('cancelled')); };
-                ov.addEventListener('click',e=>{ if(e.target===ov) cancel(); });
+                ov.querySelector('#co-x').onclick=cancel;
                 ov.querySelectorAll('input[name=co-pm]').forEach(r=>r.addEventListener('change',()=>{ selected=r.value; }));
-                ov.querySelector('#co-cancel').onclick=cancel;
                 ov.querySelector('#co-pay').onclick=async()=>{
                     const payBtn=ov.querySelector('#co-pay');
                     try{
@@ -17634,8 +17660,11 @@ pdfjsScript,
                 } catch(e){ showToast('처리 실패: ' + (e.message||e)); }
             };
             // 구매자 결제 — 금액 확정(awaiting_payment) 주문을 결제하여 에스크로 보관.
-            window.payOrder = async function(orderId, amount){
-                try { await window.openCheckout(orderId, Number(amount)||0, '주문 결제'); }   // 💳 결제 시트(간편결제/새카드)
+            window.payOrder = async function(orderId, amount, meta){
+                meta = meta || {};
+                // 썸네일·상점명 자동 보강(채팅 결제 등 meta 없이 호출될 때)
+                if(!meta.thumb || !meta.goodsName){ try{ const o=await fetch(`${API_URL}/api/order/${orderId}`).then(r=>r.json()); if(o&&o.productId){ const p=await fetch(`${API_URL}/api/product/detail/${o.productId}`).then(r=>r.json()); if(p){ meta.thumb=meta.thumb||p.thumbnail||''; meta.goodsName=meta.goodsName||p.name||'주문 결제'; if(!meta.store && p.storeId){ try{ const s=await fetch(`${API_URL}/api/store/${p.storeId}`).then(r=>r.json()); meta.store=(s&&s.name)||''; }catch(_){} } } } }catch(_){} }
+                try { await window.openCheckout(orderId, Number(amount)||0, meta.goodsName||'주문 결제', { thumb:meta.thumb||'', store:meta.store||'' }); }   // 💳 결제 시트
                 catch(_){ return; }   // 취소
                 if(window.updateUserBalance) updateUserBalance();
                 refreshRxDocStatus(orderId);
