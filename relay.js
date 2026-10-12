@@ -2690,28 +2690,18 @@ app.post('/api/admin/members/withdraw', (req, res) => {
     });
 });
 
-app.post('/api/deposit/request', (req, res) => { const me = requireUser(req, res); if (!me) return; const rawDate = new Date().toISOString(); db.run(`INSERT INTO deposits (user_name, sender_name, amount, status, date, rawDate) VALUES (?, ?, ?, '대기', ?, ?)`, [me, req.body.senderName, Number(req.body.amount)||0, new Date().toLocaleString('ko-KR'), rawDate], () => { res.json({ success: true }); }); });
-
-app.post('/api/withdraw/request', (req, res) => {
-    const meName = requireUser(req, res); if (!meName) return;   // ★신원=토큰
-    const amount = Math.floor(Number(req.body.amount) || 0); const rawDate = new Date().toISOString();
-    if (!(amount > 0)) return res.status(400).json({ error: '출금액을 확인하세요.' });
-    db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [amount, meName, amount], function(e) {
-        if (e || this.changes === 0) return res.status(400).json({ error: '잔액 부족' });
-        db.run(`INSERT INTO withdrawals (name, amount, status, date, rawDate) VALUES (?, ?, '대기', ?, ?)`, [meName, amount, new Date().toLocaleString('ko-KR'), rawDate], () => res.json({ success: true }));
-    });
-});
-
-app.get('/api/admin/actions', (req, res) => {
-    if(!requireAdmin(req,res)) return;
-    db.all(`SELECT d.*, u.realname, u.bank, u.account FROM deposits d LEFT JOIN users u ON d.user_name = u.name WHERE d.status = '대기'`, [], (err, deps) => {
-        db.all(`SELECT w.*, u.realname, u.bank, u.account FROM withdrawals w LEFT JOIN users u ON w.name = u.name WHERE w.status = '대기'`, [], (err2, wds) => { res.json({ deposits: deps || [], withdrawals: wds || [] }); });
-    });
-});
-
+// ⛔ [폐지] 충전/입금 — 잔액 폐지로 종료.
+app.post('/api/deposit/request', (req, res) => res.status(410).json({ error: '충전/잔액 기능은 종료되었습니다. 카드로 결제해 주세요.' }));
+// ⛔ [폐지] 출금 신청 — 잔액 폐지로 종료. 판매 대금은 등록계좌로 자동 지급됩니다.
+app.post('/api/withdraw/request', (req, res) => res.status(410).json({ error: '출금 신청 기능은 종료되었습니다. 판매 대금은 등록계좌로 자동 지급됩니다.' }));
+// ⛔ [폐지] 입출금 승인 목록 — 항상 빈 목록.
+app.get('/api/admin/actions', (req, res) => { if (!requireAdmin(req, res)) return; res.json({ deposits: [], withdrawals: [] }); });
+// ⛔ [폐지] 입출금 승인 — 잔액/입출금 종료로 비활성.
 app.post('/api/admin/approve', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    return res.status(410).json({ error: '입출금 승인 기능은 종료되었습니다.' });
+    // eslint-disable-next-line no-unreachable
     const { type, id, userName } = req.body; const amount = Number(req.body.amount) || 0;
-    if(!requireAdmin(req,res)) return;
     if(type === 'deposit_direct') {
         db.serialize(() => { db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, userName]); db.run(`UPDATE deposits SET status = '승인_증액' WHERE id = ?`, [id], () => res.json({ success: true })); });
     } else if (type === 'withdraw') { db.run(`UPDATE withdrawals SET status = '승인출금완료' WHERE id = ?`, [id], () => res.json({ success: true })); }
@@ -3629,10 +3619,27 @@ app.post('/api/order/approve', (req, res) => {
 });
 
 // 💳 구매자 결제 — 기공소가 금액확정·승인(awaiting_payment)한 주문을 구매자가 결제 → 에스크로 보관(→approved).
+// 🔐 [카드결제 검증] KICC 결제창 승인(pg_payments)을 1회성으로 소비(consume). moid 없으면 mock(검증 생략). cb(err, pg|null)
+function _consumePgPayment(moid, buyer, amount, cb) {
+    moid = String(moid || '').trim();
+    if (!moid) return cb(null, null);   // mock 모드(검증 없음)
+    db.get(`SELECT * FROM pg_payments WHERE moid=?`, [moid], (e, p) => {
+        if (e) return cb(e);
+        if (!p) return cb(new Error('결제 정보를 찾을 수 없습니다.'));
+        if (p.buyer !== buyer) return cb(new Error('결제자 정보가 일치하지 않습니다.'));
+        if (p.status !== 'approved') return cb(new Error('승인되지 않았거나 이미 사용된 결제입니다.'));
+        if (amount && Number(p.amount) !== Number(amount)) return cb(new Error('결제 금액이 주문 금액과 일치하지 않습니다.'));
+        db.run(`UPDATE pg_payments SET status='captured', updated_at=? WHERE moid=? AND status='approved'`, [new Date().toISOString(), moid], function (ue) {
+            if (ue) return cb(ue);
+            if (this.changes === 0) return cb(new Error('이미 사용된 결제입니다.'));
+            cb(null, p);
+        });
+    });
+}
+// 💳 주문 결제(카드 전용 — 잔액 폐지). KICC면 pgMoid 검증, mock이면 그대로 승인. 카드자금 → Admin 보관(에스크로).
 app.post('/api/order/pay', (req, res) => {
     const buyer = requireUser(req, res); if (!buyer) return;   // ★신원=토큰
     const { orderId } = req.body;
-    const payMethod = (req.body.payMethod === 'card') ? 'card' : 'balance';
     db.get(`SELECT * FROM product_orders WHERE id = ?`, [orderId], (err, ord) => {
         if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if (ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 결제할 수 있습니다.' });
@@ -3640,40 +3647,30 @@ app.post('/api/order/pay', (req, res) => {
         if (ord.status !== 'awaiting_payment') return res.status(400).json({ error: '결제할 수 있는 상태가 아닙니다.' });
         const amount = ord.amount || 0;
         if (!(amount > 0)) return res.status(400).json({ error: '확정 금액이 없습니다.' });
-        const admin = _adminAccount();
-        const isCard = payMethod === 'card';
-        db.get(`SELECT name FROM products WHERE id = ?`, [ord.productId], (e3, pRow) => {
-            const pName = (pRow && pRow.name) || ord.productId;
-            const date = new Date().toLocaleString('ko-KR');
-            db.serialize(() => {
-                db.run('BEGIN IMMEDIATE');
-                db.run(`UPDATE product_orders SET status='approved', pay_method=? WHERE id=? AND status='awaiting_payment'`, [payMethod, orderId], function(fe){
-                    if (fe) { db.run('ROLLBACK'); return res.status(500).json({ error: fe.message }); }
-                    if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '이미 처리된 주문입니다.' }); }
-                    const makeKind = /^\[리메이크\]/.test(ord.memo || '') ? '리메이크' : (/^\[리페어\]/.test(ord.memo || '') ? '리페어' : '신규제작');
-                    const _afterHold = () => {
-                        db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, pay_method, pg_approval, make_kind) VALUES (?, ?, ?, ?, ?, 'original', ?, ?, ?, ?, ?)`,
-                            [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date, payMethod, ord.pg_approval || null, makeKind],
-                            function(ie){
+        _consumePgPayment(req.body.pgMoid, buyer, amount, (pe, pg) => {
+            if (pe) return res.status(400).json({ error: '카드 결제 검증 실패: ' + pe.message });
+            const admin = _adminAccount();
+            const pgApproval = pg ? (pg.approvalNo || null) : ('PGMOCK-' + Date.now());
+            const pgTid = pg ? (pg.tid || null) : null;
+            db.get(`SELECT name FROM products WHERE id = ?`, [ord.productId], (e3, pRow) => {
+                const pName = (pRow && pRow.name) || ord.productId;
+                const date = new Date().toLocaleString('ko-KR');
+                db.serialize(() => {
+                    db.run('BEGIN IMMEDIATE');
+                    db.run(`UPDATE product_orders SET status='approved', pay_method='card', pg_approval=?, pg_tid=? WHERE id=? AND status='awaiting_payment'`, [pgApproval, pgTid, orderId], function (fe) {
+                        if (fe) { db.run('ROLLBACK'); return res.status(500).json({ error: fe.message }); }
+                        if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '이미 처리된 주문입니다.' }); }
+                        const makeKind = /^\[리메이크\]/.test(ord.memo || '') ? '리메이크' : (/^\[리페어\]/.test(ord.memo || '') ? '리페어' : '신규제작');
+                        db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, pay_method, pg_approval, pg_tid, make_kind) VALUES (?, ?, ?, ?, ?, 'original', ?, ?, 'card', ?, ?, ?)`,
+                            [ord.buyer, ord.seller, ord.productId, pName, amount, new Date().toISOString(), date, pgApproval, pgTid, makeKind],
+                            function (ie) {
                                 if (ie) { db.run('ROLLBACK'); return res.status(500).json({ error: ie.message }); }
                                 const txId = this.lastID;
                                 db.run(`UPDATE product_orders SET txId=?, escrow_held=? WHERE id=?`, [txId, amount, orderId]);
-                                db.run('COMMIT', () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', `💳 [결제 완료] 결제(${amount.toLocaleString()}원)가 완료되었습니다. 판매자가 상품을 준비합니다.`); _autoFavIfLab(ord.buyer, ord.productId); res.json({ success: true, txId, amount, escrow: true, payMethod }); });
+                                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, admin]);   // 카드자금 → Admin 에스크로 보관
+                                db.run('COMMIT', () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'approved', `💳 [결제 완료] 결제(${amount.toLocaleString()}원)가 완료되었습니다. 판매자가 상품을 준비합니다.`); _autoFavIfLab(ord.buyer, ord.productId); res.json({ success: true, txId, amount, escrow: true, payMethod: 'card' }); });
                             });
-                    };
-                    if (isCard) {
-                        db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, admin], function(ue){
-                            if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
-                            _afterHold();
-                        });
-                    } else {
-                        db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [amount, ord.buyer, amount], function(ue){
-                            if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
-                            if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '잔액이 부족합니다. 충전 후 결제하세요.' }); }
-                            db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, admin]);
-                            _afterHold();
-                        });
-                    }
+                    });
                 });
             });
         });
@@ -4334,7 +4331,7 @@ app.post('/api/buy', (req, res) => {
     const buyer = requireUser(req, res); if (!buyer) return;   // ★신원=토큰
     let amount = Number(req.body.amount) || 0; const pType = req.body.purchaseType; const rawDate = new Date().toISOString();
     const seller = req.body.seller;
-    const payMethod = req.body.payMethod === 'card' ? 'card' : 'balance';   // 💳 결제수단(구매자 선택)
+    const payMethod = 'card';   // 💳 카드 전용(잔액 폐지)
     if (!seller) return res.status(400).json({ error: '판매자 정보가 없습니다.' });
     // 🔒 금액 서버검증: 일반 상품은 서버 상품가로 강제(클라이언트 1원 결제 방지). rx 의뢰서는 재견적 금액 유지. 미등록 productId면 전송값 사용.
     db.get(`SELECT rx_form, price_original, price_stream FROM products WHERE id = ?`, [req.body.productId], (pe, prod) => {
@@ -4353,29 +4350,18 @@ app.post('/api/buy', (req, res) => {
                 [buyer, seller, req.body.productId, req.body.productName, amount, pType, rawDate, dateStr, payMethod, pgApproval || null],
                 () => res.json({ success: true, payMethod, approvalNo: pgApproval || null }));
         };
-        if (payMethod === 'card') {
-            // 💳 카드결제: 외부 카드 자금 → 판매자 입금(구매자 지갑 미차감). PG 승인 실패 시 400.
-            const auth = _pgAuthorize({ payer: buyer, amount, method: 'card', cardPw: req.body.cardPw });
-            if (!auth.ok) return res.status(400).json({ error: '카드 승인 실패: ' + (auth.error || '') });
+        // 💳 카드 전용(잔액 폐지). KICC면 pgMoid 검증, mock이면 그대로 승인. 외부 카드 자금 → 판매자 입금(구매자 미차감).
+        _consumePgPayment(req.body.pgMoid, buyer, amount, (pe, pg) => {
+            if (pe) return res.status(400).json({ error: '카드 결제 검증 실패: ' + pe.message });
+            const pgApproval = pg ? (pg.approvalNo || null) : ('PGMOCK-' + Date.now());
             db.serialize(() => {
                 db.run('BEGIN IMMEDIATE');
-                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller], function(ue) {
+                db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller], function (ue) {
                     if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
-                    db.run('COMMIT', () => _insertTx(auth.approvalNo));
+                    db.run('COMMIT', () => _insertTx(pgApproval));
                 });
             });
-        } else {
-            // 잔액결제: 원자적 조건부 차감(BEGIN IMMEDIATE + balance>=? + this.changes)
-            db.serialize(() => {
-                db.run('BEGIN IMMEDIATE');
-                db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [amount, buyer, amount], function(ue) {
-                    if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
-                    if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: '잔액 부족' }); }
-                    db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [amount, seller]);
-                    db.run('COMMIT', () => _insertTx(null));
-                });
-            });
-        }
+        });
     });
     });
 });
@@ -4385,7 +4371,7 @@ app.post('/api/buy/cart', (req, res) => {
     const buyer = requireUser(req, res); if (!buyer) return;   // ★신원=토큰
     const { items } = req.body; // items: [{productId, productName, seller, amount, purchaseType}]
     if(!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "장바구니가 비어있습니다." });
-    const payMethod = req.body.payMethod === 'card' ? 'card' : 'balance';   // 💳 결제수단
+    const payMethod = 'card';   // 💳 카드 전용(잔액 폐지)
     // 판매자 정보 필수
     for (const it of items) {
         if (!it.seller) return res.status(400).json({ error: '판매자 정보가 없는 상품이 있습니다.' });
@@ -4407,36 +4393,23 @@ app.post('/api/buy/cart', (req, res) => {
         const found = new Set((srows || []).map(r => r.name));
         if (sellers.some(s => !found.has(s))) return res.status(404).json({ error: '존재하지 않는 판매자가 포함되어 있습니다.' });
         const now = new Date(); const dateStr = now.toLocaleString('ko-KR');
-        let pgApproval = null;
-        if (payMethod === 'card') {
-            const auth = _pgAuthorize({ payer: buyer, amount: total, method: 'card', cardPw: req.body.cardPw });
-            if (!auth.ok) return res.status(400).json({ error: '카드 승인 실패: ' + (auth.error || '') });
-            pgApproval = auth.approvalNo;
-        }
-        // 거래내역은 상품별로 개별 기록 (환불 단위 = 1개 상품). rawDate에 마이크로초 오프셋으로 정렬 안정화.
-        const _recordTxs = () => {
-            items.forEach((it, idx) => {
-                const itemRaw = new Date(now.getTime() + idx).toISOString();
-                db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, pay_method, pg_approval) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [buyer, it.seller, it.productId, it.productName, Number(it.amount) || 0, it.purchaseType || 'original', itemRaw, dateStr, payMethod, pgApproval],
-                    function(e) { if(idx === items.length - 1) res.json({ success: true, count: items.length, total, payMethod, approvalNo: pgApproval }); });
-            });
-        };
-        db.serialize(() => {
-            db.run('BEGIN IMMEDIATE');
-            if (payMethod === 'card') {
-                // 💳 외부 카드결제: 구매자 지갑 미차감, 판매자별 입금
+        // 💳 카드 전용(잔액 폐지). KICC면 pgMoid(총액) 검증, mock이면 그대로 승인.
+        _consumePgPayment(req.body.pgMoid, buyer, total, (pe, pg) => {
+            if (pe) return res.status(400).json({ error: '카드 결제 검증 실패: ' + pe.message });
+            const pgApproval = pg ? (pg.approvalNo || null) : ('PGMOCK-' + Date.now());
+            const _recordTxs = () => {
+                items.forEach((it, idx) => {
+                    const itemRaw = new Date(now.getTime() + idx).toISOString();
+                    db.run(`INSERT INTO transactions (buyer, seller, productId, productName, amount, purchaseType, rawDate, date, pay_method, pg_approval) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'card', ?)`,
+                        [buyer, it.seller, it.productId, it.productName, Number(it.amount) || 0, it.purchaseType || 'original', itemRaw, dateStr, pgApproval],
+                        function (e) { if (idx === items.length - 1) res.json({ success: true, count: items.length, total, payMethod: 'card', approvalNo: pgApproval }); });
+                });
+            };
+            db.serialize(() => {
+                db.run('BEGIN IMMEDIATE');
                 for (const s of sellers) db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [sellerSums[s], s]);
                 db.run('COMMIT', () => _recordTxs());
-            } else {
-                // 잔액결제: 원자적 조건부 차감
-                db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [total, buyer, total], function(ue) {
-                    if (ue) { db.run('ROLLBACK'); return res.status(500).json({ error: ue.message }); }
-                    if (this.changes === 0) { db.run('ROLLBACK'); return res.status(400).json({ error: `잔액 부족 (필요: ${total.toLocaleString()}원)` }); }
-                    for (const s of sellers) db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [sellerSums[s], s]);
-                    db.run('COMMIT', () => _recordTxs());
-                });
-            }
+            });
         });
         });
     };
