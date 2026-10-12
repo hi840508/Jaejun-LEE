@@ -962,6 +962,8 @@ function initTables() {
         db.run(`ALTER TABLE users ADD COLUMN card_pw TEXT`, () => {});   // (선택) 회원가입 시 카드 비밀번호 4자리 — 실 PG 대비 저장만, 현재 미검증
         db.run(`ALTER TABLE users ADD COLUMN postal_code TEXT`, () => {});    // 🏷 우편번호
         db.run(`ALTER TABLE users ADD COLUMN office_phone TEXT`, () => {});   // ☎ 사무실 전화번호(phone=핸드폰)
+        db.run(`ALTER TABLE users ADD COLUMN pay_pin_hash TEXT`, () => {});   // 💳 간편결제 비밀번호(6자리) — pbkdf2 해시(salt$hash)로만 저장
+        db.run(`ALTER TABLE users ADD COLUMN pay_pin_fail INTEGER DEFAULT 0`, () => {});   // 결제PIN 연속 실패 횟수(5회 잠금)
         // 💳 [KICC PG 대비] 실 PG(KICC 이지페이 등) 취소·환불 시 필요한 거래 고유번호(TID) 저장. pg_approval=승인번호와 별개.
         db.run(`ALTER TABLE transactions ADD COLUMN pg_tid TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN pg_tid TEXT`, () => {});
@@ -1672,6 +1674,55 @@ app.post('/api/pg/billing/delete', (req, res) => {
         if (e || !bk) return res.status(404).json({ error: '빌링키를 찾을 수 없습니다.' });
         if (bk.owner !== me && !isAdminName(me)) return res.status(403).json({ error: '본인 빌링키만 삭제할 수 있습니다.' });
         db.run(`UPDATE billing_keys SET status='deleted', updated_at=? WHERE id=?`, [new Date().toISOString(), billingId], () => res.json({ ok: true }));
+    });
+});
+// 💳 ===== [간편결제] 결제 비밀번호(PIN) + 저장카드 원탭 결제(배민·쿠팡식) =====
+// 🔐 PIN은 평문 저장 금지 — pbkdf2(10만회) 해시(salt$hash)로만. 5회 오류 시 잠금.
+function _makePinHash(pin) { const salt = crypto.randomBytes(8).toString('hex'); const h = crypto.pbkdf2Sync(String(pin), salt, 100000, 32, 'sha256').toString('hex'); return salt + '$' + h; }
+function _verifyPin(pin, stored) { try { const i = String(stored || '').indexOf('$'); if (i < 0) return false; const salt = stored.slice(0, i), h = stored.slice(i + 1); const c = crypto.pbkdf2Sync(String(pin), salt, 100000, 32, 'sha256').toString('hex'); const a = Buffer.from(c, 'hex'), b = Buffer.from(h, 'hex'); return a.length === b.length && crypto.timingSafeEqual(a, b); } catch (_) { return false; } }
+// 결제 비밀번호 상태
+app.get('/api/pay/pin/status', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    db.get(`SELECT pay_pin_hash, pay_pin_fail FROM users WHERE name=?`, [me], (e, u) => res.json({ hasPin: !!(u && u.pay_pin_hash), locked: !!(u && (u.pay_pin_fail || 0) >= 5) }));
+});
+// 결제 비밀번호 설정/변경(기존 있으면 현재 비번 확인)
+app.post('/api/pay/pin/set', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const pin = String(req.body.pin || ''); const cur = String(req.body.currentPin || '');
+    if (!/^\d{6}$/.test(pin)) return res.status(400).json({ error: '결제 비밀번호는 숫자 6자리입니다.' });
+    db.get(`SELECT pay_pin_hash FROM users WHERE name=?`, [me], (e, u) => {
+        if (e || !u) return res.status(500).json({ error: '사용자 조회 실패' });
+        if (u.pay_pin_hash && !_verifyPin(cur, u.pay_pin_hash)) return res.status(401).json({ error: '기존 결제 비밀번호가 올바르지 않습니다.' });
+        db.run(`UPDATE users SET pay_pin_hash=?, pay_pin_fail=0 WHERE name=?`, [_makePinHash(pin), me], () => res.json({ ok: true }));
+    });
+});
+// 간편결제: 저장카드 + 결제PIN으로 주문 결제(원탭). 금액은 서버가 주문에서 강제, PIN 5회 잠금.
+app.post('/api/pg/quickpay', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const orderId = Number(req.body.orderId) || 0; const billingId = Number(req.body.billingId) || 0; const pin = String(req.body.pin || '');
+    if (!orderId || !billingId) return res.status(400).json({ error: '주문/카드 정보가 없습니다.' });
+    db.get(`SELECT pay_pin_hash, pay_pin_fail FROM users WHERE name=?`, [me], (ue, u) => {
+        if (ue || !u) return res.status(500).json({ error: '사용자 조회 실패' });
+        if (!u.pay_pin_hash) return res.status(400).json({ error: '결제 비밀번호가 설정되지 않았습니다.', needPin: true });
+        if ((u.pay_pin_fail || 0) >= 5) return res.status(423).json({ error: '결제 비밀번호 5회 오류로 잠겼습니다. 비밀번호를 재설정해 주세요.', locked: true });
+        if (!_verifyPin(pin, u.pay_pin_hash)) {
+            db.run(`UPDATE users SET pay_pin_fail=COALESCE(pay_pin_fail,0)+1 WHERE name=?`, [me]);
+            return res.status(401).json({ error: '결제 비밀번호가 올바르지 않습니다.', remain: Math.max(0, 4 - (u.pay_pin_fail || 0)) });
+        }
+        db.run(`UPDATE users SET pay_pin_fail=0 WHERE name=?`, [me]);
+        db.get(`SELECT o.*, p.name AS pName FROM product_orders o LEFT JOIN products p ON p.id=o.productId WHERE o.id=?`, [orderId], (oe, ord) => {
+            if (oe || !ord) return res.status(404).json({ error: '주문을 찾을 수 없습니다.' });
+            if (ord.buyer !== me) return res.status(403).json({ error: '본인 주문만 결제할 수 있습니다.' });
+            if (ord.status === 'approved') return res.json({ ok: true, already: true });
+            if (!['awaiting_payment', 'pending'].includes(ord.status)) return res.status(409).json({ error: '결제 가능 상태가 아닙니다.' });
+            db.get(`SELECT id FROM billing_keys WHERE id=? AND owner=? AND status='active'`, [billingId, me], (be, bk) => {
+                if (be || !bk) return res.status(404).json({ error: '유효한 결제 카드가 없습니다.' });
+                _billingCharge({ billingId, amount: ord.amount, orderId, goodsName: ord.pName || '주문결제', seller: ord.seller }, (ce, out) => {
+                    if (ce) return res.status(502).json({ error: ce.message });
+                    res.json({ ok: true, amount: (out && out.amount) || ord.amount, approvalNo: out && out.approvalNo, tid: out && out.tid });
+                });
+            });
+        });
     });
 });
 // 🧪 [시뮬레이터 결제창] kicc_mode=sim 에서 _pgKiccRegister가 가리키는 가짜 KICC 결제창. 승인/취소 버튼으로 실제 KICC UI를 대체.
