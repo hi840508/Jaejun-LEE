@@ -1284,9 +1284,9 @@ async function _pgKiccRegister({ shopOrderNo, amount, returnUrl, goodsName, devi
 }
 // 🏦 ② 승인요청(approval) — returnUrl에서 받은 authorizationId로 매입 확정(멱등: shopTransactionId).
 async function _pgKiccApprove({ shopTransactionId, authorizationId, shopOrderNo }) {
-    if (_kiccIsSim()) {   // 🧪 시뮬레이터: authorizationId='SIM-<moid>-<amount>' 에서 금액 복원해 가짜 승인
-        const parts = String(authorizationId || '').split('-'); const amt = Number(parts[parts.length - 1]) || 0;
-        return { ok: true, pgCno: 'SIMTID' + Date.now(), amount: amt, approvalNo: 'SIM' + Math.floor(Math.random() * 1e6), payMethodTypeCode: '00', cardNo: '1234-****-****-5678', issuerName: '신한카드', raw: { sim: true } };
+    if (_kiccIsSim()) {   // 🧪 시뮬레이터: authorizationId='SIM~<moid>~<amount>~<last4>' 에서 금액·카드끝4자리 복원
+        const parts = String(authorizationId || '').split('~'); const amt = Number(parts[2]) || 0; const last4 = /^\d{4}$/.test(parts[3] || '') ? parts[3] : '0000';
+        return { ok: true, pgCno: 'SIMTID' + Date.now(), amount: amt, approvalNo: 'SIM' + Math.floor(Math.random() * 1e6), payMethodTypeCode: '00', cardNo: '**** **** **** ' + last4, issuerName: '신한카드', raw: { sim: true } };
     }
     if (!KICC_MID) return { ok: false, error: 'KICC 미설정.' };
     const body = { mallId: KICC_MID, shopTransactionId, authorizationId, shopOrderNo, approvalReqDate: _yyyymmdd() };
@@ -1309,7 +1309,7 @@ async function _pgKiccApprove({ shopTransactionId, authorizationId, shopOrderNo 
 }
 // 🔁 [정기결제] 빌키 발급 — payMethodTypeCode=81 인증 후 authorizationId로 빌키 발급. 응답 빌키 = paymentInfo.cardInfo.cardNo.
 async function _pgKiccIssueBillKey({ shopTransactionId, authorizationId, shopOrderNo }) {
-    if (_kiccIsSim()) return { ok: true, billKey: 'SIMBILL' + Date.now(), issuerName: '신한카드', issuerCode: 'SH', cardMaskNo: '1234-****-****-5678', payMethodTypeCode: '81', raw: { sim: true } };
+    if (_kiccIsSim()) { const _p = String(authorizationId || '').split('~'); const _l4 = /^\d{4}$/.test(_p[3] || '') ? _p[3] : '0000'; return { ok: true, billKey: 'SIMBILL' + Date.now(), issuerName: '신한카드', issuerCode: 'SH', cardMaskNo: '**** **** **** ' + _l4, payMethodTypeCode: '81', raw: { sim: true } }; }
     if (!KICC_MID) return { ok: false, error: 'KICC 미설정.' };
     const body = { mallId: KICC_MID, shopTransactionId, authorizationId, shopOrderNo, approvalReqDate: _yyyymmdd() };   // 요청 해시 불요
     const r = await _kiccPost('/api/ep9/trades/approval', body);
@@ -1828,8 +1828,6 @@ app.get('/api/pg/kicc/sim', (req, res) => {
     const moid = String(req.query.moid || ''); const amount = Number(req.query.amount) || 0; const g = String(req.query.g || '결제');
     const pm = String(req.query.pm || '00'); const isBilling = (pm === '81');   // 81 = 정기결제 카드등록(빌링키)
     const ret = PG_PUBLIC_BASE + '/api/pg/kicc/return';
-    const authId = 'SIM-' + moid + '-' + amount;
-    const okUrl = ret + '?resCd=0000&authorizationId=' + encodeURIComponent(authId) + '&shopOrderNo=' + encodeURIComponent(moid);
     const noUrl = ret + '?resCd=USER_CANCEL&resMsg=' + encodeURIComponent('사용자 취소') + '&shopOrderNo=' + encodeURIComponent(moid);
     const esc = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
     const title = isBilling ? '정기결제 카드 등록' : '카드 결제';
@@ -1857,12 +1855,12 @@ app.get('/api/pg/kicc/sim', (req, res) => {
         + '<button id="no" style="width:100%;padding:11px;border:0;border-radius:10px;background:transparent;color:#64748b;font-weight:700;cursor:pointer;margin-top:6px;">취소</button>'
         + '</div></div>'
         + '<script>'
-        + 'var OK=' + JSON.stringify(okUrl) + ',NO=' + JSON.stringify(noUrl) + ';'
+        + 'var RET=' + JSON.stringify(ret) + ',MOID=' + JSON.stringify(moid) + ',AMT=' + JSON.stringify(String(amount)) + ',NO=' + JSON.stringify(noUrl) + ';'
         + 'var cn=document.getElementById("cn"),ex=document.getElementById("ex"),pw=document.getElementById("pw"),err=document.getElementById("err");'
         + 'cn.addEventListener("input",function(){var v=cn.value.replace(/\\D/g,"").slice(0,16);cn.value=(v.match(/.{1,4}/g)||[]).join(" ");});'
         + 'ex.addEventListener("input",function(){var v=ex.value.replace(/\\D/g,"").slice(0,4);ex.value=v.length>2?(v.slice(0,2)+"/"+v.slice(2)):v;});'
         + 'pw.addEventListener("input",function(){pw.value=pw.value.replace(/\\D/g,"").slice(0,2);});'
-        + 'document.getElementById("ok").onclick=function(){var d=cn.value.replace(/\\D/g,"");if(d.length<12){err.textContent="카드번호를 입력하세요(아무 숫자 12자리 이상).";err.style.display="block";cn.focus();return;}if(ex.value.replace(/\\D/g,"").length<4){err.textContent="유효기간(MM/YY)을 입력하세요.";err.style.display="block";ex.focus();return;}if(pw.value.length<2){err.textContent="비밀번호 앞 2자리를 입력하세요.";err.style.display="block";pw.focus();return;}location.href=OK;};'
+        + 'document.getElementById("ok").onclick=function(){var d=cn.value.replace(/\\D/g,"");if(d.length<12){err.textContent="카드번호를 입력하세요(아무 숫자 12자리 이상).";err.style.display="block";cn.focus();return;}if(ex.value.replace(/\\D/g,"").length<4){err.textContent="유효기간(MM/YY)을 입력하세요.";err.style.display="block";ex.focus();return;}if(pw.value.length<2){err.textContent="비밀번호 앞 2자리를 입력하세요.";err.style.display="block";pw.focus();return;}var last4=d.slice(-4);var authId="SIM~"+MOID+"~"+AMT+"~"+last4;location.href=RET+"?resCd=0000&authorizationId="+encodeURIComponent(authId)+"&shopOrderNo="+encodeURIComponent(MOID);};'
         + 'document.getElementById("no").onclick=function(){location.href=NO;};'
         + '</script></body></html>');
 });
