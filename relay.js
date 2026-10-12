@@ -1677,22 +1677,45 @@ app.post('/api/pg/billing/delete', (req, res) => {
 // 🧪 [시뮬레이터 결제창] kicc_mode=sim 에서 _pgKiccRegister가 가리키는 가짜 KICC 결제창. 승인/취소 버튼으로 실제 KICC UI를 대체.
 app.get('/api/pg/kicc/sim', (req, res) => {
     const moid = String(req.query.moid || ''); const amount = Number(req.query.amount) || 0; const g = String(req.query.g || '결제');
+    const pm = String(req.query.pm || '00'); const isBilling = (pm === '81');   // 81 = 정기결제 카드등록(빌링키)
     const ret = PG_PUBLIC_BASE + '/api/pg/kicc/return';
     const authId = 'SIM-' + moid + '-' + amount;
     const okUrl = ret + '?resCd=0000&authorizationId=' + encodeURIComponent(authId) + '&shopOrderNo=' + encodeURIComponent(moid);
     const noUrl = ret + '?resCd=USER_CANCEL&resMsg=' + encodeURIComponent('사용자 취소') + '&shopOrderNo=' + encodeURIComponent(moid);
     const esc = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+    const title = isBilling ? '정기결제 카드 등록' : '카드 결제';
+    const okLabel = isBilling ? '이 카드 등록하기' : (amount.toLocaleString() + '원 결제하기');
     res.set('Content-Type', 'text/html; charset=utf-8').send(
-        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-        + '<body style="font-family:system-ui,sans-serif;margin:0;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;">'
-        + '<div style="background:#fff;border-radius:16px;padding:26px;width:320px;max-width:92vw;box-shadow:0 12px 40px rgba(0,0,0,.18);">'
-        + '<div style="font-size:13px;color:#ef4444;font-weight:700;letter-spacing:1px;margin-bottom:6px;">● KICC 결제 시뮬레이터 (TEST)</div>'
-        + '<div style="font-size:17px;font-weight:800;margin-bottom:2px;">' + esc(g) + '</div>'
-        + '<div style="font-size:26px;font-weight:800;margin:10px 0 18px;">' + amount.toLocaleString() + '<span style="font-size:15px;font-weight:600;">원</span></div>'
-        + '<div style="font-size:12px;color:#64748b;margin-bottom:16px;">실제 KICC 결제창을 대체하는 테스트 화면입니다. 아래 버튼으로 승인/취소를 시뮬레이션합니다.</div>'
-        + '<a href="' + esc(okUrl) + '" style="display:block;text-align:center;padding:13px;border-radius:10px;background:#6366f1;color:#fff;font-weight:800;text-decoration:none;margin-bottom:10px;">결제 승인(성공)</a>'
-        + '<a href="' + esc(noUrl) + '" style="display:block;text-align:center;padding:11px;border-radius:10px;background:#f1f5f9;color:#64748b;font-weight:700;text-decoration:none;">결제 취소</a>'
-        + '</div></body>');
+        '<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        + '<body style="font-family:system-ui,sans-serif;margin:0;background:#f1f5f9;min-height:100vh;">'
+        + '<div style="max-width:380px;margin:0 auto;padding:18px 16px 40px;">'
+        + '<div style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:700;margin-bottom:14px;">🧪 시뮬레이터(TEST) — 실제 카드 청구 없음. 아무 숫자나 입력해도 됩니다.</div>'
+        + '<div style="background:#fff;border-radius:16px;padding:22px;box-shadow:0 12px 40px rgba(0,0,0,.1);">'
+        + '<div style="font-size:12px;color:#2563eb;font-weight:800;letter-spacing:1px;margin-bottom:4px;">KICC 결제창</div>'
+        + '<div style="font-size:18px;font-weight:900;margin-bottom:2px;">' + title + '</div>'
+        + '<div style="font-size:13px;color:#64748b;margin-bottom:' + (isBilling ? '4px' : '2px') + ';">' + esc(g) + '</div>'
+        + (isBilling
+            ? '<div style="font-size:13px;color:#475569;margin:6px 0 16px;">이 카드를 등록하면 다음부터 자동으로 결제됩니다.</div>'
+            : '<div style="font-size:28px;font-weight:900;margin:8px 0 16px;">' + amount.toLocaleString() + '<span style="font-size:15px;font-weight:700;">원</span></div>')
+        + '<label style="font-size:12px;font-weight:700;color:#475569;">카드번호</label>'
+        + '<input id="cn" inputmode="numeric" placeholder="0000 0000 0000 0000" style="width:100%;padding:12px;font-size:16px;border:1px solid #e2e8f0;border-radius:10px;margin:5px 0 12px;box-sizing:border-box;letter-spacing:1px;">'
+        + '<div style="display:flex;gap:10px;">'
+        + '<div style="flex:1;"><label style="font-size:12px;font-weight:700;color:#475569;">유효기간(MM/YY)</label><input id="ex" inputmode="numeric" placeholder="MM/YY" style="width:100%;padding:12px;font-size:16px;border:1px solid #e2e8f0;border-radius:10px;margin-top:5px;box-sizing:border-box;"></div>'
+        + '<div style="flex:1;"><label style="font-size:12px;font-weight:700;color:#475569;">비밀번호 앞2자리</label><input id="pw" type="password" inputmode="numeric" maxlength="2" placeholder="••" style="width:100%;padding:12px;font-size:16px;border:1px solid #e2e8f0;border-radius:10px;margin-top:5px;box-sizing:border-box;"></div>'
+        + '</div>'
+        + '<div id="err" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>'
+        + '<button id="ok" style="width:100%;padding:14px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:800;font-size:15px;cursor:pointer;margin-top:16px;">' + okLabel + '</button>'
+        + '<button id="no" style="width:100%;padding:11px;border:0;border-radius:10px;background:transparent;color:#64748b;font-weight:700;cursor:pointer;margin-top:6px;">취소</button>'
+        + '</div></div>'
+        + '<script>'
+        + 'var OK=' + JSON.stringify(okUrl) + ',NO=' + JSON.stringify(noUrl) + ';'
+        + 'var cn=document.getElementById("cn"),ex=document.getElementById("ex"),pw=document.getElementById("pw"),err=document.getElementById("err");'
+        + 'cn.addEventListener("input",function(){var v=cn.value.replace(/\\D/g,"").slice(0,16);cn.value=(v.match(/.{1,4}/g)||[]).join(" ");});'
+        + 'ex.addEventListener("input",function(){var v=ex.value.replace(/\\D/g,"").slice(0,4);ex.value=v.length>2?(v.slice(0,2)+"/"+v.slice(2)):v;});'
+        + 'pw.addEventListener("input",function(){pw.value=pw.value.replace(/\\D/g,"").slice(0,2);});'
+        + 'document.getElementById("ok").onclick=function(){var d=cn.value.replace(/\\D/g,"");if(d.length<12){err.textContent="카드번호를 입력하세요(아무 숫자 12자리 이상).";err.style.display="block";cn.focus();return;}if(ex.value.replace(/\\D/g,"").length<4){err.textContent="유효기간(MM/YY)을 입력하세요.";err.style.display="block";ex.focus();return;}if(pw.value.length<2){err.textContent="비밀번호 앞 2자리를 입력하세요.";err.style.display="block";pw.focus();return;}location.href=OK;};'
+        + 'document.getElementById("no").onclick=function(){location.href=NO;};'
+        + '</script></body></html>');
 });
 // ⚙️ [관리자] PG 설정 조회/전환 — DB 직접편집 없이 mock↔kicc, test/sim/live, mid/api_base 변경. 🔐 비밀키(KICC_LICENSE_KEY)는 env 전용이라 여기서 다루지 않음.
 app.get('/api/admin/pg/config', (req, res) => {
