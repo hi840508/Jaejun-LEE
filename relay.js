@@ -1020,6 +1020,8 @@ function initTables() {
             // 🏦 [펌뱅킹/오픈뱅킹] 실 계좌이체 공급자 — mock(기록만) | openbanking(금결원 오픈뱅킹) | firmbanking(은행 펌뱅킹). 기본 mock.
             //    ⚠ 인증키/시크릿(client_secret, 공동인증서, 이체비밀번호 등)은 settings 금지 — 반드시 환경변수로만 보관.
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('bank_provider', 'mock')`, () => {});
+            // 💳 [허용 카드사] 결제·카드등록 가능한 카드사(쉼표구분 키워드). 기본 '신한'만. 비우면 전체 허용. (관리자 옵션)
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('allowed_card_issuers', '신한')`, () => {});
             // ☁️ 클라우드 미러 백업 서비스 on/off — 기본 '0'(중지). 관리자 화면에서 켜고 끈다.
             //    중지 중에는 새 백업(켜기·업로드)만 막고, 이미 올라간 파일의 목록·복원은 계속 허용한다
             //    (회원이 이미 맡긴 데이터를 못 꺼내는 상태를 만들지 않기 위함).
@@ -1180,8 +1182,9 @@ let KICC_MID = '';
 let KICC_API_BASE_CFG = '';
 let AUTO_PAYOUT_ENABLED = false;   // 💸 정산 자동지급 ON/OFF (기본 OFF)
 let BANK_PROVIDER = 'mock';        // 🏦 mock | openbanking | firmbanking
+let ALLOWED_CARD_ISSUERS = '신한'; // 💳 허용 카드사(쉼표). 빈 문자열이면 전체 허용.
 function loadPgMode() {
-    db.all(`SELECT key,value FROM settings WHERE key IN ('pg_mode','pg_provider','kicc_mode','kicc_mid','kicc_api_base','auto_payout_enabled','bank_provider')`, [], (e, rows) => {
+    db.all(`SELECT key,value FROM settings WHERE key IN ('pg_mode','pg_provider','kicc_mode','kicc_mid','kicc_api_base','auto_payout_enabled','bank_provider','allowed_card_issuers')`, [], (e, rows) => {
         const m = {}; (rows || []).forEach(r => m[r.key] = r.value);
         if (m.pg_mode) PG_MODE = String(m.pg_mode).trim() || 'mock';
         if (m.pg_provider) PG_PROVIDER = String(m.pg_provider).trim() || 'mock';
@@ -1190,6 +1193,7 @@ function loadPgMode() {
         KICC_API_BASE_CFG = String(m.kicc_api_base || '').trim();
         AUTO_PAYOUT_ENABLED = String(m.auto_payout_enabled || '0').trim() === '1';
         if (m.bank_provider) BANK_PROVIDER = String(m.bank_provider).trim() || 'mock';
+        if (m.allowed_card_issuers !== undefined) ALLOWED_CARD_ISSUERS = String(m.allowed_card_issuers || '').trim();
     });
 }
 setTimeout(loadPgMode, 500);
@@ -1208,6 +1212,14 @@ function _yyyymmdd() { const d = new Date(Date.now() + 9 * 3600 * 1000); return 
 function _kiccSafe(s, max, fallback) { s = String(s == null ? '' : s).replace(/['"<>\\;|&\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim(); if (max && s.length > max) s = s.slice(0, max); return s || (fallback || ''); }
 // 🧪 시뮬레이터 모드 — KICC 자격증명 없이 전체 흐름(결제창→복귀→승인→주문확정)을 로컬에서 재현. kicc_mode='sim' 또는 kicc_mid가 'SIM'으로 시작.
 function _kiccIsSim() { return KICC_MODE === 'sim' || /^SIM/i.test(KICC_MID); }
+// 💳 허용 카드사 검증 — ALLOWED_CARD_ISSUERS 비면 전체 허용, 아니면 발급사명이 허용 키워드 중 하나를 포함해야 함.
+function _cardIssuerAllowed(issuerName) {
+    const allow = String(ALLOWED_CARD_ISSUERS || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!allow.length) return true;
+    const n = String(issuerName || '').toLowerCase();
+    return allow.some(k => n.indexOf(k.toLowerCase()) >= 0);
+}
+function _allowedIssuersLabel() { const a = String(ALLOWED_CARD_ISSUERS || '').split(',').map(s => s.trim()).filter(Boolean); return a.length ? a.join('·') + '카드' : ''; }
 
 // ── [PG 어댑터 seam] ─────────────────────────────────────────────────────────
 //  mock(현행 기본): 서버측 4자리 비번 즉시 승인(_pgAuthorize).
@@ -1274,7 +1286,7 @@ async function _pgKiccRegister({ shopOrderNo, amount, returnUrl, goodsName, devi
 async function _pgKiccApprove({ shopTransactionId, authorizationId, shopOrderNo }) {
     if (_kiccIsSim()) {   // 🧪 시뮬레이터: authorizationId='SIM-<moid>-<amount>' 에서 금액 복원해 가짜 승인
         const parts = String(authorizationId || '').split('-'); const amt = Number(parts[parts.length - 1]) || 0;
-        return { ok: true, pgCno: 'SIMTID' + Date.now(), amount: amt, approvalNo: 'SIM' + Math.floor(Math.random() * 1e6), payMethodTypeCode: '00', cardNo: '1234-****-****-5678', raw: { sim: true } };
+        return { ok: true, pgCno: 'SIMTID' + Date.now(), amount: amt, approvalNo: 'SIM' + Math.floor(Math.random() * 1e6), payMethodTypeCode: '00', cardNo: '1234-****-****-5678', issuerName: '신한카드', raw: { sim: true } };
     }
     if (!KICC_MID) return { ok: false, error: 'KICC 미설정.' };
     const body = { mallId: KICC_MID, shopTransactionId, authorizationId, shopOrderNo, approvalReqDate: _yyyymmdd() };
@@ -1293,11 +1305,11 @@ async function _pgKiccApprove({ shopTransactionId, authorizationId, shopOrderNo 
         } catch (_) {}
     }
     const approvalNo = ci.approvalNo || pi.approvalNo || '';   // 승인번호는 paymentInfo.cardInfo.approvalNo
-    return { ok: true, pgCno: r.data.pgCno, amount: Number(r.data.amount) || 0, approvalNo, payMethodTypeCode: pi.payMethodTypeCode || '', cardNo: ci.cardNo || '', statusCode: r.data.statusCode || '', transactionDate: r.data.transactionDate || '', raw: r.data };
+    return { ok: true, pgCno: r.data.pgCno, amount: Number(r.data.amount) || 0, approvalNo, payMethodTypeCode: pi.payMethodTypeCode || '', cardNo: ci.cardNo || '', issuerName: ci.issuerName || ci.issuerCode || '', statusCode: r.data.statusCode || '', transactionDate: r.data.transactionDate || '', raw: r.data };
 }
 // 🔁 [정기결제] 빌키 발급 — payMethodTypeCode=81 인증 후 authorizationId로 빌키 발급. 응답 빌키 = paymentInfo.cardInfo.cardNo.
 async function _pgKiccIssueBillKey({ shopTransactionId, authorizationId, shopOrderNo }) {
-    if (_kiccIsSim()) return { ok: true, billKey: 'SIMBILL' + Date.now(), issuerName: '시뮬카드', issuerCode: '00', cardMaskNo: '1234-****-****-5678', payMethodTypeCode: '81', raw: { sim: true } };
+    if (_kiccIsSim()) return { ok: true, billKey: 'SIMBILL' + Date.now(), issuerName: '신한카드', issuerCode: 'SH', cardMaskNo: '1234-****-****-5678', payMethodTypeCode: '81', raw: { sim: true } };
     if (!KICC_MID) return { ok: false, error: 'KICC 미설정.' };
     const body = { mallId: KICC_MID, shopTransactionId, authorizationId, shopOrderNo, approvalReqDate: _yyyymmdd() };   // 요청 해시 불요
     const r = await _kiccPost('/api/ep9/trades/approval', body);
@@ -1430,6 +1442,12 @@ app.post('/api/pg/approve', (req, res) => {
             try { await _pgKiccCancel({ shopTransactionId: moid + 'X', pgCno: out.pgCno, amount: out.amount, reason: '금액불일치 자동취소' }); } catch (_) {}
             db.run(`UPDATE pg_payments SET status='error', fail_reason='금액불일치', updated_at=? WHERE moid=?`, [new Date().toISOString(), moid]);
             return res.status(409).json({ error: '결제 금액이 일치하지 않아 취소되었습니다.' });
+        }
+        // 💳 허용 카드사 검증 — 미허용 카드면 즉시 취소하고 거부(신한 전용 등).
+        if (!_cardIssuerAllowed(out.issuerName)) {
+            try { await _pgKiccCancel({ shopTransactionId: moid + 'C', pgCno: out.pgCno, amount: out.amount, reason: '미허용 카드사 자동취소' }); } catch (_) {}
+            db.run(`UPDATE pg_payments SET status='error', fail_reason='미허용 카드사', updated_at=? WHERE moid=?`, [new Date().toISOString(), moid]);
+            return res.status(400).json({ error: '현재 ' + (_allowedIssuersLabel() || '지정 카드') + '만 결제할 수 있습니다. (' + (out.issuerName || '해당 카드') + ' 불가)' });
         }
         const now = new Date().toISOString();
         db.run(`UPDATE pg_payments SET status='approved', tid=?, approvalNo=?, pay_method=?, approved_at=?, updated_at=?, raw=? WHERE moid=?`,
@@ -1572,6 +1590,7 @@ app.post('/api/pg/billing/issue', (req, res) => {
         if (pay.buyer !== me) return res.status(403).json({ error: '본인 요청만 처리할 수 있습니다.' });
         const out = await _pgKiccIssueBillKey({ shopTransactionId: moid, authorizationId, shopOrderNo: moid });
         if (!out.ok) { db.run(`UPDATE pg_payments SET status='error', fail_reason=?, updated_at=? WHERE moid=?`, [String(out.error).slice(0, 200), new Date().toISOString(), moid]); return res.status(502).json({ error: out.error }); }
+        if (!_cardIssuerAllowed(out.issuerName)) { db.run(`UPDATE pg_payments SET status='error', fail_reason='미허용 카드사', updated_at=? WHERE moid=?`, [new Date().toISOString(), moid]); return res.status(400).json({ error: '현재 ' + (_allowedIssuersLabel() || '지정 카드') + '만 등록할 수 있습니다. (' + (out.issuerName || '해당 카드') + ' 불가)' }); }
         const now = new Date().toISOString();
         db.run(`INSERT INTO billing_keys (owner, billKey, issuerName, issuerCode, cardMaskNo, payMethodTypeCode, label, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?, 'active', ?, ?)`,
             [me, out.billKey, out.issuerName, out.issuerCode, out.cardMaskNo, out.payMethodTypeCode, (out.issuerName || '카드') + ' ' + (out.cardMaskNo || ''), now, now], function (ie) {
@@ -1850,21 +1869,21 @@ app.get('/api/pg/kicc/sim', (req, res) => {
 // ⚙️ [관리자] PG 설정 조회/전환 — DB 직접편집 없이 mock↔kicc, test/sim/live, mid/api_base 변경. 🔐 비밀키(KICC_LICENSE_KEY)는 env 전용이라 여기서 다루지 않음.
 app.get('/api/admin/pg/config', (req, res) => {
     if (!requireAdmin(req, res)) return;
-    res.json({ pg_provider: PG_PROVIDER, kicc_mode: KICC_MODE, kicc_mid: KICC_MID, kicc_api_base: KICC_API_BASE_CFG, api_base_effective: _kiccApiBase(), sim: _kiccIsSim(), has_license_key: !!_kiccLicenseKey() });
+    res.json({ pg_provider: PG_PROVIDER, kicc_mode: KICC_MODE, kicc_mid: KICC_MID, kicc_api_base: KICC_API_BASE_CFG, api_base_effective: _kiccApiBase(), sim: _kiccIsSim(), has_license_key: !!_kiccLicenseKey(), allowed_card_issuers: ALLOWED_CARD_ISSUERS });
 });
 app.post('/api/admin/pg/config', (req, res) => {
     if (!requireAdmin(req, res)) return;
-    const allow = ['pg_provider', 'kicc_mode', 'kicc_mid', 'kicc_api_base'];
+    const allow = ['pg_provider', 'kicc_mode', 'kicc_mid', 'kicc_api_base', 'allowed_card_issuers'];
     const entries = Object.entries(req.body || {}).filter(([k]) => allow.includes(k)).map(([k, v]) => [k, String(v == null ? '' : v).trim()]);
     if (!entries.length) return res.status(400).json({ error: '변경할 항목이 없습니다.' });
     let n = 0; entries.forEach(([k, v]) => db.run(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [k, v], () => {
-        if (++n === entries.length) { loadPgMode(); setTimeout(() => res.json({ ok: true, pg_provider: PG_PROVIDER, kicc_mode: KICC_MODE, kicc_mid: KICC_MID, kicc_api_base: KICC_API_BASE_CFG, sim: _kiccIsSim() }), 200); }
+        if (++n === entries.length) { loadPgMode(); setTimeout(() => res.json({ ok: true, pg_provider: PG_PROVIDER, kicc_mode: KICC_MODE, kicc_mid: KICC_MID, kicc_api_base: KICC_API_BASE_CFG, sim: _kiccIsSim(), allowed_card_issuers: ALLOWED_CARD_ISSUERS }), 200); }
     }));
 });
 // 🔎 [공개] 로그인 사용자용 결제 가용성 플래그 — 비밀값 없음. 정기결제/구독 UI 노출 판단용.
 app.get('/api/pg/public-config', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
-    res.json({ provider: PG_PROVIDER, billingEnabled: PG_PROVIDER === 'kicc', sim: _kiccIsSim() });
+    res.json({ provider: PG_PROVIDER, billingEnabled: PG_PROVIDER === 'kicc', sim: _kiccIsSim(), allowedIssuers: ALLOWED_CARD_ISSUERS, allowedLabel: _allowedIssuersLabel() });
 });
 // 💸 [관리자] 정산 자동지급 설정 — auto_payout_enabled(ON/OFF, 기본 OFF) + bank_provider(mock|openbanking|firmbanking).
 app.get('/api/admin/payout/config', (req, res) => {

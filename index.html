@@ -1711,13 +1711,19 @@
                             <h4 style="font-size:15px;font-weight:900;color:#166534;">💳 카드결제(PG) 설정</h4>
                             <div style="font-size:12px;color:#64748b;margin-top:3px;">결제 방식을 선택합니다. <b>시뮬레이터/KICC</b> 선택 시 내 지갑에 <b>정기결제·구독 UI</b>가 활성화됩니다.</div>
                         </div>
-                        <div class="input-group" style="width:230px; margin:0;">
-                            <label style="font-size:11px;">결제 방식</label>
-                            <select id="pg-provider-select" onchange="savePgProvider()">
-                                <option value="mock">mock (테스트 비번4자리)</option>
-                                <option value="sim">시뮬레이터 (KICC 흐름 모의)</option>
-                                <option value="kicc">KICC 실결제 (MID 필요)</option>
-                            </select>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                            <div class="input-group" style="width:210px; margin:0;">
+                                <label style="font-size:11px;">결제 방식</label>
+                                <select id="pg-provider-select" onchange="savePgProvider()">
+                                    <option value="mock">mock (테스트 비번4자리)</option>
+                                    <option value="sim">시뮬레이터 (KICC 흐름 모의)</option>
+                                    <option value="kicc">KICC 실결제 (MID 필요)</option>
+                                </select>
+                            </div>
+                            <div class="input-group" style="width:180px; margin:0;">
+                                <label style="font-size:11px;">허용 카드사 <span style="color:#94a3b8;">(쉼표, 비우면 전체)</span></label>
+                                <input id="pg-allowed-issuers" placeholder="신한" onchange="savePgProvider()" onkeydown="if(event.key==='Enter')savePgProvider()">
+                            </div>
                         </div>
                     </div>
                     <div id="pg-provider-note" style="font-size:11px;color:#b45309;margin-top:8px;"></div>
@@ -6276,6 +6282,7 @@
                 const d=await fetch(`${API_URL}/api/admin/pg/config`).then(r=>r.json());
                 let v='mock'; if(d.pg_provider==='kicc') v = d.sim ? 'sim' : 'kicc';
                 sel.value=v;
+                const ai=document.getElementById('pg-allowed-issuers'); if(ai) ai.value=(d.allowed_card_issuers!==undefined?d.allowed_card_issuers:'');
                 const note=document.getElementById('pg-provider-note');
                 if(note){ note.textContent = v==='kicc' ? ('KICC 실결제 모드'+(d.kicc_mid?(' · MID '+d.kicc_mid):' · ⚠ MID 미설정 시 결제 실패')) : v==='sim' ? '시뮬레이터 — 실제 청구 없이 결제/정기결제/구독 흐름 테스트 가능.' : 'mock — 카드결제 비활성(정기결제·구독 UI 숨김).'; }
             }catch(e){}
@@ -6286,6 +6293,7 @@
             if(sel.value==='mock') body={pg_provider:'mock'};
             else if(sel.value==='sim') body={pg_provider:'kicc', kicc_mode:'sim', kicc_mid:'SIMULATOR'};
             else body={pg_provider:'kicc', kicc_mode:'test'};
+            const ai=document.getElementById('pg-allowed-issuers'); if(ai) body.allowed_card_issuers=(ai.value||'').trim();
             try{
                 const r=await fetch(`${API_URL}/api/admin/pg/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
                 const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok) return showToast(d.error||'설정 실패');
@@ -12980,6 +12988,7 @@ pdfjsScript,
                     +'<div style="padding:16px 18px 18px;">'
                     +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">'+thumb+'<div style="min-width:0;">'+(opts.store?('<div style="font-size:12px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(opts.store)+'</div>'):'')+'<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(goodsName||'주문 결제')+'</div><div style="font-size:22px;font-weight:900;margin-top:2px;">'+Number(amount||0).toLocaleString()+'<span style="font-size:14px;font-weight:700;">원</span></div></div></div>'
                     +(billingEnabled ? ('<div style="font-weight:800;font-size:13px;margin-bottom:8px;">결제 수단</div>'+cardRows+newRow) : '<div style="font-size:13px;color:#475569;padding:4px 0 10px;">💳 카드로 결제합니다. 결제창에서 카드 정보를 입력하세요.</div>')
+                    +(cfg.allowedLabel ? ('<div style="font-size:11px;color:#94a3b8;margin:2px 0 2px;">※ 현재 <b>'+esc(cfg.allowedLabel)+'</b>만 결제할 수 있습니다.</div>') : '')
                     +'<button id="co-pay" style="width:100%;padding:15px;border:0;border-radius:12px;background:#2563eb;color:#fff;font-weight:800;font-size:16px;cursor:pointer;margin-top:10px;">'+Number(amount||0).toLocaleString()+'원 결제하기</button>'
                     +'</div></div>';
                 document.body.appendChild(ov);
