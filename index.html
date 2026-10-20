@@ -7818,6 +7818,8 @@
             try{ p.remove(); }catch(_){}
             try{ document.body.style.paddingBottom = window._oskPrevPad||''; }catch(_){}
             try{ const d=document.getElementById('messenger-drawer'); if(d){ d.style.height=''; } }catch(_){}
+            try{ const c=document.getElementById('osk-vcursor'); if(c) c.style.display='none'; }catch(_){}
+            window._oskMouse=false;   // 다음에 열 때는 키보드 모드로 시작
         }
         window.openScreenKeyboard = function(){
             // 📱 모바일: 카카오톡과 동일한 네이티브 키보드가 뜨도록 입력칸에 포커스(자체 키보드 미사용)
@@ -7927,19 +7929,26 @@
             const _base='flex:1;min-width:0;margin:2.5px;padding:11px 0;border:0;border-radius:7px;font-size:16px;font-weight:600;cursor:pointer;box-shadow:0 1px 1px rgba(0,0,0,.18);';
             const key=function(txt,val,flex){ return '<button data-k="'+String(val).replace(/"/g,'&quot;')+'" style="'+_base+'flex:'+(flex||1)+';background:#fff;color:#1f2937;">'+txt+'</button>'; };
             const fn=function(txt,val,flex,bg,col){ return '<button data-k="'+String(val).replace(/"/g,'&quot;')+'" style="'+_base+'flex:'+(flex||1)+';background:'+(bg||'#9aa4b2')+';color:'+(col||'#fff')+';font-weight:700;">'+txt+'</button>'; };
-            let h='<div style="display:flex;align-items:center;padding:1px 4px 5px;">'
-                + '<span style="flex:1;color:#4b5563;font-size:12px;font-weight:700;">⌨️ 화면 키보드 · '+(han?'한글':'영문')+'</span>'
-                + fn('✕','__close',0,'#7b8794')+'</div>'
+            const mouse=!!window._oskMouse;
+            // 작은 ✕(닫기) + 🖱 마우스 ↔ ⌨️ 키보드 전환 토글(헤더에 배치)
+            const smallX='<button data-k="__close" title="닫기" style="flex:none;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:#7b8794;color:#fff;font-size:12px;line-height:1;cursor:pointer;">✕</button>';
+            const mBtn='<button data-k="__mouse" title="마우스(트랙패드) ↔ 키보드 전환" style="flex:none;padding:4px 10px;border:0;border-radius:7px;background:'+(mouse?'#d6006e':'#0f2f52')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">'+(mouse?'⌨️ 키보드':'🖱 마우스')+'</button>';
+            let h='<div style="display:flex;align-items:center;gap:6px;padding:1px 4px 5px;">'
+                + '<span style="flex:1;min-width:0;color:#4b5563;font-size:12px;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+(mouse?'🖱 마우스 · 문질러 이동 · 탭=클릭':('⌨️ 화면 키보드 · '+(han?'한글':'영문')))+'</span>'
+                + mBtn + smallX + '</div>'
                 + '<div id="osk-preview" style="background:#fff;color:#111827;font-size:15px;font-weight:600;padding:8px 12px;border-radius:8px;margin:0 3px 6px;min-height:20px;letter-spacing:.3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;box-shadow:inset 0 0 0 1px #e5e7eb;">…▏</div>';
-            rowsEn.forEach(function(r){ h+='<div style="display:flex;">'+ r.map(function(c){ return key(label(c), 'CH:'+c); }).join('') +'</div>'; });
-            h+='<div style="display:flex;">'
-              + fn('⇧','__shift', 1.4, sh?'#0f2f52':'#9aa4b2')
-              + fn(han?'한':'A','__han',1.4, han?'#d6006e':'#5b6472')
-              + key(',','CH:,') + key('.','CH:.')
-              + key('space',' ',3.4)
-              + fn('⌫','__back',1.6,'#9aa4b2')
-              + fn('↵','__enter',2,'#fae100','#3a2e00')
-              + '</div>';
+            if(mouse){ h+=_oskMousePadHtml(); }
+            else {
+              rowsEn.forEach(function(r){ h+='<div style="display:flex;">'+ r.map(function(c){ return key(label(c), 'CH:'+c); }).join('') +'</div>'; });
+              h+='<div style="display:flex;">'
+                + fn('⇧','__shift', 1.4, sh?'#0f2f52':'#9aa4b2')
+                + fn(han?'한':'A','__han',1.4, han?'#d6006e':'#5b6472')
+                + key(',','CH:,') + key('.','CH:.')
+                + key('space',' ',3.4)
+                + fn('⌫','__back',1.6,'#9aa4b2')
+                + fn('↵','__enter',2,'#fae100','#3a2e00')
+                + '</div>';
+            }
             p.innerHTML=h;
             p.querySelectorAll('button[data-k]').forEach(function(b){
                 // 포커스 뺏김 방지: mousedown/touchstart에서 처리하고 기본동작 차단
@@ -7947,6 +7956,7 @@
                     ev.preventDefault(); ev.stopPropagation();
                     const k=b.getAttribute('data-k');
                     if(k==='__close'){ _oskClose(p); return; }
+                    if(k==='__mouse'){ window._oskMouse=!window._oskMouse; _oskRender(p); _oskUpdatePreview(); return; }
                     if(k==='__shift'){ window._oskShift=!window._oskShift; _oskRender(p); _oskUpdatePreview(); return; }
                     if(k==='__han'){ if(window._oskIME&&window._oskIME.composing())window._oskIME.flush(); window._oskHan=!window._oskHan; _oskRender(p); _oskUpdatePreview(); return; }
                     if(k==='__back'){ _oskSpecial('back'); return; }
@@ -7963,7 +7973,74 @@
                 if(window.PointerEvent){ b.addEventListener('pointerdown', fire); }
                 else { b.addEventListener('touchstart', fire, {passive:false}); b.addEventListener('mousedown', fire); }
             });
+            if(window._oskMouse){ try{ _oskBindMouse(p); }catch(_){} }
             _oskUpdatePreview();
+        }
+        // 🖱 ===== 화면 키보드 '마우스(트랙패드)' 모드 — 앱 화면 위 가상 커서를 이동/클릭 =====
+        //   웹에서 OS 커서는 못 움직이므로, 페이지 위에 가상 커서를 띄워 트랙패드로 이동하고
+        //   탭/버튼으로 그 지점의 앱 요소를 실제 클릭(이벤트 합성)한다. 키보드와 번갈아 쓸 수 있다.
+        function _oskMousePadHtml(){
+            const b='border:0;border-radius:9px;color:#fff;font-weight:800;font-size:13px;cursor:pointer;padding:10px 0;';
+            return '<div id="osk-pad" style="height:min(150px,28vh);background:#0b1220;border:1px dashed #475569;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:12px;text-align:center;margin:0 3px 6px;touch-action:none;cursor:grab;">트랙패드<br>문질러 커서 이동 · 탭 = 클릭</div>'
+              + '<div style="display:flex;gap:5px;margin:0 3px 5px;">'
+              +   '<button data-m="left" style="'+b+'flex:2;background:#0f2f52;">왼쪽 클릭</button>'
+              +   '<button data-m="dbl" style="'+b+'flex:1.4;background:#475569;">더블</button>'
+              +   '<button data-m="right" style="'+b+'flex:2;background:#475569;">오른쪽</button>'
+              + '</div>'
+              + '<div style="display:flex;gap:5px;margin:0 3px;">'
+              +   '<button data-m="up" style="'+b+'flex:1;background:#475569;">▲ 스크롤</button>'
+              +   '<button data-m="down" style="'+b+'flex:1;background:#475569;">▼ 스크롤</button>'
+              + '</div>';
+        }
+        function _oskCursorEl(){
+            let c=document.getElementById('osk-vcursor');
+            if(!c){ c=document.createElement('div'); c.id='osk-vcursor';
+                c.style.cssText='position:fixed;z-index:100061;left:0;top:0;width:22px;height:22px;pointer-events:none;will-change:transform;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));';
+                c.innerHTML='<svg width="22" height="22" viewBox="0 0 24 24"><path d="M4 2 L4 20 L9 15 L12.5 22 L15 21 L11.5 14 L18 14 Z" fill="#fff" stroke="#0f2f52" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+                document.body.appendChild(c);
+            }
+            if(!window._oskCur){ window._oskCur={ x: Math.round(innerWidth/2), y: Math.round(innerHeight*0.4) }; }
+            c.style.transform='translate('+window._oskCur.x+'px,'+window._oskCur.y+'px)';
+            c.style.display='block';
+            return c;
+        }
+        function _oskClickAt(x,y,opt){
+            opt=opt||{};
+            const el=document.elementFromPoint(x,y); if(!el) return;   // 가상 커서는 pointer-events:none → 무시됨
+            const o={ bubbles:true, cancelable:true, clientX:x, clientY:y, view:window };
+            if(opt.right){ try{ el.dispatchEvent(new MouseEvent('contextmenu', o)); }catch(_){} return; }
+            try{ if(window.PointerEvent) el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerId:1, pointerType:'mouse', isPrimary:true }, o))); }catch(_){}
+            try{ el.dispatchEvent(new MouseEvent('mousedown', o)); }catch(_){}
+            try{ if(window.PointerEvent) el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerId:1, pointerType:'mouse', isPrimary:true }, o))); }catch(_){}
+            try{ el.dispatchEvent(new MouseEvent('mouseup', o)); }catch(_){}
+            try{ el.dispatchEvent(new MouseEvent('click', o)); }catch(_){}
+            if(opt.dbl){ try{ el.dispatchEvent(new MouseEvent('dblclick', o)); }catch(_){} }
+            // 입력칸을 클릭하면 화면 키보드의 입력 대상(_oskTarget)으로 지정 → 바로 타이핑 가능
+            try{ if(el.focus && (el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable)){ el.focus(); window._oskTarget=el; } }catch(_){}
+        }
+        function _oskBindMouse(p){
+            const pad=p.querySelector('#osk-pad'); const cur=_oskCursorEl();
+            const clamp=()=>{ window._oskCur.x=Math.max(2,Math.min(innerWidth-2,window._oskCur.x)); window._oskCur.y=Math.max(2,Math.min(innerHeight-2,window._oskCur.y)); };
+            const place=()=>{ clamp(); cur.style.transform='translate('+window._oskCur.x+'px,'+window._oskCur.y+'px)'; };
+            if(pad){
+                let last=null, moved=0;
+                const down=(e)=>{ e.preventDefault(); const t=e.touches?e.touches[0]:e; last={x:t.clientX,y:t.clientY}; moved=0; pad.style.background='#111a2e'; };
+                const move=(e)=>{ if(!last) return; e.preventDefault(); const t=e.touches?e.touches[0]:e; const dx=t.clientX-last.x, dy=t.clientY-last.y; last={x:t.clientX,y:t.clientY}; moved+=Math.abs(dx)+Math.abs(dy); const SENS=1.7; window._oskCur.x+=dx*SENS; window._oskCur.y+=dy*SENS; place(); };
+                const up=(e)=>{ if(!last) return; e.preventDefault(); pad.style.background='#0b1220'; if(moved<6){ _oskClickAt(window._oskCur.x, window._oskCur.y, {}); } last=null; };
+                if(window.PointerEvent){ pad.addEventListener('pointerdown',down); pad.addEventListener('pointermove',move); pad.addEventListener('pointerup',up); pad.addEventListener('pointercancel',up); }
+                else { pad.addEventListener('touchstart',down,{passive:false}); pad.addEventListener('touchmove',move,{passive:false}); pad.addEventListener('touchend',up); pad.addEventListener('mousedown',down); pad.addEventListener('mousemove',move); pad.addEventListener('mouseup',up); }
+            }
+            p.querySelectorAll('button[data-m]').forEach(function(btn){
+                const fire=(e)=>{ e.preventDefault(); e.stopPropagation(); const m=btn.getAttribute('data-m'); const x=window._oskCur.x, y=window._oskCur.y;
+                    if(m==='left') _oskClickAt(x,y,{});
+                    else if(m==='dbl') _oskClickAt(x,y,{dbl:true});
+                    else if(m==='right') _oskClickAt(x,y,{right:true});
+                    else if(m==='up'||m==='down'){ const dir=(m==='up'?-1:1)*140; const tgt=document.elementFromPoint(x,y); try{ if(tgt && tgt.closest){ let s=tgt; while(s && s!==document.body){ const oy=getComputedStyle(s).overflowY; if((oy==='auto'||oy==='scroll') && s.scrollHeight>s.clientHeight){ s.scrollBy(0,dir); return; } s=s.parentElement; } } }catch(_){} window.scrollBy(0,dir); }
+                    btn.style.filter='brightness(1.25)'; setTimeout(()=>{ btn.style.filter=''; },110);
+                };
+                if(window.PointerEvent){ btn.addEventListener('pointerdown',fire); }
+                else { btn.addEventListener('touchstart',fire,{passive:false}); btn.addEventListener('mousedown',fire); }
+            });
         }
 
         // 🚀 ============ 장바구니 시스템 ============
