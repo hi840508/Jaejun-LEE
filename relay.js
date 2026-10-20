@@ -3400,6 +3400,11 @@ function _defaultRxItems() {
 app.post('/api/store/create', (req, res) => {
     db.get(`SELECT id FROM stores WHERE name = ?`, [req.body.name], (err, row) => {
         if (row) return res.status(400).json({ error: "이미 존재하는 명칭의 상점입니다." });
+      // 🏪 1계정 1상점 정책 — 관리자 제외. 이미 상점을 보유하면 추가 개설 불가.
+      db.get(`SELECT COUNT(*) AS c FROM stores WHERE owner = ?`, [req.body.owner], (ce, cnt) => {
+        if (!ce && cnt && cnt.c > 0 && !isAdminName(req.body.owner)) {
+            return res.status(409).json({ error: '한 계정당 상점은 1개만 개설할 수 있습니다. 기존 상점을 수정하거나 폐쇄 후 다시 만들어 주세요.', already: true });
+        }
         const category = req.body.category || 'general';
         const bizType = req.body.bizType === 'individual' ? 'individual' : 'business';
         const bizNo = String(req.body.bizNo || '').replace(/\D/g, '');
@@ -3434,6 +3439,7 @@ app.post('/api/store/create', (req, res) => {
                 try { _autoFriendFromClinics(req.body.owner, clinics || [], function () {}); } catch (_) {}
                 res.json({ success: true, storeId });
             });
+      });
     });
 });
 
