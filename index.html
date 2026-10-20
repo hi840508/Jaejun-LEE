@@ -2485,12 +2485,12 @@
 
     <!-- 🧾 전자세금계산서 발행 폼 (자비스/팍스빌 표준 레이아웃) -->
     <div class="modal-overlay" id="tax-invoice-form-modal">
-        <div class="modal-content" style="max-width:1020px; gap:0; padding:0;">
+        <div class="modal-content" style="max-width:min(1020px, 96vw); width:min(1020px, 96vw); gap:0; padding:0;">
             <div class="modal-header" style="padding:16px 20px; margin:0;">
                 <span><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg> 전자세금계산서 발행</span>
                 <button class="close-btn-x" onclick="closeModal('tax-invoice-form-modal')">&times;</button>
             </div>
-            <div style="padding:16px 20px; overflow-y:auto;">
+            <div style="padding:16px 20px; overflow-y:auto; overflow-x:auto;">
                 <style>
                     #tax-invoice-form-modal .tif-tabs{display:flex;gap:0;border-bottom:2px solid #0f2f52;margin-bottom:14px;}
                     #tax-invoice-form-modal .tif-tab{padding:9px 22px;font-size:14px;font-weight:800;border:1px solid #cbd5e1;border-bottom:none;background:#f1f5f9;color:#64748b;cursor:pointer;border-radius:8px 8px 0 0;margin-right:4px;}
@@ -6549,17 +6549,24 @@
                 loadSettlement();
             }catch(e){ showToast('정산 실패: '+(e.message||'')); }
         };
-        // 🧾 Admin 수수료 매출 세금계산서 — 플랫폼 자체 수수료 매출 1건 발행(상점 발행 후)
-        // 🧾 Admin 수수료 매출 세금계산서 — 폼을 플랫폼(공급자=공급받는자)로 프리필하여 오픈
+        // 🧾 수수료 세금계산서 일괄 발행(공용) — 반드시 '판매자별 1건'(공급자=플랫폼, 공급받는자=판매자)로 발행해야 국세청 신고 가능.
+        async function _tifBulkPost(supplier, vendors, writeDate, batchMonth){
+            try{
+                const r=await fetch(`${API_URL}/api/tax/issue-bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ supplier, vendors, writeDate, batchMonth })});
+                const d=await r.json(); if(!r.ok) throw new Error(d.error||'실패');
+                showToast(`일괄 발행 완료: ${d.count}/${d.total}건 (판매자별 수수료 세금계산서)`);
+                try{ loadTaxHistory(); }catch(_){} try{ loadSettlement(); }catch(_){}
+            }catch(e){ showToast('일괄 발행 실패: '+(e.message||'')); }
+        }
+        function _tifVendorRecipient(v){ return { name:(v.bizName||v.seller), bizNo:v.bizNo||'', ceoName:v.bizCeo||'', address:v.bizAddr||'', bizType:v.bizIndustry||'', bizClass:v.bizItem||'', email:v.taxEmail||'' }; }
+        // 🧾 수수료 매출 세금계산서 — 정산 대상 전체를 '판매자별'로 일괄 발행(배민식: 플랫폼→판매자 수수료 계산서).
         window.issueAdminRevenueTax=function(){
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
-            const month=taxG('tax-month'); const rev=window.taxAdminRevenue||0;
-            if(rev<=0){ showToast('발행할 Admin 수수료 매출이 없습니다.'); return; }
-            openTaxInvoiceForm({
-                supplier, recipient:supplier, seller:'(Admin)',
-                items:[{ month:(month||'').slice(5,7), name:month+' 거래/결제 수수료 매출', qty:1, totalAmount:rev }],
-                writeDate:(month?month+'-01':''), batchMonth:month, invoiceType:'admin_revenue'
-            });
+            const month=taxG('tax-month'); const list=(window.taxSettlement||[]).filter(v=>Number(v.payFee)>0);
+            if(!list.length){ showToast('발행할 수수료 매출(정산 대상)이 없습니다.'); return; }
+            if(!confirm(`${list.length}개 판매자에게 ${month} 수수료 세금계산서를 일괄 발행합니다.\n(공급자=플랫폼 / 공급받는자=각 판매자 · 국세청 신고자료)`)) return;
+            const vendors=list.map(v=>({ seller:v.seller, recipient:_tifVendorRecipient(v), item:{ name:month+' 플랫폼 이용 수수료' }, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }));
+            _tifBulkPost(supplier, vendors, (month?month+'-01':''), month);
         };
         // 정산(미정산) 업체 발행 버튼 → 폼 프리필 오픈
         window.issueOneTax=function(i){
@@ -7225,31 +7232,13 @@
         window.issueSettledAdminRevenueTax=function(){
             const supplier=getTaxSupplier(); if(!supplier.name||!supplier.bizNo){ showToast('공급자(플랫폼) 상호·사업자번호를 먼저 입력·저장하세요.'); return; }
             const P=_invPeriod(); const rev=window.taxSettledAdminRevenue||0;
-            if(rev<=0){ showToast('발행할 정산완료 Admin 수수료 매출이 없습니다.'); return; }
-            const vendors=window.taxSettled||[];
-            const _mm=(iso)=>{ const s=(iso||'').slice(5,7); return s||P.mm; };
-            const _dd=(iso)=>{ const s=(iso||'').slice(8,10); return s||''; };
-            const totalOrders=vendors.reduce((s,v)=>s+((v.items&&v.items.length)||0),0);
-            let items;
-            if(totalOrders>0 && totalOrders<=16){
-                // 거래(주문) 건별 — 각 항목: 업체·상품·주문#, 수수료(공급가/세액/합계)
-                items=[];
-                vendors.forEach(v=>(v.items||[]).forEach(it=>items.push({
-                    month:_mm(it.settledAt), day:_dd(it.settledAt),
-                    name:`${v.bizName||v.seller} · ${it.productName||('주문#'+it.orderId)} (주문#${it.orderId}) 수수료`,
-                    spec:'', qty:1, supplyAmount:it.fee, taxAmount:it.vat, totalAmount:it.payFee, remark:'매출 '+taxFmt(it.amount)
-                })));
-            } else if(vendors.length && vendors.length<=16){
-                // 업체(서브가맹점)별 합산 — 각 항목: 업체명, N건, 수수료 합계
-                items=vendors.map(v=>({ month:P.mm, name:`${v.bizName||v.seller} 플랫폼 수수료 (${v.count}건)`, spec:'', qty:v.count, supplyAmount:v.fee, taxAmount:v.vat, totalAmount:v.payFee, remark:'매출 '+taxFmt(v.salesTotal) }));
-            } else {
-                // 초과 시 전체 합산 1줄
-                items=[{ month:P.mm, name:P.label+' 거래/결제 수수료 매출(정산완료분)', qty:1, totalAmount:rev }];
-            }
-            openTaxInvoiceForm({
-                supplier, recipient:supplier, seller:'(Admin)',
-                items, writeDate:P.writeDate, batchMonth:P.label, invoiceType:'admin_revenue'
-            });
+            if(rev<=0){ showToast('발행할 정산완료 수수료 매출이 없습니다.'); return; }
+            const list=(window.taxSettled||[]).filter(v=>Number(v.payFee)>0);
+            if(!list.length){ showToast('발행할 정산완료 수수료 매출이 없습니다.'); return; }
+            if(!confirm(`${list.length}개 판매자에게 ${P.label} 수수료 세금계산서를 일괄 발행합니다.\n(공급자=플랫폼 / 공급받는자=각 판매자 · 국세청 신고자료)`)) return;
+            // 👉 판매자별 1건(공급받는자=판매자) · 서버는 단일 품목 — 그 판매자 수수료 합계 1줄로 발행.
+            const vendors=list.map(v=>({ seller:v.seller, recipient:_tifVendorRecipient(v), item:{ name:P.label+' 플랫폼 이용 수수료'+((v.count)?(' ('+v.count+'건)'):'') }, supplyAmount:v.fee, taxAmount:v.vat, totalAmount:v.payFee }));
+            _tifBulkPost(supplier, vendors, P.writeDate, P.label);
         };
 
         // 👥 영업 관리 — 관리자 진입은 회원 관리부터, 상점주(비관리자)는 매출 관리부터.
