@@ -13157,6 +13157,9 @@ pdfjsScript,
         function _bufToB64(buf){ const b=new Uint8Array(buf); let s=''; for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]); return btoa(s); }
         function _bufToB64url(buf){ return _bufToB64(buf).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
         window._bioSupported = function(){ return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create); };
+        // 🖥 데스크톱 앱(Windows Hello) 네이티브 생체 — rayApp 브리지 존재 여부 / 등록 여부
+        window._nativeBio = function(){ return !!(window.rayApp && window.rayApp.bioPay && window.rayApp.bioAvailable); };
+        window._nativeBioEnrolled = function(){ try{ return window._nativeBio() && localStorage.getItem('alphak_devbio')==='1'; }catch(_){ return false; } };
         window.registerBiometric = async function(){
             if(!window._bioSupported()){ showToast('이 기기/브라우저는 생체인증을 지원하지 않습니다.'); return false; }
             try{
@@ -13318,7 +13321,20 @@ pdfjsScript,
                             const _sc=cards.find(function(c){return String(c.id)===String(selected);});
                             const resetBtn=()=>{ payBtn.disabled=false; payBtn.textContent=Number(amount||0).toLocaleString()+'원 결제하기'; };
                             const _ok=(d)=>{ close(); try{ window._showReceipt({ goodsName:goodsName, amount:(d.amount||amount), approvalNo:d.approvalNo, tid:d.tid, method:(d.__bio?'생체인증 결제':'간편결제'), card:_sc?((_sc.issuerName||'카드')+' '+(_sc.cardMaskNo||'')):'' }); }catch(_){ showToast('✅ 결제가 완료되었습니다'); } resolve(Object.assign({via:'quickpay'}, d)); };
-                            // 1) 생체인증
+                            // 0) 🖥 데스크톱 앱: Windows Hello(네이티브 생체) — 인증 성공 시 저장된 PIN으로 결제
+                            if(window._nativeBioEnrolled && window._nativeBioEnrolled()){
+                                try{
+                                    const bz=await window.rayApp.bioPay();
+                                    if(bz && bz.ok && bz.pin){
+                                        payBtn.disabled=true; payBtn.textContent='결제 중…';
+                                        const r=await fetch(`${API_URL}/api/pg/quickpay`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({orderId, billingId, pin:bz.pin})});
+                                        const d=await r.json().catch(()=>({}));
+                                        if(r.ok&&d.ok){ d.__bio=true; _ok(d); return; }
+                                        resetBtn(); showToast((d.error||'생체 결제 실패')+' — 비밀번호로 진행합니다.');
+                                    } else { showToast((bz&&bz.error)||'생체 인증 실패 — 비밀번호로 진행합니다.'); }
+                                }catch(_){ showToast('생체 결제 오류 — 비밀번호로 진행합니다.'); }
+                            }
+                            // 1) 생체인증(WebAuthn · 웹)
                             if(bio && bio.enabled && window._bioSupported()){
                                 const assertion = await window._bioAuthAssertion();
                                 if(assertion){
@@ -13355,6 +13371,20 @@ pdfjsScript,
         // 🫆 생체인증 결제 등록/해제 (내 지갑)
         window.manageBiometric = async function(){
             const btn=document.getElementById('paybio-btn');
+            // 🖥 데스크톱 앱: Windows Hello(네이티브). 결제 PIN을 Windows 자격증명에 안전 보관하고 Hello로 잠금해제해 결제.
+            if(window._nativeBio && window._nativeBio()){
+                const on=(localStorage.getItem('alphak_devbio')==='1');
+                if(on){ if(!confirm('생체(Windows Hello) 결제를 해제할까요?')) return; try{ await window.rayApp.bioDisable(); }catch(_){} try{ localStorage.removeItem('alphak_devbio'); }catch(_){} showToast('생체 결제가 해제되었습니다.'); try{ loadBillingUI(); }catch(_){} return; }
+                // 등록: 결제 PIN이 있어야 함(없으면 설정) → Windows Hello 인증 후 자격증명에 저장
+                let ps={}; try{ ps=await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){}
+                let pinVal; if(!ps.hasPin){ pinVal=await window._payPinPad('set'); } else { pinVal=await window._payPinPad('enter'); }
+                if(pinVal===null||pinVal===undefined||pinVal==='') return;
+                if(btn){ btn.disabled=true; btn.textContent='인증 중…'; }
+                try{ const er=await window.rayApp.bioEnroll(pinVal); if(er&&er.ok){ try{ localStorage.setItem('alphak_devbio','1'); }catch(_){} showToast('✅ 생체(Windows Hello) 결제가 설정되었습니다.'); } else { showToast((er&&er.error)||'생체 등록에 실패했습니다.'); } }
+                catch(_){ showToast('생체 등록 중 오류가 발생했습니다.'); }
+                finally{ try{ loadBillingUI(); }catch(_){} }
+                return;
+            }
             if(!window._bioSupported()){ showToast('이 기기/브라우저는 생체인증을 지원하지 않습니다. (Windows Hello·지문·Face 지원 기기에서 이용)'); return; }
             let st={}; try{ st=await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){}
             if(st.enabled){ if(!confirm('생체인증 결제를 해제할까요?')) return; try{ await fetch(`${API_URL}/api/pay/bio/remove`,{method:'POST',credentials:'include'}); showToast('생체인증이 해제되었습니다.'); }catch(_){} try{ loadBillingUI(); }catch(_){} return; }
@@ -13412,13 +13442,20 @@ pdfjsScript,
                 panel.style.display='';
                 try{ const ps=await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); const pe=document.getElementById('paypin-state'); if(pe) pe.textContent = ps.locked?'(잠김 — 재설정 필요)':(ps.hasPin?'(설정됨)':'(미설정)'); }catch(_){}
                 try{ const row=document.getElementById('paybio-row'); if(row){
-                        // 📱 '실제 플랫폼 인증기(지문·Face·Windows Hello)'가 있는 환경에서만 노출 — 모바일 웹=뜸, 앱 WebView(미지원)=숨김.
-                        const sup = !!(window._bioSupported && window._bioSupported());
-                        let avail = false;
-                        if(sup){ try{ if(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable){ avail = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } }catch(_){ avail = false; } }
                         const be=document.getElementById('paybio-state'), bb=document.getElementById('paybio-btn');
-                        if(sup && avail){ row.style.display='flex'; const bs=await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()).catch(()=>({})); if(be) be.textContent=bs.enabled?'(사용 중)':'(미설정)'; if(bb){ bb.textContent=bs.enabled?'해제':'사용'; bb.disabled=false; } }
-                        else { row.style.display='none'; }   // 앱 WebView 등 미지원 환경 → 숨김(결제 비밀번호 사용)
+                        if(window._nativeBio && window._nativeBio()){
+                            // 🖥 데스크톱 앱: Windows Hello(지문·얼굴·PIN). 등록 여부는 로컬 플래그.
+                            let av={}; try{ av=await window.rayApp.bioAvailable(); }catch(_){}
+                            if(av && av.available){ row.style.display='flex'; const on=(localStorage.getItem('alphak_devbio')==='1'); if(be) be.textContent = on?'(사용 중 · Windows Hello)':'(미설정 · Windows Hello)'; if(bb){ bb.textContent=on?'해제':'사용'; bb.disabled=false; } }
+                            else { row.style.display='none'; }   // Windows Hello 미설정 PC → 숨김(PIN 사용)
+                        } else {
+                            // 🌐 웹: WebAuthn(지문·Face) — 실제 플랫폼 인증기가 있는 환경에서만(모바일 웹=뜸, 앱 WebView 미지원=숨김).
+                            const sup = !!(window._bioSupported && window._bioSupported());
+                            let avail = false;
+                            if(sup){ try{ if(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable){ avail = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } }catch(_){ avail = false; } }
+                            if(sup && avail){ row.style.display='flex'; const bs=await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()).catch(()=>({})); if(be) be.textContent=bs.enabled?'(사용 중)':'(미설정)'; if(bb){ bb.textContent=bs.enabled?'해제':'사용'; bb.disabled=false; } }
+                            else { row.style.display='none'; }
+                        }
                 } }catch(_){}
                 const note = document.getElementById('billing-note'); if(note) note.textContent = cfg.sim ? '※ 현재 시뮬레이터(sim) 모드 — 실제 청구되지 않습니다.' : '';
                 const cards = await window.listBilling().catch(()=>[]);
