@@ -1762,6 +1762,15 @@
                             실 KICC 결제창은 보안정책(X-Frame-Options)으로 <b>iframe 임베드가 차단될 수 있어</b>, 모바일/앱에서는 <b>리다이렉트</b>가 안전합니다. <b>자동</b> 권장(시뮬은 iframe, 실결제는 리다이렉트). <span id="pg-display-eff" style="color:var(--navy);font-weight:700;"></span>
                         </div>
                     </div>
+                    <div id="pg-mid-wrap" style="margin-top:12px; display:none; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+                        <div class="input-group" style="width:220px; margin:0;">
+                            <label style="font-size:11px;">테스트/운영 MID (상점ID)</label>
+                            <input id="pg-mid-input" placeholder="예: T0022642" onchange="savePgProvider()">
+                        </div>
+                        <div style="flex:1; min-width:220px; font-size:11px; color:#64748b; line-height:1.6; padding-bottom:4px;">
+                            🔐 <b>시크릿 키(해시키)</b>는 서버 환경변수 <b>KICC_LICENSE_KEY</b>로만 설정합니다(프론트엔드·DB 저장 금지 · 서버 간 통신 전용). 현재 키: <b id="pg-key-state" style="color:var(--navy);">—</b><br>개발 서버 <b>testpgapi.easypay.co.kr</b> / 운영 <b>pgapi.easypay.co.kr</b> (모드로 자동 선택)
+                        </div>
+                    </div>
                     <div id="pg-provider-note" style="font-size:11px;color:#b45309;margin-top:8px;"></div>
                 </div>
                 <div class="panel" style="padding:14px;">
@@ -6427,6 +6436,10 @@
                 const dsel=document.getElementById('pg-display-select');
                 if(dsel){ dsel.value = ['auto','iframe','redirect','popup'].includes(d.kicc_display_mode) ? d.kicc_display_mode : 'auto';
                     const eff=document.getElementById('pg-display-eff'); if(eff) eff.textContent = d.display_mode_effective ? ('현재 적용: '+d.display_mode_effective) : ''; }
+                // 🏦 실 KICC(MID) 입력 + 시크릿 키 상태 — 'KICC 실결제'일 때만 노출
+                const midWrap=document.getElementById('pg-mid-wrap'); if(midWrap) midWrap.style.display = (v==='kicc') ? 'flex' : 'none';
+                const midIn=document.getElementById('pg-mid-input'); if(midIn && v==='kicc') midIn.value = (d.kicc_mid && !/^SIM/i.test(d.kicc_mid)) ? d.kicc_mid : '';
+                const keySt=document.getElementById('pg-key-state'); if(keySt) keySt.textContent = d.has_license_key ? '설정됨(서버 env)' : '미설정 — 취소·응답검증 제한(서버 env KICC_LICENSE_KEY 필요)';
                 const note=document.getElementById('pg-provider-note');
                 if(note){ note.textContent = v==='kicc' ? ('KICC 실결제 모드'+(d.kicc_mid?(' · MID '+d.kicc_mid):' · ⚠ MID 미설정 시 결제 실패')) : v==='sim' ? '시뮬레이터 — 실제 청구 없이 결제/정기결제/구독 흐름 테스트 가능.' : 'mock — 카드결제 비활성(정기결제·구독 UI 숨김).'; }
             }catch(e){}
@@ -6436,7 +6449,7 @@
             let body;
             if(sel.value==='mock') body={pg_provider:'mock'};
             else if(sel.value==='sim') body={pg_provider:'kicc', kicc_mode:'sim', kicc_mid:'SIMULATOR'};
-            else body={pg_provider:'kicc', kicc_mode:'test'};
+            else { body={pg_provider:'kicc', kicc_mode:'test'}; const mid=((document.getElementById('pg-mid-input')||{}).value||'').trim(); if(mid) body.kicc_mid=mid; }
             const dsel=document.getElementById('pg-display-select'); if(dsel) body.kicc_display_mode=dsel.value;
             const boxes=document.querySelectorAll('#pg-allowed-box .pg-iss'); if(boxes.length){ const sel=[]; boxes.forEach(function(b){ if(b.checked) sel.push(b.value); }); body.allowed_card_issuers=sel.join(','); }
             try{
