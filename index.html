@@ -13249,10 +13249,42 @@ pdfjsScript,
                 };
                 ov.querySelectorAll('.pp-k').forEach(b=>b.addEventListener('click',(e)=>{ e.preventDefault(); const k=b.getAttribute('data-k'); if(k==='clear') buf=''; else if(k==='back') buf=buf.slice(0,-1); else if(buf.length<6) buf+=k; errEl.textContent=''; paint(); if(buf.length===6) setTimeout(submit,120); }));
                 ov.querySelector('#pp-cancel').onclick=()=>close(null);
-                // 🔓 잊은 PIN 재설정 — 계정 비밀번호 확인 후 새 6자리 설정(enter 모드에서만 노출)
+                // 🔓 잊은 PIN 재설정 — 이 핀패드를 닫고 '독립 재설정 모달'을 연다(겹침/z-index 문제 방지).
                 const resetEl=ov.querySelector('#pp-reset');
-                if(resetEl && mode==='enter'){ resetEl.style.display='block'; resetEl.onclick=async()=>{ let pw=null; try{ pw=await window._sfPrompt('계정(로그인) 비밀번호를 입력하세요.\n(결제 비밀번호를 잊으셨을 때 본인확인 · 계정 비번이 없으면 비워두고 확인)'); }catch(_){ pw=prompt('계정(로그인) 비밀번호 (없으면 비움)')||''; } if(pw===null) return; isReset=true; resetPw=(pw||''); stage='new'; buf=''; first=''; errEl.textContent=''; resetEl.style.display='none'; paint(); }; }
+                if(resetEl && mode==='enter'){ resetEl.style.display='block'; resetEl.onclick=()=>{ close(null); setTimeout(()=>{ try{ window._resetPayPinModal().then(function(np){ if(np){ try{ window.__pinResetDone=true; showToast('✅ 결제 비밀번호가 재설정되었습니다. 다시 시도해 주세요.'); }catch(_){} try{ if(window.loadBillingUI) loadBillingUI(); }catch(_){} } }); }catch(_){} }, 60); }; }
                 ov.addEventListener('click',(e)=>{ if(e.target===ov) close(null); });
+            });
+        };
+        // 🔓 결제 비밀번호 '재설정' 독립 모달 — 계정 비밀번호 + 새 PIN(6자리)을 한 화면에서 입력(겹침 없음). resolve(새 PIN) / resolve(null).
+        window._resetPayPinModal = function(){
+            return new Promise((resolve)=>{
+                const old=document.getElementById('pinreset-ov'); if(old) old.remove();
+                const ov=document.createElement('div'); ov.id='pinreset-ov'; ov.style.cssText='position:fixed;inset:0;z-index:100085;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:18px;';
+                ov.innerHTML='<div style="background:#fff;width:100%;max-width:360px;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
+                    +'<div style="font-size:16px;font-weight:800;text-align:center;margin-bottom:6px;">결제 비밀번호 재설정</div>'
+                    +'<div style="font-size:12px;color:#64748b;text-align:center;line-height:1.5;margin-bottom:14px;">계정(로그인) 비밀번호로 본인확인 후 <b>새 결제 비밀번호 6자리</b>를 설정합니다.<br><span style="color:#94a3b8;">※ 카드 비밀번호(4자리)와 다른 앱 전용 비밀번호</span></div>'
+                    +'<input id="pr-acct" type="password" placeholder="계정(로그인) 비밀번호 · 없으면 비움" autocomplete="off" style="width:100%;padding:12px 13px;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;font-size:14px;box-sizing:border-box;">'
+                    +'<input id="pr-pin1" type="password" inputmode="numeric" maxlength="6" placeholder="새 결제 비밀번호 (숫자 6자리)" autocomplete="off" style="width:100%;padding:12px 13px;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;font-size:14px;letter-spacing:4px;box-sizing:border-box;">'
+                    +'<input id="pr-pin2" type="password" inputmode="numeric" maxlength="6" placeholder="새 결제 비밀번호 확인" autocomplete="off" style="width:100%;padding:12px 13px;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:8px;font-size:14px;letter-spacing:4px;box-sizing:border-box;">'
+                    +'<div id="pr-err" style="color:#dc2626;font-size:12px;min-height:16px;text-align:center;margin-bottom:8px;"></div>'
+                    +'<div style="display:flex;gap:8px;"><button id="pr-cancel" type="button" style="flex:1;padding:12px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="pr-ok" type="button" style="flex:2;padding:12px;border:0;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">재설정</button></div>'
+                    +'</div>';
+                document.body.appendChild(ov);
+                const close=(v)=>{ try{ov.remove();}catch(_){} resolve(v); };
+                ['pr-pin1','pr-pin2'].forEach(id=>{ const el=ov.querySelector('#'+id); el.addEventListener('input',()=>{ el.value=el.value.replace(/\D/g,'').slice(0,6); }); });
+                ov.querySelector('#pr-cancel').onclick=()=>close(null);
+                ov.addEventListener('click',(e)=>{ if(e.target===ov) close(null); });
+                const doReset=async()=>{
+                    const acct=ov.querySelector('#pr-acct').value; const p1=ov.querySelector('#pr-pin1').value; const p2=ov.querySelector('#pr-pin2').value; const err=ov.querySelector('#pr-err'); const okb=ov.querySelector('#pr-ok');
+                    if(!/^\d{6}$/.test(p1)){ err.textContent='새 결제 비밀번호 숫자 6자리를 입력하세요.'; return; }
+                    if(p1!==p2){ err.textContent='두 비밀번호가 일치하지 않습니다.'; return; }
+                    okb.disabled=true; okb.textContent='처리 중…';
+                    try{ const r=await fetch(`${API_URL}/api/pay/pin/reset`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({password:acct, pin:p1})}); const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok){ err.textContent=d.error||'재설정 실패'; okb.disabled=false; okb.textContent='재설정'; return; } close(p1); }
+                    catch(e){ err.textContent='재설정 오류'; okb.disabled=false; okb.textContent='재설정'; }
+                };
+                ov.querySelector('#pr-ok').onclick=doReset;
+                ov.querySelector('#pr-pin2').addEventListener('keydown',(e)=>{ if(e.key==='Enter') doReset(); });
+                setTimeout(()=>{ try{ ov.querySelector('#pr-acct').focus(); }catch(_){} }, 60);
             });
         };
         // 💳 카드사 브랜드(로고 대용 컬러 뱃지) — 발급사명으로 매핑. {color, label}
