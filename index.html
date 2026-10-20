@@ -3108,7 +3108,13 @@
         }
 
         // --- 🚀 로그인 / 가입 폼 분리 ---
+        // 🧹 잔류 전체화면 오버레이 정리 — 결제창(_kf)·화면키보드(osk)·가상커서가 남아 클릭을 막는 것을 방지.
+        window._clearStuckOverlays = function(){
+            try{ ['_kf-overlay','osk-panel','osk-vcursor'].forEach(function(id){ var e=document.getElementById(id); if(e) e.remove(); }); }catch(_){}
+            try{ document.body.style.paddingBottom=''; }catch(_){}
+        };
         function toggleLoginMode(mode) {
+            try{ window._clearStuckOverlays(); }catch(_){}
             if(mode === 'login') {
                 document.getElementById('form-register-only').style.display='none'; document.getElementById('form-login-only').style.display='block';
                 document.querySelectorAll('#login-tabs-wrap .tab')[0].classList.add('active'); document.querySelectorAll('#login-tabs-wrap .tab')[1].classList.remove('active');
@@ -3121,6 +3127,7 @@
         function backToStep1() { toggleLoginMode('login'); }
 
         async function verifyUser() {
+            try{ window._clearStuckOverlays && window._clearStuckOverlays(); }catch(_){}
             const name = document.getElementById('login-name').value.trim(); const password = document.getElementById('login-password').value.trim();
             if(!name || !password) return showToast("접속 정보를 입력하세요.");
             try {
@@ -3548,6 +3555,7 @@
             currentUser = null; isAdmin = false;
             try { if(window.stopPendingOrdersPolling) window.stopPendingOrdersPolling(); } catch(_){}
             try { showToast('세션이 만료되었습니다. 다시 로그인해 주세요.'); } catch(_){}
+            try { window._clearStuckOverlays && window._clearStuckOverlays(); } catch(_){}
             try {
                 const ws = document.getElementById('workspace-section'); if(ws) ws.style.display = 'none';
                 const ls = document.getElementById('login-section'); if(ls) ls.style.display = 'block';
@@ -13063,7 +13071,7 @@ pdfjsScript,
                 }
                 let moid='', done=false, bc=null, sPoll=null, popup=null, popWatch=null;
                 // 📱 표시방식(서버 prepare.displayMode)에 따라 분기: iframe(시뮬·레이어 가능 PG) / redirect(실 KICC·WebView 안전) / popup(PC).
-                const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100060;background:rgba(4,7,12,.72);display:flex;flex-direction:column;';
+                const ov=document.createElement('div'); ov.id='_kf-overlay'; ov.style.cssText='position:fixed;inset:0;z-index:100060;background:rgba(4,7,12,.72);display:flex;flex-direction:column;';
                 ov.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;color:#fff;font:700 14px system-ui;flex:none;"><span>💳 결제</span><button id="_kf-x" style="background:rgba(255,255,255,.15);border:0;color:#fff;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;">✕</button></div>'
                   +'<div id="_kf-body" style="flex:1;background:#fff;position:relative;min-height:0;"><div id="_kf-load" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#64748b;font:600 13px system-ui;padding:0 24px;">결제창을 준비하고 있습니다…</div></div>';
                 document.body.appendChild(ov);
