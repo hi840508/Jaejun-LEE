@@ -1724,6 +1724,20 @@
                         <div style="font-size:12px; font-weight:700; color:#166534; margin-bottom:6px;">허용 카드사 <span style="font-weight:400; color:#94a3b8;">(체크한 카드사만 결제·등록 가능 · 아무것도 선택 안 하면 전체 허용)</span></div>
                         <div id="pg-allowed-box" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
                     </div>
+                    <div style="margin-top:12px; display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                        <div class="input-group" style="width:260px; margin:0;">
+                            <label style="font-size:11px;">결제창 표시방식</label>
+                            <select id="pg-display-select" onchange="savePgProvider()">
+                                <option value="auto">자동 (시뮬=iframe · 실KICC=리다이렉트)</option>
+                                <option value="iframe">iframe (앱 내 모달)</option>
+                                <option value="redirect">리다이렉트 (전면 이동 · WebView 안전)</option>
+                                <option value="popup">팝업 (PC 권장)</option>
+                            </select>
+                        </div>
+                        <div style="flex:1; min-width:200px; font-size:11px; color:#64748b; line-height:1.55; padding-top:18px;">
+                            실 KICC 결제창은 보안정책(X-Frame-Options)으로 <b>iframe 임베드가 차단될 수 있어</b>, 모바일/앱에서는 <b>리다이렉트</b>가 안전합니다. <b>자동</b> 권장(시뮬은 iframe, 실결제는 리다이렉트). <span id="pg-display-eff" style="color:#166534;font-weight:700;"></span>
+                        </div>
+                    </div>
                     <div id="pg-provider-note" style="font-size:11px;color:#b45309;margin-top:8px;"></div>
                 </div>
                 <div class="panel" style="padding:14px;">
@@ -6284,6 +6298,9 @@
                 if(box){ const allowed=String(d.allowed_card_issuers!==undefined?d.allowed_card_issuers:'').split(',').map(s=>s.trim()).filter(Boolean);
                     const ISS=['신한','삼성','국민','현대','롯데','우리','하나','BC','농협','기업','씨티','카카오','토스'];
                     box.innerHTML=ISS.map(function(k){ var on=allowed.some(function(a){return a.toLowerCase()===k.toLowerCase();}); return '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;background:#fff;border:1px solid '+(on?'#16a34a':'#e2e8f0')+';border-radius:8px;padding:5px 9px;cursor:pointer;"><input type="checkbox" class="pg-iss" value="'+k+'" '+(on?'checked':'')+' onchange="savePgProvider()" style="width:15px;height:15px;"> '+k+'</label>'; }).join(''); }
+                const dsel=document.getElementById('pg-display-select');
+                if(dsel){ dsel.value = ['auto','iframe','redirect','popup'].includes(d.kicc_display_mode) ? d.kicc_display_mode : 'auto';
+                    const eff=document.getElementById('pg-display-eff'); if(eff) eff.textContent = d.display_mode_effective ? ('현재 적용: '+d.display_mode_effective) : ''; }
                 const note=document.getElementById('pg-provider-note');
                 if(note){ note.textContent = v==='kicc' ? ('KICC 실결제 모드'+(d.kicc_mid?(' · MID '+d.kicc_mid):' · ⚠ MID 미설정 시 결제 실패')) : v==='sim' ? '시뮬레이터 — 실제 청구 없이 결제/정기결제/구독 흐름 테스트 가능.' : 'mock — 카드결제 비활성(정기결제·구독 UI 숨김).'; }
             }catch(e){}
@@ -6294,6 +6311,7 @@
             if(sel.value==='mock') body={pg_provider:'mock'};
             else if(sel.value==='sim') body={pg_provider:'kicc', kicc_mode:'sim', kicc_mid:'SIMULATOR'};
             else body={pg_provider:'kicc', kicc_mode:'test'};
+            const dsel=document.getElementById('pg-display-select'); if(dsel) body.kicc_display_mode=dsel.value;
             const boxes=document.querySelectorAll('#pg-allowed-box .pg-iss'); if(boxes.length){ const sel=[]; boxes.forEach(function(b){ if(b.checked) sel.push(b.value); }); body.allowed_card_issuers=sel.join(','); }
             try{
                 const r=await fetch(`${API_URL}/api/admin/pg/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -12805,14 +12823,14 @@ pdfjsScript,
         //    resolve({moid, authorizationId}), reject(취소/실패).
         function _kiccFlow(prepareBody, winName){
             return new Promise((resolve, reject)=>{
-                let moid='', done=false, bc=null, sPoll=null;
-                // 📱 앱(WebView)·모바일·PC 공통: 팝업(window.open) 대신 '앱 내 iframe 결제창(모달)'으로 띄운다. (webview는 window.open이 OS로 넘어가 실패)
+                let moid='', done=false, bc=null, sPoll=null, popup=null, popWatch=null;
+                // 📱 표시방식(서버 prepare.displayMode)에 따라 분기: iframe(시뮬·레이어 가능 PG) / redirect(실 KICC·WebView 안전) / popup(PC).
                 const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100060;background:rgba(4,7,12,.72);display:flex;flex-direction:column;';
                 ov.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;color:#fff;font:700 14px system-ui;flex:none;"><span>💳 결제</span><button id="_kf-x" style="background:rgba(255,255,255,.15);border:0;color:#fff;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;">✕</button></div>'
-                  +'<div id="_kf-body" style="flex:1;background:#fff;position:relative;min-height:0;"><div id="_kf-load" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#64748b;font:600 13px system-ui;">결제창을 준비하고 있습니다…</div></div>';
+                  +'<div id="_kf-body" style="flex:1;background:#fff;position:relative;min-height:0;"><div id="_kf-load" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#64748b;font:600 13px system-ui;padding:0 24px;">결제창을 준비하고 있습니다…</div></div>';
                 document.body.appendChild(ov);
-                const cleanup=()=>{ done=true; try{window.removeEventListener('message',onMsg);}catch(_){} try{window.removeEventListener('storage',onStore);}catch(_){} try{if(bc)bc.close();}catch(_){} try{clearInterval(sPoll);}catch(_){} try{ov.remove();}catch(_){} };
-                const finish=(d)=>{ if(done) return; d=d||{}; const authorizationId=d.authorizationId||d.authToken||''; const resCd=d.resCd||d.resultCode||''; cleanup();
+                const cleanup=()=>{ done=true; try{window.removeEventListener('message',onMsg);}catch(_){} try{window.removeEventListener('storage',onStore);}catch(_){} try{if(bc)bc.close();}catch(_){} try{clearInterval(sPoll);}catch(_){} try{clearInterval(popWatch);}catch(_){} try{if(popup&&!popup.closed)popup.close();}catch(_){} try{ov.remove();}catch(_){} };
+                const finish=(d)=>{ if(done) return; d=d||{}; const authorizationId=d.authorizationId||d.authToken||''; const resCd=d.resCd||d.resultCode||''; try{localStorage.removeItem('KICC_PENDING');}catch(_){} cleanup();
                     if((resCd && resCd!=='0000') || !authorizationId){ reject(new Error(d.resMsg||'결제가 취소되었거나 인증에 실패했습니다.')); return; }
                     resolve({ moid: moid, authorizationId: authorizationId }); };
                 const consider=(d)=>{ if(!d||done) return; if(moid && d.shopOrderNo && String(d.shopOrderNo)!==String(moid)) return; finish(d); };
@@ -12824,20 +12842,68 @@ pdfjsScript,
                 window.addEventListener('storage', onStore);
                 try{ bc=new BroadcastChannel('kicc_pay'); bc.onmessage=(ev)=>{ if(ev.data&&ev.data.type==='KICC_RETURN') consider(ev.data.data||{}); }; }catch(_){}
                 sPoll=setInterval(checkLS, 600);
-                ov.querySelector('#_kf-x').onclick=()=>{ cleanup(); reject(new Error('결제가 취소되었습니다.')); };
+                ov.querySelector('#_kf-x').onclick=()=>{ try{localStorage.removeItem('KICC_PENDING');}catch(_){} cleanup(); reject(new Error('결제가 취소되었습니다.')); };
                 (async()=>{
                     try{
                         const pr=await fetch(`${API_URL}/api/pg/prepare`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(prepareBody) });
                         const pd=await pr.json().catch(()=>({}));
                         if(!pr.ok||!pd.ok||!pd.authPageUrl){ cleanup(); reject(new Error(pd.error||'결제창을 열 수 없습니다.')); return; }
                         moid=pd.moid;
+                        const mode = pd.displayMode || 'iframe';
+                        const ld=ov.querySelector('#_kf-load');
+                        // 🔀 redirect/popup: 전면 이동·팝업으로 띄운다(실 KICC 결제창은 iframe 차단 가능). 새로고침 복귀 대비 KICC_PENDING 저장 → 부트에서 승인 이어감.
+                        if(mode==='redirect' || mode==='popup'){
+                            try{ localStorage.setItem('KICC_PENDING', JSON.stringify({ moid: moid, kind: (prepareBody.payMethodTypeCode==='81'?'billing':'order'), orderId: prepareBody.orderId||null, amount: Number(prepareBody.amount)||0, goodsName: prepareBody.goodsName||'', ts: Date.now() })); }catch(_){}
+                            if(mode==='popup'){
+                                popup = window.open(pd.authPageUrl, winName||'kicc_pay', 'width=460,height=720,menubar=no,toolbar=no,location=yes');
+                                if(popup){
+                                    if(ld) ld.innerHTML='결제창에서 결제를 진행해 주세요.<br>완료되면 자동으로 이 화면으로 돌아옵니다.';
+                                    popWatch=setInterval(()=>{ if(popup && popup.closed){ clearInterval(popWatch); setTimeout(()=>{ if(!done){ try{localStorage.removeItem('KICC_PENDING');}catch(_){} cleanup(); reject(new Error('결제가 취소되었습니다.')); } }, 1400); } }, 700);
+                                    return;   // 결과는 postMessage/BroadcastChannel/localStorage 로 수신 → finish()
+                                }
+                                // 팝업 차단 → redirect 로 폴백
+                            }
+                            if(ld) ld.textContent='결제창으로 이동합니다…';
+                            location.href = pd.authPageUrl;   // 전면 이동(이 페이지는 언로드) — 복귀 후 _kiccResumeOnBoot 가 승인 이어감
+                            return;   // Promise 는 미해결 상태로 두고 페이지 전환
+                        }
+                        // 🖼 iframe(기본/시뮬): 앱 내 모달 iframe 으로 결제창 표시.
                         const body=ov.querySelector('#_kf-body'); const fr=document.createElement('iframe'); fr.src=pd.authPageUrl; fr.setAttribute('allow','payment *'); fr.style.cssText='width:100%;height:100%;border:0;display:block;';
-                        fr.onload=()=>{ const ld=ov.querySelector('#_kf-load'); if(ld) ld.style.display='none'; };
+                        fr.onload=()=>{ if(ld) ld.style.display='none'; };
                         body.appendChild(fr);
                     }catch(e){ cleanup(); reject(e); }
                 })();
             });
         }
+        // 🔁 [KICC redirect 복귀] 전면 리다이렉트 결제 후 앱이 새로 로드되면 저장해둔 KICC_PENDING + 결제창이 남긴 KICC_RETURN 으로 승인을 이어간다.
+        window._kiccResumeOnBoot = async function(){
+            let pend=null, ret=null;
+            try{ pend=JSON.parse(localStorage.getItem('KICC_PENDING')||'null'); }catch(_){}
+            if(!pend || !pend.moid) return;
+            if(Date.now()-(pend.ts||0) > 10*60*1000){ try{localStorage.removeItem('KICC_PENDING'); localStorage.removeItem('KICC_RETURN');}catch(_){} return; }
+            try{ ret=JSON.parse(localStorage.getItem('KICC_RETURN')||'null'); }catch(_){}
+            if(!ret) return;   // 아직 결제창 복귀 전(수동 재방문 등) — 대기(10분 후 자동 만료)
+            if(ret.shopOrderNo && String(ret.shopOrderNo)!==String(pend.moid)) return;
+            try{ localStorage.removeItem('KICC_PENDING'); localStorage.removeItem('KICC_RETURN'); }catch(_){}
+            const authorizationId = ret.authorizationId||ret.authToken||'';
+            const resCd = ret.resCd||ret.resultCode||'';
+            if((resCd && resCd!=='0000') || !authorizationId){ try{ showToast('결제가 취소되었습니다.'); }catch(_){} return; }
+            try{
+                // 주문결제=승인(/approve, 에스크로 확정), 카드등록(정기결제)=빌키발급(/billing/issue)
+                const endpoint = (pend.kind==='billing') ? '/api/pg/billing/issue' : '/api/pg/approve';
+                const ar=await fetch(`${API_URL}${endpoint}`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ moid: pend.moid, authorizationId }) });
+                const ad=await ar.json().catch(()=>({}));
+                if(!ar.ok || !ad.ok){ try{ showToast(ad.error||(pend.kind==='billing'?'카드 등록에 실패했습니다.':'결제 승인에 실패했습니다.')); }catch(_){} return; }
+                if(pend.kind==='billing'){
+                    try{ showToast('카드가 등록되었습니다: '+(ad.issuerName||'')+' '+(ad.cardMaskNo||'')); }catch(_){}
+                    try{ if(typeof loadBillingUI==='function') loadBillingUI(); }catch(_){}
+                } else {
+                    try{ window._showReceipt({ goodsName: pend.goodsName||'주문 결제', amount: (ad.amount||pend.amount), approvalNo: ad.approvalNo, tid: ad.tid, method:'카드결제' }); }catch(_){ try{ showToast('✅ 결제가 완료되었습니다'); }catch(__){} }
+                    try{ if(typeof loadMarketplace==='function') loadMarketplace(); }catch(_){}
+                }
+            }catch(e){ try{ showToast('결제 처리 중 오류가 발생했습니다.'); }catch(_){} }
+        };
+        try{ if(document.readyState==='loading') window.addEventListener('DOMContentLoaded', ()=>setTimeout(window._kiccResumeOnBoot, 800)); else setTimeout(window._kiccResumeOnBoot, 800); }catch(_){}
         // 💳 [KICC] 주문/구매 카드 결제. orderId 있으면 서버가 승인 시 에스크로 확정. resolve({moid,approvalNo,tid,order}).
         window.payByKicc = async function(orderId, opts){
             opts = opts || {};
