@@ -1765,7 +1765,7 @@
                     <div id="pg-mid-wrap" style="margin-top:12px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
                         <div class="input-group" style="width:220px; margin:0;">
                             <label style="font-size:11px;">KICC 실결제 MID (상점ID)</label>
-                            <input id="pg-mid-input" placeholder="예: T0022642" onchange="savePgProvider()">
+                            <input id="pg-mid-input" placeholder="예: T0022642" onchange="savePgMid()">
                         </div>
                         <div style="flex:1; min-width:220px; font-size:11px; color:#64748b; line-height:1.6; padding-bottom:4px;">
                             🔐 <b>시크릿 키(해시키)</b>는 서버 환경변수 <b>KICC_LICENSE_KEY</b>로만 설정합니다(프론트엔드·DB 저장 금지 · 서버 간 통신 전용). 현재 키: <b id="pg-key-state" style="color:var(--navy);">—</b><br>개발 서버 <b>testpgapi.easypay.co.kr</b> / 운영 <b>pgapi.easypay.co.kr</b> (모드로 자동 선택)
@@ -6449,7 +6449,7 @@
             let body;
             if(sel.value==='mock') body={pg_provider:'mock'};
             else if(sel.value==='sim') body={pg_provider:'kicc', kicc_mode:'sim', kicc_mid:'SIMULATOR'};
-            else { body={pg_provider:'kicc', kicc_mode:'test'}; const mid=((document.getElementById('pg-mid-input')||{}).value||'').trim(); if(mid) body.kicc_mid=mid; }
+            else { body={pg_provider:'kicc', kicc_mode:'test', kicc_mid:((document.getElementById('pg-mid-input')||{}).value||'').trim()}; }   // 입력값 반영(시뮬레이터 MID 잔여값 정리)
             const dsel=document.getElementById('pg-display-select'); if(dsel) body.kicc_display_mode=dsel.value;
             const boxes=document.querySelectorAll('#pg-allowed-box .pg-iss'); if(boxes.length){ const sel=[]; boxes.forEach(function(b){ if(b.checked) sel.push(b.value); }); body.allowed_card_issuers=sel.join(','); }
             try{
@@ -6459,6 +6459,17 @@
                 loadPgProvider();
                 try{ if(window.loadBillingUI) loadBillingUI(); }catch(_){}
             }catch(e){ showToast('설정 오류'); }
+        };
+        // 🏦 KICC MID 독립 저장 — 결제 방식과 무관하게 MID만 저장(결제 방식 변경 시 MID가 초기화되지 않도록 분리)
+        window.savePgMid = async function(){
+            const midIn=document.getElementById('pg-mid-input'); if(!midIn) return;
+            const mid=(midIn.value||'').trim();
+            try{
+                const r=await fetch(`${API_URL}/api/admin/pg/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kicc_mid:mid})});
+                const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok) return showToast(d.error||'MID 저장 실패');
+                showToast(mid?('MID 저장됨: '+mid):'MID를 비웠습니다.');
+                loadPgProvider();
+            }catch(e){ showToast('MID 저장 오류'); }
         };
         window.loadSettlement=async function(){
             try{ loadPayoutConfig(); loadPgProvider(); }catch(_){}
@@ -13395,12 +13406,13 @@ pdfjsScript,
                 panel.style.display='';
                 try{ const ps=await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); const pe=document.getElementById('paypin-state'); if(pe) pe.textContent = ps.locked?'(잠김 — 재설정 필요)':(ps.hasPin?'(설정됨)':'(미설정)'); }catch(_){}
                 try{ const row=document.getElementById('paybio-row'); if(row){
-                        // 📱 PG(결제) 활성 시 생체인증 행을 항상 노출 — 앱 WebView는 지원판정이 환경마다 달라 숨기면 안 됨. '사용' 탭 시 지원 여부 안내.
-                        row.style.display='flex';
+                        // 📱 '실제 플랫폼 인증기(지문·Face·Windows Hello)'가 있는 환경에서만 노출 — 모바일 웹=뜸, 앱 WebView(미지원)=숨김.
                         const sup = !!(window._bioSupported && window._bioSupported());
+                        let avail = false;
+                        if(sup){ try{ if(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable){ avail = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } }catch(_){ avail = false; } }
                         const be=document.getElementById('paybio-state'), bb=document.getElementById('paybio-btn');
-                        if(sup){ const bs=await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()).catch(()=>({})); if(be) be.textContent=bs.enabled?'(사용 중)':'(미설정)'; if(bb){ bb.textContent=bs.enabled?'해제':'사용'; bb.disabled=false; } }
-                        else { if(be) be.textContent='(탭하여 등록)'; if(bb){ bb.textContent='사용'; bb.disabled=false; } }
+                        if(sup && avail){ row.style.display='flex'; const bs=await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()).catch(()=>({})); if(be) be.textContent=bs.enabled?'(사용 중)':'(미설정)'; if(bb){ bb.textContent=bs.enabled?'해제':'사용'; bb.disabled=false; } }
+                        else { row.style.display='none'; }   // 앱 WebView 등 미지원 환경 → 숨김(결제 비밀번호 사용)
                 } }catch(_){}
                 const note = document.getElementById('billing-note'); if(note) note.textContent = cfg.sim ? '※ 현재 시뮬레이터(sim) 모드 — 실제 청구되지 않습니다.' : '';
                 const cards = await window.listBilling().catch(()=>[]);
