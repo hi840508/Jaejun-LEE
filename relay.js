@@ -1211,7 +1211,16 @@ function _kiccApiBase() {
 function _pgMoid(orderId) { return 'AK' + (orderId ? ('O' + orderId) : '') + '-' + Date.now().toString(36) + '-' + crypto.randomBytes(3).toString('hex'); }
 function _yyyymmdd() { const d = new Date(Date.now() + 9 * 3600 * 1000); return d.toISOString().slice(0, 10).replace(/-/g, ''); }
 // 🔤 KICC 금지 특수문자 제거(' " < > \ ; | & 줄바꿈) + 길이 제한. goodsName/reviseMessage 등 자유입력 필드에 적용.
-function _kiccSafe(s, max, fallback) { s = String(s == null ? '' : s).replace(/['"<>\\;|&\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim(); if (max && s.length > max) s = s.slice(0, max); return s || (fallback || ''); }
+function _kiccSafe(s, max, fallback) {
+    // KICC 금지문자(' " < > \ ; | & 줄바꿈 탭) + 이모지(4바이트/기호) 제거 — 규격: special-character 가이드.
+    s = String(s == null ? '' : s)
+        .replace(/[\uD800-\uDFFF]/g, '')                       // 4바이트(이모지 서로게이트) 제거
+        .replace(/[←-⇿⌀-➿⬀-⯿︀-️‍⃣]/g, '')  // 기호·화살표·이모지 변형선택자
+        .replace(/['"<>\\;|&\r\n\t]/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+    if (max && s.length > max) s = s.slice(0, max);
+    return s || (fallback || '');
+}
 // 🧪 시뮬레이터 모드 — KICC 자격증명 없이 전체 흐름(결제창→복귀→승인→주문확정)을 로컬에서 재현. kicc_mode='sim' 또는 kicc_mid가 'SIM'으로 시작.
 function _kiccIsSim() { return KICC_MODE === 'sim' || /^SIM/i.test(KICC_MID); }
 // 🪟 결제창 표시방식(실효값) — auto: 시뮬=iframe(로컬 결제창), 실 KICC=redirect(결제창 X-Frame-Options로 iframe 차단 가능). iframe|redirect|popup 은 관리자 강제값.
@@ -1312,7 +1321,7 @@ async function _pgKiccApprove({ shopTransactionId, authorizationId, shopOrderNo 
             if (String(r.data.msgAuthValue) !== hex && String(r.data.msgAuthValue) !== b64) console.warn('[KICC] 승인응답 msgAuthValue 불일치(인코딩 규격 확인 필요) moid=', shopOrderNo);
         } catch (_) {}
     }
-    const approvalNo = ci.approvalNo || pi.approvalNo || '';   // 승인번호는 paymentInfo.cardInfo.approvalNo
+    const approvalNo = pi.approvalNo || ci.approvalNo || '';   // 규격: 승인번호는 paymentInfo.approvalNo (cardInfo 아님)
     return { ok: true, pgCno: r.data.pgCno, amount: Number(r.data.amount) || 0, approvalNo, payMethodTypeCode: pi.payMethodTypeCode || '', cardNo: ci.cardNo || '', issuerName: ci.issuerName || ci.issuerCode || '', statusCode: r.data.statusCode || '', transactionDate: r.data.transactionDate || '', raw: r.data };
 }
 // 🔁 [정기결제] 빌키 발급 — payMethodTypeCode=81 인증 후 authorizationId로 빌키 발급. 응답 빌키 = paymentInfo.cardInfo.cardNo.
@@ -1502,10 +1511,11 @@ app.post('/api/pg/kicc/webhook', (req, res) => {
     if (!trusted) console.warn('[KICC webhook] 신뢰되지 않은 IP:', ip, '(Cloudflare 경유면 cf-connecting-ip 확인) — 데이터 대조로만 처리');
     const moid = String(body.shopOrderNo || body.shopTransactionId || '').trim();
     const pgCno = String(body.pgCno || '').trim();
-    // 거래상태코드로 판별(규격): TS03 매입요청 · TS02 승인취소 · ES04 가상계좌 입금완료 · RF02 환불완료.
+    // 판별(규격): notiType(10승인·20변경/취소·30입금·40에스크로·50환불완료·51이체불능·70은련) + statusCode(TS02승인취소·TS03매입요청·ES04입금완료·RF02환불완료).
     const statusCode = String(body.statusCode || '').trim().toUpperCase();
-    const isCancel = (statusCode === 'TS02' || statusCode === 'RF02');
-    const isDeposit = (statusCode === 'ES04');   // 가상계좌 입금완료 → 결제확정
+    const notiType = String(body.notiType || '').trim();
+    const isCancel = (statusCode === 'TS02' || statusCode === 'RF02' || notiType === '20' || notiType === '50');
+    const isDeposit = (statusCode === 'ES04' || notiType === '30');   // 가상계좌 입금완료 → 결제확정
     const finish = () => res.json({ resCd: '0000', resMsg: '정상' });   // 규격 정상응답 — 재전송(3분·최대10회) 방지
     if (!moid) return finish();
     db.get(`SELECT * FROM pg_payments WHERE moid=?`, [moid], (e, pay) => {

@@ -13382,10 +13382,15 @@ pdfjsScript,
                 panel.style.display='';
                 try{ const ps=await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); const pe=document.getElementById('paypin-state'); if(pe) pe.textContent = ps.locked?'(잠김 — 재설정 필요)':(ps.hasPin?'(설정됨)':'(미설정)'); }catch(_){}
                 try{ const row=document.getElementById('paybio-row'); if(row){
-                        // 📱 WebAuthn 지원이면 노출(모바일 WebView는 isUserVerifying… 를 false로 잘못 보고하는 경우가 있어 하드 차단하지 않음).
+                        // 📱 WebAuthn 지원이면 노출. 앱(WebView)은 지원판정이 환경마다 달라, 앱에서는 일단 노출하고 '사용' 탭 시 안내한다.
                         const sup = !!(window._bioSupported && window._bioSupported());
+                        const inApp = !!window.rayApp;
                         const be=document.getElementById('paybio-state'), bb=document.getElementById('paybio-btn');
-                        if(sup){ row.style.display='flex'; const bs=await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()).catch(()=>({})); if(be) be.textContent=bs.enabled?'(사용 중)':'(미설정)'; if(bb){ bb.textContent=bs.enabled?'해제':'사용'; bb.disabled=false; } }
+                        if(sup || inApp){
+                            row.style.display='flex';
+                            if(sup){ const bs=await fetch(`${API_URL}/api/pay/bio/status`,{credentials:'include'}).then(r=>r.json()).catch(()=>({})); if(be) be.textContent=bs.enabled?'(사용 중)':'(미설정)'; if(bb){ bb.textContent=bs.enabled?'해제':'사용'; bb.disabled=false; } }
+                            else { if(be) be.textContent='(탭하여 등록)'; if(bb){ bb.textContent='사용'; bb.disabled=false; } }
+                        }
                         else { row.style.display='none'; }
                 } }catch(_){}
                 const note = document.getElementById('billing-note'); if(note) note.textContent = cfg.sim ? '※ 현재 시뮬레이터(sim) 모드 — 실제 청구되지 않습니다.' : '';
