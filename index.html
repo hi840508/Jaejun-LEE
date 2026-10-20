@@ -13214,7 +13214,7 @@ pdfjsScript,
             return new Promise((resolve)=>{
                 let stage = (mode==='set') ? 'new' : 'enter';   // new → confirm → (저장)
                 let first = '';
-                let resetPw = null;   // 잊은 PIN 재설정 시 계정 비밀번호 보관(제출 시 /pin/reset)
+                let isReset = false; let resetPw = '';   // 잊은 PIN 재설정 모드 + 계정 비밀번호(없는 계정은 빈값 허용)
                 const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100070;background:rgba(15,23,42,.6);display:flex;align-items:flex-end;justify-content:center;';
                 const keyBtn='padding:16px 0;font-size:22px;font-weight:800;border:none;background:#f1f5f9;color:#0f172a;border-radius:12px;cursor:pointer;user-select:none;';
                 ov.innerHTML='<div style="background:#fff;width:100%;max-width:420px;border-radius:18px 18px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));">'
@@ -13234,24 +13234,24 @@ pdfjsScript,
                 document.body.appendChild(ov);
                 const dots=ov.querySelector('#pp-dots'), errEl=ov.querySelector('#pp-err'), titleEl=ov.querySelector('#pp-title'), subEl=ov.querySelector('#pp-sub');
                 let buf='';
-                const paint=()=>{ const settingNew=(stage==='new'||stage==='confirm'); titleEl.textContent = resetPw?'결제 비밀번호 재설정':((stage==='enter')?'결제 비밀번호':(stage==='new'?'결제 비밀번호 설정':'비밀번호 확인')); subEl.innerHTML=(stage==='enter')?'간편결제용 숫자 6자리를 입력하세요<br><span style="color:#94a3b8;">※ 카드 비밀번호(4자리)와 다른, 앱 전용 결제 비밀번호입니다</span>':(stage==='new'?'사용할 숫자 6자리를 입력하세요<br><span style="color:#94a3b8;">※ 카드 비밀번호와 다른 앱 전용 비밀번호</span>':'다시 한 번 입력하세요'); dots.innerHTML=[0,1,2,3,4,5].map(i=>'<span style="width:14px;height:14px;border-radius:50%;background:'+(i<buf.length?'#0f2f52':'#e2e8f0')+';"></span>').join(''); };
+                const paint=()=>{ titleEl.textContent = isReset?'결제 비밀번호 재설정':((stage==='enter')?'결제 비밀번호':(stage==='new'?'결제 비밀번호 설정':'비밀번호 확인')); subEl.innerHTML=(stage==='enter')?'간편결제용 숫자 6자리를 입력하세요<br><span style="color:#94a3b8;">※ 카드 비밀번호(4자리)와 다른, 앱 전용 결제 비밀번호입니다</span>':(stage==='new'?'사용할 숫자 6자리를 입력하세요<br><span style="color:#94a3b8;">※ 카드 비밀번호와 다른 앱 전용 비밀번호</span>':'다시 한 번 입력하세요'); dots.innerHTML=[0,1,2,3,4,5].map(i=>'<span style="width:14px;height:14px;border-radius:50%;background:'+(i<buf.length?'#0f2f52':'#e2e8f0')+';"></span>').join(''); };
                 const close=(v)=>{ try{ov.remove();}catch(_){} resolve(v); };
                 paint();
                 const submit=async()=>{
-                    if(mode!=='set' && !resetPw){ close(buf); return; }   // 입력(enter)만 — 서버가 검증
+                    if(mode!=='set' && !isReset){ close(buf); return; }   // 입력(enter)만 — 서버가 검증
                     if(stage==='new'){ first=buf; buf=''; stage='confirm'; errEl.textContent=''; paint(); return; }
                     // confirm
                     if(buf!==first){ errEl.textContent='비밀번호가 일치하지 않습니다. 다시 설정하세요.'; buf=''; first=''; stage='new'; paint(); return; }
-                    const ep = resetPw ? '/api/pay/pin/reset' : '/api/pay/pin/set';
-                    const body = resetPw ? { pin:first, password:resetPw } : { pin:first, currentPin: currentPin||'' };
-                    try{ const r=await fetch(`${API_URL}${ep}`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok){ errEl.textContent=d.error||'설정 실패'; buf=''; first=''; stage='new'; paint(); return; } close(first); }
+                    const ep = isReset ? '/api/pay/pin/reset' : '/api/pay/pin/set';
+                    const body = isReset ? { pin:first, password:resetPw } : { pin:first, currentPin: currentPin||'' };
+                    try{ const r=await fetch(`${API_URL}${ep}`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok){ errEl.textContent=d.error||'설정 실패'; buf=''; first=''; stage='new'; paint(); return; } if(isReset){ try{ window.__pinResetDone=true; }catch(_){} } close(first); }
                     catch(e){ errEl.textContent='설정 오류'; }
                 };
                 ov.querySelectorAll('.pp-k').forEach(b=>b.addEventListener('click',(e)=>{ e.preventDefault(); const k=b.getAttribute('data-k'); if(k==='clear') buf=''; else if(k==='back') buf=buf.slice(0,-1); else if(buf.length<6) buf+=k; errEl.textContent=''; paint(); if(buf.length===6) setTimeout(submit,120); }));
                 ov.querySelector('#pp-cancel').onclick=()=>close(null);
                 // 🔓 잊은 PIN 재설정 — 계정 비밀번호 확인 후 새 6자리 설정(enter 모드에서만 노출)
                 const resetEl=ov.querySelector('#pp-reset');
-                if(resetEl && mode==='enter'){ resetEl.style.display='block'; resetEl.onclick=async()=>{ let pw=null; try{ pw=await window._sfPrompt('계정(로그인) 비밀번호를 입력하세요.\n(결제 비밀번호를 잊으셨을 때 본인확인용)'); }catch(_){ pw=prompt('계정(로그인) 비밀번호'); } if(pw===null||pw==='') return; resetPw=pw; stage='new'; buf=''; first=''; errEl.textContent=''; resetEl.style.display='none'; paint(); }; }
+                if(resetEl && mode==='enter'){ resetEl.style.display='block'; resetEl.onclick=async()=>{ let pw=null; try{ pw=await window._sfPrompt('계정(로그인) 비밀번호를 입력하세요.\n(결제 비밀번호를 잊으셨을 때 본인확인 · 계정 비번이 없으면 비워두고 확인)'); }catch(_){ pw=prompt('계정(로그인) 비밀번호 (없으면 비움)')||''; } if(pw===null) return; isReset=true; resetPw=(pw||''); stage='new'; buf=''; first=''; errEl.textContent=''; resetEl.style.display='none'; paint(); }; }
                 ov.addEventListener('click',(e)=>{ if(e.target===ov) close(null); });
             });
         };
@@ -13412,12 +13412,16 @@ pdfjsScript,
             try{ const ok=await window.registerBiometric(); if(ok) showToast('✅ 이제 결제 시 생체인증으로 결제할 수 있습니다.'); }
             finally{ try{ loadBillingUI(); }catch(_){} }
         };
-        // 🔐 결제 비밀번호 설정/변경 (내 지갑)
+        // 🔐 결제 비밀번호 설정/변경/재설정 (내 지갑)
         window.managePayPin = async function(){
             let st={}; try{ st=await fetch(`${API_URL}/api/pay/pin/status`,{credentials:'include'}).then(r=>r.json()); }catch(_){}
+            // 미설정이거나 잠김 → 바로 새로 설정(잠김은 재설정 흐름로 유도)
             if(!st.hasPin){ const p=await window._payPinPad('set'); if(p) showToast('✅ 결제 비밀번호가 설정되었습니다.'); try{ loadBillingUI(); }catch(_){} return; }
-            const cur = await window._payPinPad('enter'); if(cur===null||cur===undefined) return;   // 현재 비밀번호
-            const nw = await window._payPinPad('set', cur); if(nw) showToast('✅ 결제 비밀번호가 변경되었습니다.');
+            // 설정됨 → 현재 비번 입력(모르면 입력창의 "계정 비밀번호로 재설정" 사용). 재설정하면 그걸로 완료.
+            window.__pinResetDone=false;
+            const cur = await window._payPinPad('enter'); if(cur===null||cur===undefined) return;
+            if(window.__pinResetDone){ showToast('✅ 결제 비밀번호가 재설정되었습니다.'); try{ loadBillingUI(); }catch(_){} return; }   // 재설정으로 이미 새 비번 설정됨 → 재입력 요구 안 함
+            const nw = await window._payPinPad('set', cur); if(nw) showToast('✅ 결제 비밀번호가 변경되었습니다.'); try{ loadBillingUI(); }catch(_){}
         };
         window.registerBilling = async function(opts){
             opts = opts || {};

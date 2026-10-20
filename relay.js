@@ -1774,14 +1774,15 @@ app.post('/api/pay/pin/set', (req, res) => {
     });
 });
 // 🔓 결제 비밀번호 '재설정' — 잊어버렸을 때 '계정 로그인 비밀번호'로 본인확인 후 새 PIN 설정(잠금도 해제).
+//   세션(requireUser) 자체가 본인확인이므로, 계정 비번이 저장돼 있으면 그 비번을 검증하고, 저장된 비번이 없는 계정(관리자 등)은 세션만으로 허용.
 app.post('/api/pay/pin/reset', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     const pin = String(req.body.pin || ''); const acct = String(req.body.password || '');
     if (!/^\d{6}$/.test(pin)) return res.status(400).json({ error: '결제 비밀번호는 숫자 6자리입니다.' });
-    if (!acct) return res.status(400).json({ error: '계정 비밀번호를 입력하세요.' });
     db.get(`SELECT password FROM users WHERE name=?`, [me], (e, u) => {
         if (e || !u) return res.status(500).json({ error: '사용자 조회 실패' });
-        if (!verifyPassword(acct, u.password)) return res.status(401).json({ error: '계정 비밀번호가 올바르지 않습니다.' });
+        const hasAcctPw = !!(u.password && String(u.password).length);
+        if (hasAcctPw && !verifyPassword(acct, u.password)) return res.status(401).json({ error: '계정 비밀번호가 올바르지 않습니다.' });
         db.run(`UPDATE users SET pay_pin_hash=?, pay_pin_fail=0 WHERE name=?`, [_makePinHash(pin), me], () => res.json({ ok: true }));
     });
 });
