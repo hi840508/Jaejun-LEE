@@ -2896,7 +2896,8 @@
                 // 🔐 401(만료/무효 세션) 감지 → 토큰 정리 + 로그인 화면 복귀. auth 엔드포인트 자체는 제외(로그인 루프 방지).
                 try {
                     const isApi = (u.indexOf(API_URL) === 0 || u.indexOf('/api/') === 0);
-                    const isAuthEp = /\/api\/auth\//.test(u);
+                    // 🔐 결제비번/생체/간편결제는 401을 '비밀번호 틀림·인증실패' 의미로도 쓰므로 세션만료(로그아웃) 처리에서 제외.
+                    const isAuthEp = /\/api\/auth\/|\/api\/pg\/quickpay|\/api\/pay\/(pin|bio)/.test(u);
                     if (isApi && !isAuthEp && window.EARTH_TOKEN) {
                         return p.then(function(res){
                             if (res && res.status === 401) { try { if (window.__handleSessionExpired) window.__handleSessionExpired(); } catch(_){} }
@@ -13085,6 +13086,8 @@ pdfjsScript,
                         // 🔀 redirect/popup: 전면 이동·팝업으로 띄운다(실 KICC 결제창은 iframe 차단 가능). 새로고침 복귀 대비 KICC_PENDING 저장 → 부트에서 승인 이어감.
                         if(mode==='redirect' || mode==='popup'){
                             try{ localStorage.setItem('KICC_PENDING', JSON.stringify({ moid: moid, kind: (prepareBody.payMethodTypeCode==='81'?'billing':'order'), orderId: prepareBody.orderId||null, amount: Number(prepareBody.amount)||0, goodsName: prepareBody.goodsName||'', ts: Date.now() })); }catch(_){}
+                            // 🖥 네이티브 데스크톱 앱: 결제창 이동을 '다운로드'로 가로채지 않도록 결제 모드 ON(복귀 시 자동 OFF).
+                            try{ if(window.rayApp && window.rayApp.setPaymentMode) window.rayApp.setPaymentMode(true); }catch(_){}
                             if(mode==='popup'){
                                 popup = window.open(pd.authPageUrl, winName||'kicc_pay', 'width=460,height=720,menubar=no,toolbar=no,location=yes');
                                 if(popup){
