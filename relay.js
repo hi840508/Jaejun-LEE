@@ -1773,6 +1773,18 @@ app.post('/api/pay/pin/set', (req, res) => {
         db.run(`UPDATE users SET pay_pin_hash=?, pay_pin_fail=0 WHERE name=?`, [_makePinHash(pin), me], () => res.json({ ok: true }));
     });
 });
+// 🔓 결제 비밀번호 '재설정' — 잊어버렸을 때 '계정 로그인 비밀번호'로 본인확인 후 새 PIN 설정(잠금도 해제).
+app.post('/api/pay/pin/reset', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    const pin = String(req.body.pin || ''); const acct = String(req.body.password || '');
+    if (!/^\d{6}$/.test(pin)) return res.status(400).json({ error: '결제 비밀번호는 숫자 6자리입니다.' });
+    if (!acct) return res.status(400).json({ error: '계정 비밀번호를 입력하세요.' });
+    db.get(`SELECT password FROM users WHERE name=?`, [me], (e, u) => {
+        if (e || !u) return res.status(500).json({ error: '사용자 조회 실패' });
+        if (!verifyPassword(acct, u.password)) return res.status(401).json({ error: '계정 비밀번호가 올바르지 않습니다.' });
+        db.run(`UPDATE users SET pay_pin_hash=?, pay_pin_fail=0 WHERE name=?`, [_makePinHash(pin), me], () => res.json({ ok: true }));
+    });
+});
 // 🫆 생체인증 상태 / 등록(WebAuthn 플랫폼 인증기)
 app.get('/api/pay/bio/status', (req, res) => {
     const me = requireUser(req, res); if (!me) return;

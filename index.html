@@ -13103,7 +13103,7 @@ pdfjsScript,
                             // 🖥 네이티브 데스크톱 앱: 결제창 이동을 '다운로드'로 가로채지 않도록 결제 모드 ON(복귀 시 자동 OFF).
                             try{ if(window.rayApp && window.rayApp.setPaymentMode) window.rayApp.setPaymentMode(true); }catch(_){}
                             if(mode==='popup'){
-                                popup = window.open(pd.authPageUrl, winName||'kicc_pay', 'width=460,height=720,menubar=no,toolbar=no,location=yes');
+                                popup = window.open(pd.authPageUrl, winName||'kicc_pay', 'width=820,height=860,menubar=no,toolbar=no,location=yes,resizable=yes,scrollbars=yes');
                                 if(popup){
                                     if(ld) ld.innerHTML='결제창에서 결제를 진행해 주세요.<br>완료되면 자동으로 이 화면으로 돌아옵니다.';
                                     popWatch=setInterval(()=>{ if(popup && popup.closed){ clearInterval(popWatch); setTimeout(()=>{ if(!done){ try{localStorage.removeItem('KICC_PENDING');}catch(_){} cleanup(); reject(new Error('결제가 취소되었습니다.')); } }, 1400); } }, 700);
@@ -13214,6 +13214,7 @@ pdfjsScript,
             return new Promise((resolve)=>{
                 let stage = (mode==='set') ? 'new' : 'enter';   // new → confirm → (저장)
                 let first = '';
+                let resetPw = null;   // 잊은 PIN 재설정 시 계정 비밀번호 보관(제출 시 /pin/reset)
                 const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100070;background:rgba(15,23,42,.6);display:flex;align-items:flex-end;justify-content:center;';
                 const keyBtn='padding:16px 0;font-size:22px;font-weight:800;border:none;background:#f1f5f9;color:#0f172a;border-radius:12px;cursor:pointer;user-select:none;';
                 ov.innerHTML='<div style="background:#fff;width:100%;max-width:420px;border-radius:18px 18px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));">'
@@ -13228,23 +13229,29 @@ pdfjsScript,
                     + '<button class="pp-k" data-k="back" style="'+keyBtn+'font-size:18px;">⌫</button>'
                     +'</div>'
                     +'<button id="pp-cancel" style="width:100%;padding:11px;border:0;background:transparent;color:#64748b;font-weight:700;cursor:pointer;margin-top:10px;">취소</button>'
+                    +'<button id="pp-reset" style="display:none;width:100%;padding:8px;border:0;background:transparent;color:#0f2f52;font-weight:700;font-size:12px;cursor:pointer;text-decoration:underline;">결제 비밀번호를 잊으셨나요? 계정 비밀번호로 재설정</button>'
                     +'</div>';
                 document.body.appendChild(ov);
                 const dots=ov.querySelector('#pp-dots'), errEl=ov.querySelector('#pp-err'), titleEl=ov.querySelector('#pp-title'), subEl=ov.querySelector('#pp-sub');
                 let buf='';
-                const paint=()=>{ titleEl.textContent = (stage==='enter')?'결제 비밀번호':(stage==='new'?'결제 비밀번호 설정':'비밀번호 확인'); subEl.textContent=(stage==='enter')?'숫자 6자리를 입력하세요':(stage==='new'?'사용할 숫자 6자리를 입력하세요':'다시 한 번 입력하세요'); dots.innerHTML=[0,1,2,3,4,5].map(i=>'<span style="width:14px;height:14px;border-radius:50%;background:'+(i<buf.length?'#0f2f52':'#e2e8f0')+';"></span>').join(''); };
+                const paint=()=>{ const settingNew=(stage==='new'||stage==='confirm'); titleEl.textContent = resetPw?'결제 비밀번호 재설정':((stage==='enter')?'결제 비밀번호':(stage==='new'?'결제 비밀번호 설정':'비밀번호 확인')); subEl.innerHTML=(stage==='enter')?'간편결제용 숫자 6자리를 입력하세요<br><span style="color:#94a3b8;">※ 카드 비밀번호(4자리)와 다른, 앱 전용 결제 비밀번호입니다</span>':(stage==='new'?'사용할 숫자 6자리를 입력하세요<br><span style="color:#94a3b8;">※ 카드 비밀번호와 다른 앱 전용 비밀번호</span>':'다시 한 번 입력하세요'); dots.innerHTML=[0,1,2,3,4,5].map(i=>'<span style="width:14px;height:14px;border-radius:50%;background:'+(i<buf.length?'#0f2f52':'#e2e8f0')+';"></span>').join(''); };
                 const close=(v)=>{ try{ov.remove();}catch(_){} resolve(v); };
                 paint();
                 const submit=async()=>{
-                    if(mode!=='set'){ close(buf); return; }
+                    if(mode!=='set' && !resetPw){ close(buf); return; }   // 입력(enter)만 — 서버가 검증
                     if(stage==='new'){ first=buf; buf=''; stage='confirm'; errEl.textContent=''; paint(); return; }
                     // confirm
                     if(buf!==first){ errEl.textContent='비밀번호가 일치하지 않습니다. 다시 설정하세요.'; buf=''; first=''; stage='new'; paint(); return; }
-                    try{ const r=await fetch(`${API_URL}/api/pay/pin/set`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({pin:first, currentPin: currentPin||''})}); const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok){ errEl.textContent=d.error||'설정 실패'; buf=''; first=''; stage='new'; paint(); return; } close(first); }
+                    const ep = resetPw ? '/api/pay/pin/reset' : '/api/pay/pin/set';
+                    const body = resetPw ? { pin:first, password:resetPw } : { pin:first, currentPin: currentPin||'' };
+                    try{ const r=await fetch(`${API_URL}${ep}`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok){ errEl.textContent=d.error||'설정 실패'; buf=''; first=''; stage='new'; paint(); return; } close(first); }
                     catch(e){ errEl.textContent='설정 오류'; }
                 };
                 ov.querySelectorAll('.pp-k').forEach(b=>b.addEventListener('click',(e)=>{ e.preventDefault(); const k=b.getAttribute('data-k'); if(k==='clear') buf=''; else if(k==='back') buf=buf.slice(0,-1); else if(buf.length<6) buf+=k; errEl.textContent=''; paint(); if(buf.length===6) setTimeout(submit,120); }));
                 ov.querySelector('#pp-cancel').onclick=()=>close(null);
+                // 🔓 잊은 PIN 재설정 — 계정 비밀번호 확인 후 새 6자리 설정(enter 모드에서만 노출)
+                const resetEl=ov.querySelector('#pp-reset');
+                if(resetEl && mode==='enter'){ resetEl.style.display='block'; resetEl.onclick=async()=>{ let pw=null; try{ pw=await window._sfPrompt('계정(로그인) 비밀번호를 입력하세요.\n(결제 비밀번호를 잊으셨을 때 본인확인용)'); }catch(_){ pw=prompt('계정(로그인) 비밀번호'); } if(pw===null||pw==='') return; resetPw=pw; stage='new'; buf=''; first=''; errEl.textContent=''; resetEl.style.display='none'; paint(); }; }
                 ov.addEventListener('click',(e)=>{ if(e.target===ov) close(null); });
             });
         };
@@ -13347,8 +13354,8 @@ pdfjsScript,
                                     } else { showToast((bz&&bz.error)||'생체 인증 실패 — 비밀번호로 진행합니다.'); }
                                 }catch(_){ showToast('생체 결제 오류 — 비밀번호로 진행합니다.'); }
                             }
-                            // 1) 생체인증(WebAuthn · 웹)
-                            if(bio && bio.enabled && window._bioSupported()){
+                            // 1) 생체인증(WebAuthn · 웹 전용) — 네이티브 앱(Windows Hello)에서는 WebAuthn(윈도우 암호키 선택창) 비활성.
+                            if(!(window._nativeBio && window._nativeBio()) && bio && bio.enabled && window._bioSupported()){
                                 const assertion = await window._bioAuthAssertion();
                                 if(assertion){
                                     payBtn.disabled=true; payBtn.textContent='결제 중…';
