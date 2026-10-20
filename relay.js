@@ -4820,7 +4820,7 @@ app.get('/api/purchases/:buyer', async (req, res) => {
 
         // 각 구매에 연관된 주문서(product_orders) — ★N+1 제거★: 한 번에 조회 후 productId별 최신 주문 매핑(구매내역 로딩 가속)
         const orders = await new Promise(r => db.all(
-            `SELECT id, productId, bundle_html, memo, form_data, created_at, courier, tracking, status FROM product_orders WHERE buyer = ? ORDER BY id DESC`,
+            `SELECT id, productId, bundle_html, memo, form_data, created_at, courier, tracking, status, amount FROM product_orders WHERE buyer = ? ORDER BY id DESC`,
             [buyer], (e, rows) => r(rows || [])
         ));
         const orderByPid = {};
@@ -4834,6 +4834,9 @@ app.get('/api/purchases/:buyer', async (req, res) => {
                 t.orderCreatedAt = order.created_at;
                 t.hasBundle = !!order.bundle_html;
                 t.courier = order.courier; t.tracking = order.tracking; t.orderStatus = order.status;   // 🚚 배송조회용
+                t.orderAmount = order.amount;
+                // 💰 결제 전(awaiting_payment/pending) 주문은 '확정 금액(order.amount)'을 표시·결제에 사용 — 거래금액(t.amount)은 미확정/과거값일 수 있어 혼선(예: 1111 vs 10000) 방지.
+                if (['awaiting_payment', 'pending'].includes(order.status) && Number(order.amount) > 0) t.amount = order.amount;
             }
         }
         res.json(txs);

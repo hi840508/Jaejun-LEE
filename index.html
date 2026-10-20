@@ -1547,10 +1547,10 @@
                 <div class="panel" id="billing-panel" style="display:none;">
                     <!-- 결제 관리: 등록 카드 -->
                     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:4px;">
-                        <h4 style="font-size:15px; font-weight:900;">💳 결제 관리 <span style="font-size:12px;font-weight:500;color:#94a3b8;">(정기결제·구독용 카드)</span></h4>
+                        <h4 style="font-size:15px; font-weight:900;">💳 결제 관리 <span style="font-size:12px;font-weight:500;color:#94a3b8;">(간편결제·정기결제 공용 카드)</span></h4>
                         <button class="btn btn-success wallet-btn" onclick="billingRegisterCard()">+ 카드 등록</button>
                     </div>
-                    <div style="font-size:12px; color:#94a3b8; margin-bottom:10px;">여기 등록한 카드는 <b>정기결제·구독</b>(예: 공유폴더 백업)에 자동 사용됩니다. 일반 구매·주문 결제는 <b>결제할 때마다 결제창에서 카드를 입력</b>하며, 카드를 미리 등록하지 않아도 됩니다.</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-bottom:10px;">여기 등록한 카드는 <b>간편결제(일반 주문 결제)</b>와 <b>정기결제·구독</b>(예: 공유폴더 백업)에 <b>모두</b> 사용됩니다. 등록 후에는 결제 시 카드를 매번 입력할 필요 없이 간편결제로 진행됩니다. (등록하지 않아도 결제 시마다 결제창 입력으로 결제 가능)</div>
                     <div id="billing-cards" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;"></div>
                     <div class="wallet-row" style="margin-bottom:8px;">
                         <span style="font-size:13px;">🔐 결제 비밀번호 <span id="paypin-state" style="font-size:12px; color:#94a3b8;"></span><div style="font-size:11px; color:#94a3b8; margin-top:2px;">저장 카드로 간편결제할 때 사용합니다(6자리).</div></span>
@@ -13056,6 +13056,11 @@ pdfjsScript,
         //    resolve({moid, authorizationId}), reject(취소/실패).
         function _kiccFlow(prepareBody, winName){
             return new Promise((resolve, reject)=>{
+                // 🖥 구버전 데스크톱 앱(결제창 처리 미반영: setPaymentMode 없음)에서는 결제창이 외부 브라우저로 새거나 저장창이 떠 흐름이 깨짐 → 차단·안내.
+                if(window.rayApp && !window.rayApp.setPaymentMode){
+                    try{ alert('현재 데스크톱 앱 버전은 카드 결제를 지원하지 않습니다.\n\n앱을 최신 버전으로 업데이트(재설치)하거나, 웹브라우저(Chrome/Edge)에서 진행해 주세요.'); }catch(_){}
+                    reject(new Error('앱 업데이트가 필요합니다. (웹브라우저에서 진행 가능)')); return;
+                }
                 let moid='', done=false, bc=null, sPoll=null, popup=null, popWatch=null;
                 // 📱 표시방식(서버 prepare.displayMode)에 따라 분기: iframe(시뮬·레이어 가능 PG) / redirect(실 KICC·WebView 안전) / popup(PC).
                 const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100060;background:rgba(4,7,12,.72);display:flex;flex-direction:column;';
@@ -13130,7 +13135,7 @@ pdfjsScript,
                 const endpoint = (pend.kind==='billing') ? '/api/pg/billing/issue' : '/api/pg/approve';
                 const ar=await fetch(`${API_URL}${endpoint}`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ moid: pend.moid, authorizationId }) });
                 const ad=await ar.json().catch(()=>({}));
-                if(!ar.ok || !ad.ok){ try{ showToast(ad.error||(pend.kind==='billing'?'카드 등록에 실패했습니다.':'결제 승인에 실패했습니다.')); }catch(_){} return; }
+                if(!ar.ok || !ad.ok){ try{ if(pend.kind==='billing') showToast((ad.error||'카드 등록에 실패했습니다.')+'\n※ 유효한(실제/테스트) 카드번호인지 확인하세요. 임의의 숫자는 거절됩니다.'); else showToast(ad.error||'결제 승인에 실패했습니다.'); }catch(_){} return; }
                 if(pend.kind==='billing'){
                     try{ showToast('카드가 등록되었습니다: '+(ad.issuerName||'')+' '+(ad.cardMaskNo||'')); }catch(_){}
                     try{ if(typeof loadBillingUI==='function') loadBillingUI(); }catch(_){}
@@ -13483,8 +13488,8 @@ pdfjsScript,
         };
         window.billingRegisterCard = async function(){
             if(!window._billingEnabled) return showToast('카드결제(PG)가 활성화되어야 이용할 수 있습니다.');
-            try{ const r = await window.registerBilling({goodsName:'정기결제 카드등록'}); showToast('카드 등록 완료: '+(r.issuerName||'')+' '+(r.cardMaskNo||'')); loadBillingUI(); }
-            catch(e){ showToast(e.message||'카드 등록 취소'); }
+            try{ const r = await window.registerBilling({goodsName:'결제 카드 등록'}); showToast('카드 등록 완료: '+(r.issuerName||'')+' '+(r.cardMaskNo||'')); loadBillingUI(); }
+            catch(e){ const m=String(e.message||''); if(/취소|cancel/i.test(m)) showToast('카드 등록이 취소되었습니다.'); else showToast('카드 등록 실패: '+m+'\n※ 유효한(실제/테스트) 카드번호를 입력했는지 확인하세요. 임의의 숫자는 카드사에서 거절됩니다.'); }
         };
         window.billingDeleteCard = async function(id){
             if(!confirm('이 카드를 삭제할까요? 연결된 구독은 청구가 실패할 수 있습니다.')) return;
