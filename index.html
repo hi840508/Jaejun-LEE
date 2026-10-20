@@ -2896,8 +2896,9 @@
                 // 🔐 401(만료/무효 세션) 감지 → 토큰 정리 + 로그인 화면 복귀. auth 엔드포인트 자체는 제외(로그인 루프 방지).
                 try {
                     const isApi = (u.indexOf(API_URL) === 0 || u.indexOf('/api/') === 0);
-                    // 🔐 결제비번/생체/간편결제는 401을 '비밀번호 틀림·인증실패' 의미로도 쓰므로 세션만료(로그아웃) 처리에서 제외.
-                    const isAuthEp = /\/api\/auth\/|\/api\/pg\/quickpay|\/api\/pay\/(pin|bio)/.test(u);
+                    // 🔐 결제(PG)·결제인증 엔드포인트는 401을 '비밀번호 틀림·결제 인증실패' 의미로도 쓰고, 결제창 복귀 직후 타이밍에
+                    //   일시적 401이 날 수 있어 세션만료(로그아웃) 처리에서 모두 제외. (각 호출부가 자체 에러처리)
+                    const isAuthEp = /\/api\/auth\/|\/api\/pg\/|\/api\/pay\//.test(u);
                     if (isApi && !isAuthEp && window.EARTH_TOKEN) {
                         return p.then(function(res){
                             if (res && res.status === 401) { try { if (window.__handleSessionExpired) window.__handleSessionExpired(); } catch(_){} }
@@ -13122,6 +13123,8 @@ pdfjsScript,
             const authorizationId = ret.authorizationId||ret.authToken||'';
             const resCd = ret.resCd||ret.resultCode||'';
             if((resCd && resCd!=='0000') || !authorizationId){ try{ showToast('결제가 취소되었습니다.'); }catch(_){} return; }
+            // 🔐 리다이렉트 복귀 직후 세션/로그인 복원 대기(최대 ~8초) — 인증 전 호출로 401·로그아웃되는 것 방지.
+            for(let i=0;i<40;i++){ if(window.EARTH_TOKEN && typeof currentUser!=='undefined' && currentUser) break; await new Promise(r=>setTimeout(r,200)); }
             try{
                 // 주문결제=승인(/approve, 에스크로 확정), 카드등록(정기결제)=빌키발급(/billing/issue)
                 const endpoint = (pend.kind==='billing') ? '/api/pg/billing/issue' : '/api/pg/approve';
