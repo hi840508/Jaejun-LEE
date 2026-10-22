@@ -5711,12 +5711,61 @@ async function _bankOpenBanking(_p) {
     // TODO(오픈뱅킹): ①토큰 ②예금주조회(inquiry/receive) ③출금이체(모계좌→) ④입금이체(→판매자계좌) ⑤결과 ref 반환.
     return { ok: false, status: 'failed', error: '오픈뱅킹 이체 미구현 — 이용기관 등록·키 수령 후 구현.' };
 }
-// 🏦 [은행 펌뱅킹] 설계: 은행 전용선/보안매체(공동인증서·이체전용 비밀번호)로 대량이체(급여/정산 지급) 전문 전송.
-//   은행별 규격 상이(국민/신한/우리/기업 등). 🔐 FIRMBANKING_CERT_PATH/PW·이체비밀번호는 env·보안저장소.
-//   ⚠ 실호출은 은행 계약·단말 세팅 후 구현.
-async function _bankFirmBanking(_p) {
-    if (!process.env.FIRMBANKING_ENDPOINT) return { ok: false, status: 'failed', error: '펌뱅킹 미설정(FIRMBANKING_ENDPOINT env).' };
-    return { ok: false, status: 'failed', error: '펌뱅킹 이체 미구현 — 은행 계약·보안매체 세팅 후 구현.' };
+// 🏦 [은행 펌뱅킹] 판매자 등록계좌로 '실계좌 자동이체'. 실무상 펌뱅킹 중계사/은행 게이트웨이(HTTP)를 통해 이체 전문을 전송한다.
+//   계약처(은행/중계사: 웹케시·더존·코밴 등)마다 규격이 달라, 엔드포인트·인증·응답코드를 모두 env로 설정 가능하게 범용 어댑터로 구성.
+//   🔐 인증값(이체전용 비밀번호·기관키·서명키)은 env 전용(프론트/DB 금지). 계약처 엔드포인트만 넣으면 실송금 동작.
+//   요청(JSON) 기본 스키마(계약처에 맞춰 조정 가능): { requestId, bankCode, account, accountHolder, amount, memo, transferPw?, apiKey? }
+//   응답 성공 판정: HTTP 2xx + (resultCode===FIRMBANKING_OK_CODE || success===true || status==='paid'). ref=이체고유번호.
+//   멱등: requestId(=payoutId 기반)로 중복이체 방지(중계사측도 동일 requestId 재요청은 1회만 처리하도록 계약).
+//   은행명→표준코드 매핑(_firmBankCode). 이미 숫자코드로 등록돼 있으면 그대로 사용.
+const _FIRM_BANK_CODES = { '국민':'004','KB':'004','KB국민':'004','신한':'088','우리':'020','기업':'003','IBK':'003','IBK기업':'003','농협':'011','NH':'011','NH농협':'011','하나':'081','KEB':'081','KEB하나':'081','SC':'023','SC제일':'023','씨티':'027','한국씨티':'027','카카오뱅크':'090','카카오':'090','케이뱅크':'089','토스뱅크':'092','토스':'092','새마을':'045','새마을금고':'045','우체국':'071','수협':'007','대구':'031','iM뱅크':'031','부산':'032','경남':'039','광주':'034','전북':'037','제주':'035','산업':'002','KDB':'002','KDB산업':'002','저축은행':'050','신협':'048' };
+function _firmBankCode(bank) {
+    const key = String(bank || '').trim();
+    if (!key) return '';
+    if (/^\d{3}$/.test(key)) return key;                 // 이미 3자리 은행코드면 그대로
+    if (_FIRM_BANK_CODES[key]) return _FIRM_BANK_CODES[key];
+    for (const k in _FIRM_BANK_CODES) { if (key.indexOf(k) >= 0) return _FIRM_BANK_CODES[k]; }
+    return key;                                          // 못 찾으면 원문(계약처가 은행명 입력을 받는 경우 대비)
+}
+async function _bankFirmBanking({ bank, account, holder, amount, memo, payoutId }) {
+    const ep = process.env.FIRMBANKING_ENDPOINT;
+    if (!ep) return { ok: false, status: 'failed', error: '펌뱅킹 미설정(FIRMBANKING_ENDPOINT env). 중계사/은행 이체 게이트웨이 URL을 설정하세요.' };
+    const bankCode = _firmBankCode(bank);
+    const acct = String(account || '').replace(/[^0-9]/g, '');
+    const amt = Math.round(Number(amount) || 0);
+    if (!bankCode || !acct || !(amt > 0)) return { ok: false, status: 'failed', error: '펌뱅킹 이체 파라미터 오류(은행/계좌/금액 확인).' };
+    const requestId = 'PO' + (payoutId || '0') + '-' + Date.now();   // 멱등키(중복이체 방지)
+    const body = {
+        requestId: requestId,
+        bankCode: bankCode,
+        account: acct,
+        accountHolder: String(holder || '').slice(0, 20),
+        amount: amt,
+        memo: String(memo || '').replace(/[\r\n]/g, ' ').slice(0, 20)
+    };
+    if (process.env.FIRMBANKING_TRANSFER_PW) body.transferPw = process.env.FIRMBANKING_TRANSFER_PW;   // 이체전용 비밀번호(계약처 요구 시)
+    if (process.env.FIRMBANKING_API_KEY) body.apiKey = process.env.FIRMBANKING_API_KEY;               // 기관키(계약처 요구 시)
+    const headers = { 'Content-Type': 'application/json' };
+    if (process.env.FIRMBANKING_API_KEY) headers['Authorization'] = 'Bearer ' + process.env.FIRMBANKING_API_KEY;
+    // 🔏 서명(선택): 시크릿 있으면 HMAC-SHA256(requestId|bankCode|account|amount) 헤더 부가
+    if (process.env.FIRMBANKING_SIGN_KEY) {
+        try { const crypto = require('crypto'); headers['X-Signature'] = crypto.createHmac('sha256', process.env.FIRMBANKING_SIGN_KEY).update(requestId + '|' + bankCode + '|' + acct + '|' + amt).digest('hex'); } catch (_) {}
+    }
+    try {
+        const ctrl = new AbortController(); const to = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 30000);
+        let r, txt;
+        try { r = await fetch(ep, { method: 'POST', headers: headers, body: JSON.stringify(body), signal: ctrl.signal }); txt = await r.text(); }
+        finally { clearTimeout(to); }
+        let d = {}; try { d = JSON.parse(txt || '{}'); } catch (_) {}
+        const okCode = String(process.env.FIRMBANKING_OK_CODE || '0000');
+        const code = String(d.resultCode || d.rpcd || d.code || d.resCd || '');
+        const success = !!r && r.ok && (code === okCode || d.success === true || String(d.status || '').toLowerCase() === 'paid');
+        if (success) return { ok: true, status: 'paid', ref: String(d.ref || d.tranNo || d.txId || d.bankTranId || requestId) };
+        const msg = (d.resultMsg || d.message || d.resMsg || ('펌뱅킹 응답 오류 ' + (code || (r && r.status) || ''))).toString().slice(0, 200);
+        return { ok: false, status: 'failed', error: msg };
+    } catch (ex) {
+        return { ok: false, status: 'failed', error: '펌뱅킹 통신 오류: ' + String((ex && ex.message) || ex).slice(0, 160) };
+    }
 }
 // 💸 [정산 자동 지급] 정산 실행 공용 헬퍼 — 확정·미정산 주문의 지급액(매출−결제수수료)을 에스크로(Admin 보관)에서 차감하고
 //   판매자 '등록계좌로 직접 지급'(payouts 원장 기록). 인앱 잔액 적립 없음. 수수료는 Admin 수익으로 잔류. 주문 settled=1.

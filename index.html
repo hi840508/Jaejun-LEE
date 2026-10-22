@@ -1720,10 +1720,10 @@
                             <div class="input-group" style="width:210px; margin:0;">
                                 <label style="font-size:11px;">이체 방식</label>
                                 <select id="bank-provider-select" onchange="savePayoutConfig()">
-                                    <option value="wallet">앱 지갑 자동적립(즉시·설정 불필요)</option>
-                                    <option value="mock">기록만(수동 송금)</option>
-                                    <option value="openbanking">오픈뱅킹(자동이체·계약 필요)</option>
-                                    <option value="firmbanking">펌뱅킹(자동이체·계약 필요)</option>
+                                    <option value="firmbanking">펌뱅킹(판매자 실계좌 자동이체)</option>
+                                    <option value="openbanking">오픈뱅킹(판매자 실계좌 자동이체)</option>
+                                    <option value="mock">기록만(운영자 수동 송금)</option>
+                                    <option value="wallet">앱 지갑 적립(내부·테스트용)</option>
                                 </select>
                             </div>
                         </div>
@@ -6494,10 +6494,10 @@
                 const sel=document.getElementById('bank-provider-select'); if(sel) sel.value=d.bank_provider||'wallet';
                 const note=document.getElementById('payout-config-note');
                 if(note){ let msg='', col='#b45309';
-                    if(d.bank_provider==='wallet'){ msg='✅ 판매자 앱 지갑으로 즉시 적립됩니다(외부 은행/계좌·설정 불필요). 가장 간단하고 바로 동작하는 방식입니다.'; col='#166534'; }
-                    else if((d.bank_provider==='openbanking')&&!d.has_openbanking_key) msg='⚠ 오픈뱅킹 키(OPENBANKING_CLIENT_ID/SECRET) 미설정 — 자동이체가 실패합니다. (은행 계약·키 수령 전까지는 "앱 지갑 자동적립"을 권장)';
-                    else if((d.bank_provider==='firmbanking')&&!d.has_firmbanking_key) msg='⚠ 펌뱅킹(FIRMBANKING_ENDPOINT) 미설정 — 자동이체가 실패합니다. (은행 계약·보안매체 전까지는 "앱 지갑 자동적립"을 권장)';
-                    else if(d.bank_provider==='mock') msg='ℹ "기록만"은 지급이 기록만 되고 실제 이체는 운영자가 수동으로 해야 합니다.';
+                    if(d.bank_provider==='firmbanking'){ if(!d.has_firmbanking_key) msg='⚠ 펌뱅킹 미설정 — 중계사/은행 게이트웨이 URL(FIRMBANKING_ENDPOINT)과 인증값(FIRMBANKING_API_KEY 또는 이체전용 비밀번호 FIRMBANKING_TRANSFER_PW)을 서버 env에 설정해야 판매자 실계좌로 자동이체됩니다. (계약 전까지는 "기록만=수동 송금" 권장)'; else { msg='✅ 펌뱅킹 설정됨 — 구매확정·정산예정일 도래 시 판매자 등록계좌로 자동이체됩니다.'; col='#166534'; } }
+                    else if(d.bank_provider==='openbanking'){ if(!d.has_openbanking_key) msg='⚠ 오픈뱅킹 미설정 — 금결원 이용기관 등록 후 OPENBANKING_CLIENT_ID/SECRET/ACCESS_TOKEN·출금모계좌(env)를 설정해야 자동이체됩니다.'; else { msg='✅ 오픈뱅킹 설정됨 — 판매자 등록계좌로 자동이체됩니다.'; col='#166534'; } }
+                    else if(d.bank_provider==='mock'){ msg='ℹ "기록만" — 지급 내역에 판매자 실계좌가 기록되고, 운영자가 그 계좌로 직접 송금합니다. (펌뱅킹/오픈뱅킹 계약 전 운영용)'; col='#0f2f52'; }
+                    else if(d.bank_provider==='wallet'){ msg='⚠ "앱 지갑 적립"은 내부 적립(테스트용)이라 실제 은행 계좌로 가지 않습니다. 실계좌 지급은 펌뱅킹/오픈뱅킹을 사용하세요.'; }
                     note.textContent=msg; note.style.color=col; }
             }catch(e){}
         };
