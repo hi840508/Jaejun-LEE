@@ -5054,9 +5054,10 @@ app.post('/api/refund', (req, res) => {
 });
 
 // ============================================================================================
-// 🧾 전자세금계산서 + 정산(배민식: Admin 단독 일괄) — 팍스빌 ASP 어댑터(기본 Mock, env로 live 전환)
-//  정산 공식: 매출 - 결제수수료(2.7%) - SW월사용료(10000) - 그 수수료합의 VAT(10%). 세 값은 settings로 변경 가능.
-//  국세청 전송 API(팍스빌)가 없으면 Mock으로 발행 기록만 남기고 프런트에서 PDF 출력. 계약 후 env 넣으면 live.
+// 🧾 전자세금계산서 + 정산(배민식: Admin 단독 일괄) — 전자세금계산서 ASP 어댑터(기본 Mock, env로 live 전환)
+//  📌 사용 예정 ASP = 팜스빌(=팝빌 추정, 2026-10-22 결정). ⚠ 실제 업체 확정·테스트키 수령 후, 그 업체 실 API 규격(인증·요청/응답 포맷)에 맞춰
+//     아래 _postToPaxbill 요청 바디/헤더/엔드포인트를 조정해야 함. 현재는 범용 REST(Bearer+Secret) 어댑터이며 MOCK 동작.
+//  국세청 전송 API가 없으면 Mock으로 발행 기록만 남기고 프런트에서 PDF 출력. 계약 후 env 넣으면 live.
 // ============================================================================================
 function _digits(v){ return String(v == null ? '' : v).replace(/\D/g, ''); }
 function _n(v){ return Math.max(0, Math.round(Number(v) || 0)); }
@@ -5744,6 +5745,9 @@ async function _bankFirmBanking({ bank, account, holder, amount, memo, payoutId 
         amount: amt,
         memo: String(memo || '').replace(/[\r\n]/g, ' ').slice(0, 20)
     };
+    // 🏦 출금 모계좌(플랫폼 주거래, 예: 우리은행) — 계약처 API가 요구하면 env로 전달. (은행코드 자동매핑)
+    if (process.env.FIRMBANKING_WITHDRAW_BANK) body.withdrawBankCode = _firmBankCode(process.env.FIRMBANKING_WITHDRAW_BANK);
+    if (process.env.FIRMBANKING_WITHDRAW_ACCOUNT) body.withdrawAccount = String(process.env.FIRMBANKING_WITHDRAW_ACCOUNT).replace(/[^0-9]/g, '');
     if (process.env.FIRMBANKING_TRANSFER_PW) body.transferPw = process.env.FIRMBANKING_TRANSFER_PW;   // 이체전용 비밀번호(계약처 요구 시)
     if (process.env.FIRMBANKING_API_KEY) body.apiKey = process.env.FIRMBANKING_API_KEY;               // 기관키(계약처 요구 시)
     const headers = { 'Content-Type': 'application/json' };
