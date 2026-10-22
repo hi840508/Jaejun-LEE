@@ -17863,7 +17863,12 @@ pdfjsScript,
                 const head = st.mode==='simple'
                     ? '<tr><th>#</th><th>제작구분</th><th>치식</th><th>품목명</th><th>메모</th></tr>'
                     : '<tr><th>#</th><th>치식</th><th>품목(수가×치아수)</th><th>세부/메모</th><th>금액</th></tr>';
-                const filesHtml = (filesMeta&&filesMeta.length) ? `<div class="sec">첨부 파일: ${filesMeta.map(f=>esc(f.filename)).join(', ')}</div>` : '';
+                const filesHtml = (filesMeta&&filesMeta.length) ? `<h2>첨부 파일 (${filesMeta.length})</h2><div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;">${filesMeta.map(f=>{
+                        const isImg = /^image\//i.test(f.type||'') || /\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(f.filename||'');
+                        const u=f.url||'';
+                        const inner = (isImg && u) ? `<img src="${esc(u)}" alt="${esc(f.filename)}" style="width:130px;height:130px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;display:block;">` : `<div style="width:130px;height:130px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;border-radius:8px;border:1px solid #e2e8f0;font-size:40px;">📄</div>`;
+                        return `<div style="width:130px;"><a href="${esc(u||'#')}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">${inner}<div style="font-size:11px;color:#475569;margin-top:4px;word-break:break-all;text-align:center;line-height:1.3;">${esc(f.filename)}</div></a></div>`;
+                    }).join('')}</div>` : '';
                 const amtHtml = st.mode==='detail'
                     ? `<div class="amt">합계 금액: ${won(st.amount)}</div>`
                     : `<div class="amt" style="color:#b45309;">금액 미정 (기공소 확정 예정)</div>`;
@@ -18175,15 +18180,15 @@ pdfjsScript,
                 const pay = { method:'balance' };
                 showToast('의뢰서 전송 중...');
 
-                // 첨부 파일 base64
-                const filesB64 = [];
-                for(const f of st.attachFiles){ try { const b = await fileToBase64(f); filesB64.push({ filename:f.name, content:b, type:f.type||'application/octet-stream' }); } catch(_){} }
+                // 📎 첨부 파일 업로드(채팅과 동일 경로) → URL 확보. 의뢰서 썸네일 · 대화방 FILE_ATTACH · 공유폴더 전달에 공용.
+                const attachUploaded = [];
+                for(const f of (st.attachFiles||[])){ try{ const url = await window.uploadChatAttachment(f); if(url) attachUploaded.push({ filename:f.name, type:f.type||'application/octet-stream', url, sizeKB:(f.size/1024).toFixed(0) }); }catch(_){} }
 
-                const orderHtml = buildRxBundleHTML(st, info, filesB64);
+                const orderHtml = buildRxBundleHTML(st, info, attachUploaded);
                 const modeLabel = st.mode==='simple' ? '의뢰서(간편)' : '의뢰서(상세)';
                 const productName = `${modeLabel} · ${info.patientName}`;
                 const buyerInfo = { name: info.clinic, phone:'', address:'', userId: currentUser.name, clinic:info.clinic, doctor:info.doctor, patientName:info.patientName, birth:info.birth, gender:info.gender, chartNo:info.chartNo, dueDate:info.dueDate, dueAmPm:info.dueAmPm };
-                const formData = { rxMode: st.mode, orderInfo: info, items: st.items, attachMeta: filesB64.map(f=>({ filename:f.filename, type:f.type })) };
+                const formData = { rxMode: st.mode, orderInfo: info, items: st.items, attachMeta: attachUploaded.map(f=>({ filename:f.filename, type:f.type, url:f.url })) };
 
                 try { await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: st.seller }) }); } catch(_){}
 
@@ -18226,6 +18231,10 @@ pdfjsScript,
                 if(await ensureSocket() && socket){
                     socket.emit('join_room', roomId);
                     socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: rxDocMsg });
+                    // 📎 의뢰서 첨부 파일을 대화방에 FILE_ATTACH로 전송 → 썸네일 표시 + 상대가 공유폴더로 저장 가능(실제 데이터 전달).
+                    for(const a of attachUploaded){
+                        try{ const amsg = await window._buildAttachMsg(a.filename, a.sizeKB, a.type, a.url, null); socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: amsg }); }catch(_){}
+                    }
                 }
 
                 closeOv('rx-form-modal');
