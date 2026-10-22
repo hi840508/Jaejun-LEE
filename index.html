@@ -3444,7 +3444,7 @@
                 primaryAct=async function(){ await window._appRequestStoragePerm(); try{ if(typeof retryFn==='function') await retryFn(); }catch(_){} };
             } else if(isMobile){
                 title='모바일 저장 안내'; primaryLabel='확인';
-                body='이 기기에서는 <b>폴더를 지정하지 않아도 됩니다.</b><br>받은 파일은 자동으로 <b>다운로드 폴더</b>에 저장돼요.<br><span style="color:#888;">폴더 지정·자동 정리 기능은 PC(크롬/엣지)에서 사용할 수 있어요.</span>';
+                body='받은 파일은 <b>저장하기</b>를 누르면 <b>다운로드 폴더</b>로 내려받아집니다.<br>저장 후 <b>알림 표시줄</b> 또는 휴대폰 <b>"다운로드/파일"</b> 앱에서 확인하세요.<br><span style="color:#888;">날짜별 공유폴더 자동 정리는 PC(크롬/엣지)에서 지원됩니다.</span>';
                 primaryAct=function(){};
             } else {
                 title='폴더 쓰기 권한'; primaryLabel='📂 다시 시도';
@@ -3487,9 +3487,10 @@
             // 4) 폴백: 창 이동 없는 blob 다운로드 (⚠️ window.open 금지 — 앱에서 창 전체가 영상으로 바뀌어 닫히지 않는 문제)
             try {
                 const resp = await fetch(url); const blob = await resp.blob(); const bu = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = bu; a.download = name || 'download'; document.body.appendChild(a); a.click();
-                setTimeout(()=>{ try{ a.remove(); }catch(_){} try{ URL.revokeObjectURL(bu); }catch(_){} }, 3000);
-                showToast('💾 저장됨: ' + (name||''));
+                const a = document.createElement('a'); a.href = bu; a.download = name || 'download'; a.rel='noopener'; document.body.appendChild(a); a.click();
+                setTimeout(()=>{ try{ a.remove(); }catch(_){} try{ URL.revokeObjectURL(bu); }catch(_){} }, 8000);
+                const _isMob = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'');
+                showToast(_isMob ? ('💾 '+(name||'파일')+' 다운로드 — 알림 또는 "다운로드" 폴더에서 확인하세요.') : ('💾 저장됨: '+(name||'')));
             } catch(e){ try{ if(!window.rayApp) window.open(url, '_blank'); }catch(_){} }
         };
         // ▶️ 클릭 시 실행/미리보기: 공유폴더의 파일을 OS로 실행(앱 브리지) → 없으면 인페이지 미리보기(항상 닫기 가능). 창 이동 없음.
@@ -3820,7 +3821,7 @@
             async function getFileAt(pathArr, name){ try{ const h=await _dirAt(pathArr); const fh=await h.getFileHandle(_safe(name),{create:false}); return await fh.getFile(); }catch(_){ return null; } }
             async function writeFileAt(pathArr, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _dirAt(pathArr); const safe=_safe(name); const fh=await h.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return safe; }
             // 대화방 이름 폴더(없으면 생성)에 저장 — 자동 수신용
-            async function writeFileInRoom(roomName, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _loadHandle(); const dir=await h.getDirectoryHandle(_safe(roomName||'received'),{create:true}); const safe=_safe(name); const fh=await dir.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return _safe(roomName)+'/'+safe; }
+            async function writeFileInRoom(roomName, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _loadHandle(); const parts=String(roomName||'received').split('/').map(_safe).filter(Boolean); if(!parts.length) parts.push('received'); let dir=h; for(const p of parts){ dir=await dir.getDirectoryHandle(p,{create:true}); } const safe=_safe(name); const fh=await dir.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return parts.join('/')+'/'+safe; }
             async function mkdirAt(pathArr, name){ if(!(await _ensurePerm(true))) return false; try{ const h=await _dirAt(pathArr); await h.getDirectoryHandle(_safe(name),{create:true}); _scheduleSync(); return true; }catch(e){ return false; } }
             async function removeAt(pathArr, name, recursive){ if(!(await _ensurePerm(true))){ window.__rcLastErr='공유폴더 권한 없음(권한 허용 필요)'; return false; } try{ const h=await _dirAt(pathArr); await h.removeEntry(name, {recursive:!!recursive}); try{ if((pathArr||[]).length===0) fetch(API_URL+'/api/devices/files/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fname:name, deviceId:deviceId()})}); }catch(_){} _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
             async function _copyDir(srcDir, dstDir){ for await (const [nm,ent] of srcDir.entries()){ if(ent.kind==='directory'){ const nd=await dstDir.getDirectoryHandle(nm,{create:true}); await _copyDir(ent, nd); } else { const f=await ent.getFile(); const nf=await dstDir.getFileHandle(nm,{create:true}); const w=await nf.createWritable(); await w.write(f); await w.close(); } } }
@@ -4035,6 +4036,18 @@
             if(!c){ const d=new Date(); c = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
             return a + '_' + c;
         };
+        // 📅 오늘 날짜 폴더(YYYY-MM-DD)
+        window._todayFolder = function(dt){ const d=dt?new Date(dt):new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+        // 📁 공유폴더에 '날짜/케이스' 2단 폴더로 저장(없으면 생성). 데스크톱 FSA 전용. 성공 시 true.
+        window._rcSaveNested = async function(dateFolder, caseFolder, name, blob){
+            const R=window.RCFolder; if(!R||!R.supported) return false;
+            try{
+                await R.mkdirAt([], dateFolder);
+                if(caseFolder) await R.mkdirAt([dateFolder], caseFolder);
+                await R.writeFileAt(caseFolder?[dateFolder,caseFolder]:[dateFolder], name, blob);
+                return true;
+            }catch(e){ return false; }
+        };
         // 📁 주문 대화방 ID(room_ord_N) → 저장 폴더명(관점별) 해석 + 캐시. 저장 시점에 확실히 계산(타이밍 무관).
         window._resolveOrderFolderName = async function(roomId){
             try{
@@ -4045,7 +4058,9 @@
                 let chart=''; try{ const bi=o.buyer_info?JSON.parse(o.buyer_info):{}; chart=bi.chartNo||''; }catch(_){}
                 const isBuyer = (currentUser && currentUser.name === o.buyer);
                 const store = (window.__orderRoomStore && window.__orderRoomStore[roomId] && window.__orderRoomStore[roomId].storeName) || o.seller || '';
-                const name = window._orderFolderName ? (isBuyer ? window._orderFolderName(store, chart) : window._orderFolderName(o.buyer, chart)) : roomId;
+                const _case = window._orderFolderName ? (isBuyer ? window._orderFolderName(store, chart) : window._orderFolderName(o.buyer, chart)) : roomId;
+                // 📅 주문 생성일 기준 날짜 폴더로 중첩(전달 날짜별 정리) — 송신·수신 모두 같은 '날짜/케이스'로 모임.
+                const name = (window._todayFolder ? window._todayFolder(o.created_at||undefined) : '') ? (window._todayFolder(o.created_at||undefined)+'/'+_case) : _case;
                 window.__orderFolderMap = window.__orderFolderMap || {}; window.__orderFolderMap[roomId] = name;
                 return name;
             }catch(_){ return roomId; }
@@ -14707,7 +14722,8 @@ pdfjsScript,
                         try{ window.__orderFolderMap = window.__orderFolderMap || {};
                             const _isBuyer = (currentUser && currentUser.name === o.buyer);
                             const _store = (window.__orderRoomStore && window.__orderRoomStore[currentChatRoomId] && window.__orderRoomStore[currentChatRoomId].storeName) || o.seller || '';
-                            window.__orderFolderMap[currentChatRoomId] = _isBuyer ? _orderFolderName(_store, _chart) : _orderFolderName(o.buyer, _chart);
+                            const _caseN = _isBuyer ? _orderFolderName(_store, _chart) : _orderFolderName(o.buyer, _chart);
+                            window.__orderFolderMap[currentChatRoomId] = (window._todayFolder ? (window._todayFolder(o.created_at||undefined)+'/'+_caseN) : _caseN);   // 📅 주문일/케이스
                         }catch(_){}
                         window.renderOrderPin({ orderId:_oid, amount:Number(o.amount)||0, label:_label, isMe:(currentUser && currentUser.name === o.buyer) });
                     }).catch(()=>{});
@@ -18203,12 +18219,18 @@ pdfjsScript,
                 currentChatRoomId = roomId;
                 if(socket && socket.connected) socket.emit('join_room', roomId);
 
-                // 📁 주문 첨부 파일들을 지정 공유폴더에 저장(구매자 관점=상점명_차트번호) + 이후 대화방 전달 파일도 이 폴더로
+                // 📁 주문 첨부 + 의뢰서 PDF를 공유폴더 '날짜/케이스' 2단 폴더에 저장(데스크톱 FSA). 대화방 전달 파일도 같은 폴더로.
                 try {
-                    const _ofn = _orderFolderName(st.storeName, info.chartNo);
+                    const _ofn = window._todayFolder()+'/'+_orderFolderName(st.storeName, info.chartNo);   // 날짜/케이스 (writeFileInRoom이 중첩 생성)
                     window.__orderFolderMap = window.__orderFolderMap || {}; window.__orderFolderMap[roomId] = _ofn;
-                    if(window.RCFolder && window.RCFolder.supported && st.attachFiles && st.attachFiles.length){
-                        (async()=>{ let ok=0; for(const f of st.attachFiles){ try{ await window.RCFolder.writeFileInRoom(_ofn, f.name, f); ok++; }catch(_){} } if(ok) showToast('📁 첨부 '+ok+'개를 공유폴더 ['+_ofn+'] 폴더에 저장했습니다.'); })();
+                    if(window.RCFolder && window.RCFolder.supported){
+                        (async()=>{
+                            let ok=0;
+                            for(const f of (st.attachFiles||[])){ try{ await window.RCFolder.writeFileInRoom(_ofn, f.name, f); ok++; }catch(_){} }
+                            // 🧾 의뢰서 PDF 동봉
+                            try{ const pdf=buildRxPdfBlob(st, info); if(pdf){ await window.RCFolder.writeFileInRoom(_ofn, '의뢰서_'+String(info.patientName||'case').replace(/[\\/:*?"<>|]/g,'_')+'.pdf', pdf); } }catch(_){}
+                            if(ok) showToast('📁 공유폴더 ['+_ofn+']에 저장: 첨부 '+ok+'개 + 의뢰서 PDF');
+                        })();
                     }
                 } catch(_){}
 
