@@ -4137,8 +4137,8 @@ app.post('/api/order/refund-request', (req, res) => {
         if (err || !ord) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if (ord.buyer !== buyer) return res.status(403).json({ error: '본인 주문만 환불 요청할 수 있습니다.' });
         if (ord.settled) return res.status(400).json({ error: '정산 완료된 주문은 환불 요청할 수 없습니다.' });
-        if (ord.status === 'confirmed') return res.status(400).json({ error: '구매확정된 주문은 환불 요청할 수 없습니다.' });
-        if (!['approved', 'shipping', 'delivered'].includes(ord.status)) return res.status(400).json({ error: '배송 완료 전(구매확정 전) 주문만 환불 요청할 수 있습니다.' });
+        // 결제(에스크로 보관) 후 정산 전까지는 구매확정 상태여도 환불 요청 가능 — 판매자가 승인하면 보관금 반환.
+        if (!['approved', 'shipping', 'delivered', 'confirmed'].includes(ord.status)) return res.status(400).json({ error: '결제 완료 후 정산 전 주문만 환불 요청할 수 있습니다.' });
         db.run(`UPDATE product_orders SET status = 'refund_requested', memo = COALESCE(memo,'') || ? WHERE id = ?`, ['\n[환불요청] ' + (reason || ''), orderId], () => { _notifyOrderStatus(ord.buyer, ord.seller, orderId, 'refund_requested', '↩️ [환불 요청] 구매자가 환불을 요청했습니다. 판매자 승인 시 환불됩니다.' + (reason ? ' 사유: ' + reason : '')); res.json({ success: true }); });
     });
 });
