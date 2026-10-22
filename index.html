@@ -1712,16 +1712,18 @@
                             <div style="font-size:12px;color:#64748b;margin-top:3px;">켜면 정산예정일 도래 주문을 판매자 등록계좌로 <b>자동 지급</b>합니다. (기본: 꺼짐 · 꺼진 상태에선 [정산] 버튼으로 수동 지급)</div>
                         </div>
                         <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
-                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:800; font-size:13px;">
-                                <input type="checkbox" id="auto-payout-toggle" onchange="savePayoutConfig()" style="width:18px; height:18px; cursor:pointer;">
-                                <span id="auto-payout-label">자동지급 OFF</span>
+                            <label id="auto-payout-switch" onclick="toggleAutoPayout(event)" style="display:flex; align-items:center; gap:9px; cursor:pointer; font-weight:800; font-size:13px; user-select:none;">
+                                <input type="checkbox" id="auto-payout-toggle" style="position:absolute; opacity:0; width:0; height:0; pointer-events:none;">
+                                <span id="auto-payout-track" style="position:relative; display:inline-block; width:46px; height:26px; background:#cbd5e1; border-radius:999px; transition:background .2s; flex:none;"><span id="auto-payout-knob" style="position:absolute; top:3px; left:3px; width:20px; height:20px; background:#fff; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:left .2s;"></span></span>
+                                <span id="auto-payout-label" style="color:#64748b;">자동지급 꺼짐</span>
                             </label>
-                            <div class="input-group" style="width:190px; margin:0;">
+                            <div class="input-group" style="width:210px; margin:0;">
                                 <label style="font-size:11px;">이체 방식</label>
                                 <select id="bank-provider-select" onchange="savePayoutConfig()">
-                                    <option value="mock">기록만(수동 이체)</option>
-                                    <option value="openbanking">오픈뱅킹(자동이체)</option>
-                                    <option value="firmbanking">펌뱅킹(자동이체)</option>
+                                    <option value="wallet">앱 지갑 자동적립(즉시·설정 불필요)</option>
+                                    <option value="mock">기록만(수동 송금)</option>
+                                    <option value="openbanking">오픈뱅킹(자동이체·계약 필요)</option>
+                                    <option value="firmbanking">펌뱅킹(자동이체·계약 필요)</option>
                                 </select>
                             </div>
                         </div>
@@ -2963,7 +2965,12 @@
                     //    JSON이 정말 손상된 경우만(파싱 불가) 정리, 그 외엔 유지.
                     try{ JSON.parse(savedData); }catch(_bad){ try{ localStorage.removeItem('earth_auto_login'); }catch(__){} }
                     try{ const ls=document.getElementById('login-section'); if(ls) ls.style.display='block'; const lw=document.getElementById('login-wrap'); if(lw) lw.style.display='block'; }catch(_){}
+                    try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){}
                 }
+            } else {
+                // 🔓 비로그인 부팅(로그아웃 직후 등) — 로그인 칸이 잔류 오버레이/잠금으로 막히지 않도록 보장(지연 재시도 포함)
+                try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){}
+                try{ setTimeout(function(){ try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){} }, 600); setTimeout(function(){ try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){} }, 1600); }catch(_){}
             }
         };
 
@@ -3112,6 +3119,18 @@
         window._clearStuckOverlays = function(){
             try{ ['_kf-overlay','osk-panel','osk-vcursor'].forEach(function(id){ var e=document.getElementById(id); if(e) e.remove(); }); }catch(_){}
             try{ document.body.style.paddingBottom=''; }catch(_){}
+        };
+        // 🔓 로그인 화면 상호작용 보장 — 로그아웃/부팅 후 접속 ID·비밀번호 칸이 비활성(오버레이·pointer-events·disabled)으로 막히는 것을 방지.
+        //    앱(Electron)에서 결제/모달 잔류나 body 잠금이 남아 입력이 안 되던 문제 대응. 로그인 전 상태일 때만 동작.
+        window._ensureAuthInteractive = function(){
+            try{ if(typeof currentUser!=='undefined' && currentUser) return; }catch(_){}
+            try{ window._clearStuckOverlays && window._clearStuckOverlays(); }catch(_){}
+            try{ document.body.style.pointerEvents=''; document.body.style.overflow=''; document.documentElement.style.pointerEvents=''; }catch(_){}
+            try{ const lw=document.getElementById('login-wrap'); if(lw){ lw.style.pointerEvents=''; lw.classList.remove('reg-locked'); } }catch(_){}
+            try{ const ls=document.getElementById('login-section'); if(ls){ ls.style.pointerEvents=''; ls.classList.remove('reg-locked'); } }catch(_){}
+            try{ ['login-name','login-password','auto-login-check'].forEach(function(id){ var e=document.getElementById(id); if(e){ e.disabled=false; e.readOnly=false; e.style.pointerEvents=''; e.style.opacity=''; var p=e.closest('.input-group'); if(p){ p.style.pointerEvents=''; p.classList.remove('reg-locked'); } } }); }catch(_){}
+            // 결제 중 플래그/네이티브 결제모드 해제(로그아웃 상태에선 결제 아님)
+            try{ if(window.rayApp && window.rayApp.setPaymentMode) window.rayApp.setPaymentMode(false); }catch(_){}
         };
         function toggleLoginMode(mode) {
             try{ window._clearStuckOverlays(); }catch(_){}
@@ -3527,7 +3546,13 @@
             modal.style.display = 'flex';
         }
 
-        function logout() { _postAuthToParent(null); try{ if(window.EARTH_TOKEN) fetch(`${API_URL}/api/auth/logout`, { method:'POST', headers:{ 'x-auth-token': window.EARTH_TOKEN } }); }catch(_){} setEarthToken(''); localStorage.removeItem('earth_auto_login'); isAdmin = false; location.reload(); }
+        function logout() { _postAuthToParent(null); try{ if(window.EARTH_TOKEN) fetch(`${API_URL}/api/auth/logout`, { method:'POST', headers:{ 'x-auth-token': window.EARTH_TOKEN } }); }catch(_){} setEarthToken(''); localStorage.removeItem('earth_auto_login'); isAdmin = false; currentUser = null;
+            // 🔓 reload 전/후 모두 입력 가능하도록 보장(앱에서 reload가 늦거나 soft-logout이어도 로그인 칸 활성화)
+            try{ window._clearStuckOverlays && window._clearStuckOverlays(); }catch(_){}
+            try{ const ws=document.getElementById('workspace-section'); if(ws) ws.style.display='none'; const ls=document.getElementById('login-section'); if(ls) ls.style.display='block'; const lw=document.getElementById('login-wrap'); if(lw) lw.style.display='block'; }catch(_){}
+            try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){}
+            location.reload();
+        }
 
         // 🚪 회원 탈퇴 — 계정/개인데이터 삭제 + 진행 중 대화방에 상대에게 '퇴장' 안내(나가기와 동일)
         window.withdrawAccount = async function(){
@@ -5137,7 +5162,20 @@
                 const _nameBar=(nm)=>'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:500;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+_sfEsc(nm)+'</div>';
                 // 정사각 썸네일 박스(padding-top 100%): flex 컬럼에서 aspect-ratio 무시 문제 회피
                 const _sq=(inner,bg)=>'<div class="rc-thumbbox" style="position:relative;width:100%;padding-top:100%;overflow:hidden;background:'+(bg||'#f3f4f6')+';">'+inner+'</div>';
-                const folderCards=cur.folders.map(nm=>'<div class="rc-gfd" data-name="'+_sfEsc(nm)+'" title="'+_sfEsc(nm)+'" style="position:relative;overflow:hidden;background:#fff;cursor:pointer;display:flex;flex-direction:column;">'+_sq('<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:52px;line-height:1;">📁</div>')+_nameBar(nm)+'</div>').join('');
+                // 📁 폴더 카드(상대경로 data-rel 포함 — 날짜 섹션 안의 케이스 폴더는 'YYYY-MM-DD/케이스'처럼 2단 경로)
+                const _folderCard=(displayName, relSegs)=>'<div class="rc-gfd" data-name="'+_sfEsc(displayName)+'" data-rel="'+_sfEsc(relSegs.join('/'))+'" title="'+_sfEsc(displayName)+'" style="position:relative;overflow:hidden;background:#fff;cursor:pointer;display:flex;flex-direction:column;">'+_sq('<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:52px;line-height:1;">📁</div>')+_nameBar(displayName)+'</div>';
+                // 📅 날짜 폴더(YYYY-MM-DD)는 '날짜 섹션'으로 펼쳐 그 안의 케이스 폴더를 날짜별로 나열. 나머지는 '폴더' 섹션.
+                const _isDateName=(nm)=>/^\d{4}-\d{2}-\d{2}$/.test(String(nm||''));
+                const _dateFolders=cur.folders.filter(_isDateName).sort((a,b)=>b.localeCompare(a));
+                const _plainFolders=cur.folders.filter(nm=>!_isDateName(nm));
+                const folderCards=_plainFolders.map(nm=>_folderCard(nm,[nm])).join('');
+                const _dateSections=[];
+                for(const df of _dateFolders){
+                    let sub={folders:[],files:[]}; try{ sub=await R.listAt(path.concat(df)); }catch(_){}
+                    const _subFolders=(sub.folders||[]), _subFiles=(sub.files||[]);
+                    const childCards=_subFolders.map(nm=>_folderCard(nm,[df,nm])).join('');
+                    _dateSections.push({ date:df, folders:_subFolders.length, files:_subFiles.length, cards:childCards });
+                }
                 // 🩻 CT 시리즈 그룹핑
                 const seriesMap={};
                 const _dcm=cur.files.filter(f=>/\.dcm$/i.test(f.fname));
@@ -5163,7 +5201,15 @@
                 fileList.forEach(f=>{ const k=_sfDateKey(f.mtime); if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(f); });
                 const _secGridStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+ZOOM+'px,1fr));gap:12px;';
                 let sectionsHtml='';
-                if(folderCards) sectionsHtml+='<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:8px 2px 6px;">폴더 <span style="color:#94a3b8;font-weight:600;">('+cur.folders.length+')</span></div><div class="_sf-secgrid" style="'+_secGridStyle+'">'+folderCards+'</div></div>';
+                if(folderCards) sectionsHtml+='<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:8px 2px 6px;">폴더 <span style="color:#94a3b8;font-weight:600;">('+_plainFolders.length+')</span></div><div class="_sf-secgrid" style="'+_secGridStyle+'">'+folderCards+'</div></div>';
+                // 📅 날짜 섹션(최신순) — 'YYYY-MM-DD' 헤더 + 그 안의 케이스 폴더 카드. 헤더 클릭 시 해당 날짜 폴더로 진입.
+                _dateSections.forEach((ds)=>{
+                    const _cnt=ds.folders + (ds.files||0);
+                    const _todayK=(function(){ const t=new Date(); return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); })();
+                    const _dlabel = (ds.date===_todayK) ? (ds.date+' · 오늘') : ds.date;
+                    const _body = ds.cards ? ('<div class="_sf-secgrid" style="'+_secGridStyle+'">'+ds.cards+'</div>') : ('<div style="padding:6px 2px 2px;color:#94a3b8;font-size:12px;">이 날짜 폴더로 들어가 파일을 확인하세요.'+(ds.files?(' (파일 '+ds.files+'개)'):'')+'</div>');
+                    sectionsHtml+='<div class="_sf-sec"><div class="_sf-datehead" data-rel="'+_sfEsc(ds.date)+'" style="display:flex;align-items:center;justify-content:space-between;font-weight:800;font-size:14px;color:#334155;padding:14px 2px 6px;cursor:pointer;user-select:none;"><span>📅 '+_sfEsc(_dlabel)+' <span style="color:#94a3b8;font-weight:600;">('+_cnt+')</span></span><span style="color:#94a3b8;font-weight:600;font-size:12px;">열기 ›</span></div>'+_body+'</div>';
+                });
                 order.forEach((k)=>{ const cards=groups[k].map(_card).join(''); sectionsHtml+='<div class="_sf-sec"><div class="_sf-sechead" style="display:flex;align-items:center;justify-content:space-between;font-weight:800;font-size:14px;color:#334155;padding:14px 2px 6px;cursor:pointer;user-select:none;"><span>'+_sfEsc(k)+' <span style="color:#94a3b8;font-weight:600;">('+groups[k].length+')</span></span><span class="_sf-chev" style="color:#94a3b8;transition:transform .15s;">▾</span></div><div class="_sf-secgrid" style="'+_secGridStyle+'">'+cards+'</div></div>'; });
                 const empty=(!cur.folders.length && !fileList.length);
                 var _emptyMsg;
@@ -5219,16 +5265,24 @@
                 }; }
                 // 폴더 카드 — 단일 클릭으로 열기 + 파일 카드를 끌어다 놓으면 그 폴더로 이동(탐색기처럼)
                 ov.querySelectorAll('.rc-gfd').forEach(el=>{ const nm=el.getAttribute('data-name');
-                    el.addEventListener('click',()=>{ path=path.concat([nm]); render(); });
-                    el.addEventListener('dragover',(e)=>{ if(window.__rcDragFile){ e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect='move'; el.style.outline='2px solid #0f2f52'; } });
-                    el.addEventListener('dragleave',()=>{ el.style.outline=''; });
-                    el.addEventListener('drop',async(e)=>{ el.style.outline=''; const fn=window.__rcDragFile || (e.dataTransfer&&e.dataTransfer.getData('application/x-rc-file')); if(!fn) return; e.preventDefault(); e.stopPropagation(); showToast('이동 중: '+fn); if(await R.moveInto(path, fn, nm)){ showToast('폴더로 이동됨: '+nm); render(); } else showToast('이동 실패: '+(window.__rcLastErr||'')); });
+                    const rel=(el.getAttribute('data-rel')||nm).split('/').filter(Boolean);
+                    const parent=path.concat(rel.slice(0,-1));              // 이 폴더의 부모 경로(날짜 섹션 안이면 날짜폴더까지 포함)
+                    const leaf=rel[rel.length-1]||nm;                        // 실제 폴더명
+                    const nested=rel.length>1;
+                    el.addEventListener('click',()=>{ path=path.concat(rel); render(); });
+                    if(!nested){
+                        el.addEventListener('dragover',(e)=>{ if(window.__rcDragFile){ e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect='move'; el.style.outline='2px solid #0f2f52'; } });
+                        el.addEventListener('dragleave',()=>{ el.style.outline=''; });
+                        el.addEventListener('drop',async(e)=>{ el.style.outline=''; const fn=window.__rcDragFile || (e.dataTransfer&&e.dataTransfer.getData('application/x-rc-file')); if(!fn) return; e.preventDefault(); e.stopPropagation(); showToast('이동 중: '+fn); if(await R.moveInto(path, fn, leaf)){ showToast('폴더로 이동됨: '+leaf); render(); } else showToast('이동 실패: '+(window.__rcLastErr||'')); });
+                    }
                     el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); ctxMenu(e.clientX,e.clientY,[
-                        {label:'📂 열기',fn:()=>{ path=path.concat([nm]); render(); }},
-                        {label:'✏️ 이름 변경',fn:async()=>{ const nn=await _sfPrompt('폴더 새 이름',nm); if(nn&&nn!==nm){ window.__rcLastErr=''; showToast('폴더 이름 변경 중…(파일이 많으면 잠시 걸립니다)'); if(await R.renameAt(path,nm,nn,true)) { showToast('✅ 폴더 이름 변경됨'); render(); } else showToast('이름변경 실패: '+(window.__rcLastErr||'')); } }},
-                        {label:'🗑 삭제',danger:true,fn:async()=>{ if(confirm('폴더 "'+nm+'" 를 삭제할까요? (안의 파일도 함께 삭제)')){ if(await R.removeAt(path,nm,true)) render(); else showToast('삭제 실패'); } }}
+                        {label:'📂 열기',fn:()=>{ path=path.concat(rel); render(); }},
+                        {label:'✏️ 이름 변경',fn:async()=>{ const nn=await _sfPrompt('폴더 새 이름',leaf); if(nn&&nn!==leaf){ window.__rcLastErr=''; showToast('폴더 이름 변경 중…(파일이 많으면 잠시 걸립니다)'); if(await R.renameAt(parent,leaf,nn,true)) { showToast('✅ 폴더 이름 변경됨'); render(); } else showToast('이름변경 실패: '+(window.__rcLastErr||'')); } }},
+                        {label:'🗑 삭제',danger:true,fn:async()=>{ if(confirm('폴더 "'+leaf+'" 를 삭제할까요? (안의 파일도 함께 삭제)')){ if(await R.removeAt(parent,leaf,true)) render(); else showToast('삭제 실패'); } }}
                     ]); });
                 });
+                // 📅 날짜 섹션 헤더 클릭 → 해당 날짜 폴더로 진입
+                ov.querySelectorAll('._sf-datehead').forEach(h=>{ h.addEventListener('click',()=>{ const d=h.getAttribute('data-rel'); if(d){ path=path.concat([d]); render(); } }); });
                 // 파일 카드
                 ov.querySelectorAll('.rc-gf').forEach(el=>{
                     const fnm=el.getAttribute('data-fname'), mim=el.getAttribute('data-mime')||'', here=el.getAttribute('data-here')==='1';
@@ -6434,24 +6488,36 @@
             try{
                 const r=await fetch(`${API_URL}/api/admin/payout/config`); const d=await r.json().catch(()=>({}));
                 if(!r.ok) return;
-                tg.checked = !!d.auto_payout_enabled;
-                const lbl=document.getElementById('auto-payout-label'); if(lbl){ lbl.textContent='자동지급 '+(d.auto_payout_enabled?'ON':'OFF'); lbl.style.color=d.auto_payout_enabled?'#166534':'#64748b'; }
-                const sel=document.getElementById('bank-provider-select'); if(sel) sel.value=d.bank_provider||'mock';
+                const on = !!d.auto_payout_enabled;
+                tg.checked = on;
+                _renderAutoPayoutSwitch(on);
+                const sel=document.getElementById('bank-provider-select'); if(sel) sel.value=d.bank_provider||'wallet';
                 const note=document.getElementById('payout-config-note');
-                if(note){ let msg='';
-                    if((d.bank_provider==='openbanking')&&!d.has_openbanking_key) msg='⚠ 오픈뱅킹 키(OPENBANKING_CLIENT_ID/SECRET) 미설정 — 자동이체가 실패합니다.';
-                    else if((d.bank_provider==='firmbanking')&&!d.has_firmbanking_key) msg='⚠ 펌뱅킹(FIRMBANKING_ENDPOINT) 미설정 — 자동이체가 실패합니다.';
-                    else if(d.bank_provider==='mock'&&d.auto_payout_enabled) msg='ℹ 이체 방식이 "기록만"입니다 — 지급은 기록되지만 실제 이체는 운영자가 수동으로 해야 합니다.';
-                    note.textContent=msg; }
+                if(note){ let msg='', col='#b45309';
+                    if(d.bank_provider==='wallet'){ msg='✅ 판매자 앱 지갑으로 즉시 적립됩니다(외부 은행/계좌·설정 불필요). 가장 간단하고 바로 동작하는 방식입니다.'; col='#166534'; }
+                    else if((d.bank_provider==='openbanking')&&!d.has_openbanking_key) msg='⚠ 오픈뱅킹 키(OPENBANKING_CLIENT_ID/SECRET) 미설정 — 자동이체가 실패합니다. (은행 계약·키 수령 전까지는 "앱 지갑 자동적립"을 권장)';
+                    else if((d.bank_provider==='firmbanking')&&!d.has_firmbanking_key) msg='⚠ 펌뱅킹(FIRMBANKING_ENDPOINT) 미설정 — 자동이체가 실패합니다. (은행 계약·보안매체 전까지는 "앱 지갑 자동적립"을 권장)';
+                    else if(d.bank_provider==='mock') msg='ℹ "기록만"은 지급이 기록만 되고 실제 이체는 운영자가 수동으로 해야 합니다.';
+                    note.textContent=msg; note.style.color=col; }
             }catch(e){}
         };
+        // 🔀 자동지급 스위치 시각 상태 반영(켜짐=초록/노브 오른쪽)
+        window._renderAutoPayoutSwitch=function(on){
+            const track=document.getElementById('auto-payout-track'), knob=document.getElementById('auto-payout-knob'), lbl=document.getElementById('auto-payout-label');
+            if(track) track.style.background = on ? 'linear-gradient(135deg,#16a34a,#15803d)' : '#cbd5e1';
+            if(knob) knob.style.left = on ? '23px' : '3px';
+            if(lbl){ lbl.textContent = on ? '자동지급 켜짐' : '자동지급 꺼짐'; lbl.style.color = on ? '#166534' : '#64748b'; }
+        };
+        // 토글 클릭 → 상태 반전 후 저장(라벨/선택 레이블 혼동 제거: 클릭하면 반대 상태로 전환됨)
+        window.toggleAutoPayout=function(ev){ if(ev){ try{ ev.preventDefault(); }catch(_){} } const tg=document.getElementById('auto-payout-toggle'); if(!tg) return; tg.checked=!tg.checked; _renderAutoPayoutSwitch(tg.checked); savePayoutConfig(); };
         window.savePayoutConfig=async function(){
             const tg=document.getElementById('auto-payout-toggle'); const sel=document.getElementById('bank-provider-select'); if(!tg) return;
+            const _methodLabel={ wallet:'앱 지갑 자동적립', mock:'기록만', openbanking:'오픈뱅킹', firmbanking:'펌뱅킹' };
             try{
-                const r=await fetch(`${API_URL}/api/admin/payout/config`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ auto_payout_enabled: tg.checked?'1':'0', bank_provider: sel?sel.value:'mock' }) });
+                const r=await fetch(`${API_URL}/api/admin/payout/config`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ auto_payout_enabled: tg.checked?'1':'0', bank_provider: sel?sel.value:'wallet' }) });
                 const d=await r.json().catch(()=>({}));
                 if(!r.ok) return showToast(d.error||'설정 저장 실패');
-                showToast('정산 자동지급 '+(d.auto_payout_enabled?'ON':'OFF')+' · 이체: '+(d.bank_provider==='mock'?'기록만':d.bank_provider));
+                showToast('정산 자동지급 '+(d.auto_payout_enabled?'켜짐':'꺼짐')+' · 이체: '+(_methodLabel[d.bank_provider]||d.bank_provider));
                 loadPayoutConfig();
             }catch(e){ showToast('설정 저장 오류'); }
         };
@@ -14637,6 +14703,37 @@ pdfjsScript,
                 new MutationObserver(sync).observe(drawer, { attributes:true, attributeFilter:['class'] });
                 sync();
             } catch(_){}
+        })();
+        // 🔒 바깥클릭 정책: 팝업(전체화면 모달)은 바깥을 눌러도 닫히지 않음. 단, 두 서랍(채팅 메신저 / 햄버거 사이드바)만 바깥 클릭 시 닫힘.
+        (function _setupOutsideClickPolicy(){
+            try{
+                const DRAWER_SEL = '#messenger-drawer, #yt-sidebar';
+                function _isOverModal(t){ try{ if(t && t.closest && t.closest('.modal-overlay')) return true; const m=document.querySelector('.modal-overlay'); if(m){ const d=getComputedStyle(m).display; if(d && d!=='none') return true; } }catch(_){} return false; }
+                // (A) 전체화면 팝업 백드롭을 '직접' 클릭 → 팝업 자체 닫기 리스너로 가기 전에 차단(캡처 단계). 내부 버튼/콘텐츠 클릭은 영향 없음.
+                document.addEventListener('click', function(e){
+                    try{
+                        const t=e.target; if(!t || t.nodeType!==1) return;
+                        if(t.closest && t.closest(DRAWER_SEL)) return;      // 서랍 영역은 제외
+                        if(t.id==='messenger-backdrop') return;
+                        const cs=getComputedStyle(t); if(cs.position!=='fixed') return;
+                        const r=t.getBoundingClientRect();
+                        const full = r.top<=2 && r.left<=2 && r.width>=window.innerWidth-4 && r.height>=window.innerHeight-4;
+                        if(!full) return;                                   // 전체화면 백드롭 자신을 직접 클릭한 경우만
+                        e.stopPropagation();                               // 팝업의 바깥클릭 닫기 방지
+                    }catch(_){}
+                }, true);
+                // (B) 두 서랍만 바깥 클릭 시 닫힘 — 열릴 때 다음 틱에 리스너 등록(여는 클릭이 바로 닫지 않도록), 닫히면 해제.
+                function _wireDrawerOutside(drawerId, keepSel, closeFn){
+                    const el=document.getElementById(drawerId); if(!el) return;
+                    let handler=null;
+                    const add=()=>{ if(handler) return; handler=function(e){ try{ const t=e.target; if(!t) return; if(t.closest && t.closest('#'+drawerId)) return; if(keepSel && t.closest && t.closest(keepSel)) return; if(_isOverModal(t)) return; closeFn(); }catch(_){} }; setTimeout(()=>{ try{ document.addEventListener('click', handler, false); }catch(_){} }, 0); };
+                    const remove=()=>{ if(handler){ try{ document.removeEventListener('click', handler, false); }catch(_){} handler=null; } };
+                    try{ new MutationObserver(()=>{ if(el.classList.contains('open')) add(); else remove(); }).observe(el,{attributes:true,attributeFilter:['class']}); }catch(_){}
+                    if(el.classList.contains('open')) add();
+                }
+                _wireDrawerOutside('messenger-drawer', '[onclick*="toggleMessengerDrawer"], .yt-menu-btn', function(){ try{ const d=document.getElementById('messenger-drawer'); if(d) d.classList.remove('open'); }catch(_){} });
+                _wireDrawerOutside('yt-sidebar', '.yt-menu-btn, [onclick*="toggleSidebar"]', function(){ try{ const s=document.getElementById('yt-sidebar'); if(s) s.classList.remove('open'); document.body.classList.remove('sidebar-open'); }catch(_){} });
+            }catch(_){}
         })();
         function switchDrawerTab(tabName) {
             document.querySelectorAll('.m-tab').forEach(t => t.classList.remove('active')); const targetTab = document.querySelector(`.m-tab[onclick="switchDrawerTab('${tabName}')"]`); if(targetTab) targetTab.classList.add('active');

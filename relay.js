@@ -1932,7 +1932,7 @@ app.post('/api/admin/payout/config', (req, res) => {
     if (!requireAdmin(req, res)) return;
     const out = {};
     if (req.body.auto_payout_enabled !== undefined) out.auto_payout_enabled = (req.body.auto_payout_enabled === true || String(req.body.auto_payout_enabled) === '1' || String(req.body.auto_payout_enabled) === 'true') ? '1' : '0';
-    if (req.body.bank_provider !== undefined) { const p = String(req.body.bank_provider).trim(); out.bank_provider = ['mock', 'openbanking', 'firmbanking'].includes(p) ? p : 'mock'; }
+    if (req.body.bank_provider !== undefined) { const p = String(req.body.bank_provider).trim(); out.bank_provider = ['wallet', 'mock', 'openbanking', 'firmbanking'].includes(p) ? p : 'wallet'; }
     const entries = Object.entries(out);
     if (!entries.length) return res.status(400).json({ error: '변경할 항목이 없습니다.' });
     let n = 0; entries.forEach(([k, v]) => db.run(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [k, v], () => {
@@ -1959,6 +1959,7 @@ app.post('/api/admin/payout/retry', (req, res) => {
         if (e || !p) return res.status(404).json({ error: '지급 기록을 찾을 수 없습니다.' });
         if (p.status === 'paid') return res.json({ ok: true, already: true, status: 'paid' });
         if (BANK_PROVIDER === 'mock') { db.run(`UPDATE payouts SET status='paid', paid_at=?, fail_reason=NULL WHERE id=?`, [new Date().toISOString(), id]); return res.json({ ok: true, status: 'paid', mock: true }); }
+        if (BANK_PROVIDER === 'wallet') { db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [p.amount, p.seller]); db.run(`UPDATE payouts SET status='paid', paid_at=?, fail_reason=NULL WHERE id=?`, [new Date().toISOString(), id]); return res.json({ ok: true, status: 'paid', wallet: true }); }
         try {
             const tr = await _bankTransfer({ bank: p.bank, account: p.account, holder: p.accountHolder, amount: p.amount, memo: 'Alpha K 정산 ' + (p.month || '') + ' 재시도', payoutId: id });
             const st = tr.ok ? 'paid' : 'failed';
@@ -5741,7 +5742,8 @@ function _executeSettlement(seller, opts, cb) {
                 if (!u) return cb && cb(Object.assign(new Error('정산 대상 상점 계정을 찾을 수 없습니다.'), { code: 'NO_USER' }));
                 const bank = (u.bank || '').trim(), account = (u.account || '').trim(), holder = (u.realname || seller);
                 // 🏦 등록계좌 미등록이면 지급 보류 — 에스크로를 그대로 두고(주문 settled=0 유지) 계좌 등록 후 지급.
-                if (!bank || !account) return cb && cb(Object.assign(new Error('정산 대상 상점의 출금 계좌(은행/계좌번호)가 등록되지 않아 지급을 보류했습니다.'), { code: 'ACCOUNT_MISSING' }));
+                //   단, 'wallet'(앱 지갑 자동적립) 방식은 외부 계좌가 필요 없으므로 계좌 미등록이어도 지급 가능.
+                if (BANK_PROVIDER !== 'wallet' && (!bank || !account)) return cb && cb(Object.assign(new Error('정산 대상 상점의 출금 계좌(은행/계좌번호)가 등록되지 않아 지급을 보류했습니다.'), { code: 'ACCOUNT_MISSING' }));
                 const now = new Date().toLocaleString('ko-KR');
                 const itemsJson = JSON.stringify(rows.map(r => ({ orderId: r.id, name: r.productName || r.id, buyer: r.buyer, amount: r.escrow_held || 0 })));
                 db.serialize(() => {
@@ -5754,8 +5756,10 @@ function _executeSettlement(seller, opts, cb) {
                         db.run(`UPDATE users SET balance = balance - ? WHERE name = ? AND balance >= ?`, [payout, admin, payout], function (de) {
                             if (de) { db.run('ROLLBACK'); return cb && cb(de); }
                             if (this.changes === 0) { db.run('ROLLBACK'); return cb && cb(Object.assign(new Error('Admin 보관(에스크로) 잔액이 부족합니다.'), { code: 'ESCROW_SHORT' })); }
-                            // 🏦 이체 상태 초기값: mock은 '기록만(paid)', 실 공급자는 'requested'(커밋 후 이체 시도).
-                            const initStatus = (BANK_PROVIDER === 'mock') ? 'paid' : 'requested';
+                            // 💰 'wallet'(앱 지갑 자동적립): 에스크로에서 차감한 지급액을 판매자 앱 지갑(balance)으로 즉시 적립 → 외부 은행 불필요.
+                            if (BANK_PROVIDER === 'wallet') { db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [payout, seller]); }
+                            // 🏦 이체 상태 초기값: mock/wallet은 즉시 완료(paid), 실 공급자는 'requested'(커밋 후 이체 시도).
+                            const initStatus = (BANK_PROVIDER === 'mock' || BANK_PROVIDER === 'wallet') ? 'paid' : 'requested';
                             db.run(`INSERT INTO payouts (seller, amount, bank, account, accountHolder, salesTotal, payFee, month, items, orderIds, status, provider, auto, date, rawDate, paid_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
                                 [seller, payout, bank, account, holder, salesTotal, calc.payFee, month, itemsJson, JSON.stringify(ids), initStatus, BANK_PROVIDER, opts.auto ? 1 : 0, now, raw, (initStatus === 'paid' ? raw : null)], function (ie) {
                                     if (ie) { db.run('ROLLBACK'); return cb && cb(ie); }
@@ -5763,7 +5767,7 @@ function _executeSettlement(seller, opts, cb) {
                                     db.run('COMMIT', async () => {
                                         try { console.log(`[정산 지급${opts.auto ? '(자동)' : ''}] ${seller} ${payout.toLocaleString()}원 → ${bank} ${account} (provider=${BANK_PROVIDER})`); } catch (_) {}
                                         const base = { count: rows.length, salesTotal, payFee: calc.payFee, payout, bank, account, holder, payoutId };
-                                        if (BANK_PROVIDER === 'mock') return cb && cb(null, Object.assign(base, { status: 'paid' }));
+                                        if (BANK_PROVIDER === 'mock' || BANK_PROVIDER === 'wallet') return cb && cb(null, Object.assign(base, { status: 'paid' }));
                                         // 🏦 실 계좌이체 시도(에스크로는 이미 차감됨 — 실패 시 status=failed로 두고 재시도 경로 제공, 재차감 없음).
                                         try {
                                             const tr = await _bankTransfer({ bank, account, holder, amount: payout, memo: 'Alpha K 정산 ' + month, payoutId });
