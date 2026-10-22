@@ -3477,7 +3477,15 @@
                         try {
                             showToast('⬇️ 공유폴더로 저장 중…');
                             const resp = await fetch(url); const blob = await resp.blob();
-                            const saved = await window.RCFolder.writeFile(name, blob);
+                            // 📅 주문 대화방이면 '날짜/케이스' 2단 폴더로 정리(자동수신과 동일 구조). 그 외엔 루트 저장.
+                            let saved;
+                            let _rm = window.currentChatRoomId || '';
+                            if(String(_rm).startsWith('room_ord_') && window._resolveOrderFolderName && window.RCFolder.writeFileInRoom){
+                                const _folder = await window._resolveOrderFolderName(_rm);
+                                saved = await window.RCFolder.writeFileInRoom(_folder, name, blob);
+                            } else {
+                                saved = await window.RCFolder.writeFile(name, blob);
+                            }
                             showToast('✅ 공유폴더에 저장됨: ' + saved);
                             return;
                         } catch(e){ /* 폴더 저장 실패 → blob 다운로드로 폴백 */ }
