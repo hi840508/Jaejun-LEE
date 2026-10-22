@@ -2765,7 +2765,8 @@ app.get('/api/chat/active-rooms/:name', (req, res) => {
             });
             (ordRows || []).forEach(r => {
                 const partnerName = (r.buyer === name) ? r.seller : r.buyer;
-                out.push({ roomId: r.roomId, partnerName: partnerName || '', lastMsg: r.lastMsg || ('[' + (r.lastProductName || '주문') + '] 대화'), lastDate: r.lastDate || '', lastMsgId: r.lastMsgId || 0, lastSender: r.lastSender || '', isOrder: true, storeName: r.storeName || '', productName: r.lastProductName || '', orderStatus: r.orderStatus || '' });
+                // buyer/seller를 함께 반환 → 프론트가 관점별(판매자=주문 치과명 / 구매자=상점명)로 대화방 제목을 구성
+                out.push({ roomId: r.roomId, partnerName: partnerName || '', buyer: r.buyer || '', seller: r.seller || '', lastMsg: r.lastMsg || ('[' + (r.lastProductName || '주문') + '] 대화'), lastDate: r.lastDate || '', lastMsgId: r.lastMsgId || 0, lastSender: r.lastSender || '', isOrder: true, storeName: r.storeName || '', productName: r.lastProductName || '', orderStatus: r.orderStatus || '' });
             });
             const tasks = out.map(o => new Promise(resolve => {
                 db.get(`SELECT profilePic FROM users WHERE name = ?`, [o.partnerName], (e, u) => { o.partnerPic = u ? u.profilePic : null; resolve(o); });

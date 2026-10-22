@@ -14771,7 +14771,12 @@ pdfjsScript,
             let __chatTitle = `${friendName === '이재준' ? '🤖 고객센터' : friendName}`;
             try {
                 const __meta = (window.__orderRoomStore && roomIdOverride) ? window.__orderRoomStore[roomIdOverride] : null;
-                if(__meta && __meta.storeName) __chatTitle = __meta.storeName + (__meta.productName ? ` · ${__meta.productName}` : '');
+                if(__meta && (__meta.storeName || __meta.buyer)){
+                    // 관점별: 판매자(내가 seller)는 '주문한 치과(구매자)'를, 구매자는 '상점명'을 앞에.
+                    const _amSeller = !!(__meta.seller && currentUser && __meta.seller === currentUser.name);
+                    const _counter = _amSeller ? (__meta.buyer || friendName) : (__meta.storeName || friendName);
+                    __chatTitle = _counter + (__meta.productName ? ` · ${__meta.productName}` : '');
+                }
             } catch(_){}
             document.getElementById('active-chat-title').innerText = __chatTitle;
             // 💬 주문 대화방 등은 실제 roomId를 명시적으로 넘겨받는다. 미지정 시 기존 쌍(room_msg_) 규칙 유지.
@@ -14822,8 +14827,16 @@ pdfjsScript,
                     const _oid = currentChatRoomId.replace('room_ord_','');
                     fetch(`${API_URL}/api/order/${_oid}`).then(r=>r.json()).then(o=>{
                         if(!o || !o.status) return;
-                        let _label = '기공 의뢰서'; let _chart='';
-                        try { const bi = o.buyer_info ? JSON.parse(o.buyer_info) : {}; if(bi.patientName) _label = '기공 의뢰서 · ' + bi.patientName; _chart=bi.chartNo||''; } catch(_){}
+                        let _label = '기공 의뢰서'; let _chart=''; let _patient='';
+                        try { const bi = o.buyer_info ? JSON.parse(o.buyer_info) : {}; if(bi.patientName){ _patient=bi.patientName; _label = '기공 의뢰서 · ' + bi.patientName; } _chart=bi.chartNo||''; } catch(_){}
+                        // 🏷 관점별 대화방 제목 — 판매자는 '주문한 치과(구매자)', 구매자는 '상점명'을 앞에 + 환자명 + 의뢰서
+                        try{
+                            const _amSeller = !!(currentUser && currentUser.name === o.seller);
+                            const _storeNm = (window.__orderRoomStore && window.__orderRoomStore[currentChatRoomId] && window.__orderRoomStore[currentChatRoomId].storeName) || '';
+                            const _counter = _amSeller ? (o.buyer || friendName) : (_storeNm || o.seller || friendName);
+                            let _tt = String(_counter||''); if(_patient) _tt += ' · ' + _patient + ' 환자'; _tt += ' · 의뢰서';
+                            const _tEl = document.getElementById('active-chat-title'); if(_tEl && _tt.trim()) _tEl.innerText = _tt;
+                        }catch(_){}
                         // 📁 주문 대화방 전달 파일 저장 폴더명(관점별): 구매자=상점명_차트, 판매자=주문자ID_차트
                         try{ window.__orderFolderMap = window.__orderFolderMap || {};
                             const _isBuyer = (currentUser && currentUser.name === o.buyer);
@@ -15415,10 +15428,11 @@ pdfjsScript,
                         const sName = r.storeName || (meta && meta.storeName) || '';
                         const pName = r.productName || (meta && meta.lastProductName) || '';
                         const partnerDisplay = r.partnerName === '이재준' ? '🤖 고객센터' :r.partnerName;
-                        // 🏪 [Task1] 주문 대화방 제목 = 상점명(대화 상대 id 대신). 상품명은 부제로.
+                        // 🏪 주문 대화방 제목 — 관점별: 판매자(내가 seller)는 '주문한 치과(구매자)', 구매자는 '상점명'. 상품/환자는 부제.
                         window.__orderRoomStore = window.__orderRoomStore || {};
-                        window.__orderRoomStore[r.roomId] = { storeName: sName, productName: pName, partnerName: r.partnerName };
-                        const mainTitle = sName || partnerDisplay;
+                        window.__orderRoomStore[r.roomId] = { storeName: sName, productName: pName, partnerName: r.partnerName, buyer: r.buyer||'', seller: r.seller||'' };
+                        const _amSeller = !!(r.seller && currentUser && r.seller === currentUser.name);
+                        const mainTitle = _amSeller ? (partnerDisplay || sName) : (sName || partnerDisplay);
                         const productLabel = pName ? ` <span style="color:var(--text-sub); font-weight:normal; font-size:11px;">🧾 ${pName}</span>` : '';
                         titleHtml = `<b style="font-size:13px;">${mainTitle}</b>${productLabel}`;
                     } else {
@@ -18346,9 +18360,9 @@ pdfjsScript,
                     }
                 } catch(_){}
 
-                // 대화방 헤더/목록용 상점명 캐시
+                // 대화방 헤더/목록용 상점명 캐시 (제출자=구매자 → buyer=나, seller=상점주)
                 window.__orderRoomStore = window.__orderRoomStore || {};
-                window.__orderRoomStore[roomId] = { storeName: st.storeName, productName, partnerName: st.seller };
+                window.__orderRoomStore[roomId] = { storeName: st.storeName, productName, partnerName: st.seller, buyer: (currentUser&&currentUser.name)||'', seller: st.seller };
 
                 try {
                     await fetch(`${API_URL}/api/chat-room/upsert`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roomId, type:'order', buyer: currentUser.name, seller: st.seller, storeId: st.storeId, storeName: st.storeName, lastProductId: st.product.id, lastProductName: productName }) });
