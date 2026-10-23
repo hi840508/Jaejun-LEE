@@ -977,6 +977,8 @@ function initTables() {
         db.run(`ALTER TABLE payouts ADD COLUMN provider TEXT DEFAULT 'mock'`, () => {});
         db.run(`ALTER TABLE payouts ADD COLUMN transfer_ref TEXT`, () => {});
         db.run(`ALTER TABLE payouts ADD COLUMN fail_reason TEXT`, () => {});
+        // 🏷 실패 '유형코드'(_FIRM_FAIL 키) — 재시도 가능/불가 판정과 운영자 안내문구 매핑용. 메시지(fail_reason)와 분리 보관.
+        db.run(`ALTER TABLE payouts ADD COLUMN fail_code TEXT`, () => {});
         // 🔁 [정기결제] 빌링키 보관 — 🔐 billKey는 카드 토큰과 동급 민감정보: 서버에만 저장, 클라이언트엔 마스킹카드만 노출.
         db.run(`CREATE TABLE IF NOT EXISTS billing_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, billKey TEXT, issuerName TEXT, issuerCode TEXT, cardMaskNo TEXT, payMethodTypeCode TEXT, label TEXT, status TEXT DEFAULT 'active', created_at TEXT, updated_at TEXT)`, () => {});
         // 🔁 [정기결제 구독] 빌키 기반 자동 반복청구 스케줄. intervalType: monthly|weekly|daily, nextChargeAt(ISO) 도래 시 크론이 청구. status: active|paused|canceled|failed.
@@ -1926,7 +1928,12 @@ app.get('/api/admin/payout/config', (req, res) => {
     if (!requireAdmin(req, res)) return;
     res.json({ auto_payout_enabled: AUTO_PAYOUT_ENABLED, bank_provider: BANK_PROVIDER,
         has_openbanking_key: !!(process.env.OPENBANKING_CLIENT_ID && process.env.OPENBANKING_CLIENT_SECRET),
-        has_firmbanking_key: !!process.env.FIRMBANKING_ENDPOINT });
+        has_firmbanking_key: !!process.env.FIRMBANKING_ENDPOINT,
+        // 🔎 안전장치 가동 여부(값이 아니라 '설정됨'만 노출) — 운영자가 오지급/중복이체 방어 상태를 화면에서 확인.
+        has_firmbanking_verify: !!process.env.FIRMBANKING_VERIFY_ENDPOINT,
+        has_firmbanking_status: !!process.env.FIRMBANKING_STATUS_ENDPOINT,
+        firm_max_amount: Math.round(Number(process.env.FIRMBANKING_MAX_AMOUNT || 0)),
+        firm_daily_limit: Math.round(Number(process.env.FIRMBANKING_DAILY_LIMIT || 0)) });
 });
 app.post('/api/admin/payout/config', (req, res) => {
     if (!requireAdmin(req, res)) return;
@@ -1944,10 +1951,18 @@ app.get('/api/admin/payouts', (req, res) => {
     if (!requireAdmin(req, res)) return;
     const status = String(req.query.status || '').trim();
     let where = '1=1'; const params = [];
-    if (status) { where += ' AND status=?'; params.push(status); }
+    // status는 'failed' 또는 'failed,requested'처럼 쉼표 다중 지정 가능(실패+미확정을 한 화면에 모아 보기 위함).
+    const sts = status ? status.split(',').map(x => x.trim()).filter(Boolean) : [];
+    if (sts.length === 1) { where += ' AND status=?'; params.push(sts[0]); }
+    else if (sts.length > 1) { where += ` AND status IN (${sts.map(() => '?').join(',')})`; params.push(...sts); }
     db.all(`SELECT * FROM payouts WHERE ${where} ORDER BY id DESC LIMIT 500`, params, (e, rows) => {
         if (e) return res.status(500).json({ error: e.message });
-        res.json((rows || []).map(r => { let items = []; try { items = JSON.parse(r.items || '[]'); } catch (_) {} return Object.assign({}, r, { itemsObj: items }); }));
+        res.json((rows || []).map(r => {
+            let items = []; try { items = JSON.parse(r.items || '[]'); } catch (_) {}
+            // 🏷 실패 유형코드 → 운영자용 라벨/안내/재시도 가능여부. (코드 없는 과거 기록은 재시도 허용)
+            const fi = r.fail_code ? _firmFailInfo(r.fail_code) : null;
+            return Object.assign({}, r, { itemsObj: items, failLabel: fi ? fi.label : null, failHint: fi ? fi.hint : null, retryable: fi ? fi.retry : true });
+        }));
     });
 });
 // 💸 [관리자] 실패한 이체 재시도 — 에스크로 재차감 없이 이체만 재전송(멱등: 이미 paid면 스킵).
@@ -1958,14 +1973,23 @@ app.post('/api/admin/payout/retry', (req, res) => {
     db.get(`SELECT * FROM payouts WHERE id=?`, [id], async (e, p) => {
         if (e || !p) return res.status(404).json({ error: '지급 기록을 찾을 수 없습니다.' });
         if (p.status === 'paid') return res.json({ ok: true, already: true, status: 'paid' });
-        if (BANK_PROVIDER === 'mock') { db.run(`UPDATE payouts SET status='paid', paid_at=?, fail_reason=NULL WHERE id=?`, [new Date().toISOString(), id]); return res.json({ ok: true, status: 'paid', mock: true }); }
-        if (BANK_PROVIDER === 'wallet') { db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [p.amount, p.seller]); db.run(`UPDATE payouts SET status='paid', paid_at=?, fail_reason=NULL WHERE id=?`, [new Date().toISOString(), id]); return res.json({ ok: true, status: 'paid', wallet: true }); }
+        // 🚧 재시도해도 결과가 같은 유형(계좌오류·예금주불일치·거래중지·설정/권한)과 '결과 불명'(중복이체 위험)은 막는다.
+        //    운영자가 계약처 거래조회로 실제 상태를 확인한 뒤에만 force:true로 강행할 수 있다.
+        const prevInfo = p.fail_code ? _firmFailInfo(p.fail_code) : null;
+        const force = (req.body.force === true || String(req.body.force) === 'true');
+        if (prevInfo && !prevInfo.retry && !force) {
+            return res.status(409).json({ error: '[' + prevInfo.label + '] 재시도로는 해결되지 않습니다. ' + prevInfo.hint, failCode: p.fail_code, failLabel: prevInfo.label, hint: prevInfo.hint, retryable: false });
+        }
+        if (BANK_PROVIDER === 'mock') { db.run(`UPDATE payouts SET status='paid', paid_at=?, fail_reason=NULL, fail_code=NULL WHERE id=?`, [new Date().toISOString(), id]); return res.json({ ok: true, status: 'paid', mock: true }); }
+        if (BANK_PROVIDER === 'wallet') { db.run(`UPDATE users SET balance = balance + ? WHERE name = ?`, [p.amount, p.seller]); db.run(`UPDATE payouts SET status='paid', paid_at=?, fail_reason=NULL, fail_code=NULL WHERE id=?`, [new Date().toISOString(), id]); return res.json({ ok: true, status: 'paid', wallet: true }); }
         try {
             const tr = await _bankTransfer({ bank: p.bank, account: p.account, holder: p.accountHolder, amount: p.amount, memo: 'Alpha K 정산 ' + (p.month || '') + ' 재시도', payoutId: id });
             const st = tr.ok ? 'paid' : 'failed';
-            db.run(`UPDATE payouts SET status=?, transfer_ref=?, fail_reason=?, paid_at=? WHERE id=?`, [st, tr.ref || p.transfer_ref || null, tr.ok ? null : (tr.error || '이체 실패'), tr.ok ? new Date().toISOString() : null, id]);
-            res.json({ ok: tr.ok, status: st, error: tr.ok ? null : tr.error });
-        } catch (ex) { const msg = String((ex && ex.message) || ex).slice(0, 200); db.run(`UPDATE payouts SET status='failed', fail_reason=? WHERE id=?`, [msg, id]); res.status(502).json({ ok: false, status: 'failed', error: msg }); }
+            const fc = tr.ok ? null : (tr.code || 'UNKNOWN');
+            db.run(`UPDATE payouts SET status=?, transfer_ref=?, fail_reason=?, fail_code=?, paid_at=? WHERE id=?`, [st, tr.ref || p.transfer_ref || null, tr.ok ? null : (tr.error || '이체 실패'), fc, tr.ok ? new Date().toISOString() : null, id]);
+            const fi2 = fc ? _firmFailInfo(fc) : null;
+            res.json({ ok: tr.ok, status: st, error: tr.ok ? null : tr.error, failCode: fc, failLabel: fi2 ? fi2.label : null, hint: fi2 ? fi2.hint : null, retryable: fi2 ? fi2.retry : true });
+        } catch (ex) { const msg = String((ex && ex.message) || ex).slice(0, 200); db.run(`UPDATE payouts SET status='failed', fail_reason=?, fail_code='UNKNOWN' WHERE id=?`, [msg, id]); res.status(502).json({ ok: false, status: 'failed', error: msg, failCode: 'UNKNOWN', retryable: true }); }
     });
 });
 // 💰 [에스크로] 자금이 귀속되는 Admin 계정(첫 관리자, 기본 hi840508). 구매 대금 보관·정산 지급의 주체.
@@ -5709,9 +5733,9 @@ async function _bankTransfer({ bank, account, holder, amount, memo, payoutId }) 
 //   필요: 이용기관 등록·출금계좌(모계좌) 등록·일/건 한도. 🔐 OPENBANKING_CLIENT_ID/SECRET/ACCESS_TOKEN·출금계좌 fintech_use_num 은 env.
 //   ⚠ 실호출은 계약·키 수령 후 구현. 현재는 미구현 명시 에러(사일런트 성공 금지).
 async function _bankOpenBanking(_p) {
-    if (!process.env.OPENBANKING_CLIENT_ID || !process.env.OPENBANKING_CLIENT_SECRET) return { ok: false, status: 'failed', error: '오픈뱅킹 미설정(OPENBANKING_CLIENT_ID/SECRET env).' };
+    if (!process.env.OPENBANKING_CLIENT_ID || !process.env.OPENBANKING_CLIENT_SECRET) return { ok: false, status: 'failed', code: 'CONFIG', retryable: false, error: '[설정 누락] 오픈뱅킹 미설정(OPENBANKING_CLIENT_ID/SECRET env).' };
     // TODO(오픈뱅킹): ①토큰 ②예금주조회(inquiry/receive) ③출금이체(모계좌→) ④입금이체(→판매자계좌) ⑤결과 ref 반환.
-    return { ok: false, status: 'failed', error: '오픈뱅킹 이체 미구현 — 이용기관 등록·키 수령 후 구현.' };
+    return { ok: false, status: 'failed', code: 'CONFIG', retryable: false, error: '[설정 누락] 오픈뱅킹 이체 미구현 — 이용기관 등록·키 수령 후 구현.' };
 }
 // 🏦 [은행 펌뱅킹] 판매자 등록계좌로 '실계좌 자동이체'. 실무상 펌뱅킹 중계사/은행 게이트웨이(HTTP)를 통해 이체 전문을 전송한다.
 //   계약처(은행/중계사: 웹케시·더존·코밴 등)마다 규격이 달라, 엔드포인트·인증·응답코드를 모두 env로 설정 가능하게 범용 어댑터로 구성.
@@ -5729,47 +5753,159 @@ function _firmBankCode(bank) {
     for (const k in _FIRM_BANK_CODES) { if (key.indexOf(k) >= 0) return _FIRM_BANK_CODES[k]; }
     return key;                                          // 못 찾으면 원문(계약처가 은행명 입력을 받는 경우 대비)
 }
+// 🏷 [이체 실패 유형] 계약처 응답을 유형으로 분류해, 운영자가 '재시도하면 되는 건지 사람이 손봐야 하는 건지'를 바로 알게 한다.
+//   retry=false 유형은 재시도해도 결과가 같다(계좌 재등록·설정 수정·한도 상향 등 사람 조치 필요) → 재시도 버튼을 막는다.
+const _FIRM_FAIL = {
+    LIMIT:             { label: '한도초과',        retry: true,  hint: '이체 한도(건당/일일)를 넘었습니다. 한도 상향 또는 익일 재시도.' },
+    INSUFFICIENT:      { label: '출금계좌 잔액부족', retry: true,  hint: '플랫폼 출금(모)계좌 잔액이 부족합니다. 입금 후 재시도하세요.' },
+    ACCOUNT_SUSPENDED: { label: '거래중지계좌',     retry: false, hint: '수취계좌가 거래중지/지급정지/압류/휴면 상태입니다. 판매자에게 다른 계좌 등록을 요청하세요.' },
+    ACCOUNT_INVALID:   { label: '계좌오류',        retry: false, hint: '없는 계좌이거나 해지된 계좌입니다. 판매자 계좌정보를 다시 받아 등록하세요.' },
+    HOLDER_MISMATCH:   { label: '예금주 불일치',    retry: false, hint: '등록 예금주와 실제 예금주가 다릅니다. 오지급 방지를 위해 이체하지 않았습니다.' },
+    AUTH:              { label: '인증/권한 오류',   retry: false, hint: '기관키·이체전용 비밀번호·서명키(env)나 계약 권한을 확인하세요.' },
+    CONFIG:            { label: '설정 누락',       retry: false, hint: '펌뱅킹 환경변수(FIRMBANKING_*)를 서버에 설정해야 합니다.' },
+    PARAM:             { label: '요청값 오류',     retry: false, hint: '은행/계좌번호/금액 값을 확인하세요.' },
+    NETWORK:           { label: '통신 오류',       retry: true,  hint: '게이트웨이에 요청이 닿지 않았습니다(미전송). 재시도 가능합니다.' },
+    UNKNOWN_RESULT:    { label: '결과 불명',       retry: false, hint: '⚠ 요청은 전송됐으나 결과를 못 받았습니다. 중복이체 위험 — 계약처 거래조회로 실제 이체 여부를 확인한 뒤 처리하세요.' },
+    UNKNOWN:           { label: '이체 실패',       retry: true,  hint: '계약처 응답 메시지를 확인하세요.' }
+};
+function _firmFailInfo(code) { return _FIRM_FAIL[String(code || 'UNKNOWN')] || _FIRM_FAIL.UNKNOWN; }
+function _firmFail(code, msg) { const i = _firmFailInfo(code); return { ok: false, status: 'failed', code: code, retryable: i.retry, error: '[' + i.label + '] ' + String(msg || '').slice(0, 200) }; }
+// 응답코드/메시지 → 유형 추정. 계약처마다 코드체계가 달라 코드와 메시지 키워드를 함께 본다.
+function _firmErrClass(code, msg) {
+    const s = (String(code || '') + ' ' + String(msg || '')).toLowerCase();
+    if (/중복|duplicate|이미\s*(처리|접수)|already/.test(s)) return 'UNKNOWN_RESULT';       // 멱등키 중복 = 앞선 요청이 접수됨 → 거래조회로 확인
+    if (/예금주|성명|실명|holder|depositor|name.?mismatch|불일치/.test(s)) return 'HOLDER_MISMATCH';
+    if (/거래\s*중지|지급\s*정지|압류|사고|휴면|dormant|suspend|block|freeze|restrict/.test(s)) return 'ACCOUNT_SUSPENDED';
+    if (/없는\s*계좌|미등록\s*계좌|유효하지|해지|폐쇄|invalid.?account|account.?not.?found|closed/.test(s)) return 'ACCOUNT_INVALID';
+    if (/한도|limit|exceed/.test(s)) return 'LIMIT';
+    if (/잔액|부족|insufficient|balance/.test(s)) return 'INSUFFICIENT';
+    if (/비밀번호|인증|권한|서명|signature|unauthorized|forbidden|auth/.test(s)) return 'AUTH';
+    return 'UNKNOWN';
+}
+// 공통 헤더(인증/서명). signBase가 있으면 HMAC-SHA256 서명 헤더를 붙인다.
+function _firmHeaders(signBase) {
+    const h = { 'Content-Type': 'application/json' };
+    if (process.env.FIRMBANKING_API_KEY) h['Authorization'] = 'Bearer ' + process.env.FIRMBANKING_API_KEY;
+    if (process.env.FIRMBANKING_SIGN_KEY && signBase) {
+        try { const crypto = require('crypto'); h['X-Signature'] = crypto.createHmac('sha256', process.env.FIRMBANKING_SIGN_KEY).update(String(signBase)).digest('hex'); } catch (_) {}
+    }
+    return h;
+}
+// 공통 POST(JSON). ⚠ '타임아웃(요청은 갔을 수 있음)'과 '연결 실패(요청이 안 감)'를 구분해 돌려준다 — 결과불명 판정의 근거.
+async function _firmPost(url, body, headers, timeoutMs) {
+    const ctrl = new AbortController(); const to = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, timeoutMs || 30000);
+    try {
+        const r = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body), signal: ctrl.signal });
+        const txt = await r.text(); let d = {}; try { d = JSON.parse(txt || '{}'); } catch (_) {}
+        return { sent: true, ok: r.ok, httpStatus: r.status, data: d, text: txt };
+    } catch (ex) {
+        const aborted = !!(ex && (ex.name === 'AbortError' || /abort/i.test(String((ex && ex.message) || ''))));
+        return { sent: aborted, ok: false, aborted: aborted, error: String((ex && ex.message) || ex) };
+    } finally { clearTimeout(to); }
+}
+// 이름 비교 키 — 은행 응답 '홍길동' vs 등록 '홍길동(○○치과)' 같은 변형을 흡수(공백/괄호/구두점 제거).
+function _nameKey(s) { return String(s || '').replace(/[\s()\[\]\-_.·,]/g, '').toLowerCase(); }
+// 🔎 [예금주 조회] 선택 — FIRMBANKING_VERIFY_ENDPOINT 설정 시 이체 전에 수취계좌 예금주를 조회해 등록 예금주와 대조한다.
+//   오지급(엉뚱한 계좌 송금)은 회수가 매우 어렵다 → 불일치·조회실패면 이체하지 않는다.
+async function _firmVerifyHolder({ bankCode, account, holder, requestId }) {
+    const ep = process.env.FIRMBANKING_VERIFY_ENDPOINT;
+    if (!ep) return { ok: true, skipped: true };
+    const body = { requestId: 'VR' + requestId, bankCode: bankCode, account: account };
+    if (process.env.FIRMBANKING_API_KEY) body.apiKey = process.env.FIRMBANKING_API_KEY;
+    const r = await _firmPost(ep, body, _firmHeaders(requestId + '|' + bankCode + '|' + account), 15000);
+    if (!r.ok) return { ok: false, code: 'NETWORK', error: '예금주 조회 실패(' + String(r.error || r.httpStatus || '').slice(0, 80) + ') — 오지급 방지를 위해 이체를 중단했습니다.' };
+    const d = r.data || {}; const dd = d.data || {};
+    const found = d.accountHolder || d.holderName || d.depositorName || d.acctHolder || d.name || dd.accountHolder || dd.holderName || '';
+    if (!found) return { ok: false, code: 'ACCOUNT_INVALID', error: '예금주 조회 결과가 비어 있습니다(없는 계좌 가능). 계좌정보를 확인하세요.' };
+    if (_nameKey(found) !== _nameKey(holder)) return { ok: false, code: 'HOLDER_MISMATCH', error: '예금주 불일치 — 등록 "' + holder + '" / 실제 "' + found + '"' };
+    return { ok: true, holder: String(found) };
+}
+// 🔎 [거래조회] 선택 — FIRMBANKING_STATUS_ENDPOINT 설정 시 '결과 불명'(타임아웃·중복접수)에서 실제 이체 여부를 멱등키로 확인한다.
+async function _firmQueryStatus(requestId) {
+    const ep = process.env.FIRMBANKING_STATUS_ENDPOINT;
+    if (!ep) return { known: false };
+    const body = { requestId: requestId };
+    if (process.env.FIRMBANKING_API_KEY) body.apiKey = process.env.FIRMBANKING_API_KEY;
+    const r = await _firmPost(ep, body, _firmHeaders(requestId), 15000);
+    if (!r.ok) return { known: false };
+    const d = r.data || {};
+    const st = String(d.status || d.tranStatus || d.resultStatus || '').toLowerCase();
+    const okCode = String(process.env.FIRMBANKING_OK_CODE || '0000');
+    const code = String(d.resultCode || d.rpcd || d.code || d.resCd || '');
+    if (st === 'paid' || st === 'success' || st === 'completed' || d.paid === true || (code && code === okCode && st !== 'failed')) {
+        return { known: true, paid: true, ref: String(d.ref || d.tranNo || d.txId || d.bankTranId || requestId) };
+    }
+    if (st === 'notfound' || st === 'none' || d.found === false) return { known: true, paid: false, notSent: true };
+    if (st === 'failed' || st === 'error' || st === 'canceled') return { known: true, paid: false, message: String(d.resultMsg || d.message || d.resMsg || '') };
+    return { known: false };
+}
+// 📊 금일(KST) 펌뱅킹 이체 성공 누계 — 일 이체한도 사전 체크용.
+function _kstDayStartIso() { const k = new Date(Date.now() + 9 * 3600000); return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate()) - 9 * 3600000).toISOString(); }
+function _firmPaidTodaySum() {
+    return new Promise((resolve) => {
+        db.get(`SELECT COALESCE(SUM(amount),0) AS s FROM payouts WHERE provider='firmbanking' AND status='paid' AND COALESCE(paid_at, rawDate) >= ?`, [_kstDayStartIso()], (e, r) => resolve((r && r.s) || 0));
+    });
+}
 async function _bankFirmBanking({ bank, account, holder, amount, memo, payoutId }) {
     const ep = process.env.FIRMBANKING_ENDPOINT;
-    if (!ep) return { ok: false, status: 'failed', error: '펌뱅킹 미설정(FIRMBANKING_ENDPOINT env). 중계사/은행 이체 게이트웨이 URL을 설정하세요.' };
+    if (!ep) return _firmFail('CONFIG', '펌뱅킹 미설정(FIRMBANKING_ENDPOINT env). 중계사/은행 이체 게이트웨이 URL을 설정하세요.');
     const bankCode = _firmBankCode(bank);
     const acct = String(account || '').replace(/[^0-9]/g, '');
     const amt = Math.round(Number(amount) || 0);
-    if (!bankCode || !acct || !(amt > 0)) return { ok: false, status: 'failed', error: '펌뱅킹 이체 파라미터 오류(은행/계좌/금액 확인).' };
-    const requestId = 'PO' + (payoutId || '0') + '-' + Date.now();   // 멱등키(중복이체 방지)
-    const body = {
-        requestId: requestId,
-        bankCode: bankCode,
-        account: acct,
-        accountHolder: String(holder || '').slice(0, 20),
-        amount: amt,
-        memo: String(memo || '').replace(/[\r\n]/g, ' ').slice(0, 20)
-    };
-    // 🏦 출금 모계좌(플랫폼 주거래, 예: 우리은행) — 계약처 API가 요구하면 env로 전달. (은행코드 자동매핑)
-    if (process.env.FIRMBANKING_WITHDRAW_BANK) body.withdrawBankCode = _firmBankCode(process.env.FIRMBANKING_WITHDRAW_BANK);
-    if (process.env.FIRMBANKING_WITHDRAW_ACCOUNT) body.withdrawAccount = String(process.env.FIRMBANKING_WITHDRAW_ACCOUNT).replace(/[^0-9]/g, '');
-    if (process.env.FIRMBANKING_TRANSFER_PW) body.transferPw = process.env.FIRMBANKING_TRANSFER_PW;   // 이체전용 비밀번호(계약처 요구 시)
-    if (process.env.FIRMBANKING_API_KEY) body.apiKey = process.env.FIRMBANKING_API_KEY;               // 기관키(계약처 요구 시)
-    const headers = { 'Content-Type': 'application/json' };
-    if (process.env.FIRMBANKING_API_KEY) headers['Authorization'] = 'Bearer ' + process.env.FIRMBANKING_API_KEY;
-    // 🔏 서명(선택): 시크릿 있으면 HMAC-SHA256(requestId|bankCode|account|amount) 헤더 부가
-    if (process.env.FIRMBANKING_SIGN_KEY) {
-        try { const crypto = require('crypto'); headers['X-Signature'] = crypto.createHmac('sha256', process.env.FIRMBANKING_SIGN_KEY).update(requestId + '|' + bankCode + '|' + acct + '|' + amt).digest('hex'); } catch (_) {}
-    }
+    if (!bankCode || !acct || !(amt > 0)) return _firmFail('PARAM', '펌뱅킹 이체 파라미터 오류(은행/계좌/금액 확인).');
+    // 🔑 멱등키는 payout 1건당 '고정'(PO{id}) — 재시도해도 같은 키라 계약처에서 중복이체가 걸러진다.
+    //    (키에 타임스탬프를 섞으면 재시도마다 새 거래가 되어 이중지급 위험이 생긴다.)
+    const requestId = 'PO' + (payoutId || ('X' + Date.now()));
     try {
-        const ctrl = new AbortController(); const to = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 30000);
-        let r, txt;
-        try { r = await fetch(ep, { method: 'POST', headers: headers, body: JSON.stringify(body), signal: ctrl.signal }); txt = await r.text(); }
-        finally { clearTimeout(to); }
-        let d = {}; try { d = JSON.parse(txt || '{}'); } catch (_) {}
+        // 🚧 사전 한도 체크 — 은행이 거절하기 전에 우리가 먼저 막아 원인이 분명한 실패기록을 남긴다.
+        const maxTx = Math.round(Number(process.env.FIRMBANKING_MAX_AMOUNT || 0));
+        if (maxTx > 0 && amt > maxTx) return _firmFail('LIMIT', '건당 이체한도 초과 — 요청 ' + amt.toLocaleString() + '원 > 한도 ' + maxTx.toLocaleString() + '원.');
+        const dailyLimit = Math.round(Number(process.env.FIRMBANKING_DAILY_LIMIT || 0));
+        if (dailyLimit > 0) {
+            const used = await _firmPaidTodaySum();
+            if (used + amt > dailyLimit) return _firmFail('LIMIT', '일일 이체한도 초과 — 금일 누계 ' + used.toLocaleString() + '원 + 요청 ' + amt.toLocaleString() + '원 > 한도 ' + dailyLimit.toLocaleString() + '원.');
+        }
+        // 🔎 예금주 조회(설정 시) — 불일치/없는 계좌면 송금하지 않는다.
+        const vr = await _firmVerifyHolder({ bankCode: bankCode, account: acct, holder: String(holder || ''), requestId: requestId });
+        if (!vr.ok) return _firmFail(vr.code || 'HOLDER_MISMATCH', vr.error || '예금주 확인 실패');
+        const body = {
+            requestId: requestId,
+            bankCode: bankCode,
+            account: acct,
+            accountHolder: String(holder || '').slice(0, 20),
+            amount: amt,
+            memo: String(memo || '').replace(/[\r\n]/g, ' ').slice(0, 20)
+        };
+        // 🏦 출금 모계좌(플랫폼 주거래, 예: 우리은행) — 계약처 API가 요구하면 env로 전달. (은행코드 자동매핑)
+        if (process.env.FIRMBANKING_WITHDRAW_BANK) body.withdrawBankCode = _firmBankCode(process.env.FIRMBANKING_WITHDRAW_BANK);
+        if (process.env.FIRMBANKING_WITHDRAW_ACCOUNT) body.withdrawAccount = String(process.env.FIRMBANKING_WITHDRAW_ACCOUNT).replace(/[^0-9]/g, '');
+        if (process.env.FIRMBANKING_TRANSFER_PW) body.transferPw = process.env.FIRMBANKING_TRANSFER_PW;   // 이체전용 비밀번호(계약처 요구 시)
+        if (process.env.FIRMBANKING_API_KEY) body.apiKey = process.env.FIRMBANKING_API_KEY;               // 기관키(계약처 요구 시)
+        const headers = _firmHeaders(requestId + '|' + bankCode + '|' + acct + '|' + amt);
+        const r = await _firmPost(ep, body, headers, 30000);
+        if (r.aborted) {
+            // ⏱ 타임아웃: 은행에 닿았는지 알 수 없다 → 거래조회로 확정 시도, 실패하면 '결과 불명'으로 두고 재시도를 막는다(중복이체 방지).
+            const q = await _firmQueryStatus(requestId);
+            if (q.known && q.paid) return { ok: true, status: 'paid', code: null, retryable: false, ref: q.ref };
+            if (q.known && q.notSent) return _firmFail('NETWORK', '이체요청 타임아웃 — 거래조회 결과 미접수로 확인됨(재시도 가능).');
+            return _firmFail('UNKNOWN_RESULT', '이체요청 타임아웃(30초). 멱등키 ' + requestId + ' 로 계약처 거래조회 후 처리하세요.');
+        }
+        if (!r.sent) return _firmFail('NETWORK', '게이트웨이 연결 실패: ' + String(r.error || '').slice(0, 140));
+        const d = r.data || {};
         const okCode = String(process.env.FIRMBANKING_OK_CODE || '0000');
         const code = String(d.resultCode || d.rpcd || d.code || d.resCd || '');
-        const success = !!r && r.ok && (code === okCode || d.success === true || String(d.status || '').toLowerCase() === 'paid');
-        if (success) return { ok: true, status: 'paid', ref: String(d.ref || d.tranNo || d.txId || d.bankTranId || requestId) };
-        const msg = (d.resultMsg || d.message || d.resMsg || ('펌뱅킹 응답 오류 ' + (code || (r && r.status) || ''))).toString().slice(0, 200);
-        return { ok: false, status: 'failed', error: msg };
+        const success = r.ok && (code === okCode || d.success === true || String(d.status || '').toLowerCase() === 'paid');
+        if (success) return { ok: true, status: 'paid', code: null, retryable: false, ref: String(d.ref || d.tranNo || d.txId || d.bankTranId || requestId) };
+        const msg = (d.resultMsg || d.message || d.resMsg || ('펌뱅킹 응답 오류 ' + (code || r.httpStatus || ''))).toString().slice(0, 200);
+        let cls = (r.httpStatus === 401 || r.httpStatus === 403) ? 'AUTH' : _firmErrClass(code, msg);
+        if (cls === 'UNKNOWN_RESULT') {        // 중복접수 응답 → 거래조회로 확정 시도
+            const q = await _firmQueryStatus(requestId);
+            if (q.known && q.paid) return { ok: true, status: 'paid', code: null, retryable: false, ref: q.ref };
+            if (q.known && q.notSent) cls = 'UNKNOWN';
+        }
+        return _firmFail(cls, msg + (code ? ' (code=' + code + ')' : ''));
     } catch (ex) {
-        return { ok: false, status: 'failed', error: '펌뱅킹 통신 오류: ' + String((ex && ex.message) || ex).slice(0, 160) };
+        return _firmFail('UNKNOWN', '펌뱅킹 처리 오류: ' + String((ex && ex.message) || ex).slice(0, 160));
     }
 }
 // 💸 [정산 자동 지급] 정산 실행 공용 헬퍼 — 확정·미정산 주문의 지급액(매출−결제수수료)을 에스크로(Admin 보관)에서 차감하고
@@ -5826,11 +5962,13 @@ function _executeSettlement(seller, opts, cb) {
                                         try {
                                             const tr = await _bankTransfer({ bank, account, holder, amount: payout, memo: 'Alpha K 정산 ' + month, payoutId });
                                             const st = tr.ok ? 'paid' : 'failed';
-                                            db.run(`UPDATE payouts SET status=?, transfer_ref=?, fail_reason=?, paid_at=? WHERE id=?`, [st, tr.ref || null, tr.ok ? null : (tr.error || '이체 실패'), tr.ok ? new Date().toISOString() : null, payoutId]);
-                                            cb && cb(null, Object.assign(base, { status: st, transferRef: tr.ref || null, transferError: tr.ok ? null : tr.error }));
+                                            const fc = tr.ok ? null : (tr.code || 'UNKNOWN');
+                                            db.run(`UPDATE payouts SET status=?, transfer_ref=?, fail_reason=?, fail_code=?, paid_at=? WHERE id=?`, [st, tr.ref || null, tr.ok ? null : (tr.error || '이체 실패'), fc, tr.ok ? new Date().toISOString() : null, payoutId]);
+                                            if (!tr.ok) { try { console.warn(`[정산 이체실패] payout#${payoutId} ${seller} ${payout.toLocaleString()}원 · ${fc} · ${tr.error}`); } catch (_) {} }
+                                            cb && cb(null, Object.assign(base, { status: st, transferRef: tr.ref || null, transferError: tr.ok ? null : tr.error, failCode: fc }));
                                         } catch (ex) {
                                             const msg = String((ex && ex.message) || ex).slice(0, 200);
-                                            db.run(`UPDATE payouts SET status='failed', fail_reason=? WHERE id=?`, [msg, payoutId]);
+                                            db.run(`UPDATE payouts SET status='failed', fail_reason=?, fail_code='UNKNOWN' WHERE id=?`, [msg, payoutId]);
                                             cb && cb(null, Object.assign(base, { status: 'failed', transferError: msg }));
                                         }
                                     });
