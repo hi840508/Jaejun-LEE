@@ -5095,8 +5095,9 @@
  "#rc-folder-page .rc-gf:hover,#rc-folder-page .rc-gfd:hover,#rc-folder-page .rc-serf:hover{box-shadow:0 4px 14px rgba(17,24,39,.10);}",
  "#rc-folder-page .rc-more{display:flex;align-items:center;justify-content:center;opacity:.85;}",
  "#rc-folder-page .rc-gf:hover .rc-more{opacity:1;}",
- "#rc-folder-page .rc-gf-chk,#rc-folder-page .rc-gfd-chk{appearance:none;-webkit-appearance:none;border:2px solid #fff;background:rgba(17,24,39,.28);border-radius:6px;box-shadow:0 0 0 1px rgba(17,24,39,.15);}",
+ "#rc-folder-page .rc-gf-chk,#rc-folder-page .rc-gfd-chk{appearance:none;-webkit-appearance:none;border:2px solid #fff;background:rgba(17,24,39,.28);border-radius:6px;box-shadow:0 0 0 1px rgba(17,24,39,.15);display:flex;align-items:center;justify-content:center;}",
  "#rc-folder-page .rc-gf-chk:checked,#rc-folder-page .rc-gfd-chk:checked{background:#0f2f52;border-color:#fff;}",
+ "#rc-folder-page .rc-gf-chk:checked::after,#rc-folder-page .rc-gfd-chk:checked::after{content:'✓';color:#fff;font-size:13px;font-weight:900;line-height:1;}",
  "#rc-folder-page ._sf-secgrid{gap:14px;}",
  "#rc-folder-page ._sf-sechead,#rc-folder-page ._sf-sechead-plain{font-size:13.5px;font-weight:700;color:#374151;}",
  "@media (max-width:640px){ #rc-folder-page ._sf-secgrid{grid-template-columns:repeat(auto-fill,minmax(44vw,1fr))!important;gap:12px!important;} }"
@@ -5323,7 +5324,7 @@
                     el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); ctxMenu(e.clientX,e.clientY,[
                         {label:'📂 열기',fn:()=>{ path=path.concat(rel); render(); }},
                         {label:'✏️ 이름 변경',fn:async()=>{ const nn=await _sfPrompt('폴더 새 이름',leaf); if(nn&&nn!==leaf){ window.__rcLastErr=''; showToast('폴더 이름 변경 중…(파일이 많으면 잠시 걸립니다)'); if(await R.renameAt(parent,leaf,nn,true)) { showToast('✅ 폴더 이름 변경됨'); render(); } else showToast('이름변경 실패: '+(window.__rcLastErr||'')); } }},
-                        {label:'🗑 삭제',danger:true,fn:async()=>{ if(confirm('폴더 "'+leaf+'" 를 삭제할까요? (안의 파일도 함께 삭제)')){ if(await R.removeAt(parent,leaf,true)) render(); else showToast('삭제 실패'); } }}
+                        {label:((_isSelected(el)&&(selected.size+selectedFolders.size)>1)?('🗑 삭제 ('+(selected.size+selectedFolders.size)+'개)'):'🗑 삭제'),danger:true,fn:async()=>{ if(_isSelected(el) && (selected.size+selectedFolders.size)>1){ await _doDeleteSelection(); return; } if(confirm('폴더 "'+leaf+'" 를 삭제할까요? (안의 파일도 함께 삭제)')){ if(await R.removeAt(parent,leaf,true)) render(); else showToast('삭제 실패'); } }}
                     ]); });
                 });
                 // 📅 날짜 섹션 헤더 클릭 → 해당 날짜 폴더로 진입
@@ -5358,7 +5359,7 @@
                             items.push({label:(multi?('📤 공유 / 나에게 보내기 ('+sel.length+'개)'):'📤 공유 / 나에게 보내기'),fn:()=>openShareRecipientPicker(sel)});
                             items.push({label:'🔗 외부 공유(비회원 · QR/링크)',fn:()=>window.guestShareLocalFile(path, fnm, mim, 0)});
                             items.push({label:'✏️ 이름 변경',fn:async()=>{ const nn=await _sfPrompt('새 파일 이름',fnm); if(nn&&nn!==fnm){ if(await R.renameAt(path,fnm,nn,false)) render(); else showToast('이름변경 실패'); } }});
-                            items.push({label:'🗑 삭제',danger:true,fn:async()=>{ if(confirm('"'+fnm+'" 삭제할까요?')){ if(await R.removeAt(path,fnm,false)) render(); else showToast('삭제 실패'); } }});
+                            items.push({label:(multi?('🗑 삭제 ('+sel.length+'개)'):'🗑 삭제'),danger:true,fn:async()=>{ if(selected.has(fnm) && (selected.size+selectedFolders.size)>1){ await _doDeleteSelection(); return; } if(confirm('"'+fnm+'" 삭제할까요?')){ if(await R.removeAt(path,fnm,false)) render(); else showToast('삭제 실패'); } }});
                         } else {
                             items.push({label:'👁 미리보기 (내려받아 열기)',fn:()=>window.rcPreviewFolderFile(fnm,mim)});
                             items.push({label:'📤 공유 / 나에게 보내기',fn:()=>openShareRecipientPicker([fnm])});
