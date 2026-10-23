@@ -5262,7 +5262,38 @@
 
                 const selbar=ov.querySelector('#_sf-selbar');
                 const updCnt=()=>{ const n=selected.size+selectedFolders.size; const c=ov.querySelector('#_sf-cnt'); if(c) c.textContent=n+'개 선택'+(selectedFolders.size?(' (폴더 '+selectedFolders.size+')'):''); if(selbar) selbar.style.display=n>0?'flex':'none'; };
-                const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ selected.clear(); selectedFolders.clear(); ov.querySelectorAll('.rc-gf').forEach(el=>{ const c=el.querySelector('.rc-gf-chk'); if(c) c.checked=false; el.style.outline=''; }); ov.querySelectorAll('.rc-gfd').forEach(el=>{ const c=el.querySelector('.rc-gfd-chk'); if(c) c.checked=false; el.style.outline=''; }); updCnt(); };
+                const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _clearSel(); };
+                // ===== 🖱 선택 공용 헬퍼(파일 .rc-gf + 폴더 .rc-gfd) — 탐색기식 멀티선택/삭제 =====
+                const _allCards=()=>ov.querySelectorAll('.rc-gf, .rc-gfd');
+                const _folderRelKey=(el)=>((el.getAttribute('data-rel')||el.getAttribute('data-name')||'').split('/').filter(Boolean)).join('/');
+                function _cardOn(el, on){
+                    if(!el) return;
+                    if(el.classList.contains('rc-gfd')){
+                        const rel=(el.getAttribute('data-rel')||el.getAttribute('data-name')||'').split('/').filter(Boolean); const key=rel.join('/'); if(!key) return;
+                        if(on) selectedFolders.set(key,{parent:path.concat(rel.slice(0,-1)),leaf:rel[rel.length-1]}); else selectedFolders.delete(key);
+                        const c=el.querySelector('.rc-gfd-chk'); if(c) c.checked=on;
+                    } else {
+                        const fn=el.getAttribute('data-fname'); if(!fn) return;
+                        if(on) selected.add(fn); else selected.delete(fn);
+                        const c=el.querySelector('.rc-gf-chk'); if(c) c.checked=on;
+                    }
+                    el.style.outline = on ? '3px solid #0f2f52' : ''; el.style.outlineOffset = on ? '-3px' : '';
+                }
+                const _isSelected=(el)=> el.classList.contains('rc-gfd') ? selectedFolders.has(_folderRelKey(el)) : selected.has(el.getAttribute('data-fname'));
+                function _clearSel(){ selected.clear(); selectedFolders.clear(); _allCards().forEach(el=>{ el.style.outline=''; const c=el.querySelector('.rc-gf-chk,.rc-gfd-chk'); if(c) c.checked=false; }); updCnt(); }
+                function _selectAllVisible(){ _allCards().forEach(el=>{ if(el.style.display!=='none') _cardOn(el, true); }); updCnt(); }
+                async function _doDeleteSelection(){
+                    const names=[...selected]; const folders=[...selectedFolders.values()];
+                    if(!names.length && !folders.length){ showToast('삭제할 항목을 선택하세요.'); return; }
+                    const _p=[]; if(names.length)_p.push('파일 '+names.length+'개'); if(folders.length)_p.push('폴더 '+folders.length+'개(내용 포함)');
+                    if(!confirm(_p.join(' + ')+'을(를) 삭제할까요? (실제 폴더에서 삭제되며 되돌릴 수 없습니다)')) return;
+                    if(!(await R.ensureAccess())){ try{ window._showFolderPermHelp(function(){ if(R.pick) R.pick(); }); }catch(_){ showToast('공유폴더 권한이 필요합니다.'); } return; }
+                    window.__rcLastErr=''; let ok=0, fail=0;
+                    for(const nm of names){ if(await R.removeAt(path,nm,false)) ok++; else fail++; }
+                    for(const f of folders){ if(await R.removeAt(f.parent,f.leaf,true)) ok++; else fail++; }   // 폴더=재귀 삭제
+                    showToast(ok?('🗑 삭제: '+ok+'개'+(fail?(' · 실패 '+fail):'')):('삭제 실패: '+(window.__rcLastErr||'권한/폴더 확인')));
+                    render();
+                }
                 // 📎 선택 모드(pick): 선택한 파일을 콜백으로 돌려주고 갤러리 닫기(의뢰서 첨부 등)
                 { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=async()=>{
                     if(!selected.size){ showToast('첨부할 파일을 선택하세요.'); return; }
@@ -5282,8 +5313,8 @@
                     const relKey=rel.join('/');
                     // ☑ 폴더 멀티선택 체크박스 — 선택 시 카드 클릭(이동) 막고 selectedFolders에 담는다
                     const fchk=el.querySelector('.rc-gfd-chk');
-                    if(fchk){ fchk.addEventListener('click',(e)=>{ e.stopPropagation(); if(fchk.checked){ selectedFolders.set(relKey,{parent:parent,leaf:leaf}); el.style.outline='3px solid #0f2f52'; el.style.outlineOffset='-3px'; } else { selectedFolders.delete(relKey); el.style.outline=''; } updCnt(); }); }
-                    el.addEventListener('click',()=>{ path=path.concat(rel); render(); });
+                    if(fchk){ fchk.addEventListener('click',(e)=>{ e.stopPropagation(); _cardOn(el, fchk.checked); updCnt(); }); }
+                    el.addEventListener('click',(e)=>{ if(e.ctrlKey||e.metaKey||e.shiftKey){ e.preventDefault(); e.stopPropagation(); _cardOn(el, !_isSelected(el)); updCnt(); return; } path=path.concat(rel); render(); });
                     if(!nested){
                         el.addEventListener('dragover',(e)=>{ if(window.__rcDragFile){ e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect='move'; el.style.outline='2px solid #0f2f52'; } });
                         el.addEventListener('dragleave',()=>{ el.style.outline=''; });
@@ -5301,9 +5332,9 @@
                 ov.querySelectorAll('.rc-gf').forEach(el=>{
                     const fnm=el.getAttribute('data-fname'), mim=el.getAttribute('data-mime')||'', here=el.getAttribute('data-here')==='1';
                     const chk=el.querySelector('.rc-gf-chk');
-                    chk.addEventListener('click',(e)=>{ e.stopPropagation(); if(chk.checked){ selected.add(fnm); el.style.outline='3px solid #0f2f52'; el.style.outlineOffset='-3px'; } else { selected.delete(fnm); el.style.outline=''; } updCnt(); });
+                    chk.addEventListener('click',(e)=>{ e.stopPropagation(); _cardOn(el, chk.checked); updCnt(); });
                     const more=el.querySelector('.rc-more'); if(more) more.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); el.dispatchEvent(new MouseEvent('contextmenu',{clientX:e.clientX,clientY:e.clientY,bubbles:true})); });
-                    el.addEventListener('click',(e)=>{ if(e.target===chk || (e.target&&e.target.closest&&e.target.closest('.rc-more'))) return; window.rcPreviewFolderFile(fnm, mim); });
+                    el.addEventListener('click',(e)=>{ if(e.target===chk || (e.target&&e.target.closest&&e.target.closest('.rc-more'))) return; if(e.ctrlKey||e.metaKey||e.shiftKey){ e.preventDefault(); e.stopPropagation(); _cardOn(el, !_isSelected(el)); updCnt(); return; } window.rcPreviewFolderFile(fnm, mim); });
                     // 🖥 더블클릭 = 실시간 뷰어(cbct_suite)로 열기. 같은 폴더의 다른 영상은 뷰어 안 DATA 서랍에서 추가로 연다.
                     el.addEventListener('dblclick',(e)=>{ if(e.target===chk) return; e.preventDefault(); e.stopPropagation(); window.rcOpenInLiveViewer(path, fnm); });
                     el.addEventListener('dragstart',(e)=>{ if(!here){ e.preventDefault(); return; } try{
@@ -5356,17 +5387,7 @@
                         if(!names.length && folders.length===1){ const f=folders[0]; const nn=await _sfPrompt('폴더 새 이름', f.leaf); if(nn&&nn!==f.leaf){ window.__rcLastErr=''; showToast('폴더 이름 변경 중…'); if(await R.renameAt(f.parent,f.leaf,nn,true)) render(); else showToast('이름변경 실패: '+(window.__rcLastErr||'')); } return; }
                         return showToast('이름변경할 항목 1개만 선택하세요.');
                     }
-                    if(act==='delete'){
-                        if(!names.length && !folders.length) return showToast('삭제할 항목을 선택하세요.');
-                        const _msgParts=[]; if(names.length) _msgParts.push('파일 '+names.length+'개'); if(folders.length) _msgParts.push('폴더 '+folders.length+'개(내용 포함)');
-                        if(!confirm(_msgParts.join(' + ')+'을(를) 삭제할까요? (실제 폴더에서 삭제되며 되돌릴 수 없습니다)')) return;
-                        if(!(await R.ensureAccess())){ try{ window._showFolderPermHelp(function(){ if(R.pick) R.pick(); }); }catch(_){ showToast('공유폴더 권한이 필요합니다.'); } return; }
-                        window.__rcLastErr=''; let ok=0, fail=0;
-                        for(const nm of names){ if(await R.removeAt(path,nm,false)) ok++; else fail++; }
-                        for(const f of folders){ if(await R.removeAt(f.parent,f.leaf,true)) ok++; else fail++; }   // 폴더=재귀 삭제
-                        showToast(ok?('🗑 삭제: '+ok+'개'+(fail?(' · 실패 '+fail):'')):('삭제 실패: '+(window.__rcLastErr||'권한/폴더 확인')));
-                        render(); return;
-                    }
+                    if(act==='delete'){ await _doDeleteSelection(); return; }
                 }));
                 // 정렬/확대 + 섹션 접기
                 const sb2=ov.querySelector('#_sf-sort'); if(sb2) sb2.onclick=()=>{ flt.sort = flt.sort==='new'?'old':(flt.sort==='old'?'name':'new'); render(); };
@@ -5406,6 +5427,46 @@
                 (async()=>{ const pend=[].slice.call(ov.querySelectorAll('.rc-gf[data-here="1"]')).filter(el=>!el.querySelector('.rc-thumbbox img')); let i=0; const CONC=5; async function w(){ while(i<pend.length){ const el=pend[i++]; const box=el.querySelector('.rc-thumbbox'); if(!box) continue; const fn=el.getAttribute('data-fname'), mm=el.getAttribute('data-mime'); try{ const f=await R.getFileAt(path,fn); if(!f) continue; const t=await R.getThumb(f,mm,fn); if(t && !box.querySelector('img')){ const ic=box.querySelector('.rc-gf-icon'); if(ic) ic.style.display='none'; const isV=_sfType(mm,fn)==='video'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isV?_vov:'')); } }catch(_){} } } const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws); })();
                 // 시리즈 카드 중간 슬라이스 썸네일
                 (async()=>{ const sers=[].slice.call(ov.querySelectorAll('.rc-serf')); for(const el of sers){ const box=el.querySelector('.rc-thumbbox'); if(!box) continue; const sid=el.getAttribute('data-sid'); const sl=seriesMap[sid]||[]; if(!sl.length) continue; const mid=sl[Math.floor(sl.length/2)]; try{ const f=await R.getFileAt(path, mid); if(!f) continue; const t=await R.getThumb(f,'application/dicom',mid); if(t){ const ic=box.querySelector('.rc-ser-icon'); if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;">'); } }catch(_){} } })();
+
+                // ===== 🖱 드래그 범위선택(러버밴드) — 빈 공간에서 끌면 사각형 범위 안의 파일/폴더가 한번에 선택 =====
+                (function(){
+                    const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
+                    try{ if(getComputedStyle(grid).position==='static') grid.style.position='relative'; }catch(_){}
+                    const _interactive=(t)=> !!(t && t.closest && (t.closest('.rc-gf')||t.closest('.rc-gfd')||t.closest('.rc-serf')||t.closest('button')||t.closest('input')||t.closest('a')||t.closest('select')||t.closest('._sf-datehead')||t.closest('._sf-sechead')));
+                    grid.addEventListener('mousedown',(e)=>{
+                        if(e.button!==0 || _interactive(e.target)) return;
+                        const additive = e.ctrlKey||e.metaKey||e.shiftKey; if(!additive) _clearSel();
+                        const gr0=grid.getBoundingClientRect();
+                        const sx=e.clientX-gr0.left+grid.scrollLeft, sy=e.clientY-gr0.top+grid.scrollTop;
+                        const band=document.createElement('div'); band.style.cssText='position:absolute;border:1.5px solid #0f2f52;background:rgba(15,47,82,.12);z-index:60;pointer-events:none;left:'+sx+'px;top:'+sy+'px;width:0;height:0;border-radius:3px;';
+                        grid.appendChild(band); grid.style.userSelect='none';
+                        const mm=(ev)=>{
+                            const g=grid.getBoundingClientRect();
+                            const cx=ev.clientX-g.left+grid.scrollLeft, cy=ev.clientY-g.top+grid.scrollTop;
+                            const x=Math.min(sx,cx), y=Math.min(sy,cy), w=Math.abs(cx-sx), h=Math.abs(cy-sy);
+                            band.style.left=x+'px'; band.style.top=y+'px'; band.style.width=w+'px'; band.style.height=h+'px';
+                            const rl=g.left+(x-grid.scrollLeft), rt=g.top+(y-grid.scrollTop), rr=rl+w, rb=rt+h;
+                            _allCards().forEach(el=>{ if(el.style.display==='none') return; const b=el.getBoundingClientRect(); const hit=!(b.right<rl||b.left>rr||b.bottom<rt||b.top>rb); if(hit){ if(!_isSelected(el)) _cardOn(el,true); } else if(!additive && _isSelected(el)) _cardOn(el,false); });
+                            updCnt();
+                            if(ev.clientY>g.bottom-28) grid.scrollTop+=20; else if(ev.clientY<g.top+28) grid.scrollTop-=20;
+                        };
+                        const mu=()=>{ document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu); try{band.remove();}catch(_){} grid.style.userSelect=''; };
+                        document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu);
+                        e.preventDefault();
+                    });
+                })();
+                // ===== ⌨ Delete=삭제 · Ctrl/⌘+A=전체선택 · Esc=선택해제 (윈도우 탐색기식). 전역 1개만 유지(재렌더 누수 방지). =====
+                (function(){
+                    const h=(e)=>{
+                        if(window.__sfOv!==ov || !document.body.contains(ov)) return;        // 공유폴더가 현재 열린 화면일 때만
+                        const ae=document.activeElement; if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName||'')) return;
+                        if(e.key==='Delete'){ e.preventDefault(); _doDeleteSelection(); }
+                        else if((e.ctrlKey||e.metaKey) && (e.key==='a'||e.key==='A')){ e.preventDefault(); _selectAllVisible(); }
+                        else if(e.key==='Escape'){ if(selected.size||selectedFolders.size){ e.preventDefault(); _clearSel(); } }
+                    };
+                    try{ if(window.__sfKeyHandler) document.removeEventListener('keydown', window.__sfKeyHandler); }catch(_){}
+                    window.__sfKeyHandler=h; document.addEventListener('keydown', h);
+                })();
 
                 applyFilter();
             }
