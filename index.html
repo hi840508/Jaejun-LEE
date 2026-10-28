@@ -1890,6 +1890,8 @@
                                 <option value="nts_sent_mock">테스트(미전송)</option>
                                 <option value="not_sent">미전송</option>
                             </select>
+                            <input id="tax-hist-vendor" list="tax-hist-vendor-list" oninput="loadTaxHistory()" placeholder="거래처(업체)로 조회" title="업체명·사업자번호로 조회(비우면 전체)" style="width:150px;padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;">
+                            <datalist id="tax-hist-vendor-list"></datalist>
                             <span style="display:inline-flex;align-items:center;gap:5px;background:#eef4f8;border:1px solid #d7e3ee;border-radius:7px;padding:4px 8px;">
                                 <label style="font-size:11px;color:#0f2f52;font-weight:700;">국세청 일괄발급</label>
                                 <input id="nts-xls-count" type="number" min="1" max="1000" value="100" title="내려받을 건수(1~1000)" style="width:62px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;text-align:right;">
@@ -2983,9 +2985,25 @@
                     try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){}
                 }
             } else {
-                // 🔓 비로그인 부팅(로그아웃 직후 등) — 로그인 칸이 잔류 오버레이/잠금으로 막히지 않도록 보장(지연 재시도 포함)
-                try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){}
-                try{ setTimeout(function(){ try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){} }, 600); setTimeout(function(){ try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){} }, 1600); }catch(_){}
+                // 🔔 알림 클릭 등으로 열렸을 때 재로그인 없이 바로 보이도록 — 세션 토큰이 유효하면 자동 복원(자동로그인 미체크여도 세션 유지 중이면 복원).
+                (async function(){
+                    let restored=false;
+                    try{
+                        const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
+                        if(tk){
+                            const pr = await fetch(API_URL+'/api/auth/ping', { headers:{ 'x-auth-token': tk } }).then(r=>r.json()).catch(()=>null);
+                            if(pr && pr.ok && pr.name){
+                                const u = await fetch(API_URL+'/api/users/'+encodeURIComponent(pr.name)).then(r=>r.json()).catch(()=>null);
+                                if(u && u.name && u.approval_status!=='pending' && u.approval_status!=='rejected'){ try{ setEarthToken(tk); }catch(_){} u.token=tk; loginSuccess(u); restored=true; }
+                            }
+                        }
+                    }catch(_){}
+                    if(!restored){
+                        // 🔓 비로그인 부팅 — 로그인 칸이 잔류 오버레이/잠금으로 막히지 않도록 보장(지연 재시도 포함)
+                        try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){}
+                        try{ setTimeout(function(){ try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){} }, 600); setTimeout(function(){ try{ window._ensureAuthInteractive && window._ensureAuthInteractive(); }catch(_){} }, 1600); }catch(_){}
+                    }
+                })();
             }
         };
 
@@ -3146,6 +3164,10 @@
             try{ ['login-name','login-password','auto-login-check'].forEach(function(id){ var e=document.getElementById(id); if(e){ e.disabled=false; e.readOnly=false; e.style.pointerEvents=''; e.style.opacity=''; var p=e.closest('.input-group'); if(p){ p.style.pointerEvents=''; p.classList.remove('reg-locked'); } } }); }catch(_){}
             // 결제 중 플래그/네이티브 결제모드 해제(로그아웃 상태에선 결제 아님)
             try{ if(window.rayApp && window.rayApp.setPaymentMode) window.rayApp.setPaymentMode(false); }catch(_){}
+            // ⌨ 접속 ID 칸에 포커스(앱에서 클릭해야 활성화되던 불편 해소) — 보이는 폼 기준
+            try{ var _lf=document.getElementById('form-login-only'); if(!_lf || _lf.style.display!=='none'){ var _n=document.getElementById('login-name'); if(_n){ try{ window.focus(); }catch(_){} try{ _n.focus({preventScroll:true}); }catch(_){ try{ _n.focus(); }catch(__){} } } } }catch(_){}
+            // 🖱 로그인 영역을 처음 클릭하면 즉시 재활성·포커스(혹시 남은 잔류 방지) — 1회만
+            try{ var _lw=document.getElementById('login-wrap'); if(_lw && !_lw.__authClickWired){ _lw.__authClickWired=true; _lw.addEventListener('mousedown',function(ev){ try{ if(typeof currentUser!=='undefined' && currentUser) return; if(ev.target && /^(INPUT|SELECT|TEXTAREA|BUTTON|LABEL|A)$/.test(ev.target.tagName||'')) return; window._clearStuckOverlays && window._clearStuckOverlays(); var n=document.getElementById('login-name'); if(n){ n.disabled=false; n.readOnly=false; } }catch(_){} }, true); } }catch(_){}
         };
         function toggleLoginMode(mode) {
             try{ window._clearStuckOverlays(); }catch(_){}
@@ -4321,7 +4343,7 @@
             cube:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>'
         };
         // 커스텀 입력창(앱/Electron은 window.prompt 비활성 → 자체 모달). Promise<string|null>
-        window._sfPrompt = function(titleTxt, def){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;'; ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="font-weight:800;font-size:15px;margin-bottom:12px;">'+_sfEsc(titleTxt||'')+'</div><input id="_sfp-in" type="text" inputmode="text" autofocus autocomplete="off" style="width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;box-sizing:border-box;-webkit-user-select:text;user-select:text;" value="'+_sfEsc(def||'')+'"><div style="display:flex;gap:8px;margin-top:14px;"><button id="_sfp-c" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_sfp-ok" style="flex:1;padding:11px;border:none;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">확인</button></div></div>'; document.body.appendChild(ov); const inp=ov.querySelector('#_sfp-in'); const _focus=()=>{ try{ inp.focus({preventScroll:true}); inp.select(); }catch(_){} }; _focus(); requestAnimationFrame(_focus); [30,120,280].forEach(t=>setTimeout(_focus,t)); inp.addEventListener('pointerdown',(e)=>{ e.stopPropagation(); }); const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); }; ov.querySelector('#_sfp-c').onclick=()=>done(null); ov.querySelector('#_sfp-ok').onclick=()=>done(inp.value); inp.addEventListener('keydown',(e)=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); done(inp.value); } else if(e.key==='Escape'){ done(null); } }); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(null); }); }); };
+        window._sfPrompt = function(titleTxt, def){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;'; ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="font-weight:800;font-size:15px;margin-bottom:12px;">'+_sfEsc(titleTxt||'')+'</div><input id="_sfp-in" type="text" inputmode="text" autofocus autocomplete="off" style="width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;box-sizing:border-box;-webkit-user-select:text;user-select:text;" value="'+_sfEsc(def||'')+'"><div style="display:flex;gap:8px;margin-top:14px;"><button id="_sfp-c" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_sfp-ok" style="flex:1;padding:11px;border:none;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">확인</button></div></div>'; try{ window._clearStuckOverlays && window._clearStuckOverlays(); }catch(_){} document.body.appendChild(ov); const inp=ov.querySelector('#_sfp-in'); const _focus=()=>{ try{ window.focus(); }catch(_){} try{ inp.focus({preventScroll:true}); inp.select(); }catch(_){ try{ inp.focus(); }catch(__){} } }; _focus(); requestAnimationFrame(_focus); [30,120,280,600].forEach(t=>setTimeout(_focus,t)); ov.addEventListener('mousedown',(e)=>{ if(e.target===ov){ _focus(); } }); inp.addEventListener('pointerdown',(e)=>{ e.stopPropagation(); }); const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); }; ov.querySelector('#_sfp-c').onclick=()=>done(null); ov.querySelector('#_sfp-ok').onclick=()=>done(inp.value); inp.addEventListener('keydown',(e)=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); done(inp.value); } else if(e.key==='Escape'){ done(null); } }); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(null); }); }); };
         // 🔒 확인 모달(Electron confirm() 비활성 대응) → Promise<bool>
         window._sfConfirm = function(titleTxt, okLabel){ return new Promise((resolve)=>{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100090;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;'; ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);"><div style="font-weight:700;font-size:14px;line-height:1.5;margin-bottom:16px;white-space:pre-line;">'+_sfEsc(titleTxt||'')+'</div><div style="display:flex;gap:8px;"><button id="_sfc-c" style="flex:1;padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;font-weight:700;cursor:pointer;">취소</button><button id="_sfc-ok" style="flex:1;padding:11px;border:none;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">'+_sfEsc(okLabel||'확인')+'</button></div></div>'; document.body.appendChild(ov); const done=(v)=>{ try{ ov.remove(); }catch(_){} resolve(v); }; ov.querySelector('#_sfc-c').onclick=()=>done(false); ov.querySelector('#_sfc-ok').onclick=()=>done(true); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(false); }); document.addEventListener('keydown',function _k(e){ if(e.key==='Escape'){ document.removeEventListener('keydown',_k); done(false); } }); }); };
         // 🔎 통합 검색 결과 모달 — 모든 연결 폴더/하위폴더/DICOM 헤더를 검색해 결과를 리스트로 보여주고, 클릭 시 그 폴더로 이동+미리보기
@@ -6809,7 +6831,7 @@
             const month=taxG('tax-month'); const list=(window.taxSettlement||[]).filter(v=>Number(v.payFee)>0);
             if(!list.length){ showToast('발행할 수수료 매출(정산 대상)이 없습니다.'); return; }
             if(!confirm(`${list.length}개 판매자에게 ${month} 수수료 세금계산서를 일괄 발행합니다.\n(공급자=플랫폼 / 공급받는자=각 판매자 · 국세청 신고자료)`)) return;
-            const vendors=list.map(v=>({ seller:v.seller, recipient:_tifVendorRecipient(v), item:{ name:month+' 플랫폼 이용 수수료' }, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }));
+            const vendors=list.map(v=>({ seller:v.seller, recipient:_tifVendorRecipient(v), item:{ name:'수수료' }, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }));
             _tifBulkPost(supplier, vendors, (month?month+'-01':''), month);
         };
         // 정산(미정산) 업체 발행 버튼 → 폼 프리필 오픈
@@ -6819,7 +6841,7 @@
             const month=taxG('tax-month');
             openTaxInvoiceForm({
                 supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'', ceoName:v.bizCeo||'', address:v.bizAddr||'', bizType:v.bizIndustry||'', bizClass:v.bizItem||'', email:v.taxEmail||'' }, seller:v.seller,
-                items:[{ month:(month||'').slice(5,7), name:month+' 플랫폼 이용 수수료', qty:1, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }],
+                items:[{ month:(month||'').slice(5,7), name:'수수료', qty:1, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }],
                 writeDate:(month?month+'-01':''), batchMonth:month
             });
         };
@@ -6829,7 +6851,7 @@
             if(!sel.length){ showToast('발행할 업체를 선택하세요.'); return; }
             const month=taxG('tax-month');
             if(!confirm(`${sel.length}개 업체에 ${month} 수수료 세금계산서를 일괄 발행합니다.`)) return;
-            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:month+' 플랫폼 이용 수수료'}, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee }));
+            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:'수수료'}, supplyAmount:v.payFee, taxAmount:0, totalAmount:v.payFee }));
             try{
                 const r=await fetch(`${API_URL}/api/tax/issue-bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ supplier, vendors, writeDate:month+'-01', batchMonth:month })});
                 const d=await r.json(); if(!r.ok) throw new Error(d.error||'실패');
@@ -6845,10 +6867,15 @@
                 let rows=await fetch(`${API_URL}/api/admin/tax/invoices?month=${encodeURIComponent(month)}`).then(r=>r.json());
                 rows=Array.isArray(rows)?rows:[];
                 if(statusF) rows=rows.filter(r=>r.ntsStatus===statusF||r.issueStatus===statusF);
+                // 🏢 거래처(업체) 자동완성 목록 채우기 — 상태 필터 전 전체 거래처 기준
+                try{ const dl=document.getElementById('tax-hist-vendor-list'); if(dl){ const seen=new Set(); dl.innerHTML=rows.map(r=>{ const nm=(r.recipientName||(r.payloadObj&&r.payloadObj.recipient&&r.payloadObj.recipient.name)||'').trim(); if(!nm||seen.has(nm)) return ''; seen.add(nm); return '<option value="'+nm.replace(/"/g,'&quot;')+'">'; }).join(''); } }catch(_){}
+                // 🏢 거래처 필터 — 업체명/사업자번호 부분일치. 업체별로 따로 조회·내려받기 가능.
+                const vendF=((document.getElementById('tax-hist-vendor')||{}).value||'').trim().toLowerCase();
+                if(vendF){ const _dig=vendF.replace(/[^0-9]/g,''); rows=rows.filter(r=>{ const nm=String(r.recipientName||(r.payloadObj&&r.payloadObj.recipient&&r.payloadObj.recipient.name)||'').toLowerCase(); const bz=String(r.recipientBizNo||(r.payloadObj&&r.payloadObj.recipient&&r.payloadObj.recipient.bizNo)||'').replace(/[^0-9]/g,''); return (nm.indexOf(vendF)>=0) || (_dig && bz.indexOf(_dig)>=0); }); }
                 window.taxHistoryRows=rows;
                 if(!rows.length){ body.innerHTML='<tr><td colspan="15" style="text-align:center;padding:16px;color:#94a3b8;">발행 내역 없음</td></tr>'; return; }
                 body.innerHTML=rows.map((r,i)=>{ const p=r.payloadObj||{}; const rec=p.recipient||{}; const item=(p.items&&p.items[0])||{};
-                    const jeoyo=item.name||p.memo||'플랫폼 이용 수수료';
+                    const jeoyo=item.name||p.memo||'수수료';
                     return `<tr>
                     <td style="text-align:center;"><input type="checkbox" class="tax-hsel" data-id="${r.id}" data-i="${i}"></td>
                     <td style="text-align:center;font-size:11px;font-weight:700;color:${(r.ntsStatus||'').indexOf('nts_sent')===0?'#166534':'#b45309'};">${taxEscH(taxStatusLabel(r))}</td>
@@ -6889,7 +6916,7 @@
                     const wdate=_ymd(p.writeDate||r.created_at);
                     const yc=(p.purposeType==='claim')?'02':'01';
                     const bizNo=_digits(r.recipientBizNo||rec.bizNo); const regNo = bizNo || '9999999999999';   // 외국인/미등록 대비
-                    return [ wdate, regNo, _d(rec.subBizNo), _d(r.recipientName||rec.name), _d(rec.ceoName), _d(rec.address), _d(rec.bizType||rec.uptae||rec['업태']), _d(rec.bizItem||rec.jongmok||rec['종목']), _d(rec.email), wdate, _d(it.name||p.memo||'플랫폼 이용 수수료'), _d(it.spec), (it.qty!=null&&it.qty!==''?Number(it.qty):''), (it.unitPrice!=null&&it.unitPrice!==''?Number(it.unitPrice):''), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(it.remark), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(p.memo), yc ]; });
+                    return [ wdate, regNo, _d(rec.subBizNo), _d(r.recipientName||rec.name), _d(rec.ceoName), _d(rec.address), _d(rec.bizType||rec.uptae||rec['업태']), _d(rec.bizItem||rec.jongmok||rec['종목']), _d(rec.email), wdate, _d(it.name||p.memo||'수수료'), _d(it.spec), (it.qty!=null&&it.qty!==''?Number(it.qty):''), (it.unitPrice!=null&&it.unitPrice!==''?Number(it.unitPrice):''), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(it.remark), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(p.memo), yc ]; });
                 const aoa=[
                     ['전자세금계산서 일괄발급 — 국세청 업로드용 데이터 ('+use.length+'건)'],
                     ['① 홈택스 ▸ 계산서·영수증·카드 ▸ 전자(세금)계산서 발급 ▸ 일괄/공동매입분 발급 ▸ "전자(세금)계산서 일괄발급(100건 초과)" 이동'],
@@ -6904,7 +6931,8 @@
                 ws['!cols']=HEAD.map(h=>({wch:Math.max(9,Math.min(26,String(h).length*1.8))}));
                 XLSX.utils.book_append_sheet(wb, ws, '일괄발급데이터');
                 const mm=(document.getElementById('inv-month')||{}).value||'';
-                XLSX.writeFile(wb, '전자세금계산서_일괄발급_'+(mm||'전체')+'_'+use.length+'건.xlsx');
+                const vend=((document.getElementById('tax-hist-vendor')||{}).value||'').trim().replace(/[\\/:*?"<>|]/g,'').slice(0,20);
+                XLSX.writeFile(wb, '전자세금계산서_일괄발급_'+(mm||'전체')+(vend?('_'+vend):'')+'_'+use.length+'건.xlsx');
                 showToast('✅ 국세청 일괄발급 엑셀 내려받기 완료: '+use.length+'건');
             }catch(e){ showToast('엑셀 생성 실패: '+(e.message||'')); }
         };
@@ -6933,7 +6961,7 @@
                 +'<tr><th>주소</th><td>'+taxEscH(sup.address||'')+'</td><td>'+taxEscH(rec.address||'')+'</td></tr>'
                 +'<tr><th>업태/종목</th><td>'+taxEscH((sup.bizType||'')+' / '+(sup.bizClass||''))+'</td><td>'+taxEscH((rec.bizType||'')+' / '+(rec.bizClass||''))+'</td></tr></table>'
                 +'<table><tr><th>품목</th><th class="r">공급가액</th><th class="r">세액</th><th class="r">합계</th></tr>'
-                +'<tr><td>'+taxEscH((o.month||'')+' 플랫폼 이용 수수료')+'</td><td class="r">'+taxFmt(o.supplyAmount)+'</td><td class="r">'+taxFmt(o.taxAmount)+'</td><td class="r amt">'+taxFmt(o.totalAmount)+'</td></tr></table>'
+                +'<tr><td>'+taxEscH(((o.payloadObj&&o.payloadObj.items&&o.payloadObj.items[0]&&o.payloadObj.items[0].name)||'수수료'))+'</td><td class="r">'+taxFmt(o.supplyAmount)+'</td><td class="r">'+taxFmt(o.taxAmount)+'</td><td class="r amt">'+taxFmt(o.totalAmount)+'</td></tr></table>'
                 +'<p class="no">본 세금계산서는 Alpha K 정산 시스템에서 발행되었습니다.'+(mock?' (테스트 발행 · 국세청 미전송)':'')+'</p>'
                 +'</body></html>';
             const ov=document.createElement('div'); ov.id='tax-pdf-ov';
@@ -7487,12 +7515,12 @@
             // 각 정산완료 거래(주문)를 1개 품목 라인으로 — 상품명·주문#·구매자 표기 + 건별 공급가/세액/합계
             let items=(v.items&&v.items.length)?v.items.map(it=>({
                 month:_mm(it.settledAt||it.confirmedAt), day:_dd(it.settledAt||it.confirmedAt),
-                name:`${it.productName||('주문 #'+it.orderId)} (주문#${it.orderId}·${it.buyerRealname||it.buyer||'구매자'}) 플랫폼 수수료`,
-                spec:'', qty:1, supplyAmount:it.fee, taxAmount:it.vat, totalAmount:it.payFee, remark:'매출 '+taxFmt(it.amount)+'원'
-            })):[{ month:P.mm, name:P.label+' 플랫폼 이용 수수료', qty:1, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }];
+                name:'수수료',
+                spec:'', qty:1, supplyAmount:it.fee, taxAmount:it.vat, totalAmount:it.payFee, remark:('주문#'+it.orderId+' '+(it.productName||'')+' 매출 '+taxFmt(it.amount)+'원').trim()
+            })):[{ month:P.mm, name:'수수료', qty:1, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }];
             if(items.length>16){ // 세금계산서 품목 한도(16) 초과 → 합산 1줄로 폴백 안내
                 showToast('거래 '+items.length+'건 → 품목 한도(16) 초과로 1줄 합산 발행됩니다.');
-                items=[{ month:P.mm, name:P.label+' 플랫폼 이용 수수료 ('+v.count+'건 합산)', qty:v.count, supplyAmount:v.fee, taxAmount:v.vat, totalAmount:v.payFee }];
+                items=[{ month:P.mm, name:'수수료', qty:v.count, supplyAmount:v.fee, taxAmount:v.vat, totalAmount:v.payFee, remark:v.count+'건 합산' }];
             }
             openTaxInvoiceForm({
                 supplier, recipient:{ name:(v.bizName||v.seller), bizNo:v.bizNo||'', ceoName:v.bizCeo||'', address:v.bizAddr||'', bizType:v.bizIndustry||'', bizClass:v.bizItem||'', email:v.taxEmail||'' }, seller:v.seller,
@@ -7505,7 +7533,7 @@
             if(!sel.length){ showToast('발행할 업체를 선택하세요.'); return; }
             const P=_invPeriod();
             if(!confirm(`${sel.length}개 업체에 [${P.label}] 플랫폼 이용 수수료 세금계산서를 일괄 발행합니다.`)) return;
-            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:P.label+' 플랫폼 이용 수수료'}, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }));
+            const vendors=sel.map(v=>({ seller:v.seller, recipient:{name:(v.bizName||v.seller),bizNo:v.bizNo||''}, item:{name:'수수료'}, supplyAmount:(v.commissionTotal!=null?v.commissionTotal:v.fee), taxAmount:(v.vatOnFees!=null?v.vatOnFees:v.vat), totalAmount:v.payFee }));
             try{
                 const r=await fetch(`${API_URL}/api/tax/issue-bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ supplier, vendors, writeDate:P.writeDate, batchMonth:P.label })});
                 const d=await r.json(); if(!r.ok) throw new Error(d.error||'실패');
@@ -7521,7 +7549,7 @@
             if(!list.length){ showToast('발행할 정산완료 수수료 매출이 없습니다.'); return; }
             if(!confirm(`${list.length}개 판매자에게 ${P.label} 수수료 세금계산서를 일괄 발행합니다.\n(공급자=플랫폼 / 공급받는자=각 판매자 · 국세청 신고자료)`)) return;
             // 👉 판매자별 1건(공급받는자=판매자) · 서버는 단일 품목 — 그 판매자 수수료 합계 1줄로 발행.
-            const vendors=list.map(v=>({ seller:v.seller, recipient:_tifVendorRecipient(v), item:{ name:P.label+' 플랫폼 이용 수수료'+((v.count)?(' ('+v.count+'건)'):'') }, supplyAmount:v.fee, taxAmount:v.vat, totalAmount:v.payFee }));
+            const vendors=list.map(v=>({ seller:v.seller, recipient:_tifVendorRecipient(v), item:{ name:'수수료', remark:((v.count)?(v.count+'건'):'') }, supplyAmount:v.fee, taxAmount:v.vat, totalAmount:v.payFee }));
             _tifBulkPost(supplier, vendors, P.writeDate, P.label);
         };
 
@@ -7681,13 +7709,13 @@
             const bizFmt=s=>{ s=String(s||'').replace(/\D/g,''); return s.length===10?(s.slice(0,3)+'-'+s.slice(3,5)+'-'+s.slice(5)):s; };
             const html='<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>세금계산서</title>'
                 +'<style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;padding:24px;color:#111;}h1{text-align:center;font-size:22px;margin:0 0 4px;}.sub{text-align:center;color:#666;font-size:12px;margin-bottom:14px;}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;}th,td{border:1px solid #333;padding:6px 8px;}th{background:#f1f5f9;}.r{text-align:right;}.c{text-align:center;}.amt{font-size:16px;font-weight:900;}@media print{.noprint{display:none;}}</style></head><body>'
-                +'<h1>전자세금계산서</h1><div class="sub">관리번호 '+taxEscH(v.invoiceNo||'-')+' · '+taxEscH((v.created_at||'').slice(0,10))+' · 플랫폼 이용 수수료</div>'
+                +'<h1>전자세금계산서</h1><div class="sub">관리번호 '+taxEscH(v.invoiceNo||'-')+' · '+taxEscH((v.created_at||'').slice(0,10))+' · 수수료</div>'
                 +'<table><tr><th style="width:14%;">구분</th><th>공급자(플랫폼)</th><th>공급받는자(우리 상점)</th></tr>'
                 +'<tr><th>등록번호</th><td>'+bizFmt(v.supplierBizNo)+'</td><td>'+bizFmt(v.recipientBizNo)+'</td></tr>'
                 +'<tr><th>상호</th><td>'+taxEscH(v.supplierName||'')+'</td><td>'+taxEscH(v.recipientName||'')+'</td></tr></table>'
                 +'<table><tr><th class="r" colspan="4">합계금액 '+taxFmt(v.totalAmount)+' (공급가액 '+taxFmt(v.supplyAmount)+' · 세액 '+taxFmt(v.taxAmount)+')</th></tr>'
                 +'<tr><th>품목</th><th class="r">공급가액</th><th class="r">세액</th><th class="r">합계</th></tr>'
-                +'<tr><td>'+taxEscH((v.batchMonth||'')+' 플랫폼 이용 수수료')+'</td><td class="r">'+taxFmt(v.supplyAmount)+'</td><td class="r">'+taxFmt(v.taxAmount)+'</td><td class="r amt">'+taxFmt(v.totalAmount)+'</td></tr></table>'
+                +'<tr><td>'+taxEscH(((v.payloadObj&&v.payloadObj.items&&v.payloadObj.items[0]&&v.payloadObj.items[0].name)||'수수료'))+'</td><td class="r">'+taxFmt(v.supplyAmount)+'</td><td class="r">'+taxFmt(v.taxAmount)+'</td><td class="r amt">'+taxFmt(v.totalAmount)+'</td></tr></table>'
                 +'<p style="color:#666;font-size:11px;text-align:center;">본 세금계산서는 Alpha K 정산 시스템에서 발행되었습니다. 부가세 신고 시 매입세액공제 자료로 사용하세요.</p>'
                 +'<div class="noprint" style="text-align:center;margin-top:16px;"><button onclick="window.print()" style="padding:10px 22px;font-size:14px;font-weight:700;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border:0;border-radius:8px;cursor:pointer;">PDF로 저장 / 인쇄</button></div></body></html>';
             if(typeof _printHtmlViaIframe==='function') _printHtmlViaIframe(html);
@@ -9234,6 +9262,9 @@
                     if(!_summary && o.memo) _summary = String(o.memo).replace(/\n/g,' ').slice(0,60);
                     const _titleE = _title.replace(/</g,'&lt;');
                     const _summaryE = _summary ? ('<div style="font-size:11px; color:#475569; margin-top:2px; word-break:break-all;">📝 '+_summary.replace(/</g,'&lt;')+'</div>') : '';
+                    // ↩️ 환불 사유(구매자가 입력) — 환불요청/환불완료 주문에 표시. 서버가 order.memo에 '[환불요청] 사유'로 기록.
+                    let _refundReason=''; try{ if(o.memo){ const _m=String(o.memo).match(/\[환불요청\]\s*([^\n]*)/); if(_m) _refundReason=(_m[1]||'').trim(); } }catch(_){}
+                    const _refundE = (o.status==='refund_requested'||o.status==='refunded') ? ('<div style="font-size:11px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:4px 8px;margin-top:4px;word-break:break-all;">↩️ 환불 사유: '+(( _refundReason||'(사유 미입력)').replace(/</g,'&lt;'))+'</div>') : '';
                     let acts = '';
                     if(o.status === 'pending') {
                         // 🚀 판매 관리에서도 승인/거절 가능(대화방 밖) — 금액 0(간편 의뢰서)은 재견적 먼저
@@ -9258,6 +9289,7 @@
                         <div style="flex:1; min-width:120px;">
                             <div style="font-size:14px; font-weight:600; color:var(--text-main); word-break:break-all;">${_titleE}</div>
                             ${_summaryE}
+                            ${_refundE}
                             <div style="font-size:11px; color:var(--text-sub); margin-top:2px;">구매자 ${(o.buyer||'').replace(/</g,'&lt;')} · ${dt}${o.tracking?(' · 송장 '+String(o.tracking).replace(/</g,'&lt;')):''}</div>
                         </div>
                         ${acts?`<div style="display:flex; gap:5px; flex-wrap:wrap;">${acts}</div>`:''}
@@ -10865,6 +10897,11 @@
         };
         window._earthSetupPush = async function(){
             try {
+                // 📱 앱(설치형)에서는 '앱 네이티브 알림'만 사용 → 웹푸시 구독 건너뜀(앱+웹 알림 중복 방지). 기존 구독이 있으면 해지.
+                if(window.rayApp){
+                    try{ if('serviceWorker' in navigator){ const reg0=await navigator.serviceWorker.ready.catch(()=>null); if(reg0 && reg0.pushManager){ const s0=await reg0.pushManager.getSubscription(); if(s0){ try{ const tk0=window.EARTH_TOKEN||localStorage.getItem('earth_token')||''; await fetch(API_URL+'/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json','x-auth-token':tk0},body:JSON.stringify({ endpoint:s0.endpoint })}).catch(()=>{}); }catch(_){} try{ await s0.unsubscribe(); }catch(_){} } } } }catch(_){}
+                    return;
+                }
                 if(!('serviceWorker' in navigator) || !('PushManager' in window)) return;
                 // 🔧 SW ready 무한대기 방지(iOS/프라이빗 등에서 pending) — 6초 타임아웃
                 const reg = await Promise.race([ navigator.serviceWorker.ready, new Promise((_,rej)=>setTimeout(()=>rej(new Error('sw-ready-timeout')), 6000)) ]);
@@ -13349,7 +13386,10 @@ pdfjsScript,
                 ov.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;color:#fff;font:700 14px system-ui;flex:none;"><span>💳 결제</span><button id="_kf-x" style="background:rgba(255,255,255,.15);border:0;color:#fff;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;">✕</button></div>'
                   +'<div id="_kf-body" style="flex:1;background:#fff;position:relative;min-height:0;"><div id="_kf-load" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#64748b;font:600 13px system-ui;padding:0 24px;">결제창을 준비하고 있습니다…</div></div>';
                 document.body.appendChild(ov);
-                const cleanup=()=>{ done=true; try{window.removeEventListener('message',onMsg);}catch(_){} try{window.removeEventListener('storage',onStore);}catch(_){} try{if(bc)bc.close();}catch(_){} try{clearInterval(sPoll);}catch(_){} try{clearInterval(popWatch);}catch(_){} try{if(popup&&!popup.closed)popup.close();}catch(_){} try{ov.remove();}catch(_){} };
+                let _killTimer=null;
+                const cleanup=()=>{ done=true; try{clearTimeout(_killTimer);}catch(_){} try{window.removeEventListener('message',onMsg);}catch(_){} try{window.removeEventListener('storage',onStore);}catch(_){} try{if(bc)bc.close();}catch(_){} try{clearInterval(sPoll);}catch(_){} try{clearInterval(popWatch);}catch(_){} try{if(popup&&!popup.closed)popup.close();}catch(_){} try{ov.remove();}catch(_){} try{ if(window.rayApp && window.rayApp.setPaymentMode) window.rayApp.setPaymentMode(false); }catch(_){} };
+                // ⏱ 안전장치: 결과 수신 없이 오버레이가 영구 잔류(→ 로그인·입력 차단)하지 않도록 최대 6분 후 자동 정리.
+                _killTimer=setTimeout(()=>{ if(!done){ try{localStorage.removeItem('KICC_PENDING');}catch(_){} cleanup(); reject(new Error('결제 대기 시간이 초과되었습니다. 다시 시도해 주세요.')); } }, 360000);
                 const finish=(d)=>{ if(done) return; d=d||{}; const authorizationId=d.authorizationId||d.authToken||''; const resCd=d.resCd||d.resultCode||''; try{localStorage.removeItem('KICC_PENDING');}catch(_){} cleanup();
                     if((resCd && resCd!=='0000') || !authorizationId){ reject(new Error(d.resMsg||'결제가 취소되었거나 인증에 실패했습니다.')); return; }
                     resolve({ moid: moid, authorizationId: authorizationId }); };
