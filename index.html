@@ -5860,7 +5860,7 @@
             // 🔐 기존 소켓이 있으면 정리(중복 연결 방지 — 다른 계정/재로그인 잔존 소켓 제거)
             try { if(window.socket && window.socket.connected){ window.socket.removeAllListeners(); window.socket.disconnect(); } } catch(_){}
             // 🔐 소켓 핸드셰이크에 세션 토큰 전달 → 서버가 신원 바인딩 + 개인 룸 가입(스코프 전송 수신). 발신자 위조 차단.
-            socket = io(API_URL, { transports: ['websocket', 'polling'], auth: { token: window.EARTH_TOKEN || localStorage.getItem('earth_token') || '' } });
+            socket = io(API_URL, { transports: ['websocket', 'polling'], auth: { token: window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', isApp: !!window.rayApp } });
             // 🔧 핸들러를 안전 래핑 — 핸들러 미정의/예외가 소켓 등록·이후 로그인 초기화를 중단시키지 않도록
             socket.on('receive_message', d => { try { if(typeof handleReceiveMessage==='function') handleReceiveMessage(d); } catch(e){ try{ if(window.__earthDiag) __earthDiag('receive_message: '+(e.message||e), true); }catch(_){} } });
             // 🔐 다기기 로그인 허용 — force_logout이 오더라도 무시(로그인 상태 유지). 알림 재진입 등으로 세션이 풀리지 않게 한다.
@@ -10929,7 +10929,7 @@
                 }
                 if(!sub){ sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:wantKey }); }
                 const tk = window.EARTH_TOKEN || localStorage.getItem('earth_token') || '';
-                const r = await fetch(API_URL + '/api/push/subscribe', { method:'POST', headers:{'Content-Type':'application/json','x-auth-token':tk}, body: JSON.stringify({ sub: sub }) });
+                const r = await fetch(API_URL + '/api/push/subscribe', { method:'POST', headers:{'Content-Type':'application/json','x-auth-token':tk}, body: JSON.stringify({ sub: sub, isApp: !!window.rayApp }) });
                 if(!r.ok){ try{ if(window.__earthDiag) __earthDiag('push subscribe HTTP '+r.status, true); }catch(_){} }
             } catch(e){ try{ if(window.__earthDiag) __earthDiag('push setup: '+(e && e.message || e), true); }catch(_){} }
         };

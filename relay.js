@@ -612,8 +612,9 @@ app.post('/api/push/subscribe', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     const sub = req.body && req.body.sub;
     if (!sub || !sub.endpoint) return res.status(400).json({ error: 'no sub' });
-    db.run(`INSERT OR REPLACE INTO push_subs (endpoint, userName, sub, created) VALUES (?, ?, ?, ?)`,
-        [sub.endpoint, me, JSON.stringify(sub), new Date().toISOString()], () => res.json({ ok: true }));
+    const isApp = (req.body && (req.body.isApp === true || req.body.isApp === 1 || req.body.isApp === '1')) ? 1 : 0;
+    db.run(`INSERT OR REPLACE INTO push_subs (endpoint, userName, sub, created, isApp) VALUES (?, ?, ?, ?, ?)`,
+        [sub.endpoint, me, JSON.stringify(sub), new Date().toISOString(), isApp], () => res.json({ ok: true }));
 });
 app.post('/api/push/unsubscribe', (req, res) => {
     const ep = req.body && req.body.endpoint; if (!ep) return res.json({ ok: true });
@@ -677,9 +678,10 @@ function _webPushToUser(name, payload) {
     if (!webpush || !name) { console.log('[push] skip(webpush 없음 또는 대상없음):', name); return; }
     const badge = (pushBadge.get(name) || 0) + 1; pushBadge.set(name, badge);
     const body = JSON.stringify(Object.assign({ badge: badge }, payload));
-    db.all(`SELECT endpoint, sub FROM push_subs WHERE userName = ?`, [name], (e, rows) => {
+    // 📱 앱(설치형) 구독은 제외 — 앱은 네이티브 알림을 띄우므로 웹푸시로 보내면 중복/클릭 시 외부 브라우저 열림. (폰 등 비(非)앱 브라우저 구독은 그대로 발송)
+    db.all(`SELECT endpoint, sub FROM push_subs WHERE userName = ? AND IFNULL(isApp,0)=0`, [name], (e, rows) => {
         const n = (rows || []).length;
-        console.log('[push] →', name, '| 구독', n, '개 |', (payload && payload.title) || '', '/', (payload && payload.body) || '');
+        console.log('[push] →', name, '| 구독', n, '개(앱제외) |', (payload && payload.title) || '', '/', (payload && payload.body) || '');
         if (!n) return;
         (rows || []).forEach(r => {
             let sub; try { sub = JSON.parse(r.sub); } catch (_) { return; }
@@ -1059,6 +1061,7 @@ function initTables() {
         });
         // 🔔 웹 푸시 구독 저장(카톡식 알림) — endpoint 당 1행, 사용자별 다기기 허용
         db.run(`CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, userName TEXT, sub TEXT, created TEXT)`);
+        db.run(`ALTER TABLE push_subs ADD COLUMN isApp INTEGER DEFAULT 0`, () => {});   // 🔔 앱(설치형) WebView 구독 표시 — 발송 제외용(앱은 네이티브 알림 사용)
         // 🔔 네이티브 앱(Alpha K) FCM 토큰 — token 당 1행, 사용자별 다기기 허용
         db.run(`CREATE TABLE IF NOT EXISTS fcm_tokens (token TEXT PRIMARY KEY, userName TEXT, platform TEXT, updated TEXT)`);
         // 💬 카톡식 읽음표시: 방·사용자별 마지막으로 읽은 메시지 id
@@ -6119,6 +6122,7 @@ function _roomParticipants(roomId) {
 // 두 참가자의 개인 룸에만 이벤트 전송(예전 io.emit 전체 브로드캐스트 → 무관한 사용자에게까지 채팅 노출되던 문제 제거). 크로스룸 알림은 개인 룸으로 유지.
 // 🟢 온라인 사용자 추적(name → 접속 소켓 수)
 const ONLINE = new Map();
+const APP_ONLINE = new Map();   // 🔔 사용자별 '앱(설치형) 소켓' 접속 수 — >0이면 앱이 네이티브 알림을 띄우므로 웹푸시 생략
 function _emitToRoomUsers(roomId, event, payload) {
     const parts = _roomParticipants(roomId);
     if (parts.length) { let e = io; parts.forEach(u => { e = e.to('user:' + u); }); e.emit(event, payload); }
@@ -6130,6 +6134,7 @@ io.on('connection', (socket) => {
         const t = socket.handshake && socket.handshake.auth && socket.handshake.auth.token;
         const s = t && SESSIONS.get(String(t));
         socket.data.user = s ? s.name : null;
+        socket.data.isApp = !!(socket.handshake && socket.handshake.auth && (socket.handshake.auth.isApp === true || socket.handshake.auth.isApp === 1 || socket.handshake.auth.isApp === '1'));
         if (socket.data.user) socket.join('user:' + socket.data.user);
     } catch (_) { socket.data.user = null; }
     // 🟢 접속 상태(presence) — 사용자별 소켓 수 카운트. 0→1이면 온라인, 1→0이면 오프라인 브로드캐스트.
@@ -6138,11 +6143,13 @@ io.on('connection', (socket) => {
         if (u) {
             const n = (ONLINE.get(u) || 0) + 1; ONLINE.set(u, n);
             if (n === 1) io.emit('presence', { user: u, online: true });
+            if (socket.data.isApp) APP_ONLINE.set(u, (APP_ONLINE.get(u) || 0) + 1);   // 📱 앱 소켓 카운트
         }
     } catch (_) {}
     socket.on('disconnect', () => {
         try {
             const u = socket.data.user; if (!u) return;
+            if (socket.data.isApp) { const a = (APP_ONLINE.get(u) || 1) - 1; if (a <= 0) APP_ONLINE.delete(u); else APP_ONLINE.set(u, a); }
             const n = (ONLINE.get(u) || 1) - 1;
             if (n <= 0) { ONLINE.delete(u); io.emit('presence', { user: u, online: false }); }
             else ONLINE.set(u, n);
