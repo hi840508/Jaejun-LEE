@@ -1890,6 +1890,12 @@
                                 <option value="nts_sent_mock">테스트(미전송)</option>
                                 <option value="not_sent">미전송</option>
                             </select>
+                            <span style="display:inline-flex;align-items:center;gap:5px;background:#eef4f8;border:1px solid #d7e3ee;border-radius:7px;padding:4px 8px;">
+                                <label style="font-size:11px;color:#0f2f52;font-weight:700;">국세청 일괄발급</label>
+                                <input id="nts-xls-count" type="number" min="1" max="1000" value="100" title="내려받을 건수(1~1000)" style="width:62px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;text-align:right;">
+                                <span style="font-size:11px;color:#64748b;">건</span>
+                                <button class="btn" style="padding:5px 10px;font-size:12px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border:0;border-radius:6px;font-weight:700;" onclick="exportNtsBulkExcel()">📥 엑셀 내려받기</button>
+                            </span>
                             <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="taxPrintSelected()"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> 출력·변환(PDF)</button>
                             <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;color:#dc2626;border-color:#dc2626;" onclick="taxDeleteSelected()"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> 삭제(매출취소)</button>
                         </div>
@@ -5771,6 +5777,8 @@
             try { if(window.rayApp && window.rayApp.link){ window.rayApp.link(data.token || window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', data.name); } } catch(_){}
             // 앱에서 실행 중이면 'PC 앱 다운로드' 메뉴 숨김(이미 앱)
             try { if(window.rayApp){ const _ad=document.getElementById('sb-app-download'); if(_ad) _ad.style.display='none'; } } catch(_){}
+            // 💳 로그인 후 초기 카드 등록 안내(카드결제 활성 + 미등록 + 최근 '나중에' 아님). 가입 직후 백업카드 안내와 중복 방지됨.
+            try { setTimeout(function(){ try{ window._offerCardOnboarding && window._offerCardOnboarding(); }catch(_){} }, 3500); } catch(_){}
             // 🔔 푸시 알림(카톡식 상시 알림): 앱이면 권한 자동 요청 후 구독, 브라우저는 권한 있으면 구독·없으면 온보딩
             try { setTimeout(function(){
                 try {
@@ -6859,6 +6867,46 @@
                     <td style="text-align:center;"><button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" onclick="taxPrintHist(${i})">PDF</button></td>
                 </tr>`; }).join('');
             }catch(e){ body.innerHTML=`<tr><td colspan="15" style="text-align:center;padding:16px;color:#dc2626;">이력 로드 실패</td></tr>`; }
+        };
+        // 🧾 [국세청 제출용] 전자세금계산서 일괄발급 엑셀 내려받기(1~1000건) — 홈택스 '엑셀양식(100건 초과)' 데이터(7행)에 붙여넣거나 직접 업로드용.
+        window.exportNtsBulkExcel = async function(){
+            let rows = Array.isArray(window.taxHistoryRows) ? window.taxHistoryRows.slice() : [];
+            // 발행완료(국세청 전송 대상)만 — 작성중/실패 제외
+            rows = rows.filter(r => (r.issueStatus==='issued') || String(r.ntsStatus||'').indexOf('nts_sent')===0 || r.ntsStatus==='not_sent');
+            if(!rows.length){ showToast('먼저 [월/상태]로 발행 이력을 불러오세요. (발행완료 건만 내려받습니다)'); return; }
+            let n = parseInt((document.getElementById('nts-xls-count')||{}).value,10) || rows.length;
+            n = Math.max(1, Math.min(1000, n));
+            const use = rows.slice(0, n);
+            showToast('엑셀 생성 중… ('+use.length+'건)');
+            try{
+                if(!window.XLSX){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=()=>rej(new Error('XLSX 로드 실패')); document.head.appendChild(s); }); }
+                const _d=v=>String(v==null?'':v);
+                const _digits=v=>_d(v).replace(/[^0-9]/g,'');
+                const _ymd=(s)=>{ const t=_digits(_d(s).slice(0,10)); return t.slice(0,8); };
+                // 홈택스 전자세금계산서 일괄발급(100건 초과) 데이터 열 순서 — 데이터는 7행부터. 영수(01)/청구(02) 필수(마지막 열).
+                const HEAD=['작성일자(YYYYMMDD)','공급받는자 등록번호','종사업장번호','공급받는자 상호','공급받는자 대표자명','공급받는자 사업장주소','업태','종목','이메일','품목일자(YYYYMMDD)','품목명','규격','수량','단가','공급가액','세액','품목비고','합계 공급가액','합계 세액','비고','영수(01)/청구(02)'];
+                const data=use.map(r=>{ const p=r.payloadObj||{}; const rec=p.recipient||{}; const it=(p.items&&p.items[0])||{};
+                    const wdate=_ymd(p.writeDate||r.created_at);
+                    const yc=(p.purposeType==='claim')?'02':'01';
+                    const bizNo=_digits(r.recipientBizNo||rec.bizNo); const regNo = bizNo || '9999999999999';   // 외국인/미등록 대비
+                    return [ wdate, regNo, _d(rec.subBizNo), _d(r.recipientName||rec.name), _d(rec.ceoName), _d(rec.address), _d(rec.bizType||rec.uptae||rec['업태']), _d(rec.bizItem||rec.jongmok||rec['종목']), _d(rec.email), wdate, _d(it.name||p.memo||'플랫폼 이용 수수료'), _d(it.spec), (it.qty!=null&&it.qty!==''?Number(it.qty):''), (it.unitPrice!=null&&it.unitPrice!==''?Number(it.unitPrice):''), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(it.remark), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(p.memo), yc ]; });
+                const aoa=[
+                    ['전자세금계산서 일괄발급 — 국세청 업로드용 데이터 ('+use.length+'건)'],
+                    ['① 홈택스 ▸ 계산서·영수증·카드 ▸ 전자(세금)계산서 발급 ▸ 일괄/공동매입분 발급 ▸ "전자(세금)계산서 일괄발급(100건 초과)" 이동'],
+                    ['② 그 화면에서 [엑셀양식 내려받기]로 공식 양식을 받은 뒤, 아래 7행부터의 데이터 행을 복사해 공식 양식의 7행(데이터 시작)에 붙여넣기'],
+                    ['③ 공급자 정보는 홈택스 화면에서 자동 입력 · 외국인은 등록번호 9999999999999 + 비고에 외국인등록번호 · 영수(01)/청구(02)는 필수'],
+                    [''],
+                    HEAD,
+                    ...data
+                ];
+                const wb=XLSX.utils.book_new();
+                const ws=XLSX.utils.aoa_to_sheet(aoa);
+                ws['!cols']=HEAD.map(h=>({wch:Math.max(9,Math.min(26,String(h).length*1.8))}));
+                XLSX.utils.book_append_sheet(wb, ws, '일괄발급데이터');
+                const mm=(document.getElementById('inv-month')||{}).value||'';
+                XLSX.writeFile(wb, '전자세금계산서_일괄발급_'+(mm||'전체')+'_'+use.length+'건.xlsx');
+                showToast('✅ 국세청 일괄발급 엑셀 내려받기 완료: '+use.length+'건');
+            }catch(e){ showToast('엑셀 생성 실패: '+(e.message||'')); }
         };
         window.taxHistCheckAll=function(cb){ document.querySelectorAll('.tax-hsel').forEach(x=>x.checked=cb.checked); };
         window.taxPrintHist=function(i){ const r=window.taxHistoryRows[i]; if(!r) return; const p=r.payloadObj||{}; taxPrintInvoice({ supplier:p.supplier||{name:r.supplierName,bizNo:r.supplierBizNo}, recipient:p.recipient||{name:r.recipientName,bizNo:r.recipientBizNo}, month:r.batchMonth||'', supplyAmount:r.supplyAmount, taxAmount:r.taxAmount, totalAmount:r.totalAmount, invoiceNo:r.invoiceNo, writeDate:(p.writeDate||'') }); };
@@ -13815,6 +13863,41 @@ pdfjsScript,
                 };
             }catch(_){}
         };
+        // 💳 [초기 카드 등록 안내] 로그인 후, 카드결제 활성 + 카드 미등록이면 자연스러운 안내 모달. '나중에'면 7일 쿨다운.
+        window._offerCardOnboarding = async function(force){
+            try{
+                if(window.__cardOnboardShown && !force) return;
+                if(document.getElementById('_bkc-go')) return;                       // 가입 직후 백업카드 안내가 떠 있으면 중복 방지
+                if(!force){ try{ const t=Number(localStorage.getItem('alphak_card_onboard_dismiss')||0); if(t && (Date.now()-t)<7*864e5) return; }catch(_){} }
+                const cfg = await fetch(`${API_URL}/api/pg/public-config`, { credentials:'include' }).then(r=>r.json()).catch(()=>({}));
+                if(!cfg.billingEnabled) return;                                       // 카드결제 비활성 환경은 안내 안 함
+                const cards = await window.listBilling().catch(()=>[]);
+                if(cards && cards.length) return;                                     // 이미 카드 있음
+                if(document.getElementById('_cardob-ov')) return;
+                window.__cardOnboardShown = true;
+                const ov=document.createElement('div'); ov.id='_cardob-ov'; ov.style.cssText='position:fixed;inset:0;z-index:4690;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:20px;';
+                ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:18px;max-width:440px;width:100%;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.4);">'
+                    +'<div style="font-size:34px;line-height:1;margin-bottom:8px;">💳</div>'
+                    +'<div style="font-weight:900;font-size:19px;margin-bottom:6px;">결제 카드를 등록해 주세요</div>'
+                    +'<div style="font-size:13px;color:#64748b;line-height:1.65;margin-bottom:16px;">상품·기공 의뢰 <b>주문 결제</b>와 <b>정기결제(구독)</b>를 바로 사용하려면 카드를 한 번만 등록하면 됩니다. 등록만 하며 <b>지금 청구되지 않습니다.</b></div>'
+                    +'<div style="background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:13px;line-height:1.9;color:#334155;">'
+                        +'<div><b>1.</b> 아래 <b>[카드 등록하기]</b>를 누르세요</div>'
+                        +'<div><b>2.</b> 카드사 인증 창에서 카드 정보를 입력</div>'
+                        +'<div><b>3.</b> 완료! 주문할 때 바로 결제됩니다</div>'
+                    +'</div>'
+                    +'<button id="_cardob-go" style="width:100%;padding:14px;border:none;border-radius:11px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:9px;">카드 등록하기</button>'
+                    +'<button id="_cardob-skip" style="width:100%;padding:10px;border:none;background:transparent;color:#94a3b8;font-size:13px;cursor:pointer;">나중에 할게요 (내 지갑 ▸ + 카드 등록)</button>'
+                    +'</div>';
+                document.body.appendChild(ov);
+                const _dismiss=()=>{ try{ localStorage.setItem('alphak_card_onboard_dismiss', String(Date.now())); }catch(_){} try{ ov.remove(); }catch(_){} };
+                ov.querySelector('#_cardob-skip').onclick=_dismiss;
+                ov.querySelector('#_cardob-go').onclick=async()=>{
+                    const g=ov.querySelector('#_cardob-go'); g.disabled=true; g.textContent='카드사 인증 창 여는 중…';
+                    try{ const r=await window.registerBilling({goodsName:'결제 카드 등록'}); try{ ov.remove(); }catch(_){} showToast('✅ 카드 등록 완료: '+(r.issuerName||'')+' '+(r.cardMaskNo||'')); try{ localStorage.removeItem('alphak_card_onboard_dismiss'); }catch(_){} try{ if(window.loadBillingUI) loadBillingUI(); }catch(_){} }
+                    catch(e){ g.disabled=false; g.textContent='카드 등록하기'; const m=String(e.message||''); if(/취소|cancel/i.test(m)) showToast('카드 등록이 취소되었습니다.'); else showToast('카드 등록 실패: '+m+'\n※ 유효한(실제/테스트) 카드번호인지 확인하세요. 임의의 숫자는 카드사에서 거절됩니다.'); }
+                };
+            }catch(_){}
+        };
 
         async function buyAsset(id, name, amount, seller, purchaseType) {
             // 🚀 [v7p+] PDF 주문서가 있는 패키지 상품만 채팅 승인 흐름으로 라우팅
@@ -15629,6 +15712,8 @@ pdfjsScript,
             { k:['회원','가입','로그인','계정','비밀번호'], a:'👤 회원가입/로그인: 가입 시 실명·은행·계좌를 입력하면 정산 지급과 세금계산서에 자동 반영됩니다. 가입 직후에는 공유폴더 백업 서비스를 위한 결제 카드 등록(선택)을 안내해 드려요(지금 청구되지 않습니다 · 나중에 지갑에서도 가능).' },
             { k:['충전','입금','잔액','결제수단'], a:'💳 결제: 모든 결제는 카드로 진행됩니다(잔액·충전 기능은 종료). 카드 결제는 결제창에서 안전하게 진행되며 카드 정보는 서버에 저장되지 않아요. 정기 결제용 카드는 "내 지갑 > 결제 관리"에서 한 번 등록하면 다음부터 자동 결제됩니다.' },
             { k:['출금','정산','인출','정산지급','자동지급','계좌지급'], a:'🏦 정산 지급: 판매 대금은 구매확정 후 정산예정일(구매확정+3영업일 또는 배송완료+5영업일 중 빠른 날)이 되면 수수료(2.7%)를 제외한 금액이 가입 시 등록한 은행 계좌로 자동 입금됩니다. 별도 출금 신청이 필요 없어요. 지급 내역은 지갑의 거래/정산 내역에서 확인할 수 있습니다.' },
+            { k:['카드등록','카드 등록','결제카드','카드 추가','카드없음','카드 안내','결제수단 등록'], a:'💳 카드 등록: 로그인하면 결제 카드 등록 안내가 떠요. [카드 등록하기]를 누르고 카드사 인증 창에서 카드 정보를 입력하면 끝! 등록만 하는 것이라 지금 청구되지 않아요. 나중에 하셔도 되고, 언제든 "내 지갑 ▸ + 카드 등록"에서 등록할 수 있습니다. 카드 정보는 서버에 저장되지 않고 카드사(PG)에서 안전하게 관리됩니다.' },
+            { k:['세금계산서 엑셀','일괄발급','국세청','홈택스','엑셀 내려받기','세금계산서 다운로드','대량발급'], a:'🧾 [관리자] 국세청 일괄발급 엑셀: 영업관리 ▸ 세금계산서 탭 ▸ "발행 이력"에서 월/상태로 조회한 뒤, "국세청 일괄발급" 옆에 건수(1~1000)를 입력하고 [📥 엑셀 내려받기]를 누르세요. 홈택스의 전자(세금)계산서 일괄발급(100건 초과) 양식 순서로 내려받아집니다. 홈택스 ▸ 계산서·영수증·카드 ▸ 일괄/공동매입분 발급에서 [엑셀양식 내려받기]로 공식 양식을 받아 7행부터 붙여넣어 올리면 됩니다.' },
             { k:['상점','브랜드','개설','만들','상점만들'], a:'🏪 상점 만들기: "내 상점"에서 브랜드(상호·카테고리·소개)를 만드세요. 기공소(치과기공소) 카테고리는 보철 품목·수가 관리가 함께 제공됩니다.' },
             { k:['상품등록','상품 등록','등록','판매등록','미리보기'], a:'📦 상품 등록: "내 상점"에서 상품명·가격·설명·사진을 넣으면 실제 진열될 "상품 카드 미리보기"가 실시간으로 보입니다. 기공소는 등록한 수가 품목에서 선택해 등록해요.' },
             { k:['대문','배경','배너','이미지편집','사진편집','회전','크롭'], a:'🖼 대문 이미지: 상점 대문 등록 시 편집기에서 확대/축소·좌우상하 이동·회전으로 맞추고, 보이는 영역 그대로 저장됩니다.' },
