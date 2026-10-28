@@ -1350,12 +1350,14 @@
                         </div>
                         <div style="margin-top:2px;">
                             <!-- 🧾 세금계산서용: 사업자=사업자등록번호 / 개인=주민등록번호 -->
-                            <div style="display:flex; gap:8px; margin:6px 12px 0; flex-wrap:wrap;">
+                            <div style="display:flex; gap:8px; margin:6px 12px 0; flex-wrap:wrap; align-items:center;">
+                                <span style="font-size:11px; color:#64748b; font-weight:700;">구분</span>
                                 <select id="new-brand-biztype" onchange="wbcToggleBizNo()" style="padding:8px 10px; border:1px solid var(--border-color); border-radius:8px; font-size:13px; background:#fff;">
                                     <option value="business">사업자</option>
                                     <option value="individual">개인</option>
                                 </select>
-                                <input type="text" id="new-brand-bizno" inputmode="numeric" placeholder="사업자등록번호 (숫자만)" style="flex:1; min-width:170px; padding:8px 10px; border:1px solid var(--border-color); border-radius:8px; font-size:13px;">
+                                <label id="new-brand-bizno-label" for="new-brand-bizno" style="font-size:11px; color:#64748b; font-weight:700;">사업자등록번호</label>
+                                <input type="text" id="new-brand-bizno" inputmode="numeric" placeholder="사업자등록번호 (숫자만)" style="flex:1; min-width:150px; padding:8px 10px; border:1px solid var(--border-color); border-radius:8px; font-size:13px;">
                             </div>
                             <div style="font-size:11px; color:#94a3b8; margin:4px 12px 0;">세금계산서 발행에 사용됩니다. (사업자=사업자등록번호 / 개인=주민등록번호)</div>
                             <!-- 🦷 치과 기공소: 취급 보철 품목 + 수가 체크리스트(선택한 항목만 등록) -->
@@ -7775,6 +7777,7 @@
                 // 🏪 1계정 1상점 — 이미 보유(관리자 제외) 시 생성 화면 차단, 상점 관리로 우회
                 if(!isAdmin && Array.isArray(window.myBrandStores) && window.myBrandStores.length>0){ showToast('상점은 계정당 1개만 개설할 수 있습니다. 기존 상점은 상점 관리에서 수정하세요.'); return switchTab('my-store'); }
                 try{ if(window.applyOpenCategories) window.applyOpenCategories(); }catch(_){}
+                try{ if(window.wbcToggleBizNo) window.wbcToggleBizNo(); }catch(_){}   // 구분→번호 라벨 초기화
                 // 🧾 사업자번호: 가입 시 입력한 회원정보 번호를 기본값으로(비어 있을 때만) — 수정 가능
                 try{ const bz=document.getElementById('new-brand-bizno'); const saved=(currentUser && (currentUser.biz_no||currentUser.bizNo||currentUser.license_no))||''; if(bz && !bz.value && saved) bz.value=saved; }catch(_){}
             }
@@ -8678,10 +8681,11 @@
         window.OPEN_CATEGORIES = ['dental_clinic','dental_lab'];
         window.ALL_SIGNUP_CATEGORIES = [{id:'individual',label:'개인 (일반 회원)'}].concat(window.BRAND_CATEGORIES||[]);
         window.applyOpenCategories = function(){
-            ['reg-business-type','new-brand-category'].forEach(id=>{
-                const sel=document.getElementById(id); if(!sel) return;
-                Array.from(sel.options).forEach(o=>{ if(o.value===''){ return; } const ok=window.OPEN_CATEGORIES.includes(o.value); o.hidden=!ok; o.disabled=!ok; if(!ok && o.selected){ sel.value=''; } });
-            });
+            const open = window.OPEN_CATEGORIES || [];
+            // 가입 업체유형: 비활성 카테고리는 숨김/비활성(개인·placeholder는 유지)
+            try{ const rb=document.getElementById('reg-business-type'); if(rb){ Array.from(rb.options).forEach(o=>{ if(o.value===''||o.value==='individual') return; const ok=open.includes(o.value); o.hidden=!ok; o.disabled=!ok; if(!ok && o.selected){ rb.value=''; } }); } }catch(_){}
+            // 상점 생성 카테고리: 관리자가 활성화(OPEN_CATEGORIES)한 카테고리만 '옵션 자체를 재구성' → 정적 전체목록이 보이던 문제 차단
+            try{ const nc=document.getElementById('new-brand-category'); if(nc){ const cur=nc.value; const cats=(window.BRAND_CATEGORIES||[]).filter(c=>open.includes(c.id)); nc.innerHTML='<option value="">카테고리 선택</option>'+cats.map(c=>'<option value="'+c.id+'">'+String(c.label).replace(/</g,'&lt;')+'</option>').join(''); if(cur && open.includes(cur)) nc.value=cur; else nc.value=''; } }catch(_){}
         };
         window.loadOpenCategories = async function(){
             try{ const d=await (await fetch(API_URL+'/api/settings/open-categories')).json(); if(d&&Array.isArray(d.categories)&&d.categories.length) window.OPEN_CATEGORIES=d.categories; }catch(_){}
@@ -8902,7 +8906,10 @@
         window.wbcToggleBizNo = function() {
             const t = (document.getElementById('new-brand-biztype')||{}).value;
             const inp = document.getElementById('new-brand-bizno');
-            if(inp) inp.placeholder = (t === 'individual') ? '주민등록번호 (숫자만)' : '사업자등록번호 (숫자만)';
+            const lbl = document.getElementById('new-brand-bizno-label');
+            const isIndiv = (t === 'individual');
+            if(inp) inp.placeholder = isIndiv ? '주민등록번호 (숫자만)' : '사업자등록번호 (숫자만)';
+            if(lbl) lbl.textContent = isIndiv ? '주민등록번호' : '사업자등록번호';
         };
         function registerNewBrandStore() {
             const storeName = document.getElementById('new-brand-name').value.trim();
@@ -11021,6 +11028,8 @@
         // PWA: 서비스워커 등록 + 설치 프롬프트(Android) 캡처 + OS별 메뉴 라벨/숨김 + 알림 클릭 처리
         (function(){
             try { if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(function(){}); } } catch(_){}
+            // 📱 앱(설치형): 부팅 즉시 이 WebView의 웹푸시 구독 해지 → 앱은 '네이티브 알림'만 사용(앱+브라우저 중복/클릭 시 외부 브라우저 열림 방지).
+            try { if(window.rayApp && 'serviceWorker' in navigator && navigator.serviceWorker.ready){ navigator.serviceWorker.ready.then(function(reg){ try{ reg.pushManager.getSubscription().then(function(s){ if(s){ try{ s.unsubscribe(); }catch(_){} } }); }catch(_){} }).catch(function(){}); } } catch(_){}
             window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); window._deferredPWA = e; });
             // 알림 탭 → 해당 대화방 열기 (서비스워커 메시지)
             try { navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', function(ev){
