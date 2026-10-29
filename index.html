@@ -269,8 +269,8 @@
         .sf-headrow { display:flex; align-items:center; gap:8px; background:#fff; padding:6px 14px; min-height:52px; box-sizing:border-box; border-bottom:1px solid #f0f1f3; overflow-x:auto; }
         .sf-headrow .yt-search-bar { width:300px; max-width:42vw; }
         /* 상점검색 헤더를 파일검색처럼 화면 양끝까지(본문 좌우/상단 패딩 상쇄) */
-        #market-head { background:#fff; margin:-20px -32px 14px; }
-        @media (max-width:768px){ #market-head { margin:-12px -12px 12px; } }
+        #market-head, .scr-head { background:#fff; margin:-20px -32px 14px; }
+        @media (max-width:768px){ #market-head, .scr-head { margin:-12px -12px 12px; } }
         #market-fav-row .market-fav:hover span:first-child { border-color:#0b2b4b !important; }
         .yt-search-bar {
             flex: none;
@@ -376,6 +376,10 @@
             /* 🏷 상단 로고영역을 사이드바 폭과 동일하게 — 사이드바 우측 경계선이 상단바까지 연장되어 보이게 */
             .yt-topbar { padding-left: 0; }
             #topbar-brand { width: var(--sidebar-w); box-sizing: border-box; flex: none; height: 56px; padding-left: 16px; border-right: 1px solid var(--chrome-border); }
+            /* 📏 줄맞춤: 좌측 검색 섹션(파일검색/상점검색) 2개 항목을 본문 헤더 2줄(각 52px)과 높이·경계선 일치 */
+            .yt-sidebar { padding-top: 0; }
+            #sb-search-section { padding: 0; }
+            #sb-search-section .yt-sb-item { min-height: 52px; border-radius: 0; margin: 0; box-sizing: border-box; border-bottom: 1px solid #f0f1f3; padding-left: 16px; }
         }
         .yt-sb-section { padding: 4px 8px; }
         .yt-sb-title { font-size: 11px; color: var(--chrome-sub); font-weight: 700; padding: 8px 12px 4px; letter-spacing: 0.5px; text-transform: uppercase; }
@@ -1212,8 +1216,8 @@
             <div class="yt-layout">
                 <!-- 사이드바 (YouTube 스타일) -->
                 <aside class="yt-sidebar" id="yt-sidebar">
-                    <!-- 🔎 검색: 파일검색(위) · 상점검색(아래) -->
-                    <div class="yt-sb-section">
+                    <!-- 🔎 검색: 파일검색(위) · 상점검색(아래) — 데스크톱에서 본문 헤더 2줄과 높이·경계선을 맞춤 -->
+                    <div class="yt-sb-section" id="sb-search-section">
                         <button id="sb-sharedfolder" class="yt-sb-item" data-tab="__sharedfolder" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>파일검색</span></button>
                         <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>상점검색</span></button>
                     </div>
@@ -7879,6 +7883,8 @@
             const tabEl = document.getElementById(`tab-${id}`);
             if(tabEl) tabEl.classList.add('active');
             else { console.error('tab not found: tab-' + id); return; }
+            // 🧩 검색이 필요한 화면에 공통 통합검색 헤더를 통일 적용(파일검색·상점검색과 동일 UI)
+            try{ if(window.mountScreenHead) window.mountScreenHead(id); }catch(_){}
 
             // 🔙 뒤로가기 지원 — 탭 전환을 history에 기록(앱/브라우저 뒤로가기 시 이전 탭으로 복귀, 앱 종료 방지)
             try{
@@ -9038,6 +9044,45 @@
             try{ const innerWrap=document.getElementById('brand-inner-wrap'); if(innerWrap) innerWrap.style.display='none'; }catch(_){}
             try{ loadShowcase(); }catch(_){}
             try{ searchPartnerStores(); }catch(_){}
+        };
+
+        // 🧩 공통 화면 헤더(통합검색 바) — 파일검색/상점검색과 동일한 풀블리드 흰색 헤더를 다른 화면에도 통일 적용.
+        //    기존 검색이 있는 화면은 그 입력/함수로 위임(중복 제거), 없는 화면은 카드 텍스트 필터.
+        window._SCREEN_HEAD = {
+            'my-store':      { ph:'상품 검색', list:'my-store-grid' },
+            'my-purchases':  { ph:'상품·판매자·거래 대상 검색', mirror:'my-purchases-search', call:'filterMyPurchases' },
+            'history':       { ph:'상품명·구매자·환자명 검색', mirror:'sales-search', call:'renderSalesOrders' },
+            'wallet':        { ph:'결제수단·구독 검색' }
+            // ※ 영업 관리(admin-members·admin-orders)는 상단 고정 네비 + 자체 상세검색(기간·상태)이 있어 별도 유지
+        };
+        window.mountScreenHead = function(id){
+            const cfg = window._SCREEN_HEAD && window._SCREEN_HEAD[id]; if(!cfg) return;
+            const tab = document.getElementById('tab-'+id); if(!tab) return;
+            let head = tab.querySelector(':scope > .scr-head');
+            if(!head){ head = document.createElement('div'); head.className='scr-head'; tab.insertBefore(head, tab.firstChild); }
+            const ev = (cfg.mirror && cfg.enter)
+                ? "onkeydown=\"if(event.key==='Enter')screenHeadGo('"+id+"')\""
+                : "oninput=\"screenHeadGo('"+id+"')\"";
+            head.innerHTML = '<div class="sf-headrow"><div class="yt-search-bar" style="flex:none;width:300px;max-width:42vw;">'
+                + '<input id="scrq-'+id+'" type="text" placeholder="'+(cfg.ph||'통합 검색')+'" '+ev+'>'
+                + '<button type="button" onclick="screenHeadGo(\''+id+'\')" aria-label="검색" style="border-radius:0 20px 20px 0;border-left:none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>'
+                + '</div><div style="flex:1;min-width:8px;"></div></div>';
+            // 기존 인라인 텍스트 검색은 숨김(통합검색으로 일원화) — 나머지 필터(상태·기간·상점)는 그대로 유지
+            if(cfg.mirror){ try{ const m=document.getElementById(cfg.mirror); if(m){ const w=m.closest('.input-group')||m; w.style.display='none'; } }catch(_){} }
+        };
+        window.screenHeadGo = function(id){
+            const inp = document.getElementById('scrq-'+id); if(!inp) return;
+            const cfg = (window._SCREEN_HEAD && window._SCREEN_HEAD[id]) || {};
+            if(cfg.mirror){ const m=document.getElementById(cfg.mirror); if(m) m.value=inp.value; if(cfg.call && typeof window[cfg.call]==='function'){ try{ window[cfg.call](); }catch(_){} } }
+            else { window.screenListFilter(id, inp.value, cfg.list||''); }
+        };
+        window.screenListFilter = function(id, q, listId){
+            const tab = document.getElementById('tab-'+id); if(!tab) return;
+            q = (q||'').trim().toLowerCase();
+            let items;
+            if(listId){ const c=document.getElementById(listId); if(!c) return; items=c.children; }
+            else { items=tab.querySelectorAll('.karrot-card,.clean-card,.ui-card,.brand-showcase-card'); }
+            Array.prototype.forEach.call(items, el=>{ if(el.closest && el.closest('.scr-head')) return; const t=(el.textContent||'').toLowerCase(); el.style.display = (!q||t.includes(q)) ? '' : 'none'; });
         };
 
         // 📢 공지·광고 배너 — 서버 설정(notice_banner)을 모두에게 노출. 글씨 길면 마퀴 자동 스크롤.
