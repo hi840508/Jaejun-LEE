@@ -264,8 +264,13 @@
         @media (prefers-reduced-motion: reduce){ .yt-ad-slot.marquee #yt-ad-text { animation: none; padding-left: 0; } }
         @media (max-width: 760px){ .yt-ad-slot { display: none; } }
         /* 🧭 상점검색/파일검색 공통 헤더 행 */
-        .sf-headrow { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border-color); overflow-x:auto; }
-        .sf-headrow .yt-search-bar { width:340px; max-width:48vw; }
+        /* 📦 상점검색 헤더 줄 — 파일검색 헤더와 동일: 흰 배경 + 동일 패딩 + 연한 하단 테두리(#f0f1f3) */
+        .sf-headrow { display:flex; align-items:center; gap:8px; background:#fff; padding:8px 14px 9px; border-bottom:1px solid #f0f1f3; overflow-x:auto; }
+        .sf-headrow .yt-search-bar { width:300px; max-width:42vw; }
+        /* 상점검색 헤더를 파일검색처럼 화면 양끝까지(본문 좌우/상단 패딩 상쇄) */
+        #market-head { background:#fff; margin:-20px -32px 14px; }
+        @media (max-width:768px){ #market-head { margin:-12px -12px 12px; } }
+        @media (min-width:1024px){ #market-head { margin:-18px -28px 14px; } }
         #market-fav-row .market-fav:hover span:first-child { border-color:#0b2b4b !important; }
         .yt-search-bar {
             flex: none;
@@ -366,6 +371,8 @@
             .yt-layout { padding-left: 280px; }
             .yt-menu-btn { display: none; }
             #rc-folder-page.sf-docked { left: 280px !important; }   /* 공유폴더(파일검색) 화면도 사이드바에 안 가리게 */
+            /* 🖥 본문도 파일검색처럼 화면 가득 차게 — 1400px 중앙정렬 캡 해제(여백 최소화) */
+            .yt-main { max-width: none; margin: 0; padding: 18px 28px 80px; }
         }
         .yt-sb-section { padding: 4px 8px; }
         .yt-sb-title { font-size: 11px; color: var(--chrome-sub); font-weight: 700; padding: 8px 12px 4px; letter-spacing: 0.5px; text-transform: uppercase; }
@@ -1286,7 +1293,7 @@
 
                 <!-- 🚀 [v7+] 디지털 거래소 메인 — 컨텐츠 우선 (상품·브랜드 쇼케이스) -->
                 <div id="brand-showcase-wrap" style="display:block;">
-                    <div id="brand-showcase-grid" style="display:flex; flex-direction:column; gap:12px; min-height:120px;">
+                    <div id="brand-showcase-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; min-height:120px; align-items:start;">
                         <div style="text-align:center; padding:30px 20px; color:var(--text-sub); font-size:13px; background:#fff; border:1px dashed var(--border-color); border-radius:12px;">브랜드 쇼케이스 데이터 로딩 중...</div>
                     </div>
                 </div>
@@ -1595,7 +1602,7 @@
                 <div class="panel" id="billing-panel" style="display:none;">
                     <!-- 결제 관리: 등록 카드 -->
                     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:4px;">
-                        <h4 style="font-size:15px; font-weight:900;">💳 결제 관리 <span style="font-size:12px;font-weight:500;color:#94a3b8;">(간편결제·정기결제 공용 카드)</span></h4>
+                        <h4 style="font-size:15px; font-weight:900;">💳 결제 수단 <span style="font-size:12px;font-weight:500;color:#94a3b8;">(간편결제·정기결제 공용 카드)</span></h4>
                         <button class="btn btn-success wallet-btn" onclick="billingRegisterCard()">+ 카드 등록</button>
                     </div>
                     <div style="font-size:12px; color:#94a3b8; margin-bottom:10px;">여기 등록한 카드는 <b>간편결제(일반 주문 결제)</b>와 <b>정기결제·구독</b>(예: 공유폴더 백업)에 <b>모두</b> 사용됩니다. 등록 후에는 결제 시 카드를 매번 입력할 필요 없이 간편결제로 진행됩니다. (등록하지 않아도 결제 시마다 결제창 입력으로 결제 가능)</div>
@@ -5024,8 +5031,9 @@
                     const anchor = doc.getElementById('btn-save') || doc.getElementById('btn-report');
                     if(!anchor || !anchor.parentElement) return false;
                     const b = doc.createElement('button');
-                    b.id = '_lv-close-in'; b.textContent = '닫기'; b.title = '실시간 뷰어 닫기';
-                    b.style.cssText = 'margin-left:auto;background:#ef4444;color:#fff;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;';
+                    b.id = '_lv-close-in'; b.title = 'Viewer 닫기';
+                    b.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg><span>Viewer 닫기</span>';
+                    b.style.cssText = 'margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,43,75,.3);';
                     b.onclick = function(){ try{ window.parent._lvClose(); }catch(_){} };
                     anchor.parentElement.appendChild(b);
                     return true;
@@ -5034,8 +5042,9 @@
             function _lvFallbackClose(){
                 if(ov.querySelector('#_lv-close-fb')) return;
                 const b = document.createElement('button');
-                b.id = '_lv-close-fb'; b.textContent = '닫기';
-                b.style.cssText = 'position:absolute;top:10px;right:12px;z-index:5;background:#ef4444;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;';
+                b.id = '_lv-close-fb'; b.title = 'Viewer 닫기';
+                b.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg><span>Viewer 닫기</span>';
+                b.style.cssText = 'position:absolute;top:10px;right:12px;z-index:5;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,43,75,.3);';
                 b.onclick = cleanup; ov.appendChild(b);
             }
             // 💬 채팅은 우측 하단 말풍선 버튼으로 연다(뷰어 z-index 3900 < 채팅 4001 이라 위로 열림).
