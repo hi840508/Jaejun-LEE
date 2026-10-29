@@ -241,6 +241,18 @@
             color: var(--text-main);
         }
         .yt-menu-btn:hover { background: #f0f0f0; }
+        /* 🔎 상단 빠른 접근 버튼 (상점검색/파일검색) — 햄버거 없이 바로 접근 */
+        .yt-quick-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: var(--primary-soft, #eef2f7); color: var(--primary, #0f2f52);
+            border: 1px solid var(--chrome-border, #e2e8f0); border-radius: 20px;
+            padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+            font-family: inherit; white-space: nowrap; transition: 0.15s; line-height: 1;
+        }
+        .yt-quick-btn svg { width: 17px; height: 17px; flex: none; }
+        .yt-quick-btn:hover { background: linear-gradient(135deg,#22446b,#0b2b4b); color: #fff; border-color: #0b2b4b; }
+        .yt-quick-btn.active { background: linear-gradient(135deg,#22446b,#0b2b4b); color: #fff; border-color: #0b2b4b; }
+        @media (max-width: 760px){ .yt-quick-btn span { display: none; } .yt-quick-btn { padding: 7px 10px; } }
         .yt-search-bar { 
             flex: 1; 
             max-width: 540px; 
@@ -330,6 +342,15 @@
             z-index: 98;
         }
         body.sidebar-open .yt-sidebar-overlay { display: block; }
+        /* 🖥 데스크톱: 사이드바 항상 표시(햄버거로 사라지지 않음) + 본문을 그만큼 밀어 겹침 방지 */
+        @media (min-width: 1024px){
+            .yt-sidebar { left: 0; box-shadow: none; }
+            .yt-sidebar-overlay { display: none !important; }
+            body.sidebar-open { overflow: auto; touch-action: auto; }
+            body.sidebar-open .yt-main { overflow: visible; }
+            .yt-layout { padding-left: 280px; }
+            .yt-menu-btn { display: none; }
+        }
         .yt-sb-section { padding: 4px 8px; }
         .yt-sb-title { font-size: 11px; color: var(--chrome-sub); font-weight: 700; padding: 8px 12px 4px; letter-spacing: 0.5px; text-transform: uppercase; }
         .yt-sb-item {
@@ -1143,6 +1164,9 @@
                     <!-- Admin: 로고 변경 (hidden, admin 인증 시 표시) -->
                     <input type="file" id="admin-logo-upload" accept="image/*" style="display:none;" onchange="adminChangeLogo(event)">
                     <button id="admin-logo-btn" style="display:none; background:var(--primary-soft); color:var(--primary); border:1px solid var(--border-color); border-radius:6px; padding:4px 8px; font-size:10px; cursor:pointer; margin-left:4px;" onclick="document.getElementById('admin-logo-upload').click()" title="로고 변경 (Admin)">로고 변경</button>
+                    <!-- 🔎 빠른 접근: 상점검색(홈)·파일검색(공유폴더) — 햄버거 없이 상단 검색 좌측에 상시 노출 -->
+                    <button class="yt-quick-btn" id="qbtn-market" onclick="switchTab('market')" title="상점 검색 (상품·상점 둘러보기)" aria-label="상점검색"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg><span>상점검색</span></button>
+                    <button class="yt-quick-btn" id="qbtn-files" onclick="openSharedFolderPanel()" title="파일 검색 (공유폴더·받은 파일)" aria-label="파일검색"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><circle cx="12" cy="13" r="2.4"></circle></svg><span>파일검색</span></button>
                 </div>
                 <div class="yt-search-bar">
                     <input type="text" id="topbar-global-search" placeholder="통합 검색 (상품·상점·회원)" onkeyup="if(event.key==='Enter') doTopbarSearch()">
@@ -1166,9 +1190,9 @@
                 <!-- 사이드바 (YouTube 스타일) -->
                 <aside class="yt-sidebar" id="yt-sidebar">
                     <div class="yt-sb-section">
-                        <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>홈</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>상점검색</span></button>
                         <!-- 📁 공유폴더: 받은 파일 자동저장 폴더 지정 + 내 기기 목록 -->
-                        <button id="sb-sharedfolder" class="yt-sb-item" data-tab="__sharedfolder" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>공유폴더</span></button>
+                        <button id="sb-sharedfolder" class="yt-sb-item" data-tab="__sharedfolder" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>파일검색</span></button>
                     </div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
@@ -2091,7 +2115,8 @@
 
             <!-- 🚀 [v7] 모바일 하단 네비 (YouTube 모바일 스타일) -->
             <nav class="yt-bottom-nav">
-                <button class="yt-bn-item active" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>홈</span></button>
+                <button class="yt-bn-item active" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>상점검색</span></button>
+                <button class="yt-bn-item" onclick="openSharedFolderPanel()" data-tab="__sharedfolder"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><circle cx="12" cy="13" r="2.4"></circle></svg></span><span>파일검색</span></button>
                 <button class="yt-bn-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg></span><span>구매목록</span></button>
                 <button class="yt-bn-item" onclick="switchTab('my-store')" data-tab="my-store"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-4h16l1 4M4 9v11h16V9M9 9V5h6v4"></path></svg></span><span>내상점</span></button>
                 <button class="yt-bn-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"></rect><path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path><path d="M2 10h20"></path></svg></span><span>지갑</span></button>
@@ -9036,6 +9061,14 @@
             showToast("상점 소개가 업데이트되었습니다."); loadMyBrandStores();
         }
 
+        // 🖼 내 상점 대표(대문) 이미지 바로 편집 — 고객 화면의 hero를 클릭 → 이미지 선택 → 편집기(확대·이동·회전) → 서버 저장.
+        window.editBrandBackground = function(storeId){
+            try{
+                const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.style.display='none'; document.body.appendChild(inp);
+                inp.onchange=()=>{ const f=inp.files&&inp.files[0]; try{ inp.remove(); }catch(_){} if(!f) return; const r=new FileReader(); r.onload=()=>{ try{ openBackgroundEditor(storeId, r.result, null); }catch(e){ showToast('편집기 열기 실패'); } }; r.readAsDataURL(f); };
+                inp.click();
+            }catch(_){ showToast('이미지 변경을 시작할 수 없습니다.'); }
+        };
         async function loadMyBrandStores() {
             try {
                 if(!currentUser || !currentUser.name) return;
@@ -9055,37 +9088,33 @@
                 stores.forEach(st => {
                     let logoHtml = st.logo ? `<img src="${st.logo}">` : `<span>N/A</span>`;
                     const hasBg = !!st.background;
-                    const bgPreview = hasBg ? `<div style="width:100%; height:60px; border-radius:8px; background-image:url('${st.background.replace(/'/g, "\\'")}'); background-size:cover; background-position:center; margin-top:8px; border:1px solid var(--border-color);"></div>` : '';
                     const descStr = (st.description || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
                     const currentCat = st.category || 'general';
                     const catLabelMap = { general:'일반 상점', food:'음식점·카페', dental_lab:'치과 기공소', dental_clinic:'치과 병·의원', medical:'일반 병·의원', pharmacy:'약국', medical_wholesale:'의약 도·소매', fashion:'패션·의류', beauty:'뷰티·미용', education:'교육·강의', art:'아트·디자인', music:'음악·음원', game:'게임·IT', craft:'공예·수공', construction:'건설·시공', real_estate:'부동산', auto:'자동차·운송', pet:'반려동물', sports:'스포츠·레저', book:'도서·출판', legal:'법률·자문', finance:'금융·컨설팅', other:'기타' };
                     const catLabel = catLabelMap[currentCat] || '일반 상점';
-                    h += `<div style="padding:14px; background:#f8fafc; border:1px solid var(--border-color); border-radius:14px;">
-                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
-                            <div style="display:flex; align-items:center; gap:10px;">
-                                <div class="brand-logo-circle">${logoHtml}</div>
-                                <div>
-                                    <b style="font-size:15px;">${st.name}</b>
-                                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:11px; color:var(--text-sub); margin-top:4px;">
-                                        <span style="background:var(--primary-soft); color:var(--primary); padding:3px 9px; border-radius:10px; font-weight:600;">${catLabel}</span>
-                                        ${st.status === 'active'
-                                          ? '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--success-soft);color:var(--success);padding:3px 9px;border-radius:10px;font-weight:700;">● 운영중</span>'
-                                          : '<span style="display:inline-flex;align-items:center;gap:4px;background:#eef2f6;color:#64748b;padding:3px 9px;border-radius:10px;font-weight:700;">● 휴무</span>'}
-                                        <button class="btn btn-outline" style="padding:3px 11px; font-size:11px; font-weight:700; border-radius:8px;" title="상점 노출 상태를 전환합니다" onclick="toggleBrandStatus('${st.id}', '${st.status}')">${st.status === 'active' ? '휴무로 전환' : '운영 시작'}</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div style="display:flex; gap:5px; flex-wrap:wrap;">
-                                <button class="btn" style="padding:6px 10px; font-size:11px;" onclick="enterBrandStoreById('${st.id}')">내 상점 입장</button>
-                                <button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:var(--primary); border-color:var(--primary);" onclick="editBrandFull('${st.id}')">✏️ 전체 편집</button>
-                                ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#7c3aed; border-color:#c4b5fd;" onclick="openRxItemsModal('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🦷 보철 품목·수가 관리</button>` : ''}
-                                ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#0e7490; border-color:#a5f3fc;" onclick="openClinicManage('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🏥 거래처 관리</button>` : ''}
-                                <button class="btn btn-warning" style="padding:6px 10px; font-size:11px;" onclick="openPromoQR('${st.id}', '${st.name.replace(/'/g, "\\'")}')">홍보 QR</button>
-                                <button class="btn btn-danger" style="padding:6px 10px; font-size:11px;" onclick="closeOwnBrandStore('${st.id}')">폐쇄</button>
+                    // 🖼 실제 고객이 보는 화면(brand-hero, 16:9·contain=대표이미지 전체 노출) 그대로 + 클릭하면 바로 편집(WYSIWYG)
+                    const _bgEsc = hasBg ? st.background.replace(/"/g, '&quot;') : '';
+                    h += `<div class="brand-showcase-card" style="cursor:default; margin-bottom:6px;">
+                        <div class="brand-hero" style="cursor:pointer;" onclick="editBrandBackground('${st.id}')" title="클릭하여 대표(대문) 이미지 변경 — 고객에게 보이는 그대로 편집됩니다">
+                            ${hasBg ? `<img class="hero-img" src="${_bgEsc}">` : `<div class="hero-empty">대표 이미지 없음 · 클릭하여 추가</div>`}
+                            <div class="hero-gradient"></div>
+                            <span class="hero-badge">✏️ 대표 이미지 변경</span>
+                            <span class="price-pill">${st.status === 'active' ? '● 운영중' : '● 휴무'}</span>
+                            <div class="hero-overlay">
+                                <div class="logo">${logoHtml}</div>
+                                <div class="meta"><div class="name">${st.name}</div><div class="sub">${catLabel}</div></div>
                             </div>
                         </div>
-                        ${bgPreview}
-                        ${st.description ? `<div style="font-size:12px; color:var(--text-main); margin-top:8px; padding:8px 12px; background:#fff; border:1px solid var(--border-color); border-radius:10px;">"${st.description}"</div>` : ''}
+                        <div style="padding:12px 14px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                            <button class="btn btn-outline" style="padding:5px 11px; font-size:11px; font-weight:700; border-radius:8px;" title="상점 노출 상태를 전환합니다" onclick="toggleBrandStatus('${st.id}', '${st.status}')">${st.status === 'active' ? '휴무로 전환' : '운영 시작'}</button>
+                            <button class="btn" style="padding:6px 10px; font-size:11px;" onclick="enterBrandStoreById('${st.id}')">내 상점 입장(고객 화면)</button>
+                            <button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:var(--primary); border-color:var(--primary);" onclick="editBrandFull('${st.id}')">✏️ 전체 편집(이름·소개·로고)</button>
+                            ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#7c3aed; border-color:#c4b5fd;" onclick="openRxItemsModal('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🦷 보철 품목·수가 관리</button>` : ''}
+                            ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#0e7490; border-color:#a5f3fc;" onclick="openClinicManage('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🏥 거래처 관리</button>` : ''}
+                            <button class="btn btn-warning" style="padding:6px 10px; font-size:11px;" onclick="openPromoQR('${st.id}', '${st.name.replace(/'/g, "\\'")}')">홍보 QR</button>
+                            <button class="btn btn-danger" style="padding:6px 10px; font-size:11px;" onclick="closeOwnBrandStore('${st.id}')">폐쇄</button>
+                        </div>
+                        ${st.description ? `<div style="font-size:12px; color:var(--text-main); margin:0 14px 14px; padding:8px 12px; background:#f8fafc; border:1px solid var(--border-color); border-radius:10px;">"${st.description}"</div>` : ''}
                     </div>`;
                     s += `<option value="${st.id}">${st.name}</option>`;
                 });
