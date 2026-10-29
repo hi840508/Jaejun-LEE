@@ -5116,6 +5116,26 @@
                     }catch(e){ reply(null, String((e&&e.message)||e)); }
                     return;
                 }
+                // 💬 뷰어 DATA 리스트 → 현재 대화방으로 파일 전송(채팅 드래그 대체 — iframe→부모 교차프레임 DnD 불가 대응)
+                if(ev.data.type==='RAYCLOUD_SEND_TO_CHAT'){
+                    const ref=ev.data.ref||{}; const pa=Array.isArray(ref.pathArr)?ref.pathArr:[]; const fn=ref.fname||ev.data.name;
+                    if(!currentChatRoomId){ showToast('먼저 대화방을 열어 주세요. (채팅에서 상대를 선택한 뒤 Viewer의 💬를 누르면 그 대화방으로 전송됩니다)'); return; }
+                    if(!fn){ showToast('전송할 파일 정보가 없습니다.'); return; }
+                    try{
+                        showToast('채팅으로 전송 중: '+fn);
+                        const f=await R.getFileAt(pa, fn);
+                        if(!f){ showToast('파일을 읽을 수 없습니다.'); return; }
+                        const url=await window.uploadChatAttachment(f);
+                        const mime=f.type||'application/octet-stream'; const sizeKB=(f.size/1024).toFixed(0);
+                        const msg=await window._buildAttachMsg(fn, sizeKB, mime, url, null);
+                        const pic=(document.getElementById('my-profile-pic')||{}).src||'';
+                        if(socket && socket.connected){ socket.emit('send_message', { roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg }); }
+                        else { (window.__pendingChatEmits=window.__pendingChatEmits||[]).push({ roomId: currentChatRoomId, sender: currentUser.name, senderPic: pic, message: msg }); }
+                        try{ appendMainMessage(currentUser.name, msg, pic); }catch(_){}
+                        showToast('✅ 채팅으로 전송됨: '+fn);
+                    }catch(e){ showToast('전송 실패: '+(e.message||e)); }
+                    return;
+                }
                 // 🖼 [지연 썸네일] 서랍에서 보이는 이미지/DICOM 카드만 작은 미리보기 요청 → 생성해 돌려준다.
                 if(ev.data.type==='RAYCLOUD_REQUEST_THUMB'){
                     const ref=ev.data.ref||{}; const pa=Array.isArray(ref.pathArr)?ref.pathArr:[]; const fn=ref.fname; const mid=ev.data.mid;
