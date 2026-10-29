@@ -2549,6 +2549,20 @@ app.post('/api/admin/open-categories', (req, res) => {
         res.json({ ok: true, categories: cats });
     });
 });
+// ☁️ 클라우드(파일검색 데이터의 클라우드 복사) 전역 활성화 설정 — 관리자가 켜야 파일검색에 '클라우드' 버튼 노출.
+app.get('/api/settings/cloud-mirror', (req, res) => {
+    db.get(`SELECT value FROM settings WHERE key='cloud_mirror_enabled'`, [], (e, row) => {
+        res.json({ enabled: String((row && row.value) || '0').trim() === '1' });
+    });
+});
+app.post('/api/admin/cloud-mirror', (req, res) => {
+    if(!requireAdmin(req,res)) return;
+    const on = (req.body && (req.body.enabled === true || String(req.body.enabled) === '1' || String(req.body.enabled) === 'true')) ? '1' : '0';
+    db.run(`INSERT INTO settings (key, value) VALUES ('cloud_mirror_enabled', ?) ON CONFLICT(key) DO UPDATE SET value=?`, [on, on], (e) => {
+        if(e) return res.status(500).json({ error: e.message });
+        res.json({ ok: true, enabled: on === '1' });
+    });
+});
 
 // 🏥 Admin: 회원 업종(business_type) 변경 — 잘못 가입된 업종 정정(예: 치과인데 일반 병·의원으로 가입 → 치과 병·의원)
 app.post('/api/admin/user-business-type', (req, res) => {
