@@ -43,6 +43,7 @@
             --chrome-text: #142331;
             --chrome-sub: #566372;
             --chrome-border: #e2e8ef;
+            --sidebar-w: 224px;   /* 좌측 기능리스트 폭(상단 로고영역·본문 오프셋 공통 사용) */
             /* 상태 색상 — 절제된 전문가 팔레트 */
             --success: #0e7a5a;
             --success-soft: #e7f6ef;
@@ -270,7 +271,6 @@
         /* 상점검색 헤더를 파일검색처럼 화면 양끝까지(본문 좌우/상단 패딩 상쇄) */
         #market-head { background:#fff; margin:-20px -32px 14px; }
         @media (max-width:768px){ #market-head { margin:-12px -12px 12px; } }
-        @media (min-width:1024px){ #market-head { margin:-18px -28px 14px; } }
         #market-fav-row .market-fav:hover span:first-child { border-color:#0b2b4b !important; }
         .yt-search-bar {
             flex: none;
@@ -327,9 +327,9 @@
         /* 🚀 [v8] 사이드바를 모든 화면에서 슬라이드 인 (햄버거로 토글) */
         .yt-sidebar {
             position: fixed;
-            left: -300px;
+            left: calc(-1 * var(--sidebar-w) - 24px);
             top: 56px;
-            width: 280px;
+            width: var(--sidebar-w);
             height: calc(100vh - 56px);
             height: calc(100dvh - 56px); /* 📱 iOS 동적 뷰포트(주소창 포함 잘림 방지) */
             background: var(--chrome-bg);
@@ -368,11 +368,14 @@
             .yt-sidebar-overlay { display: none !important; }
             body.sidebar-open { overflow: auto; touch-action: auto; }
             body.sidebar-open .yt-main { overflow: visible; }
-            .yt-layout { padding-left: 280px; }
+            .yt-layout { padding-left: var(--sidebar-w); }
             .yt-menu-btn { display: none; }
-            #rc-folder-page.sf-docked { left: 280px !important; }   /* 공유폴더(파일검색) 화면도 사이드바에 안 가리게 */
+            #rc-folder-page.sf-docked { left: var(--sidebar-w) !important; }   /* 공유폴더(파일검색) 화면도 사이드바에 안 가리게 */
             /* 🖥 본문도 파일검색처럼 화면 가득 차게 — 1400px 중앙정렬 캡 해제(여백 최소화) */
-            .yt-main { max-width: none; margin: 0; padding: 18px 28px 80px; }
+            .yt-main { max-width: none !important; margin: 0 !important; }
+            /* 🏷 상단 로고영역을 사이드바 폭과 동일하게 — 사이드바 우측 경계선이 상단바까지 연장되어 보이게 */
+            .yt-topbar { padding-left: 0; }
+            #topbar-brand { width: var(--sidebar-w); box-sizing: border-box; flex: none; height: 56px; padding-left: 16px; border-right: 1px solid var(--chrome-border); }
         }
         .yt-sb-section { padding: 4px 8px; }
         .yt-sb-title { font-size: 11px; color: var(--chrome-sub); font-weight: 700; padding: 8px 12px 4px; letter-spacing: 0.5px; text-transform: uppercase; }
@@ -1177,7 +1180,7 @@
 
         <div id="workspace-section" style="display: none;">
             <div class="yt-topbar">
-                <div style="display: flex; align-items: center; gap:8px;">
+                <div id="topbar-brand" style="display: flex; align-items: center; gap:8px;">
                     <button class="yt-menu-btn" onclick="toggleSidebar()" title="메뉴" aria-label="메뉴">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                     </button>
@@ -1247,7 +1250,7 @@
                         <!-- 📢 공지·광고 배너 편집 (관리자 전용) -->
                         <button class="yt-sb-item" id="sb-notice-admin" style="display:none;" onclick="openNoticeBannerEditor()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path></svg></span><span>공지·광고</span></button>
                         <!-- 📥 앱 설치/다운로드 — 앱/홈화면앱으로 실행 중이면 숨김. 현재 버전 표기 + 업데이트 New 뱃지 -->
-                        <button class="yt-sb-item" id="sb-app-download" onclick="installAppForOS()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path><path d="M7 11l5 5 5-5"></path><path d="M12 4v12"></path></svg></span><span id="sb-app-label">앱 설치</span><span id="sb-app-ver" style="font-size:10px;color:var(--chrome-sub);margin-left:6px;"></span><span id="sb-app-new" style="display:none;margin-left:6px;background:#ef4444;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:10px;">NEW</span></button>
+                        <button class="yt-sb-item" id="sb-app-download" onclick="installAppForOS()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path><path d="M7 11l5 5 5-5"></path><path d="M12 4v12"></path></svg></span><span id="sb-app-label">앱 설치</span><span id="sb-app-ver" style="display:none;"></span><span id="sb-app-new" style="display:none;margin-left:6px;background:#ef4444;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:10px;">NEW</span></button>
                     </div>
                 </aside>
 
