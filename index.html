@@ -1221,15 +1221,17 @@
             <div class="yt-layout">
                 <!-- 사이드바 (YouTube 스타일) -->
                 <aside class="yt-sidebar" id="yt-sidebar">
-                    <!-- 🔎 검색: 파일검색(위) · 상점검색(아래) — 데스크톱에서 본문 헤더 2줄과 높이·경계선을 맞춤 -->
+                    <!-- 🔎 검색: 상점검색(위) · 파일검색(아래) — 데스크톱에서 본문 헤더 2줄과 높이·경계선을 맞춤 -->
                     <div class="yt-sb-section" id="sb-search-section">
-                        <button id="sb-sharedfolder" class="yt-sb-item" data-tab="__sharedfolder" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>파일검색</span></button>
                         <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>상점검색</span></button>
+                        <button id="sb-sharedfolder" class="yt-sb-item" data-tab="__sharedfolder" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>파일검색</span></button>
                     </div>
                     <div class="yt-sb-divider" id="sb-search-divider"></div>
                     <!-- 🧰 도구 -->
                     <div class="yt-sb-section">
                         <div class="yt-sb-title">도구</div>
+                        <!-- ☁️ 클라우드(구독) — 관리자 활성화(cloud_mirror_enabled) 시에만 노출. 파일검색 UI로 클라우드 보관함 열람 -->
+                        <button class="yt-sb-item" id="sb-cloud" style="display:none;" onclick="openCloudFromSidebar()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg></span><span>클라우드</span></button>
                         <button class="yt-sb-item" id="sb-viewer" onclick="openLiveViewerFromSidebar()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span><span>Viewer</span></button>
                     </div>
                     <!-- 즐겨찾기 목록은 마켓(상점검색) 상단 가로 표시(#market-fav-row). 하위 호환용 숨김 컨테이너. -->
@@ -4530,7 +4532,7 @@
             async function restoreOne(rpath){ const R=window.RCFolder; const d=await fetch(A()+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath})}); const dj=await d.json(); if(!d.ok) throw new Error(dj.error||'복원 오류'); const blob=await (await fetch(dj.url)).blob(); const parts=rpath.split('/'); const fname=parts.pop(); let acc=[]; for(const p of parts){ try{ await R.mkdirAt(acc.slice(),p); }catch(_){} acc.push(p); } await R.writeFileAt(parts,fname,blob); return true; }
             async function restoreAll(onProg){ const items=await list(); let done=0,ok=0,fail=0; for(const it of items){ done++; try{ await restoreOne(it.rpath); ok++; }catch(_){ fail++; } if(onProg)onProg(done,items.length,it.rpath); } return {total:items.length,ok,fail}; }
             async function del(rpath){ try{ await fetch(A()+'/api/mirror/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath})}); }catch(_){}}
-            return { status, enable, backupAll, autoMirror, list, restoreAll, restoreOne, del, uploadOne };
+            return { status, enable, backupAll, autoMirror, list, restoreAll, restoreOne, del, uploadOne, walk:_walk };
         })();
 
         // ☁️🔁 클라우드 버튼 진입점 — 구독 상태로 흐름 결정: 구독중/카드결제 비활성 → 백업패널, 미구독 → 구독 안내.
@@ -5615,31 +5617,64 @@
                 // ☁️ 클라우드 보관함 뷰 — 토글 ON이면 로컬 대신 클라우드에 복사된 목록을 표시.
                 if(window.__sfCloudView){ try{ _sfRenderCloud(ov); }catch(_){} }
             }
-            // ☁️ 클라우드 보관함 렌더(토글 뷰) — RCMirror.list()의 항목을 그리드에 표시. 다운로드(복원)·전체 백업 지원.
+            // ☁️ 클라우드 보관함 렌더(토글 뷰) — 공유폴더 데이터를 그대로 표시하고, 아이콘별 업로드 진행률을 프로그레스바로 보여준다.
+            //    · 저장됨: 클라우드에 이미 올라간 파일(로컬 삭제와 무관하게 유지)
+            //    · 미저장(반투명): 업로드 대상 → 순차 업로드하며 진행바 표시
+            //    · 클라우드 전용: 로컬엔 없지만 클라우드에 남아있는 파일(클릭 시 로컬로 복원)
             async function _sfRenderCloud(ov){
                 const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
-                grid.innerHTML='<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">☁️ 클라우드 보관함 불러오는 중…</div>';
-                let items=[]; try{ items=await window.RCMirror.list(); }catch(_){ items=[]; }
-                const _b=(rp)=>{ const a=String(rp||'').split('/'); return a[a.length-1]||rp; };
+                grid.innerHTML='<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">☁️ 클라우드 보관함 준비 중…</div>';
+                const R=window.RCFolder; const _b=(rp)=>{ const a=String(rp||'').split('/'); return a[a.length-1]||rp; };
+                let local=[]; try{ if(R&&R.chosen()) local=await window.RCMirror.walk(R); }catch(_){ local=[]; }
+                let cloud=[]; try{ cloud=await window.RCMirror.list(); }catch(_){ cloud=[]; }
+                const have={}; cloud.forEach(it=>have[it.rpath]=it);
+                const localSet=new Set(local.map(f=>f.rpath));
+                const cloudOnly=cloud.filter(it=>!localSet.has(it.rpath));
+                const pend=local.filter(f=>!(have[f.rpath]&&have[f.rpath].size===f.size));
+                const total=local.length+cloudOnly.length;
                 const head='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 2px 12px;">'
-                    +'<div style="font-weight:800;font-size:15px;color:#0f2f52;">☁️ 클라우드 보관함 <span style="color:#94a3b8;font-weight:600;">('+items.length+')</span></div>'
-                    +'<div style="font-size:12px;color:#64748b;">파일검색의 데이터를 클라우드에 복사해 둔 사본입니다. (로컬 보기로 돌아가려면 상단 \'클라우드\'를 다시 누르세요)</div>'
+                    +'<div style="font-weight:800;font-size:15px;color:#0f2f52;">☁️ 클라우드 <span style="color:#94a3b8;font-weight:600;">('+total+')</span></div>'
+                    +'<div style="font-size:12px;color:#64748b;">공유폴더 데이터를 클라우드에 보관합니다. 로컬에서 지워도 클라우드 사본은 유지됩니다. (로컬 보기로 돌아가려면 상단 \'클라우드\' 다시 누르기)</div>'
                     +'<div style="flex:1;"></div>'
-                    +'<button id="_sf-cloud-backup" class="_sf-txt" style="flex:none;">⬆ 현재 데이터 백업</button>'
+                    +(pend.length?('<span id="_sf-cloud-prog" style="flex:none;font-size:12px;font-weight:700;color:#0f2f52;">업로드 대기 '+pend.length+'개</span>'):'')
                     +'</div>';
-                if(!items.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">클라우드에 복사된 데이터가 없습니다.<br><span style="font-size:12px;">상단 [⬆ 현재 데이터 백업]을 눌러 지금 보이는 파일들을 클라우드에 복사하세요.</span></div>'; }
-                else {
-                    const _secGridStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+(flt.zoom||150)+'px,1fr));gap:12px;';
-                    const cards=items.map(it=>{ const nm=_b(it.rpath); const sub=(it.rpath||'').split('/').slice(0,-1).join(' / ');
-                        return '<div class="rc-cloudf" data-rpath="'+_sfEsc(it.rpath)+'" title="'+_sfEsc(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
-                        +'<div style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;color:#5b7fa6;">☁️</div></div>'
-                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+_sfEsc(nm)+'</div>'
-                        +(sub?('<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+_sfEsc(sub)+'</div>'):'')
-                        +'</div>'; }).join('');
-                    grid.innerHTML=head+'<div class="_sf-secgrid" style="'+_secGridStyle+'">'+cards+'</div>';
-                    grid.querySelectorAll('.rc-cloudf').forEach(el=>{ el.addEventListener('click',async()=>{ const rp=el.getAttribute('data-rpath'); if(!confirm('이 파일을 로컬 공유폴더로 복원할까요?\n'+rp)) return; try{ showToast('복원 중…'); await window.RCMirror.restoreOne(rp); showToast('✅ 복원 완료: '+_b(rp)); }catch(e){ showToast('복원 실패: '+(e.message||'')); } }); });
+                if(!total){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+((R&&R.chosen())?'표시할 데이터가 없습니다.':'먼저 파일검색에서 <b>공유폴더를 지정</b>하세요.')+'</div>'; return; }
+                const zoom=(flt.zoom||150); const ESC=_sfEsc;
+                const localCard=f=>{ const done=have[f.rpath]&&have[f.rpath].size===f.size;
+                    return '<div class="rc-cl" data-rpath="'+ESC(f.rpath)+'" title="'+ESC(f.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;'+(done?'':'opacity:.5;')+'transition:opacity .35s;">'
+                        +'<div style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;color:#5b7fa6;">'+(done?'☁️':'📄')+'</div>'
+                        +'<div class="rc-cl-badge" style="position:absolute;top:6px;right:6px;background:'+(done?'#16a34a':'#94a3b8')+';color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;">'+(done?'저장됨':'대기')+'</div>'
+                        +'<div style="position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(15,47,82,.12);"><div class="rc-cl-bar" style="height:100%;width:'+(done?100:0)+'%;background:#0f2f52;transition:width .4s ease;"></div></div>'
+                        +'</div>'
+                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(_b(f.rpath))+'</div>'
+                        +'</div>'; };
+                const cloudCard=it=>'<div class="rc-cloudf" data-rpath="'+ESC(it.rpath)+'" title="'+ESC(it.rpath)+' (클릭: 로컬로 복원)" style="position:relative;overflow:hidden;background:#fff;border:1px dashed #bcd0e6;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
+                        +'<div style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;color:#5b7fa6;">☁️</div><div style="position:absolute;top:6px;right:6px;background:#0f2f52;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;">클라우드</div></div>'
+                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(_b(it.rpath))+'</div>'
+                        +'</div>';
+                grid.innerHTML=head+'<div class="_sf-secgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;">'+local.map(localCard).join('')+cloudOnly.map(cloudCard).join('')+'</div>';
+                // 클라우드 전용 파일 클릭 → 로컬 복원
+                grid.querySelectorAll('.rc-cloudf').forEach(el=>{ el.addEventListener('click',async()=>{ const rp=el.getAttribute('data-rpath'); if(!confirm('이 파일을 로컬 공유폴더로 복원할까요?\n'+rp)) return; try{ showToast('복원 중…'); await window.RCMirror.restoreOne(rp); showToast('✅ 복원 완료: '+_b(rp)); if(window.__sfCloudView) _sfRenderCloud(ov); }catch(e){ showToast('복원 실패: '+(e.message||'')); } }); });
+                // 미저장 로컬 파일 → 순차 업로드하며 아이콘별 진행바 갱신
+                const cardByPath={}; grid.querySelectorAll('.rc-cl').forEach(el=>cardByPath[el.getAttribute('data-rpath')]=el);
+                const progEl=grid.querySelector('#_sf-cloud-prog');
+                if(pend.length){
+                    let okc=0;
+                    for(let i=0;i<pend.length;i++){ if(!window.__sfCloudView) break;   // 뷰 벗어나면 중단
+                        const f=pend[i]; const card=cardByPath[f.rpath]; const bar=card&&card.querySelector('.rc-cl-bar'); const badge=card&&card.querySelector('.rc-cl-badge');
+                        if(progEl) progEl.textContent='업로드 중 ('+(i+1)+'/'+pend.length+')';
+                        if(badge){ badge.textContent='업로드'; badge.style.background='#0f2f52'; }
+                        try{ if(bar) bar.style.width='15%';
+                            const blob=await R.getFileAt(f.pathArr,f.fname); if(!blob) throw new Error('로컬 파일 읽기 실패');
+                            if(bar) bar.style.width='55%';
+                            await window.RCMirror.uploadOne(f.rpath,blob,f.mime,f.mtime);
+                            if(bar) bar.style.width='100%'; if(card) card.style.opacity='1'; if(badge){ badge.textContent='저장됨'; badge.style.background='#16a34a'; }
+                            okc++;
+                        }catch(e){ if(bar){ bar.style.background='#dc2626'; bar.style.width='100%'; } if(badge){ badge.textContent='실패'; badge.style.background='#dc2626'; }
+                            if(String(e.message||'').indexOf('용량')>=0){ showToast('클라우드 용량이 부족합니다. 용량을 구매해 주세요.'); break; } }
+                    }
+                    if(progEl) progEl.textContent='업로드 완료 '+okc+'/'+pend.length;
                 }
-                const bk=grid.querySelector('#_sf-cloud-backup'); if(bk) bk.onclick=async()=>{ if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('먼저 공유폴더를 지정하세요.'); return; } try{ await window.RCMirror.enable(true); }catch(_){} showToast('클라우드 백업 시작…'); try{ const r=await window.RCMirror.backupAll((d,t,nm,st)=>{ if(bk) bk.textContent='('+d+'/'+t+') '+st; }); showToast('✅ 백업 완료 — 업로드 '+r.up+' · 건너뜀 '+r.skip+' · 실패 '+r.fail); _sfRenderCloud(ov); }catch(e){ showToast('백업 실패: '+(e.message||'')); if(bk) bk.textContent='⬆ 현재 데이터 백업'; } };
             }
             render();
         }
@@ -8875,10 +8910,29 @@
         window.CLOUD_MIRROR_ENABLED = false; window.__sfCloudView = false;
         window.loadCloudMirrorFlag = async function(){
             try{ const d=await (await fetch(API_URL+'/api/settings/cloud-mirror')).json(); window.CLOUD_MIRROR_ENABLED = !!(d&&d.enabled); }catch(_){ window.CLOUD_MIRROR_ENABLED=false; }
+            try{ const b=document.getElementById('sb-cloud'); if(b) b.style.display = window.CLOUD_MIRROR_ENABLED ? '' : 'none'; }catch(_){}
+        };
+        // ☁️ 사이드바 '클라우드' 버튼 — 미구독이면 구독 결제 팝업, 구독 중이면 파일검색 UI의 클라우드 보관함 뷰로 진입.
+        window.openCloudFromSidebar = async function(){
+            if(!window.CLOUD_MIRROR_ENABLED){ showToast('클라우드 기능이 비활성화되어 있습니다.'); return; }
+            // 구독 상태 확인(카드결제 PG 기반)
+            let sub=null; try{ sub=await fetch(API_URL+'/api/mirror/subscription',{credentials:'include'}).then(r=>r.json()); }catch(_){}
+            if(sub && sub.billingEnabled){
+                if(!sub.active){ if(window.openCloudBackup) window.openCloudBackup(); else if(window.openMirrorPanel) window.openMirrorPanel(); return; }   // 미구독 → 구독 결제 팝업
+            } else {
+                // 카드결제(PG) 비활성 환경 → 기존 미러 ON/OFF 패널로 처리
+                let s=null; try{ s=await window.RCMirror.status(); }catch(_){}
+                if(s && s.serviceEnabled===false){ showToast('클라우드 서비스가 현재 중지되어 있습니다. (관리자 설정)'); return; }
+                if(!s || !s.enabled){ if(window.openMirrorPanel) window.openMirrorPanel(); return; }
+            }
+            // 구독 중 → 파일검색 화면을 열고 클라우드 보관함 뷰로 전환(동일 UI) + 공유폴더 데이터 자동 동기화
+            try{ await window.RCMirror.enable(true); }catch(_){}
+            try{ openSharedFolderPanel(); }catch(_){}
+            setTimeout(()=>{ try{ const b=document.getElementById('_sf-mirror'); if(b && !window.__sfCloudView) b.click(); }catch(_){} }, 260);
         };
         // 🛠 관리자: 클라우드 기능 on/off 토글
         window.toggleCloudMirrorAdmin = async function(){
-            try{ const r=await fetch(API_URL+'/api/admin/cloud-mirror',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled: !window.CLOUD_MIRROR_ENABLED})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'변경 실패'); return; } window.CLOUD_MIRROR_ENABLED=!!d.enabled; showToast('클라우드 기능 '+(d.enabled?'활성화':'비활성화')+' 되었습니다.'); try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; openSharedFolderPanel(); } }catch(_){} try{ if(window.renderCloudAdminToggle) renderCloudAdminToggle(); }catch(_){} }catch(e){ showToast('오류: '+(e.message||e)); }
+            try{ const r=await fetch(API_URL+'/api/admin/cloud-mirror',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled: !window.CLOUD_MIRROR_ENABLED})}); const d=await r.json(); if(!r.ok){ showToast(d.error||'변경 실패'); return; } window.CLOUD_MIRROR_ENABLED=!!d.enabled; try{ const b=document.getElementById('sb-cloud'); if(b) b.style.display = window.CLOUD_MIRROR_ENABLED ? '' : 'none'; }catch(_){} showToast('클라우드 기능 '+(d.enabled?'활성화':'비활성화')+' 되었습니다.'); try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; openSharedFolderPanel(); } }catch(_){} try{ if(window.renderCloudAdminToggle) renderCloudAdminToggle(); }catch(_){} }catch(e){ showToast('오류: '+(e.message||e)); }
         };
         // 🗂 [관리자] 카테고리 노출 관리 모달
         window.openCategoryManage = function(){
