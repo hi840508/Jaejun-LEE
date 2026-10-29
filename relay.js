@@ -102,7 +102,11 @@ function _syncAppToR2() {
         const { PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
         const _apk = _resolveApk();
         const _crypto = require('crypto');
-        [{ name: 'APP_Setup.exe', ct: 'application/octet-stream' }].concat(_apk ? [{ name: _apk.name, ct: 'application/vnd.android.package-archive' }] : []).forEach(fi => {
+        // ⬆️ electron-updater 피드: APP_Setup.exe + latest.yml(버전정보) + .blockmap(차등 다운로드). agent/ 에 있으면 함께 R2로.
+        [{ name: 'APP_Setup.exe', ct: 'application/octet-stream' },
+         { name: 'latest.yml', ct: 'text/yaml' },
+         { name: 'APP_Setup.exe.blockmap', ct: 'application/octet-stream' }
+        ].concat(_apk ? [{ name: _apk.name, ct: 'application/vnd.android.package-archive' }] : []).forEach(fi => {
             const fp = path.join(RC_AGENT_DIR, fi.name);
             if (!fs.existsSync(fp)) return;
             const buf = fs.readFileSync(fp);
@@ -111,7 +115,7 @@ function _syncAppToR2() {
             const md5 = _crypto.createHash('md5').update(buf).digest('hex');
             _r2.client.send(new HeadObjectCommand({ Bucket: _r2.bucket, Key: 'app/' + fi.name }))
                 .then(h => { const etag = String(h.ETag || '').replace(/"/g, '').toLowerCase(); if (etag !== md5) throw new Error('diff'); })
-                .catch(() => { _r2.client.send(new PutObjectCommand({ Bucket: _r2.bucket, Key: 'app/' + fi.name, Body: buf, ContentType: fi.ct })).then(() => console.log('☁️ 앱 파일 R2 업로드:', fi.name, size, md5.slice(0, 8))).catch(e => console.warn('앱 R2 업로드 실패', fi.name, e && e.message)); });
+                .catch(() => { _r2.client.send(new PutObjectCommand({ Bucket: _r2.bucket, Key: 'app/' + fi.name, Body: buf, ContentType: fi.ct, CacheControl: (fi.name === 'latest.yml' ? 'no-cache, max-age=0' : 'public, max-age=86400') })).then(() => console.log('☁️ 앱 파일 R2 업로드:', fi.name, size, md5.slice(0, 8))).catch(e => console.warn('앱 R2 업로드 실패', fi.name, e && e.message)); });
         });
     } catch (e) { console.warn('_syncAppToR2:', e && e.message); }
 }
