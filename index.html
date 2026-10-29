@@ -253,8 +253,14 @@
         .yt-quick-btn:hover { background: linear-gradient(135deg,#22446b,#0b2b4b); color: #fff; border-color: #0b2b4b; }
         .yt-quick-btn.active { background: linear-gradient(135deg,#22446b,#0b2b4b); color: #fff; border-color: #0b2b4b; }
         @media (max-width: 760px){ .yt-quick-btn span { display: none; } .yt-quick-btn { padding: 7px 10px; } }
-        /* 📢 중앙 상단: 광고 배너 자리(추후). 통합검색은 좌측(로고 옆)로 이동. */
-        .yt-ad-slot { flex: 1; min-width: 0; height: 40px; }
+        /* 📢 중앙 상단: 광고/공지 배너. 광고 없으면 공지·업데이트 안내. */
+        .yt-ad-slot { flex: 1; min-width: 0; height: 40px; margin: 0 14px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: linear-gradient(135deg,#ee0068,#c60058); color: #fff; font-size: 13px; font-weight: 700; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 16px; }
+        .yt-ad-slot #yt-ad-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        @media (max-width: 760px){ .yt-ad-slot { display: none; } }
+        /* 🧭 상점검색/파일검색 공통 헤더 행 */
+        .sf-headrow { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border-color); overflow-x:auto; }
+        .sf-headrow .yt-search-bar { width:340px; max-width:48vw; }
+        #market-fav-row .market-fav:hover span:first-child { border-color:#0b2b4b !important; }
         .yt-search-bar {
             flex: none;
             width: 340px; max-width: 42vw;
@@ -882,9 +888,10 @@
         .empty-state-box { text-align:center; padding:36px var(--space-5); color:var(--text-sub); font-size:var(--fs-base); background:#fff; border:1px dashed var(--border-color); border-radius:var(--radius-md); }
         .loading-state-box { text-align:center; padding:24px; color:var(--text-sub); font-size:var(--fs-sm); }
         /* 카테고리 칩 - 통일 */
-        .cat-chip { background:#fff; border:1px solid var(--border-color); border-radius:30px; padding:8px 14px; font-size:var(--fs-sm); font-weight:var(--fw-medium); color:var(--text-main); cursor:pointer; transition:var(--transition); display:inline-flex; align-items:center; gap:var(--space-1); }
-        .cat-chip:hover { border-color:var(--text-main); }
-        .cat-chip.active { background:var(--text-main); color:#fff; border-color:var(--text-main); }
+        /* 파일검색 유형칩과 통일(동일 pill·네이비 active) */
+        .cat-chip { background:#fff; border:1px solid #e5e7eb; border-radius:999px; padding:5px 13px; font-size:12px; font-weight:600; color:#475569; cursor:pointer; transition:0.15s; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; flex:none; }
+        .cat-chip:hover { border-color:#0b2b4b; }
+        .cat-chip.active { background:linear-gradient(135deg,#22446b,#0b2b4b); color:#fff; border-color:#0b2b4b; box-shadow:0 3px 10px rgba(16,34,54,.20); }
         /* 패널 헤더 일관성 */
         h4 { font-size:var(--fs-md); font-weight:var(--fw-bold); color:var(--text-main); }
         h3 { font-size:var(--fs-xl); font-weight:var(--fw-bold); color:var(--text-main); }
@@ -1168,25 +1175,21 @@
                     <!-- Admin: 로고 변경 (hidden, admin 인증 시 표시) -->
                     <input type="file" id="admin-logo-upload" accept="image/*" style="display:none;" onchange="adminChangeLogo(event)">
                     <button id="admin-logo-btn" style="display:none; background:var(--primary-soft); color:var(--primary); border:1px solid var(--border-color); border-radius:6px; padding:4px 8px; font-size:10px; cursor:pointer; margin-left:4px;" onclick="document.getElementById('admin-logo-upload').click()" title="로고 변경 (Admin)">로고 변경</button>
-                    <!-- 🔎 통합 검색: 좌측(로고 옆)에 배치. 상점/파일 검색은 좌측 사이드바로 이동됨. -->
-                    <div class="yt-search-bar">
-                        <input type="text" id="topbar-global-search" placeholder="통합 검색" onkeyup="if(event.key==='Enter') doTopbarSearch()">
-                        <button onclick="doTopbarSearch()" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
-                        <button onclick="openScreenKeyboard()" aria-label="가상 키보드" title="화면 키보드 (물리 키보드 없이 입력)" style="border-radius:0 20px 20px 0; border-left:none; font-size:17px;">⌨️</button>
-                    </div>
+                    <!-- 통합검색 입력은 각 화면(상점검색·파일검색) 상단 행으로 이동. 호환용 숨김 입력 유지(doTopbarSearch/모바일검색). -->
+                    <input type="text" id="topbar-global-search" style="display:none;">
                 </div>
-                <!-- 📢 중앙 상단: 광고 배너 자리(추후) -->
-                <div class="yt-ad-slot" id="yt-ad-slot" aria-hidden="true"></div>
+                <!-- 📢 중앙 상단: 광고/공지 배너 (추후 광고, 없으면 공지·업데이트) -->
+                <div class="yt-ad-slot" id="yt-ad-slot"><span id="yt-ad-text">광고가 없을 경우 공지 사항이나 업데이트 내용이 나오는 곳</span></div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <!-- 모바일 검색 버튼 (검색바가 안 보일 때만) -->
                     <button class="yt-mobile-search-btn" onclick="openMobileSearch()" aria-label="검색">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     </button>
-                    <div style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 10px; border-radius:30px; background:#f0f0f0; transition:0.2s;" onclick="openProfileModal()">
+                    <!-- 👤 프로필 — 클릭하면 계정 화면(그 안에서 로그아웃). 상단 로그아웃 버튼 제거. -->
+                    <div style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 12px; border-radius:30px; background:#f0f0f0; transition:0.2s;" onclick="openProfileModal()" title="계정 · 로그아웃">
                         <img id="my-profile-pic" class="profile-pic" style="width:24px; height:24px; border:none;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>">
                         <span style="font-weight: 600; color:var(--text-main); font-size:13px;" id="topbar-uname-wrap"><span id="display-name" style="color: var(--text-main);"></span></span>
                     </div>
-                    <button class="btn btn-outline" style="padding: 6px 10px; font-size: 12px;" onclick="logout()">로그아웃</button>
                 </div>
             </div>
 
@@ -1197,33 +1200,35 @@
                     <div class="yt-sb-section">
                         <button id="sb-sharedfolder" class="yt-sb-item" data-tab="__sharedfolder" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>파일검색</span></button>
                         <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>상점검색</span></button>
-                        <!-- 🧊 Viewer — 즐겨찾기는 마켓 상단 가로 배치로 이동, Viewer만 유지 -->
-                        <button class="yt-sb-item" id="sb-viewer" onclick="openLiveViewerFromSidebar()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span><span>Viewer</span></button>
                     </div>
                     <div class="yt-sb-divider"></div>
-                    <!-- 즐겨찾기 목록은 마켓(상점검색) 상단에 가로로 표시(#market-fav-row). 사이드바에서는 제거. 하위 코드 호환용 숨김 컨테이너 유지. -->
-                    <div id="yt-sb-favs" style="display:none;"></div>
+                    <!-- 🧰 도구 -->
                     <div class="yt-sb-section">
-                        <div class="yt-sb-title">내 페이지</div>
-                        <button class="yt-sb-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"></rect><path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path><path d="M2 10h20"></path></svg></span><span>내 지갑</span></button>
+                        <div class="yt-sb-title">도구</div>
+                        <button class="yt-sb-item" id="sb-viewer" onclick="openLiveViewerFromSidebar()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span><span>Viewer</span></button>
+                    </div>
+                    <!-- 즐겨찾기 목록은 마켓(상점검색) 상단 가로 표시(#market-fav-row). 하위 호환용 숨김 컨테이너. -->
+                    <div id="yt-sb-favs" style="display:none;"></div>
+                    <div class="yt-sb-divider"></div>
+                    <!-- 🛒 구매 -->
+                    <div class="yt-sb-section">
+                        <div class="yt-sb-title">구매</div>
+                        <button class="yt-sb-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"></rect><path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path><path d="M2 10h20"></path></svg></span><span>결제 관리</span></button>
                         <button class="yt-sb-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg></span><span>구매 목록</span></button>
                     </div>
-                    <!-- 🛠 운영·관리: 상점/주문/영업/서버 (상점 관리는 누구나 — 상점 생성 진입) -->
+                    <!-- 🏷 판매: 상점/주문/영업/서버 (상점 관리는 누구나 — 상점 생성 진입) -->
                     <div class="yt-sb-divider" id="sb-ops-divider"></div>
                     <div class="yt-sb-section" id="sb-ops-section">
-                        <div class="yt-sb-title">운영·관리</div>
+                        <div class="yt-sb-title">판매</div>
                         <button class="yt-sb-item" onclick="switchTab('my-store')" data-tab="my-store"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-4h16l1 4M4 9v11h16V9M9 9V5h6v4"></path></svg></span><span>상점 관리</span></button>
                         <button class="yt-sb-item" id="sb-order-mgmt" style="display:none" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span><span>주문 관리</span></button>
                         <button class="yt-sb-item" id="sb-sales-btn" onclick="openSalesMgmt()" data-tab="admin-members"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg></span><span>영업 관리</span></button>
                         <button class="yt-sb-item" id="admin-ops-btn" onclick="switchTab('admin-server')" data-tab="admin-server"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg></span><span>서버 관리</span></button>
                     </div>
-                    <!-- 🚀 [v8] 사이드바 맨 아래 설정 + 사이드바 영역 늘리기 위해 flex-grow spacer -->
                     <div style="flex:1; min-height:10px;"></div>
                     <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
                         <div class="yt-sb-title">설정</div>
-                        <!-- 🗂 제어판(카테고리 표시·기본 화면 등 설정) -->
-                        <button class="yt-sb-item" onclick="openSettingsPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg></span><span>제어판</span></button>
                         <!-- 🔔 알림 설정 -->
                         <button class="yt-sb-item" onclick="_earthNotifyOnboard(true)"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span><span>알림</span></button>
                         <!-- 📥 앱 설치/다운로드 — 앱/홈화면앱으로 실행 중이면 숨김. 현재 버전 표기 + 업데이트 New 뱃지 -->
@@ -1233,14 +1238,24 @@
 
                 <!-- 메인 컨텐츠 영역 -->
                 <main class="yt-main">
-                    <!-- 모바일 상단 카테고리 칩 (가로 스크롤) -->
-                    <div class="yt-mobile-chips" id="yt-mobile-chips"></div>
-
                     <div class="tabs" style="display:none;"></div>
             <div id="tab-market" class="tab-content active">
 
-                <!-- ⭐ 즐겨찾기 가로 배치(상점검색 상단) — 사이드바 대체 -->
-                <div id="market-fav-row" style="display:none; gap:10px; overflow-x:auto; white-space:nowrap; padding:6px 2px 12px; margin-bottom:6px; border-bottom:1px solid var(--border-color);"></div>
+                <!-- 🧭 상점검색 헤더 — 파일검색과 동일 구조: (1줄) 통합검색 좌 + 즐겨찾기 우 / (2줄) 카테고리칩 좌 + 컨트롤 우 -->
+                <div id="market-head">
+                    <div class="sf-headrow">
+                        <div class="yt-search-bar" style="flex:none;">
+                            <input type="text" id="market-search" placeholder="통합 검색" onkeyup="if(event.key==='Enter') doScreenSearch(this.value)">
+                            <button onclick="doScreenSearch(document.getElementById('market-search').value)" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+                            <button onclick="openScreenKeyboard()" aria-label="가상 키보드" title="화면 키보드" style="border-radius:0 20px 20px 0; border-left:none; font-size:17px;">⌨️</button>
+                        </div>
+                        <div style="flex:1; min-width:8px;"></div>
+                        <div id="market-fav-row" style="display:none; gap:12px; overflow-x:auto; white-space:nowrap; align-items:center;"></div>
+                    </div>
+                    <div class="sf-headrow">
+                        <div class="yt-mobile-chips" id="yt-mobile-chips" style="display:flex; border-bottom:0; margin:0; padding:0; flex:1;"></div>
+                    </div>
+                </div>
 
                 <!-- 🚀 브랜드 입장 시 배경 화면 + 브랜드 정보 표시 -->
                 <!-- 상점 배경화면: 가로 폭에 맞춰 전체가 보이도록(크롭 없음), 남는 영역은 어두운 회색으로 채움 -->
@@ -2368,7 +2383,8 @@
             <button class="btn btn-success" style="width:100%; padding:14px;" onclick="saveProfile()">설정 저장</button>
 
             <div style="height:1px; background:var(--border-color); margin:8px 0;"></div>
-            <button class="btn btn-outline" style="width:100%; padding:11px; color:#dc2626; border-color:#fecaca;" onclick="withdrawAccount()">회원 탈퇴</button>
+            <button class="btn" style="width:100%; padding:12px; background:linear-gradient(135deg,#22446b,#0b2b4b); color:#fff; font-weight:800;" onclick="closeModal('profile-modal'); logout();">로그아웃</button>
+            <button class="btn btn-outline" style="width:100%; padding:11px; margin-top:6px; color:#dc2626; border-color:#fecaca;" onclick="withdrawAccount()">회원 탈퇴</button>
 
             <button class="btn btn-danger" id="admin-db-reset-btn" style="width:100%; padding:12px; display:none; margin-top:5px; background:#7f1d1d;" onclick="adminForceResetDB()">⚠️ 전체 데이터 초기화 (DB 초기화)</button>
         </div>
@@ -5196,10 +5212,12 @@
                 // 📁 (1줄) 뒤로 + 경로(crumb) + 공유폴더 칩/추가
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:7px 14px 9px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f0f1f3;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
+                    // 🔎 통합검색(좌) — 상점검색과 동일 위치. Enter=전역 통합검색.
+                    + '<div class="yt-search-bar" style="flex:none;width:300px;max-width:42vw;"><input type="text" id="_sf-global-q" placeholder="통합 검색" onkeyup="if(event.key===\'Enter\') doScreenSearch(this.value)"><button onclick="doScreenSearch(document.getElementById(\'_sf-global-q\').value)" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><button onclick="openScreenKeyboard()" aria-label="가상 키보드" style="border-radius:0 20px 20px 0;border-left:none;font-size:17px;">⌨️</button></div>'
                     // 뒤로/경로(breadcrumb)는 하위 폴더에 들어갔을 때만 표시(루트에선 숨김)
                     + (path.length ? ('<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>'
-                        + '<div style="flex:none;max-width:38%;font-size:14px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
-                        + '<span style="width:1px;height:18px;background:#e5e7eb;flex:none;margin:0 4px;"></span>') : '')
+                        + '<div style="flex:none;max-width:28%;font-size:14px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>') : '')
+                    + '<div style="flex:1;min-width:8px;"></div>'   // 통합검색(좌) ↔ 공유폴더/폴더추가(우) 분리
                     + '<span style="font-size:11px;color:#94a3b8;font-weight:800;flex:none;">공유폴더</span>'
                     + roots.map(r=>'<span class="_sf-root" data-id="'+r.id+'" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 10px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid '+(r.active?'#0b2b4b':'#e2e8f0')+';background:'+(r.active?'linear-gradient(135deg,#22446b,#0b2b4b)':'#fff')+';color:'+(r.active?'#fff':'#334155')+';white-space:nowrap;'+(r.active?'box-shadow:0 3px 10px rgba(16,34,54,.20);':'')+'">'+_SFIC.folder+' '+_sfEsc(r.name)+'<b class="_sf-root-x" data-id="'+r.id+'" title="이 폴더 목록에서 제거" style="color:'+(r.active?'#cfe0ff':'#b6bdc7')+';font-weight:900;font-size:14px;line-height:1;padding:0 2px;">×</b></span>').join('')
                     + '<button id="_sf-addroot" style="flex:none;display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;border:1px solid #e2e8f0;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">'+_SFIC.plus+' 폴더 추가</button>'
@@ -7793,7 +7811,9 @@
         function _mountSalesNav(){ document.querySelectorAll('.smnav-host').forEach(function(h){ if(!h.dataset.mounted){ h.innerHTML=window._SALES_NAV_HTML(); h.dataset.mounted='1'; } }); }
         function _setSalesNavActive(id){ document.querySelectorAll('.smn-btn').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-nav')===id); }); }
         function switchTab(id, _fromHistory) {
-            try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){}   // 공유폴더 전체화면 열려 있으면 닫고 페이지 전환
+            // 공유폴더(파일검색) 전체화면이 열려 있으면 확실히 닫고 페이지 전환(간헐적으로 안 닫히던 문제 — id로도 제거).
+            try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){}
+            try{ document.querySelectorAll('#rc-folder-page').forEach(function(e){ try{ e.remove(); }catch(_){} }); window.__sfOv=null; window.__sfCloudView=false; }catch(_){}
             window.currentMarketFilter = null; // 상점 탭 이동시 필터 초기화
             window.currentMarketFilterStore = null;
             // 🚀 [v8+] 톱바 검색 placeholder도 기본값 복원 (상점 내부 검색 잔존 버그 수정)
@@ -8104,6 +8124,8 @@
         };
 
         // 🚀 [v8+] 톱바 = 항상 통합 검색 (상점/상품/회원). 상점 내부 상품 검색은 별도 market-search 사용
+        // 🔎 화면(상점검색·파일검색) 상단 통합검색 입력 → 전역 통합검색 실행
+        window.doScreenSearch = function(v){ try{ const g=document.getElementById('topbar-global-search'); if(g) g.value=(v!=null?v:''); }catch(_){} doTopbarSearch(); };
         window.doTopbarSearch = function() {
             const input = document.getElementById('topbar-global-search');
             if(!input) return;
