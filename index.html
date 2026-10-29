@@ -253,15 +253,15 @@
         .yt-quick-btn:hover { background: linear-gradient(135deg,#22446b,#0b2b4b); color: #fff; border-color: #0b2b4b; }
         .yt-quick-btn.active { background: linear-gradient(135deg,#22446b,#0b2b4b); color: #fff; border-color: #0b2b4b; }
         @media (max-width: 760px){ .yt-quick-btn span { display: none; } .yt-quick-btn { padding: 7px 10px; } }
-        /* 🔎 중앙 래퍼: [상점검색][파일검색][통합검색] 을 한 묶음으로 중앙 배치(버튼이 검색 바로 좌측) */
-        .yt-center-wrap { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .yt-center-wrap .yt-search-bar { margin: 0; }
+        /* 📢 중앙 상단: 광고 배너 자리(추후). 통합검색은 좌측(로고 옆)로 이동. */
+        .yt-ad-slot { flex: 1; min-width: 0; height: 40px; }
         .yt-search-bar {
-            flex: 1;
-            max-width: 540px;
+            flex: none;
+            width: 340px; max-width: 42vw;
             display: flex;
-            margin: 0 auto;
+            margin: 0;
         }
+        @media (max-width: 760px){ .yt-search-bar { width: auto; flex: 1; } }
         .yt-search-bar input {
             flex: 1;
             padding: 8px 16px;
@@ -1168,17 +1168,15 @@
                     <!-- Admin: 로고 변경 (hidden, admin 인증 시 표시) -->
                     <input type="file" id="admin-logo-upload" accept="image/*" style="display:none;" onchange="adminChangeLogo(event)">
                     <button id="admin-logo-btn" style="display:none; background:var(--primary-soft); color:var(--primary); border:1px solid var(--border-color); border-radius:6px; padding:4px 8px; font-size:10px; cursor:pointer; margin-left:4px;" onclick="document.getElementById('admin-logo-upload').click()" title="로고 변경 (Admin)">로고 변경</button>
+                    <!-- 🔎 통합 검색: 좌측(로고 옆)에 배치. 상점/파일 검색은 좌측 사이드바로 이동됨. -->
+                    <div class="yt-search-bar">
+                        <input type="text" id="topbar-global-search" placeholder="통합 검색" onkeyup="if(event.key==='Enter') doTopbarSearch()">
+                        <button onclick="doTopbarSearch()" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+                        <button onclick="openScreenKeyboard()" aria-label="가상 키보드" title="화면 키보드 (물리 키보드 없이 입력)" style="border-radius:0 20px 20px 0; border-left:none; font-size:17px;">⌨️</button>
+                    </div>
                 </div>
-                <div class="yt-center-wrap">
-                    <!-- 🔎 빠른 접근: 상점검색(홈)·파일검색(공유폴더) — 중앙 통합검색 바로 좌측에 상시 노출 -->
-                    <button class="yt-quick-btn" id="qbtn-market" onclick="switchTab('market')" title="상점 검색 (상품·상점 둘러보기)" aria-label="상점검색"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg><span>상점검색</span></button>
-                    <button class="yt-quick-btn" id="qbtn-files" onclick="openSharedFolderPanel()" title="파일 검색 (공유폴더·받은 파일)" aria-label="파일검색"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg><span>파일검색</span></button>
-                <div class="yt-search-bar">
-                    <input type="text" id="topbar-global-search" placeholder="통합 검색" onkeyup="if(event.key==='Enter') doTopbarSearch()">
-                    <button onclick="doTopbarSearch()" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
-                    <button onclick="openScreenKeyboard()" aria-label="가상 키보드" title="화면 키보드 (물리 키보드 없이 입력)" style="border-radius:0 20px 20px 0; border-left:none; font-size:17px;">⌨️</button>
-                </div>
-                </div><!-- /yt-center-wrap -->
+                <!-- 📢 중앙 상단: 광고 배너 자리(추후) -->
+                <div class="yt-ad-slot" id="yt-ad-slot" aria-hidden="true"></div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <!-- 모바일 검색 버튼 (검색바가 안 보일 때만) -->
                     <button class="yt-mobile-search-btn" onclick="openMobileSearch()" aria-label="검색">
@@ -1195,8 +1193,12 @@
             <div class="yt-layout">
                 <!-- 사이드바 (YouTube 스타일) -->
                 <aside class="yt-sidebar" id="yt-sidebar">
-                    <!-- 상점검색/파일검색은 상단바로 이동(중복 제거). 숨김 호환용 자리표시(파일검색 하이라이트 대상). -->
-                    <button id="sb-sharedfolder" data-tab="__sharedfolder" style="display:none;" onclick="openSharedFolderPanel()" aria-hidden="true"></button>
+                    <!-- 🔎 검색: 파일검색(위) · 상점검색(아래) -->
+                    <div class="yt-sb-section">
+                        <button id="sb-sharedfolder" class="yt-sb-item" data-tab="__sharedfolder" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>파일검색</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>상점검색</span></button>
+                    </div>
+                    <div class="yt-sb-divider"></div>
                     <div class="yt-sb-section">
                         <div class="yt-sb-title">즐겨찾기</div>
                         <div id="yt-sb-favs" style="display:flex; flex-direction:column; gap:2px;"></div>
@@ -1207,21 +1209,15 @@
                     <div class="yt-sb-section">
                         <div class="yt-sb-title">내 페이지</div>
                         <button class="yt-sb-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"></rect><path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path><path d="M2 10h20"></path></svg></span><span>내 지갑</span></button>
-                        <button class="yt-sb-item" onclick="switchTab('my-store')" data-tab="my-store"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-4h16l1 4M4 9v11h16V9M9 9V5h6v4"></path></svg></span><span>상점 관리</span></button>
-                        <!-- 📦 주문 관리: 상점 개설자 전용(개설 안 하면 숨김) -->
-                        <button class="yt-sb-item" id="sb-order-mgmt" style="display:none" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span><span>주문 관리</span></button>
                         <button class="yt-sb-item" onclick="switchTab('my-purchases')" data-tab="my-purchases"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg></span><span>구매 목록</span></button>
                     </div>
-                    <div class="yt-sb-divider"></div>
-                    <div class="yt-sb-section">
-                        <div class="yt-sb-title">탐색 (카테고리)</div>
-                        <div id="yt-sb-categories" style="display:flex; flex-direction:column; gap:2px;"></div>
-                    </div>
-                    <!-- 🛠 Admin 전용: 운영·관리 -->
-                    <div class="yt-sb-divider" id="sb-ops-divider" style="display:none"></div>
-                    <div class="yt-sb-section" id="sb-ops-section" style="display:none">
+                    <!-- 🛠 운영·관리: 상점/주문/영업/서버 (상점 관리는 누구나 — 상점 생성 진입) -->
+                    <div class="yt-sb-divider" id="sb-ops-divider"></div>
+                    <div class="yt-sb-section" id="sb-ops-section">
                         <div class="yt-sb-title">운영·관리</div>
-                        <button class="yt-sb-item" onclick="openSalesMgmt()" data-tab="admin-members"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg></span><span>영업 관리</span></button>
+                        <button class="yt-sb-item" onclick="switchTab('my-store')" data-tab="my-store"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-4h16l1 4M4 9v11h16V9M9 9V5h6v4"></path></svg></span><span>상점 관리</span></button>
+                        <button class="yt-sb-item" id="sb-order-mgmt" style="display:none" onclick="switchTab('history')" data-tab="history"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span><span>주문 관리</span></button>
+                        <button class="yt-sb-item" id="sb-sales-btn" onclick="openSalesMgmt()" data-tab="admin-members"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg></span><span>영업 관리</span></button>
                         <button class="yt-sb-item" id="admin-ops-btn" onclick="switchTab('admin-server')" data-tab="admin-server"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg></span><span>서버 관리</span></button>
                     </div>
                     <!-- 🚀 [v8] 사이드바 맨 아래 설정 + 사이드바 영역 늘리기 위해 flex-grow spacer -->
@@ -5195,20 +5191,14 @@
                 const crumb = path.length
                     ? ('<span class="_sf-crumb" data-i="-1" style="cursor:pointer;">Home</span>'+path.map((seg,i)=>' <span style="color:#c4c9d0;font-weight:500;">/</span> <span class="_sf-crumb" data-i="'+i+'" style="cursor:pointer;">'+_sfEsc(seg)+'</span>').join(''))
                     : 'Home';
-                const head='<div style="flex:none;background:#fff;padding:11px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f0f1f3;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
-                    +'<button id="_sf-back" class="_sf-ic" title="뒤로">'+_SFIC.back+'</button>'
-                    +'<button class="_sf-txt" title="앱 홈으로 나가기" style="flex:none;" onclick="switchTab(\'market\')">'+_SFIC.home+' 홈</button>'
-                    +'<div style="flex:1;min-width:50px;font-size:16px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
-                    +(notSupported?'':'<button id="_sf-sort" class="_sf-txt">'+(flt.sort==='old'?'오래된순':flt.sort==='name'?'이름순':'최신순')+' '+_SFIC.chev+'</button>')
-                    +(notSupported?'':'<button id="_sf-zout" class="_sf-ic" title="축소">'+_SFIC.minus+'</button>')
-                    +(notSupported?'':'<button id="_sf-zin" class="_sf-ic" title="확대">'+_SFIC.plus+'</button>')
-                    // ☁️ 클라우드: 관리자가 활성화(cloud_mirror_enabled)했을 때만 노출. 파일검색 데이터를 클라우드로 복사·열람.
-                    +(window.CLOUD_MIRROR_ENABLED?('<button id="_sf-mirror" class="_sf-txt" title="클라우드 — 파일검색 데이터를 클라우드에 복사·열람">'+_SFIC.cloud+' 클라우드</button>'):'')
-                    +'<button id="_sf-kebab" class="_sf-ic" title="더보기">'+_SFIC.kebab+'</button>'
-                    +'</div>';
-                // 📁 다중 공유폴더 칩 행 — 연결된 폴더를 전환/추가/제거(한 곳에서 여러 폴더의 데이터를 본다)
+                // 상단 전용 줄 제거 — 뒤로·경로는 공유폴더 칩 줄로, 정렬/확대/클라우드/더보기는 필터 줄 우측으로 통합.
+                const head='';
+                // 📁 (1줄) 뒤로 + 경로(crumb) + 공유폴더 칩/추가
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:7px 14px 9px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f0f1f3;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
+                    + '<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>'
+                    + '<div style="flex:none;max-width:38%;font-size:14px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
+                    + '<span style="width:1px;height:18px;background:#e5e7eb;flex:none;margin:0 4px;"></span>'
                     + '<span style="font-size:11px;color:#94a3b8;font-weight:800;flex:none;">공유폴더</span>'
                     + roots.map(r=>'<span class="_sf-root" data-id="'+r.id+'" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 10px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid '+(r.active?'#0b2b4b':'#e2e8f0')+';background:'+(r.active?'linear-gradient(135deg,#22446b,#0b2b4b)':'#fff')+';color:'+(r.active?'#fff':'#334155')+';white-space:nowrap;'+(r.active?'box-shadow:0 3px 10px rgba(16,34,54,.20);':'')+'">'+_SFIC.folder+' '+_sfEsc(r.name)+'<b class="_sf-root-x" data-id="'+r.id+'" title="이 폴더 목록에서 제거" style="color:'+(r.active?'#cfe0ff':'#b6bdc7')+';font-weight:900;font-size:14px;line-height:1;padding:0 2px;">×</b></span>').join('')
                     + '<button id="_sf-addroot" style="flex:none;display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;border:1px solid #e2e8f0;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">'+_SFIC.plus+' 폴더 추가</button>'
@@ -5217,13 +5207,18 @@
                 const typeChips=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(flt.type===t?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
                 const periodChips=[['all','전체'],['today','오늘'],['7','7일'],['30','30일']].map(p=>'<button class="_sf-pchip" data-period="'+p[0]+'" style="'+CHIP+(flt.period===p[0]?CHIPON:'')+'">'+p[1]+'</button>').join('');
                 const typeChipsPill=['all','image','video','doc','3d','dicom','other'].map(t=>'<button class="_sf-tchip" data-type="'+t+'" style="'+CHIP+(flt.type===t?CHIPON:'')+'">'+_sfTypeLabel[t]+'</button>').join('');
-                // 🔎 검색 조건(유형) + 환경 조건(기간)을 '한 줄'에 통합. 별도 '통합검색' 버튼/영역은 제거(파일 이름 검색 입력만 유지, Enter=하위폴더·DICOM까지 검색).
+                // 🔎 (2줄) 검색 조건(유형) + 기간을 좌측에, 정렬·확대·클라우드·더보기를 우측에 통합. 파일 이름 검색 입력은 제거(상단 통합검색으로 일원화 예정).
                 const filter=(notSupported?'':'<div style="flex:none;background:#fff;padding:8px 14px 10px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f0f1f3;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
-                    +'<input id="_sf-q" value="'+_sfEsc(flt.q)+'" placeholder="파일 이름 검색 (Enter=하위폴더·DICOM 포함)" style="flex:none;width:200px;min-width:140px;padding:8px 12px;border:1px solid #ededf0;border-radius:9px;font-size:13px;outline:none;background:#f7f8fa;">'
                     +typeChipsPill
                     +' <input type="date" id="_sf-from" value="'+_sfEsc(flt.from)+'" title="시작일" style="flex:none;padding:6px 8px;border:1px solid #ededf0;border-radius:9px;font-size:12px;">'
                     +'<span style="color:#94a3b8;font-size:12px;">~</span>'
                     +'<input type="date" id="_sf-to" value="'+_sfEsc(flt.to)+'" title="종료일" style="flex:none;padding:6px 8px;border:1px solid #ededf0;border-radius:9px;font-size:12px;">'
+                    +'<div style="flex:1;min-width:8px;"></div>'
+                    +'<button id="_sf-sort" class="_sf-txt" style="flex:none;">'+(flt.sort==='old'?'오래된순':flt.sort==='name'?'이름순':'최신순')+' '+_SFIC.chev+'</button>'
+                    +'<button id="_sf-zout" class="_sf-ic" title="축소" style="flex:none;">'+_SFIC.minus+'</button>'
+                    +'<button id="_sf-zin" class="_sf-ic" title="확대" style="flex:none;">'+_SFIC.plus+'</button>'
+                    +(window.CLOUD_MIRROR_ENABLED?('<button id="_sf-mirror" class="_sf-txt'+(window.__sfCloudView?' active':'')+'" style="flex:none;" title="클라우드 — 파일검색 데이터를 클라우드에 복사·열람">'+_SFIC.cloud+' 클라우드'+(window.__sfCloudView?' ✓':'')+'</button>'):'')
+                    +'<button id="_sf-kebab" class="_sf-ic" title="더보기" style="flex:none;">'+_SFIC.kebab+'</button>'
                     +'</div>');
                 // 작업바: 선택된 항목이 있을 때만 표시(아이콘)
                 const AB='width:34px;height:34px;border:none;border-radius:9px;background:transparent;color:#374151;cursor:pointer;display:flex;align-items:center;justify-content:center;';
@@ -5304,7 +5299,8 @@
 
                 // 닫기·메뉴는 상단바(캡처 영역)의 표준 햄버거/로고로 통일 — X 버튼 제거. switchTab이 공유폴더를 닫고 전환.
                 const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } };
-                const mir=ov.querySelector('#_sf-mirror'); if(mir) mir.onclick=()=>{ try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} };
+                // ☁️ 클라우드 버튼 = 로컬↔클라우드 보관함 뷰 전환 토글
+                const mir=ov.querySelector('#_sf-mirror'); if(mir) mir.onclick=()=>{ window.__sfCloudView = !window.__sfCloudView; render(); };
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); path = i<0?[]:path.slice(0,i+1); render(); }));
                 const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else { close(); } };
@@ -5540,6 +5536,34 @@
                 })();
 
                 applyFilter();
+                // ☁️ 클라우드 보관함 뷰 — 토글 ON이면 로컬 대신 클라우드에 복사된 목록을 표시.
+                if(window.__sfCloudView){ try{ _sfRenderCloud(ov); }catch(_){} }
+            }
+            // ☁️ 클라우드 보관함 렌더(토글 뷰) — RCMirror.list()의 항목을 그리드에 표시. 다운로드(복원)·전체 백업 지원.
+            async function _sfRenderCloud(ov){
+                const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
+                grid.innerHTML='<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">☁️ 클라우드 보관함 불러오는 중…</div>';
+                let items=[]; try{ items=await window.RCMirror.list(); }catch(_){ items=[]; }
+                const _b=(rp)=>{ const a=String(rp||'').split('/'); return a[a.length-1]||rp; };
+                const head='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 2px 12px;">'
+                    +'<div style="font-weight:800;font-size:15px;color:#0f2f52;">☁️ 클라우드 보관함 <span style="color:#94a3b8;font-weight:600;">('+items.length+')</span></div>'
+                    +'<div style="font-size:12px;color:#64748b;">파일검색의 데이터를 클라우드에 복사해 둔 사본입니다. (로컬 보기로 돌아가려면 상단 \'클라우드\'를 다시 누르세요)</div>'
+                    +'<div style="flex:1;"></div>'
+                    +'<button id="_sf-cloud-backup" class="_sf-txt" style="flex:none;">⬆ 현재 데이터 백업</button>'
+                    +'</div>';
+                if(!items.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">클라우드에 복사된 데이터가 없습니다.<br><span style="font-size:12px;">상단 [⬆ 현재 데이터 백업]을 눌러 지금 보이는 파일들을 클라우드에 복사하세요.</span></div>'; }
+                else {
+                    const _secGridStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+(flt.zoom||150)+'px,1fr));gap:12px;';
+                    const cards=items.map(it=>{ const nm=_b(it.rpath); const sub=(it.rpath||'').split('/').slice(0,-1).join(' / ');
+                        return '<div class="rc-cloudf" data-rpath="'+_sfEsc(it.rpath)+'" title="'+_sfEsc(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
+                        +'<div style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;color:#5b7fa6;">☁️</div></div>'
+                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+_sfEsc(nm)+'</div>'
+                        +(sub?('<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+_sfEsc(sub)+'</div>'):'')
+                        +'</div>'; }).join('');
+                    grid.innerHTML=head+'<div class="_sf-secgrid" style="'+_secGridStyle+'">'+cards+'</div>';
+                    grid.querySelectorAll('.rc-cloudf').forEach(el=>{ el.addEventListener('click',async()=>{ const rp=el.getAttribute('data-rpath'); if(!confirm('이 파일을 로컬 공유폴더로 복원할까요?\n'+rp)) return; try{ showToast('복원 중…'); await window.RCMirror.restoreOne(rp); showToast('✅ 복원 완료: '+_b(rp)); }catch(e){ showToast('복원 실패: '+(e.message||'')); } }); });
+                }
+                const bk=grid.querySelector('#_sf-cloud-backup'); if(bk) bk.onclick=async()=>{ if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('먼저 공유폴더를 지정하세요.'); return; } try{ await window.RCMirror.enable(true); }catch(_){} showToast('클라우드 백업 시작…'); try{ const r=await window.RCMirror.backupAll((d,t,nm,st)=>{ if(bk) bk.textContent='('+d+'/'+t+') '+st; }); showToast('✅ 백업 완료 — 업로드 '+r.up+' · 건너뜀 '+r.skip+' · 실패 '+r.fail); _sfRenderCloud(ov); }catch(e){ showToast('백업 실패: '+(e.message||'')); if(bk) bk.textContent='⬆ 현재 데이터 백업'; } };
             }
             render();
         }
@@ -7600,9 +7624,11 @@
         // 🛠 운영·관리 사이드바 노출 제어: 관리자=전체, 상점주=영업 관리(매출/세금계산서)만. 서버관리/회원관리/정산은 관리자 전용.
         window._applyOpsVisibility = function(){
             const hasStore = !!(window.myBrandStores && window.myBrandStores.length);
-            const show = !!isAdmin || hasStore;
-            const sbOps = document.getElementById('sb-ops-section'); if(sbOps) sbOps.style.display = show ? 'block' : 'none';
-            const sbOpsDiv = document.getElementById('sb-ops-divider'); if(sbOpsDiv) sbOpsDiv.style.display = show ? 'block' : 'none';
+            const show = !!isAdmin || hasStore;   // 영업/주문 관리 노출 대상(상점주·관리자)
+            // 운영·관리 섹션은 항상 표시(상점 관리=상점 생성 진입은 누구나 가능). 세부 항목만 역할별로 gating.
+            const sbOps = document.getElementById('sb-ops-section'); if(sbOps) sbOps.style.display = 'block';
+            const sbOpsDiv = document.getElementById('sb-ops-divider'); if(sbOpsDiv) sbOpsDiv.style.display = 'block';
+            const salesBtn = document.getElementById('sb-sales-btn'); if(salesBtn) salesBtn.style.display = show ? '' : 'none';   // 영업 관리=상점주/관리자
             const srv = document.getElementById('admin-ops-btn'); if(srv) srv.style.display = isAdmin ? '' : 'none';   // 서버 관리=관리자 전용
             // 🏪 상점 운영자면 매출 관리에서 관리자 전용 컬럼 숨김(body 클래스)
             try{ document.body.classList.toggle('sales-owner', !isAdmin); }catch(_){}
@@ -7771,7 +7797,9 @@
             window.currentMarketFilterStore = null;
             // 🚀 [v8+] 톱바 검색 placeholder도 기본값 복원 (상점 내부 검색 잔존 버그 수정)
             const _tbs = document.getElementById('topbar-global-search');
-            if(_tbs) { _tbs.value = ''; _tbs.placeholder = '통합 검색 (상품·상점·회원)'; }
+            if(_tbs) { _tbs.value = ''; _tbs.placeholder = '통합 검색'; }
+            // 🗂 카테고리 칩 바(가로)는 '상점검색(market)' 화면에서만 노출 — 사이드바 '탐색' 대체.
+            try{ const _chips=document.getElementById('yt-mobile-chips'); if(_chips) _chips.style.display = (id==='market') ? 'flex' : 'none'; }catch(_){}
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             // 🚀 [v7] 사이드바 + 하단 네비 active 동기화
