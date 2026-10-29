@@ -1197,15 +1197,12 @@
                     <div class="yt-sb-section">
                         <button id="sb-sharedfolder" class="yt-sb-item" data-tab="__sharedfolder" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>파일검색</span></button>
                         <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>상점검색</span></button>
+                        <!-- 🧊 Viewer — 즐겨찾기는 마켓 상단 가로 배치로 이동, Viewer만 유지 -->
+                        <button class="yt-sb-item" id="sb-viewer" onclick="openLiveViewerFromSidebar()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span><span>Viewer</span></button>
                     </div>
                     <div class="yt-sb-divider"></div>
-                    <div class="yt-sb-section">
-                        <div class="yt-sb-title">즐겨찾기</div>
-                        <div id="yt-sb-favs" style="display:flex; flex-direction:column; gap:2px;"></div>
-                        <!-- 🧊 실시간 뷰어(Viewer) — 즐겨찾기 바로 아래 -->
-                        <button class="yt-sb-item" id="sb-viewer" onclick="openLiveViewerFromSidebar()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span><span>Viewer (실시간 뷰어)</span></button>
-                    </div>
-                    <div class="yt-sb-divider"></div>
+                    <!-- 즐겨찾기 목록은 마켓(상점검색) 상단에 가로로 표시(#market-fav-row). 사이드바에서는 제거. 하위 코드 호환용 숨김 컨테이너 유지. -->
+                    <div id="yt-sb-favs" style="display:none;"></div>
                     <div class="yt-sb-section">
                         <div class="yt-sb-title">내 페이지</div>
                         <button class="yt-sb-item" onclick="switchTab('wallet')" data-tab="wallet"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"></rect><path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path><path d="M2 10h20"></path></svg></span><span>내 지갑</span></button>
@@ -1241,6 +1238,9 @@
 
                     <div class="tabs" style="display:none;"></div>
             <div id="tab-market" class="tab-content active">
+
+                <!-- ⭐ 즐겨찾기 가로 배치(상점검색 상단) — 사이드바 대체 -->
+                <div id="market-fav-row" style="display:none; gap:10px; overflow-x:auto; white-space:nowrap; padding:6px 2px 12px; margin-bottom:6px; border-bottom:1px solid var(--border-color);"></div>
 
                 <!-- 🚀 브랜드 입장 시 배경 화면 + 브랜드 정보 표시 -->
                 <!-- 상점 배경화면: 가로 폭에 맞춰 전체가 보이도록(크롭 없음), 남는 영역은 어두운 회색으로 채움 -->
@@ -5196,9 +5196,10 @@
                 // 📁 (1줄) 뒤로 + 경로(crumb) + 공유폴더 칩/추가
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:7px 14px 9px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f0f1f3;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
-                    + '<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>'
-                    + '<div style="flex:none;max-width:38%;font-size:14px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
-                    + '<span style="width:1px;height:18px;background:#e5e7eb;flex:none;margin:0 4px;"></span>'
+                    // 뒤로/경로(breadcrumb)는 하위 폴더에 들어갔을 때만 표시(루트에선 숨김)
+                    + (path.length ? ('<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>'
+                        + '<div style="flex:none;max-width:38%;font-size:14px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>'
+                        + '<span style="width:1px;height:18px;background:#e5e7eb;flex:none;margin:0 4px;"></span>') : '')
                     + '<span style="font-size:11px;color:#94a3b8;font-weight:800;flex:none;">공유폴더</span>'
                     + roots.map(r=>'<span class="_sf-root" data-id="'+r.id+'" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 10px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid '+(r.active?'#0b2b4b':'#e2e8f0')+';background:'+(r.active?'linear-gradient(135deg,#22446b,#0b2b4b)':'#fff')+';color:'+(r.active?'#fff':'#334155')+';white-space:nowrap;'+(r.active?'box-shadow:0 3px 10px rgba(16,34,54,.20);':'')+'">'+_SFIC.folder+' '+_sfEsc(r.name)+'<b class="_sf-root-x" data-id="'+r.id+'" title="이 폴더 목록에서 제거" style="color:'+(r.active?'#cfe0ff':'#b6bdc7')+';font-weight:900;font-size:14px;line-height:1;padding:0 2px;">×</b></span>').join('')
                     + '<button id="_sf-addroot" style="flex:none;display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;border:1px solid #e2e8f0;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">'+_SFIC.plus+' 폴더 추가</button>'
@@ -7948,6 +7949,22 @@
                 h += `<button class="yt-sb-item" onclick="enterBrandStoreById('${s.id}')" title="${(s.name||'').replace(/"/g,'&quot;')}"><span class="ic">${logo}</span><span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${(s.name||'').replace(/</g,'&lt;')}</span></button>`;
             });
             wrap.innerHTML = h;
+            try{ window.renderMarketFavs && window.renderMarketFavs(); }catch(_){}
+        };
+        // 🚀 즐겨찾기 — 마켓(상점검색) 상단 '가로' 배치(원형 아바타). 사이드바 대체.
+        window.renderMarketFavs = function(){
+            const wrap = document.getElementById('market-fav-row'); if(!wrap) return;
+            const favs = window.favoriteStoreIds || [];
+            const stores = window.allStoreCache || [];
+            const favStores = stores.filter(s => favs.includes(s.id));
+            if(!favStores.length){ wrap.style.display='none'; wrap.innerHTML=''; return; }
+            wrap.style.display='flex';
+            wrap.innerHTML = '<span style="font-size:12px;color:#94a3b8;font-weight:800;flex:none;align-self:center;padding-right:4px;">⭐ 즐겨찾기</span>' + favStores.slice(0,30).map(s=>{
+                const logo = s.logo
+                    ? `<img src="${s.logo}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;">`
+                    : `<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#52525b,#27272a);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:15px;">${(s.name||'?').substring(0,1)}</div>`;
+                return `<button class="market-fav" onclick="enterBrandStoreById('${s.id}')" title="${(s.name||'').replace(/"/g,'&quot;')}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:0;cursor:pointer;width:64px;"><span style="border:2px solid #e2e8f0;border-radius:50%;padding:2px;display:inline-flex;">${logo}</span><span style="font-size:10px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;">${(s.name||'').replace(/</g,'&lt;')}</span></button>`;
+            }).join('');
         };
 
         // 🚀 [v8] 사이드바: 카테고리 리스트 (= 탐색) — 설정에서 선택된 카테고리만
