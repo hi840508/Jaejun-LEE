@@ -2564,6 +2564,32 @@ app.post('/api/admin/cloud-mirror', (req, res) => {
     });
 });
 
+// 📢 공지·광고 배너 — 상단 중앙 배너 내용/색상. 모든 사용자에게 노출(공개 조회), 관리자만 수정.
+app.get('/api/settings/notice-banner', (req, res) => {
+    db.get(`SELECT value FROM settings WHERE key='notice_banner'`, [], (e, row) => {
+        let cfg = {};
+        try { cfg = JSON.parse((row && row.value) || '{}') || {}; } catch(_) { cfg = {}; }
+        res.json(cfg);
+    });
+});
+app.post('/api/admin/notice-banner', (req, res) => {
+    if(!requireAdmin(req,res)) return;
+    const b = req.body || {};
+    // 저장 필드만 화이트리스트 — 텍스트/배경/글자색/배경색 기준값
+    const cfg = {
+        text: String(b.text || '').slice(0, 500),
+        bg: String(b.bg || '').slice(0, 200),
+        bgColor: String(b.bgColor || '').slice(0, 40),
+        color: String(b.color || '').slice(0, 40),
+        updatedAt: Date.now()
+    };
+    const v = JSON.stringify(cfg);
+    db.run(`INSERT INTO settings (key, value) VALUES ('notice_banner', ?) ON CONFLICT(key) DO UPDATE SET value=?`, [v, v], (e) => {
+        if(e) return res.status(500).json({ error: e.message });
+        res.json({ ok: true, ...cfg });
+    });
+});
+
 // 🏥 Admin: 회원 업종(business_type) 변경 — 잘못 가입된 업종 정정(예: 치과인데 일반 병·의원으로 가입 → 치과 병·의원)
 app.post('/api/admin/user-business-type', (req, res) => {
     if(!requireAdmin(req,res)) return;

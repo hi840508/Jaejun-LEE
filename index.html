@@ -254,8 +254,14 @@
         .yt-quick-btn.active { background: linear-gradient(135deg,#22446b,#0b2b4b); color: #fff; border-color: #0b2b4b; }
         @media (max-width: 760px){ .yt-quick-btn span { display: none; } .yt-quick-btn { padding: 7px 10px; } }
         /* 📢 중앙 상단: 광고/공지 배너. 광고 없으면 공지·업데이트 안내. */
-        .yt-ad-slot { flex: 1; min-width: 0; height: 40px; margin: 0 14px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: linear-gradient(135deg,#ee0068,#c60058); color: #fff; font-size: 13px; font-weight: 700; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 16px; }
-        .yt-ad-slot #yt-ad-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .yt-ad-slot { flex: 1; min-width: 0; height: 40px; margin: 0 14px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: linear-gradient(135deg,#ee0068,#c60058); color: #fff; font-size: 13px; font-weight: 700; overflow: hidden; white-space: nowrap; padding: 0 16px; cursor: default; }
+        .yt-ad-slot #yt-ad-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+        /* 글씨가 길면 좌→우 자동 스크롤(마퀴) — 읽기 편하게 */
+        .yt-ad-slot.marquee { justify-content: flex-start; }
+        .yt-ad-slot.marquee #yt-ad-text { text-overflow: clip; padding-left: 100%; animation: ytAdMarquee 18s linear infinite; }
+        .yt-ad-slot.marquee:hover #yt-ad-text { animation-play-state: paused; }
+        @keyframes ytAdMarquee { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+        @media (prefers-reduced-motion: reduce){ .yt-ad-slot.marquee #yt-ad-text { animation: none; padding-left: 0; } }
         @media (max-width: 760px){ .yt-ad-slot { display: none; } }
         /* 🧭 상점검색/파일검색 공통 헤더 행 */
         .sf-headrow { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border-color); overflow-x:auto; }
@@ -1231,6 +1237,8 @@
                         <div class="yt-sb-title">설정</div>
                         <!-- 🔔 알림 설정 -->
                         <button class="yt-sb-item" onclick="_earthNotifyOnboard(true)"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span><span>알림</span></button>
+                        <!-- 📢 공지·광고 배너 편집 (관리자 전용) -->
+                        <button class="yt-sb-item" id="sb-notice-admin" style="display:none;" onclick="openNoticeBannerEditor()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path></svg></span><span>공지·광고</span></button>
                         <!-- 📥 앱 설치/다운로드 — 앱/홈화면앱으로 실행 중이면 숨김. 현재 버전 표기 + 업데이트 New 뱃지 -->
                         <button class="yt-sb-item" id="sb-app-download" onclick="installAppForOS()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path><path d="M7 11l5 5 5-5"></path><path d="M12 4v12"></path></svg></span><span id="sb-app-label">앱 설치</span><span id="sb-app-ver" style="font-size:10px;color:var(--chrome-sub);margin-left:6px;"></span><span id="sb-app-new" style="display:none;margin-left:6px;background:#ef4444;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:10px;">NEW</span></button>
                     </div>
@@ -1244,9 +1252,9 @@
                 <!-- 🧭 상점검색 헤더 — 파일검색과 동일 구조: (1줄) 통합검색 좌 + 즐겨찾기 우 / (2줄) 카테고리칩 좌 + 컨트롤 우 -->
                 <div id="market-head">
                     <div class="sf-headrow">
-                        <div class="yt-search-bar" style="flex:none;">
-                            <input type="text" id="market-search" placeholder="통합 검색" onkeyup="if(event.key==='Enter') doScreenSearch(this.value)">
-                            <button onclick="doScreenSearch(document.getElementById('market-search').value)" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+                        <div class="yt-search-bar" style="flex:none;width:300px;max-width:42vw;">
+                            <input type="text" id="market-global-q" placeholder="통합 검색" onkeyup="if(event.key==='Enter') doScreenSearch(this.value,'market')">
+                            <button onclick="doScreenSearch(document.getElementById('market-global-q').value,'market')" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
                             <button onclick="openScreenKeyboard()" aria-label="가상 키보드" title="화면 키보드" style="border-radius:0 20px 20px 0; border-left:none; font-size:17px;">⌨️</button>
                         </div>
                         <div style="flex:1; min-width:8px;"></div>
@@ -3014,6 +3022,7 @@
             // 🗂 오픈 카테고리 로드 → 가입/상점 카테고리 select 필터(치과 병의원·기공소 기본)
             try{ if(window.loadOpenCategories) window.loadOpenCategories(); }catch(_){}
             try{ if(window.loadCloudMirrorFlag) window.loadCloudMirrorFlag(); }catch(_){}
+            try{ if(window.applyNoticeBanner) window.applyNoticeBanner(); }catch(_){}   // 📢 공지·광고 배너 적용(모두에게)
 
             const savedData = localStorage.getItem('earth_auto_login');
             // 🔧 자동로그인 방어 — JSON 파싱/초기화 예외로 로그인 화면이 먹통 되지 않도록. 손상 시 캐시 정리 후 로그인 폼 노출.
@@ -5232,7 +5241,7 @@
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:7px 14px 9px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f0f1f3;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;">'
                     // 🔎 통합검색(좌) — 상점검색과 동일 위치. Enter=전역 통합검색.
-                    + '<div class="yt-search-bar" style="flex:none;width:300px;max-width:42vw;"><input type="text" id="_sf-global-q" placeholder="통합 검색" onkeyup="if(event.key===\'Enter\') doScreenSearch(this.value)"><button onclick="doScreenSearch(document.getElementById(\'_sf-global-q\').value)" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><button onclick="openScreenKeyboard()" aria-label="가상 키보드" style="border-radius:0 20px 20px 0;border-left:none;font-size:17px;">⌨️</button></div>'
+                    + '<div class="yt-search-bar" style="flex:none;width:300px;max-width:42vw;"><input type="text" id="_sf-global-q" placeholder="통합 검색" onkeyup="if(event.key===\'Enter\') doScreenSearch(this.value,\'files\')"><button onclick="doScreenSearch(document.getElementById(\'_sf-global-q\').value,\'files\')" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><button onclick="openScreenKeyboard()" aria-label="가상 키보드" style="border-radius:0 20px 20px 0;border-left:none;font-size:17px;">⌨️</button></div>'
                     // 뒤로/경로(breadcrumb)는 하위 폴더에 들어갔을 때만 표시(루트에선 숨김)
                     + (path.length ? ('<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>'
                         + '<div style="flex:none;max-width:28%;font-size:14px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+crumb+'</div>') : '')
@@ -7668,6 +7677,7 @@
             const sbOpsDiv = document.getElementById('sb-ops-divider'); if(sbOpsDiv) sbOpsDiv.style.display = 'block';
             const salesBtn = document.getElementById('sb-sales-btn'); if(salesBtn) salesBtn.style.display = show ? '' : 'none';   // 영업 관리=상점주/관리자
             const srv = document.getElementById('admin-ops-btn'); if(srv) srv.style.display = isAdmin ? '' : 'none';   // 서버 관리=관리자 전용
+            const nb = document.getElementById('sb-notice-admin'); if(nb) nb.style.display = isAdmin ? '' : 'none';   // 공지·광고=관리자 전용
             // 🏪 상점 운영자면 매출 관리에서 관리자 전용 컬럼 숨김(body 클래스)
             try{ document.body.classList.toggle('sales-owner', !isAdmin); }catch(_){}
             // 상단 고정 네비: 회원 관리·정산·세금계산서는 관리자 전용(상점주는 거래처 관리·매출 관리만) — 네비는 _SALES_NAV_HTML에서 역할별로 생성됨(보강)
@@ -7876,6 +7886,10 @@
                 const innerWrap = document.getElementById('brand-inner-wrap');
                 if(showWrap) showWrap.style.display = 'block';
                 if(innerWrap) innerWrap.style.display = 'none';
+                // 🔄 이전 검색 결과 패널이 떠 있으면 닫아 상점 목록이 가려지지 않게
+                try{ const wrap=document.getElementById('global-search-results'); if(wrap){ wrap.style.display='none'; wrap.innerHTML=''; } }catch(_){}
+                try{ const p=document.getElementById('partner-search-input'); if(p) p.value=''; }catch(_){}
+                try{ const m=document.getElementById('market-global-q'); if(m) m.value=''; }catch(_){}
                 try { loadShowcase(); } catch(e){ console.error(e); }
                 try { searchPartnerStores(); } catch(e){ console.error(e); }
                 // 🚀 사이드바 즐겨찾기/카테고리 새로고침
@@ -8143,8 +8157,15 @@
         };
 
         // 🚀 [v8+] 톱바 = 항상 통합 검색 (상점/상품/회원). 상점 내부 상품 검색은 별도 market-search 사용
-        // 🔎 화면(상점검색·파일검색) 상단 통합검색 입력 → 전역 통합검색 실행
-        window.doScreenSearch = function(v){ try{ const g=document.getElementById('topbar-global-search'); if(g) g.value=(v!=null?v:''); }catch(_){} doTopbarSearch(); };
+        // 🔎 화면별 통합검색: 파일검색=파일만(공유폴더 deep search) · 상점검색=상점/상품만(회원 제외, 회원검색은 메신저 담당)
+        window.doScreenSearch = function(v, scope){
+            v = (v!=null?String(v):'').trim();
+            if(scope==='files'){ if(v && window._sfDeepSearch) window._sfDeepSearch(v); else if(!v) showToast('검색어를 입력하세요.'); return; }
+            // 상점 검색: 빈 값이면 검색 결과 패널을 닫고 상점 목록으로 초기화
+            if(!v){ if(window.resetMarketView) window.resetMarketView(); return; }
+            try{ const g=document.getElementById('topbar-global-search'); if(g) g.value=v; }catch(_){}
+            doTopbarSearch();   // 상점/상품 (회원 제외)
+        };
         window.doTopbarSearch = function() {
             const input = document.getElementById('topbar-global-search');
             if(!input) return;
@@ -8928,7 +8949,7 @@
                     (p.description && p.description.toLowerCase().includes(qLower))
                 ).slice(0, 24);
 
-                let users = (data.users || []).filter(u => u.name !== currentUser.name);
+                let users = [];   // 👥 회원 검색은 메신저에서만 — 상점검색 통합검색 결과에서는 제외
                 let stores = (data.stores || []);
                 let h = '';
                 // focusSearch=true 이고 결과가 단일하면 즉시 이동
@@ -8981,6 +9002,97 @@
             } catch(e) {
                 if(window.__earthDiag) window.__earthDiag('globalSearch error: ' + (e.message || e), true);
             }
+        };
+
+        // 🔄 상점 검색 화면 초기화 — 검색 결과 패널을 닫고 상점 목록을 다시 보이게
+        window.resetMarketView = function() {
+            try{ const wrap=document.getElementById('global-search-results'); if(wrap){ wrap.style.display='none'; wrap.innerHTML=''; } }catch(_){}
+            try{ const p=document.getElementById('partner-search-input'); if(p) p.value=''; }catch(_){}
+            try{ const g=document.getElementById('topbar-global-search'); if(g) g.value=''; }catch(_){}
+            try{ const m=document.getElementById('market-global-q'); if(m) m.value=''; }catch(_){}
+            // 상점 컨텍스트(특정 상점 입장 상태) 해제 후 쇼케이스 복원
+            try{ if((window.currentMarketFilter||window.currentMarketFilterStore) && window.clearMarketFilter) window.clearMarketFilter(); }catch(_){}
+            try{ const bd=document.getElementById('brand-backdrop'); if(bd) bd.style.display='none'; }catch(_){}
+            try{ const showWrap=document.getElementById('brand-showcase-wrap'); if(showWrap) showWrap.style.display='block'; }catch(_){}
+            try{ const innerWrap=document.getElementById('brand-inner-wrap'); if(innerWrap) innerWrap.style.display='none'; }catch(_){}
+            try{ loadShowcase(); }catch(_){}
+            try{ searchPartnerStores(); }catch(_){}
+        };
+
+        // 📢 공지·광고 배너 — 서버 설정(notice_banner)을 모두에게 노출. 글씨 길면 마퀴 자동 스크롤.
+        window.applyNoticeBanner = async function(cfg) {
+            try {
+                if(!cfg){ const r = await fetch(`${API_URL}/api/settings/notice-banner`); cfg = await r.json(); }
+            } catch(_) { return; }
+            window.__noticeBanner = cfg || {};
+            const slot = document.getElementById('yt-ad-slot');
+            const txt = document.getElementById('yt-ad-text');
+            if(!slot || !txt) return;
+            const DEF = '광고가 없을 경우 공지 사항이나 업데이트 내용이 나오는 곳';
+            const content = (cfg && cfg.text && String(cfg.text).trim()) ? String(cfg.text).trim() : DEF;
+            txt.textContent = content;
+            // 색상(배경) 적용 — 입력 없으면 기본 그라데이션
+            if(cfg && cfg.bg){ slot.style.background = cfg.bg; } else { slot.style.background = ''; }
+            if(cfg && cfg.color){ slot.style.color = cfg.color; } else { slot.style.color = ''; }
+            // 넘치면 마퀴 — 렌더 후 폭 비교
+            slot.classList.remove('marquee');
+            requestAnimationFrame(() => {
+                try { if(txt.scrollWidth > slot.clientWidth - 8){ slot.classList.add('marquee'); } } catch(_){}
+            });
+        };
+        // 관리자 편집 모달
+        window.openNoticeBannerEditor = function() {
+            if(!isAdmin){ showToast('관리자 전용입니다.'); return; }
+            const cur = window.__noticeBanner || {};
+            let m = document.getElementById('notice-banner-modal');
+            if(!m){ m = document.createElement('div'); m.id='notice-banner-modal'; document.body.appendChild(m); }
+            m.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:14px;';
+            m.onclick = function(e){ if(e.target===m) m.remove(); };
+            const esc = s => String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+            m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:520px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.35);overflow:hidden;">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #e2e8f0;">
+                    <h3 style="margin:0;font-size:17px;font-weight:900;color:var(--navy);">📢 공지·광고 배너 편집</h3>
+                    <span onclick="var e=document.getElementById('notice-banner-modal');if(e)e.remove();" style="cursor:pointer;font-size:24px;color:#94a3b8;line-height:1;">&times;</span>
+                </div>
+                <div style="padding:18px;">
+                    <label style="font-size:12px;font-weight:800;color:var(--text-sub);">내용 (모든 사용자에게 노출 · 길면 자동 스크롤)</label>
+                    <textarea id="nb-text" rows="3" style="width:100%;margin:6px 0 14px;padding:10px;border:1px solid var(--border-color);border-radius:8px;font-size:13px;resize:vertical;" placeholder="예) 🎉 추석 연휴 배송 안내 / 신규 수가 품목 업데이트 ...">${esc(cur.text||'')}</textarea>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+                        <div><label style="font-size:12px;font-weight:800;color:var(--text-sub);display:block;margin-bottom:4px;">배경색</label><input type="color" id="nb-bg" value="${esc(cur.bgColor||'#ee0068')}" style="width:52px;height:34px;border:1px solid var(--border-color);border-radius:6px;cursor:pointer;"></div>
+                        <div><label style="font-size:12px;font-weight:800;color:var(--text-sub);display:block;margin-bottom:4px;">글자색</label><input type="color" id="nb-color" value="${esc(cur.color||'#ffffff')}" style="width:52px;height:34px;border:1px solid var(--border-color);border-radius:6px;cursor:pointer;"></div>
+                        <label style="font-size:12px;color:var(--text-sub);display:flex;align-items:center;gap:6px;margin-top:16px;"><input type="checkbox" id="nb-grad" ${cur.bg && /gradient/.test(cur.bg) ? 'checked':''}> 그라데이션</label>
+                    </div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;">
+                        <button class="btn btn-outline" onclick="var e=document.getElementById('notice-banner-modal');if(e)e.remove();">취소</button>
+                        <button class="btn btn-danger" onclick="saveNoticeBanner(true)">배너 끄기(기본)</button>
+                        <button class="btn btn-success" onclick="saveNoticeBanner(false)">저장</button>
+                    </div>
+                </div>
+            </div>`;
+        };
+        window.saveNoticeBanner = async function(clear) {
+            const text = clear ? '' : (document.getElementById('nb-text').value||'').trim();
+            const bgColor = document.getElementById('nb-bg').value || '#ee0068';
+            const color = document.getElementById('nb-color').value || '#ffffff';
+            const grad = document.getElementById('nb-grad').checked;
+            // 그라데이션이면 선택색 기반으로 자동 생성
+            const bg = clear ? '' : (grad ? `linear-gradient(135deg, ${bgColor}, ${_darken(bgColor,0.18)})` : bgColor);
+            const cfg = { text, bg, bgColor, color };
+            try {
+                const r = await fetch(`${API_URL}/api/admin/notice-banner`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...cfg, admin: (currentUser&&currentUser.name)||'' }) });
+                if(!r.ok) throw new Error('HTTP '+r.status);
+                window.applyNoticeBanner(cfg);
+                const m = document.getElementById('notice-banner-modal'); if(m) m.remove();
+                showToast(clear ? '배너를 기본값으로 되돌렸습니다.' : '공지·광고 배너가 저장되었습니다.');
+            } catch(e){ showToast('저장 실패: '+(e.message||e)); }
+        };
+        // 간단한 색상 어둡게(그라데이션 끝색)
+        window._darken = function(hex, amt){
+            try{ let c=hex.replace('#',''); if(c.length===3) c=c.split('').map(x=>x+x).join('');
+                let r=parseInt(c.slice(0,2),16), g=parseInt(c.slice(2,4),16), b=parseInt(c.slice(4,6),16);
+                r=Math.max(0,Math.round(r*(1-amt))); g=Math.max(0,Math.round(g*(1-amt))); b=Math.max(0,Math.round(b*(1-amt)));
+                return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+            }catch(_){ return hex; }
         };
 
         window.openMessengerChatFromSearch = async function(name) {
@@ -12469,6 +12581,9 @@ pdfjsScript,
                 let b = ''; prods.forEach(p => {
                     const isSel = window.selectedProductsForBundle.has(p.id); const ratio = p.compression_ratio || getCompressionRatio(p.id + p.name);
                     const pkgBadge = '';   // 패키지 뱃지 제거(요청)
+                    const isRx = Number(p.rx_form) === 1;   // 🦷 의뢰서 작성 품목 — 편집/이미지/파기 불필요(요청)
+                    const actions = isRx ? '' :
+                        `<div class="karrot-actions"><button class="btn btn-secondary" id="btn-edit-${p.id}" onclick="toggleEditMode('${p.id}')">정보 수정</button><button class="btn btn-outline" onclick="changeProductImage('${p.id}')" title="상품 이미지 변경">🖼 이미지</button><button class="btn btn-danger" onclick="deleteProduct('${p.id}')">파기</button></div>`;
                     b += `<div class="karrot-card ${isSel?'selected':''}" id="card-${p.id}">
                         <div class="karrot-thumb" onclick="openUniversalViewer('${p.id}', true)"><img src="${window.prodThumbSrc(p)}" onerror="this.onerror=null;this.src=window.PROD_ICON;"></div>
                         <div class="karrot-info">
@@ -12476,9 +12591,9 @@ pdfjsScript,
                             <div class="karrot-seller">상점 ID: ${p.storeId}</div>
                             <div id="desc-${p.id}" class="editable-field karrot-desc" contenteditable="false">${p.description || '상품 설명 추가...'}</div>
                             <div class="karrot-price">판매가: <span id="p_ori-${p.id}" class="editable-field">${p.price_original}</span>원</div>
-                            <div class="karrot-actions"><button class="btn btn-secondary" id="btn-edit-${p.id}" onclick="toggleEditMode('${p.id}')">정보 수정</button><button class="btn btn-outline" onclick="changeProductImage('${p.id}')" title="상품 이미지 변경">🖼 이미지</button><button class="btn btn-danger" onclick="deleteProduct('${p.id}')">파기</button></div>
+                            ${actions}
                         </div>
-                        <div class="check-circle" onclick="toggleProductSelect('${p.id}', this, event)">${isSel?'✔':''}</div>
+                        ${isRx ? '' : `<div class="check-circle" onclick="toggleProductSelect('${p.id}', this, event)">${isSel?'✔':''}</div>`}
                     </div>`;
                 }); grid.innerHTML = b;
             } catch(e){
