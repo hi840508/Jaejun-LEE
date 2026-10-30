@@ -1916,7 +1916,7 @@
                 <!-- 💰 정산완료 업체 — 세금계산서 발행 대상 (settled=1) -->
                 <div class="panel" style="padding:14px;">
                     <div class="sm-head" style="margin-bottom:10px;">
-                        <h4 style="font-size:15px;font-weight:900;">발행 대상 <span style="font-size:12px;font-weight:500;color:#94a3b8;">(정산완료 업체)</span></h4>
+                        <h4 style="font-size:15px;font-weight:900;">발행 대상 <span style="font-size:12px;font-weight:500;color:#94a3b8;">(전체 업체 · 월·기간·업체별 조회)</span></h4>
                         <div class="sm-filters">
                         <div class="input-group" style="width:120px;"><label>조회 방식</label>
                             <select id="inv-range-mode" onchange="invToggleRangeMode()">
@@ -1960,7 +1960,8 @@
                         </table>
                     </div>
                 </div>
-                <div class="panel" style="padding:14px;">
+                <!-- 발행 이력(조회)은 더 이상 사용하지 않음 — 세금계산서는 국세청 대량 업로드 엑셀로만 관리(요청). 호환용 요소는 숨김 유지. -->
+                <div class="panel" style="padding:14px;display:none;">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
                         <h4 style="font-size:14px;font-weight:900;margin:0;">발행 이력 (조회)</h4>
                         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
@@ -4774,6 +4775,9 @@
                   +'</div>'
                   +'<div style="height:1px;background:#eef2f7;margin:18px 0;"></div>'
                   + usageHtml + cloudHtml
+                  // ☁️ 클라우드 버튼(사용자 노출) — 미러 '서비스' on/off와 별개의 독립 스위치. 켜면 좌측 도구에 '클라우드' 버튼이 생김.
+                  +'<div style="height:1px;background:#eef2f7;margin:18px 0;"></div>'
+                  +'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:14px;"><div><div style="font-weight:700;">☁️ 클라우드 버튼 노출(사용자)</div><div style="font-size:12px;color:#64748b;">좌측 <b>도구 ▸ 클라우드</b> 버튼을 사용자에게 보일지 설정합니다. (미러 백업 <b>서비스</b> on/off와는 별개)</div></div><button id="_ao-cloudbtn" style="margin-left:auto;padding:8px 16px;border:none;border-radius:999px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569;white-space:nowrap;">불러오는 중…</button></div>'
                   // 📢 공지·광고 배너 편집(관리자) — 사이드바에서 이쪽으로 통합
                   +'<div style="height:1px;background:#eef2f7;margin:18px 0;"></div>'
                   +'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:14px;"><div><div style="font-weight:700;">📢 공지·광고 배너</div><div style="font-size:12px;color:#64748b;">상단 중앙 배너의 문구·색상을 편집합니다(모든 사용자에게 노출).</div></div><button id="_ao-notice" style="margin-left:auto;padding:9px 16px;border:none;border-radius:9px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;white-space:nowrap;">공지·광고 편집</button></div>'
@@ -4800,6 +4804,17 @@
                 // 📢 공지·광고 편집 + ⚠️ DB 초기화 버튼 연결
                 try{ const _nb=body.querySelector('#_ao-notice'); if(_nb) _nb.onclick=()=>{ if(window.openNoticeBannerEditor) window.openNoticeBannerEditor(); }; }catch(_){}
                 try{ const _dr=body.querySelector('#_ao-dbreset'); if(_dr) _dr.onclick=()=>{ if(window.adminForceResetDB) window.adminForceResetDB(); }; }catch(_){}
+                // ☁️ 클라우드 버튼 노출(cloud_mirror_enabled) — 독립 토글
+                (function(){ const b=body.querySelector('#_ao-cloudbtn'); if(!b) return;
+                    const paint=(on)=>{ b.textContent=on?'노출 중 (끄기)':'숨김 (켜기)'; b.style.background=on?'#16a34a':'#e2e8f0'; b.style.color=on?'#fff':'#475569'; b.dataset.on=on?'1':'0'; };
+                    fetch(API_URL+'/api/settings/cloud-mirror',{cache:'no-store'}).then(r=>r.json()).then(j=>{ window.CLOUD_MIRROR_ENABLED=!!(j&&j.enabled); paint(window.CLOUD_MIRROR_ENABLED); }).catch(()=>{ b.textContent='조회 실패'; });
+                    b.onclick=async()=>{ const next=b.dataset.on!=='1'; const prev=b.textContent; b.textContent='적용 중…';
+                        try{ const r=await fetch(API_URL+'/api/admin/cloud-mirror',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:next})}); const j=await r.json(); if(!r.ok) throw new Error(j.error||'실패');
+                            window.CLOUD_MIRROR_ENABLED=!!j.enabled; paint(window.CLOUD_MIRROR_ENABLED);
+                            try{ const sb=document.getElementById('sb-cloud'); if(sb) sb.style.display=window.CLOUD_MIRROR_ENABLED?'':'none'; }catch(_){}
+                            showToast(j.enabled?'☁️ 클라우드 버튼을 노출합니다(좌측 도구).':'클라우드 버튼을 숨겼습니다.'); }
+                        catch(e){ b.textContent=prev; showToast('변경 실패: '+(e.message||e)); } };
+                })();
                 // 👥 회원별 사용 — 검색/정렬/정리
                 if(cloud){
                     const rowsEl=body.querySelector('#_ao-cloud-rows'); const qEl=body.querySelector('#_ao-cq'); const sEl=body.querySelector('#_ao-cs');
@@ -7157,57 +7172,55 @@
                 showToast('✅ 국세청 일괄발급 엑셀 내려받기 완료: '+use.length+'건');
             }catch(e){ showToast('엑셀 생성 실패: '+(e.message||'')); }
         };
-        // 🧾 [국세청 통합] 미발행(발행대상) + 발행완료(이력)를 업체·월·기간별로 모두 모아 홈택스 일괄발급 엑셀로 내려받기.
+        // 🧾 [국세청 대량 업로드] 모든 업체의 수수료를 업체·월·기간별로 모아 홈택스 공식 양식(전자세금계산서-일반(영세율), 101~1000건)으로 내려받기.
+        //    양식은 E:\raycloud-local-server\세금계산서등록양식(일반)_대량.xls 의 구조를 그대로 재현(제목·안내·헤더·51열, 데이터 7행부터).
         window.exportNtsAll = async function(){
             const range=(taxG('inv-range-mode')==='range');
             let qs, periodLabel, from='', to='', month='';
-            if(range){ from=taxG('inv-from'); to=taxG('inv-to'); if(!from&&!to){ showToast('시작일 또는 종료일을 선택하세요.'); return; } qs='from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to); periodLabel=(from||'')+'~'+(to||''); }
-            else { month=taxG('inv-month'); qs='month='+encodeURIComponent(month); periodLabel=month||'전체'; }
+            if(range){ from=taxG('inv-from'); to=taxG('inv-to'); if(!from&&!to){ showToast('시작일 또는 종료일을 선택하세요.'); return; } qs='from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&all=1'; periodLabel=(from||'')+'~'+(to||''); }
+            else { month=taxG('inv-month'); qs='month='+encodeURIComponent(month)+'&all=1'; periodLabel=month||'전체'; }
             const vendRaw=((document.getElementById('inv-vendor')||{}).value||'').trim();
-            const vendF=vendRaw.toLowerCase(); const vendDig=vendRaw.replace(/[^0-9]/g,'');
-            showToast('국세청 통합 자료 생성 중…');
+            const _vf=vendRaw.toLowerCase(), _vd=vendRaw.replace(/[^0-9]/g,'');
+            showToast('국세청 대량 업로드 자료 생성 중…');
             try{
-                // 1) 미발행(정산완료=발행대상)
-                let settled=[]; try{ const d=await fetch(`${API_URL}/api/admin/tax/settled?${qs}`).then(r=>r.json()); settled=(d&&d.vendors)||[]; }catch(_){}
-                // 2) 발행완료(이력) — 월 모드는 month로, 기간 모드는 전체 조회 후 작성일자로 필터
-                let issued=[]; try{ let iv=await fetch(`${API_URL}/api/admin/tax/invoices?month=${encodeURIComponent(month)}`).then(r=>r.json()); issued=Array.isArray(iv)?iv:[]; }catch(_){}
-                if(range){ const f=from?from.replace(/-/g,''):'', t=to?to.replace(/-/g,''):''; issued=issued.filter(r=>{ const w=(((r.payloadObj&&r.payloadObj.writeDate)||r.created_at||'')+'').replace(/[^0-9]/g,'').slice(0,8); return (!f||w>=f)&&(!t||w<=t); }); }
-                issued=issued.filter(r=>(r.issueStatus==='issued')||String(r.ntsStatus||'').indexOf('nts_sent')===0||r.ntsStatus==='not_sent');
-                // 업체 필터(업체명/사업자번호 부분일치)
-                if(vendF||vendDig){
-                    settled=settled.filter(v=>{ const nm=String(v.bizName||v.seller||'').toLowerCase(); const bz=String(v.bizNo||'').replace(/[^0-9]/g,''); return (vendF&&nm.indexOf(vendF)>=0)||(vendDig&&bz&&bz.indexOf(vendDig)>=0); });
-                    issued=issued.filter(r=>{ const rec=(r.payloadObj&&r.payloadObj.recipient)||{}; const nm=String(r.recipientName||rec.name||'').toLowerCase(); const bz=String(r.recipientBizNo||rec.bizNo||'').replace(/[^0-9]/g,''); return (vendF&&nm.indexOf(vendF)>=0)||(vendDig&&bz&&bz.indexOf(vendDig)>=0); });
-                }
-                if(!settled.length && !issued.length){ showToast('해당 조건(업체·월·기간)의 자료가 없습니다.'); return; }
+                let vendors=[]; try{ const d=await fetch(`${API_URL}/api/admin/tax/settled?${qs}`).then(r=>r.json()); vendors=(d&&d.vendors)||[]; }catch(_){}
+                if(_vf||_vd){ vendors=vendors.filter(v=>{ const nm=String(v.bizName||v.seller||'').toLowerCase(); const bz=String(v.bizNo||'').replace(/[^0-9]/g,''); return (_vf&&nm.indexOf(_vf)>=0)||(_vd&&bz&&bz.indexOf(_vd)>=0); }); }
+                if(!vendors.length){ showToast('해당 조건(업체·월·기간)의 업체가 없습니다. (구매확정된 거래가 있어야 조회됩니다)'); return; }
                 if(!window.XLSX){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=()=>rej(new Error('XLSX 로드 실패')); document.head.appendChild(s); }); }
-                const _d=v=>String(v==null?'':v); const _digits=v=>_d(v).replace(/[^0-9]/g,''); const _ymd=s=>_digits(_d(s).slice(0,10)).slice(0,8);
-                const defW = range ? (from?from.replace(/-/g,''):(to?to.replace(/-/g,''):'')) : (month?(month.replace(/-/g,'')+'01'):'');
-                const HEAD=['작성일자(YYYYMMDD)','공급받는자 등록번호','종사업장번호','공급받는자 상호','공급받는자 대표자명','공급받는자 사업장주소','업태','종목','이메일','품목일자(YYYYMMDD)','품목명','규격','수량','단가','공급가액','세액','품목비고','합계 공급가액','합계 세액','비고','영수(01)/청구(02)'];
-                const data=[];
-                // (A) 발행완료(이력)
-                issued.forEach(r=>{ const p=r.payloadObj||{}; const rec=p.recipient||{}; const it=(p.items&&p.items[0])||{};
-                    const w=_ymd(p.writeDate||r.created_at)||defW; const yc=(p.purposeType==='claim')?'02':'01';
-                    const regNo=_digits(r.recipientBizNo||rec.bizNo)||'9999999999999';
-                    data.push([ w, regNo, _d(rec.subBizNo), _d(r.recipientName||rec.name), _d(rec.ceoName), _d(rec.address), _d(rec.bizType||rec.uptae), _d(rec.bizItem||rec.jongmok), _d(rec.email), w, _d(it.name||p.memo||'수수료'), _d(it.spec), (it.qty!=null&&it.qty!==''?Number(it.qty):1), (it.unitPrice!=null&&it.unitPrice!==''?Number(it.unitPrice):''), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(it.remark), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(p.memo), yc ]); });
-                // (B) 미발행(발행대상) — 업체별 수수료 1줄
-                settled.forEach(v=>{ const supply=(v.commissionTotal!=null?v.commissionTotal:v.fee); const tax=(v.vatOnFees!=null?v.vatOnFees:v.vat); const regNo=_digits(v.bizNo)||'9999999999999';
-                    data.push([ defW, regNo, '', _d(v.bizName||v.seller), _d(v.bizCeo), _d(v.bizAddr), _d(v.bizIndustry), _d(v.bizItem), _d(v.taxEmail), defW, '수수료', '', 1, '', Number(supply)||0, Number(tax)||0, '', Number(supply)||0, Number(tax)||0, '플랫폼 이용 수수료', '02' ]); });
+                const _d=v=>String(v==null?'':v); const _digits=v=>_d(v).replace(/[^0-9]/g,'');
+                // 작성일자(YYYYMMDD): 월 모드=해당 월 말일, 기간 모드=종료일(없으면 시작일), 둘 다 없으면 오늘
+                const _lastDay=(ym)=>{ const [y,m]=ym.split('-').map(Number); return new Date(y,m,0).getDate(); };
+                let wdate='';
+                if(range){ wdate=(to||from||'').replace(/-/g,''); }
+                else if(month){ wdate=month.replace(/-/g,'')+String(_lastDay(month)).padStart(2,'0'); }
+                if(!wdate){ const t=new Date(); wdate=''+t.getFullYear()+String(t.getMonth()+1).padStart(2,'0')+String(t.getDate()).padStart(2,'0'); }
+                const dd=wdate.slice(6,8);
+                // 공식 양식(엑셀업로드양식 시트) 1~6행 — 제목·안내·헤더(51열) 원본 그대로
+                const T=['전자세금계산서 종류\n(01:일반, 02:영세율)','작성일자\n(8자리,\nYYYYMMDD 형식)','공급받는자 등록번호\n("-" 없이 입력)','공급받는자 \n종사업장번호','공급받는자 상호','공급받는자 성명','공급받는자 사업장주소','공급받는자 업태','공급받는자 종목','공급받는자 이메일1','공급받는자 이메일2','공급가액\n합계','세액\n합계','비고'];
+                const ITH=g=>['일자'+g+'\n(2자리, 작성년월 제외)','품목'+g,'규격'+g,'수량'+g,'단가'+g,'공급가액'+g,'세액'+g,'품목비고'+g];
+                const HEAD=T.concat(ITH(1),ITH(2),ITH(3),ITH(4),['현금','수표','어음','외상미수금','영수(01),\n청구(02)']);
+                const EMPTY_ITEM=['','','','','','','',''];   // 품목 그룹 공란(8열)
+                const data=vendors.map(v=>{ const supply=Number(v.commissionTotal!=null?v.commissionTotal:v.fee)||0; const tax=Number(v.vatOnFees!=null?v.vatOnFees:v.vat)||0; const regNo=_digits(v.bizNo)||'9999999999999';
+                    const head=['01', wdate, regNo, '', _d(v.bizName||v.seller), _d(v.bizCeo), _d(v.bizAddr), _d(v.bizIndustry), _d(v.bizItem), _d(v.taxEmail), '', supply, tax, ''];
+                    const item1=[dd, '수수료', '', 1, supply, supply, tax, ''];   // 일자·품목·규격·수량·단가·공급가액·세액·품목비고
+                    return head.concat(item1, EMPTY_ITEM, EMPTY_ITEM, EMPTY_ITEM, ['','','','','02']);   // 현금/수표/어음/외상미수금 공란 + 청구(02)
+                });
                 const aoa=[
-                    ['전자세금계산서 일괄발급 — 국세청 업로드용 통합 데이터 (총 '+data.length+'건 · 미발행 '+settled.length+' + 발행완료 '+issued.length+')'],
-                    ['① 홈택스 ▸ 계산서·영수증·카드 ▸ 전자(세금)계산서 발급 ▸ 일괄/공동매입분 발급 ▸ "전자(세금)계산서 일괄발급(100건 초과)" 이동'],
-                    ['② [엑셀양식 내려받기]로 공식 양식을 받은 뒤, 아래 7행부터의 데이터 행을 복사해 공식 양식 7행(데이터 시작)에 붙여넣기'],
-                    ['③ 공급자 정보는 홈택스에서 자동 입력 · 외국인 등록번호 9999999999999 · 영수(01)/청구(02) 필수 · ⚠ 이미 발행한 건을 재업로드하면 중복발행되니 발행 전 확인'],
-                    [''],
+                    ['엑셀 대량 업로드 양식(전자세금계산서-일반(영세율)), 101건 ~ 1000건'],
+                    ["○ 필수항목(주황색)은 반드시 입력하셔야 합니다.\n     > 아래 '항목설명' 및 '올바른 예시' 시트를 참고하여 작성하시기 바랍니다."],
+                    ['○ 임의로 양식을 변경[행 또는 열 추가 삭제 등]하는 경우 발급시 오류가 발생할 수 있으므로, 정해진 양식으로 작성하시기 바랍니다\n     > 실제 업로드할 DATA는 7행부터 입력하여야 하며, 최대 1000건까지 입력이 가능합니다.(1000건 초과 자료는 다른 파일에 작성 필요)'],
+                    ["○ 공급받는자 등록번호는 사업자등록번호(10자리)·주민등록번호(13자리)를 입력 · 외국인은 '9999999999999' + 비고(N열)에 외국인등록번호 · 마지막 열 '영수(01)/청구(02)'는 필수"],
+                    ['※ 플랫폼 이용 수수료 세금계산서 — 작성일자 '+wdate+' · 총 '+vendors.length+'개 업체 (조회: '+(periodLabel||'전체')+(vendRaw?(' · '+vendRaw):'')+')'],
                     HEAD,
                     ...data
                 ];
                 const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(aoa);
-                ws['!cols']=HEAD.map(h=>({wch:Math.max(9,Math.min(26,String(h).length*1.8))}));
-                XLSX.utils.book_append_sheet(wb, ws, '일괄발급_통합');
+                ws['!cols']=HEAD.map(()=>({wch:14}));
+                XLSX.utils.book_append_sheet(wb, ws, '엑셀업로드양식');
                 const vlab=vendRaw.replace(/[\\/:*?"<>|]/g,'').slice(0,20);
-                XLSX.writeFile(wb, '전자세금계산서_통합일괄발급_'+(periodLabel||'전체')+(vlab?('_'+vlab):'')+'_'+data.length+'건.xlsx');
-                showToast('✅ 국세청 통합 엑셀 완료 — 총 '+data.length+'건(미발행 '+settled.length+' · 발행완료 '+issued.length+')');
-            }catch(e){ showToast('통합 엑셀 생성 실패: '+(e.message||'')); }
+                XLSX.writeFile(wb, '전자세금계산서_대량업로드_'+(periodLabel||'전체')+(vlab?('_'+vlab):'')+'_'+vendors.length+'건.xls');
+                showToast('✅ 국세청 대량 업로드 양식 완료 — '+vendors.length+'개 업체');
+            }catch(e){ showToast('양식 생성 실패: '+(e.message||'')); }
         };
         window.taxHistCheckAll=function(cb){ document.querySelectorAll('.tax-hsel').forEach(x=>x.checked=cb.checked); };
         window.taxPrintHist=function(i){ const r=window.taxHistoryRows[i]; if(!r) return; const p=r.payloadObj||{}; taxPrintInvoice({ supplier:p.supplier||{name:r.supplierName,bizNo:r.supplierBizNo}, recipient:p.recipient||{name:r.recipientName,bizNo:r.recipientBizNo}, month:r.batchMonth||'', supplyAmount:r.supplyAmount, taxAmount:r.taxAmount, totalAmount:r.totalAmount, invoiceNo:r.invoiceNo, writeDate:(p.writeDate||'') }); };
@@ -7727,16 +7740,20 @@
             const body=document.getElementById('settled-body'); if(!body) return;
             const range=(taxG('inv-range-mode')==='range');
             let qs, periodLabel;
-            if(range){ const from=taxG('inv-from'), to=taxG('inv-to'); if(!from&&!to){ showToast('시작일 또는 종료일을 선택하세요.'); return; } qs='from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to); periodLabel=(from||'')+'~'+(to||''); }
-            else { const month=taxG('inv-month'); qs='month='+encodeURIComponent(month); periodLabel=month; }
+            if(range){ const from=taxG('inv-from'), to=taxG('inv-to'); if(!from&&!to){ showToast('시작일 또는 종료일을 선택하세요.'); return; } qs='from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&all=1'; periodLabel=(from||'')+'~'+(to||''); }
+            else { const month=taxG('inv-month'); qs='month='+encodeURIComponent(month)+'&all=1'; periodLabel=month; }
+            // 🧾 '모든 업체'(구매확정=수수료 확정된 전체 거래) 기준 — 정산/발행 여부와 무관. 업체 필터(inv-vendor)는 아래 클라이언트에서 적용.
             window.__invPeriodLabel=periodLabel;
             body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;">불러오는 중...</td></tr>';
             try{
                 const d=await fetch(`${API_URL}/api/admin/tax/settled?${qs}`).then(r=>r.json());
                 window.taxSettled=d.vendors||[];
-                window.taxSettledAdminRevenue=d.adminRevenue||0; renderSettledAdminRevenue();
-                // 업체(거래처) 자동완성 — 통합 엑셀/업체별 조회용
+                // 업체(거래처) 자동완성 — 필터 전 전체 기준
                 try{ const dl=document.getElementById('inv-vendor-list'); if(dl){ const seen=new Set(); dl.innerHTML=(window.taxSettled||[]).map(v=>{ const nm=(v.bizName||v.seller||'').trim(); if(!nm||seen.has(nm))return''; seen.add(nm); return '<option value="'+nm.replace(/"/g,'&quot;')+'">'; }).join(''); } }catch(_){}
+                // 업체 필터(업체명·사업자번호 부분일치) — 비우면 전체
+                { const vr=((document.getElementById('inv-vendor')||{}).value||'').trim(); const vf=vr.toLowerCase(), vd=vr.replace(/[^0-9]/g,'');
+                  if(vf||vd){ window.taxSettled=(window.taxSettled||[]).filter(v=>{ const nm=String(v.bizName||v.seller||'').toLowerCase(); const bz=String(v.bizNo||'').replace(/[^0-9]/g,''); return (vf&&nm.indexOf(vf)>=0)||(vd&&bz&&bz.indexOf(vd)>=0); }); } }
+                window.taxSettledAdminRevenue=(window.taxSettled||[]).reduce((s,v)=>s+(Number(v.payFee)||0),0); renderSettledAdminRevenue();
                 if(!window.taxSettled.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;line-height:1.7;">해당 기간에 <b>발행 대상</b>이 없습니다.<br><span style="font-size:11px;">· 아직 <b>정산(지급)</b>을 완료한 매출이 없거나<br>· 정산완료 매출을 <b>이미 모두 세금계산서 발행</b>했을 수 있습니다. (발행 이력은 아래에서 확인)<br>· 정산 전이라면 <b>정산</b> 화면에서 먼저 지급을 완료하세요.</span></td></tr>'; return; }
                 const _dt=(s)=>taxEscH((s||'').replace('T',' ').substring(0,10));
                 const _bizFmt=(s)=>{ s=taxDigits(s); return s.length===10?(s.slice(0,3)+'-'+s.slice(3,5)+'-'+s.slice(5)):(s||''); };

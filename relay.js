@@ -5700,17 +5700,25 @@ app.get('/api/admin/tax/settled', (req, res) => {
     const month = String(req.query.month || '').slice(0, 7);
     // 상점주(비관리자)는 owner 파라미터와 무관하게 '본인'으로 강제 스코프
     const owner = sc.isAdmin ? String(req.query.owner || '').trim() : sc.me;
-    const from = String(req.query.from || '').slice(0, 10);   // 정산완료일 기간(YYYY-MM-DD)
+    const from = String(req.query.from || '').slice(0, 10);   // 기간(YYYY-MM-DD)
     const to = String(req.query.to || '').slice(0, 10);
+    // 🧾 all=1 → '모든 업체'(구매확정=수수료 확정된 모든 거래, 정산여부·발행여부 무관). 기본은 정산완료 미발행만.
+    const allMode = String(req.query.all || '') === '1';
+    const dateCol = allMode ? 'o.confirmed_at' : 'o.settled_at';
     _taxConfig((cfg) => {
-        let where = `o.settled=1 AND o.escrow_held>0`; const params = [];
-        // 기간(from/to)이 있으면 정산완료일 기준, 없으면 월(settle_month) 기준
+        let where; const params = [];
+        if (allMode) { where = `o.escrow_held>0 AND o.confirmed_at IS NOT NULL`; }
+        else { where = `o.settled=1 AND o.escrow_held>0`; }
+        // 기간(from/to) 우선, 없으면 월 기준
         if (from || to) {
-            if (from) { where += ` AND date(o.settled_at) >= date(?)`; params.push(from); }
-            if (to) { where += ` AND date(o.settled_at) <= date(?)`; params.push(to); }
-        } else if (month) { where += ` AND o.settle_month=?`; params.push(month);
-            // ✅ 이미 세금계산서를 발행한 업체는 '발행 대상'에서 제외(발행 후에도 안내/목록에 남는 문제 해결)
-            where += ` AND o.seller NOT IN (SELECT seller FROM tax_invoices WHERE batchMonth=? AND (issueStatus IS NULL OR issueStatus NOT IN ('canceled','error')))`; params.push(month);
+            if (from) { where += ` AND date(${dateCol}) >= date(?)`; params.push(from); }
+            if (to) { where += ` AND date(${dateCol}) <= date(?)`; params.push(to); }
+        } else if (month) {
+            if (allMode) { where += ` AND strftime('%Y-%m', o.confirmed_at)=?`; params.push(month); }
+            else { where += ` AND o.settle_month=?`; params.push(month);
+                // ✅ (기본 모드만) 이미 세금계산서 발행한 업체는 '발행 대상'에서 제외
+                where += ` AND o.seller NOT IN (SELECT seller FROM tax_invoices WHERE batchMonth=? AND (issueStatus IS NULL OR issueStatus NOT IN ('canceled','error')))`; params.push(month);
+            }
         }
         if (owner) { where += ` AND o.seller=?`; params.push(owner); }
         // 🧾 [배민식 서브가맹점] 정산완료 '주문 건별'로 조회 → 각 업체(seller)의 거래 항목을 세금계산서 품목 라인으로 노출.
