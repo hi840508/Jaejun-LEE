@@ -1927,8 +1927,15 @@
                         <div class="input-group" id="inv-month-wrap" style="width:150px;"><label>발행 월</label><input id="inv-month" type="month"></div>
                         <div class="input-group" id="inv-from-wrap" style="width:130px;display:none;"><label>시작일</label><input id="inv-from" type="date"></div>
                         <div class="input-group" id="inv-to-wrap" style="width:130px;display:none;"><label>종료일</label><input id="inv-to" type="date"></div>
+                        <div class="input-group" style="width:160px;"><label>업체(거래처)</label><input id="inv-vendor" list="inv-vendor-list" placeholder="업체명·사업자번호(비우면 전체)"><datalist id="inv-vendor-list"></datalist></div>
                         <button class="btn btn-secondary" onclick="loadSettledVendors()">발행 대상 불러오기</button>
                         </div>
+                    </div>
+                    <!-- 📥 국세청 통합 일괄발급 자료 — 미발행(발행대상)+발행완료(이력)를 업체/월/기간별로 모두 묶어 국세청 엑셀 양식으로 내려받기 -->
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#eef4f8;border:1px solid #d7e3ee;border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+                        <div style="font-size:12px;font-weight:800;color:#0f2f52;">📥 국세청 통합 일괄발급 자료</div>
+                        <div style="font-size:11px;color:#64748b;flex:1;min-width:160px;">위 조회방식(업체·월·기간) 기준으로 <b>미발행+발행완료를 구분 없이 모두</b> 모아 홈택스 일괄발급 엑셀 양식으로 내려받습니다.</div>
+                        <button class="btn" style="padding:8px 16px;font-size:13px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border:0;border-radius:8px;font-weight:800;" onclick="exportNtsAll()">📥 통합 엑셀 내려받기</button>
                     </div>
                     <div style="text-align:right;margin-bottom:10px;"><span id="settled-admin-revenue-badge" style="font-size:12px;font-weight:800;padding:8px 14px;border-radius:8px;background:#f0fdf4;color:#166534;">정산완료 Admin 수수료 매출: 0원</span></div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
@@ -7150,6 +7157,58 @@
                 showToast('✅ 국세청 일괄발급 엑셀 내려받기 완료: '+use.length+'건');
             }catch(e){ showToast('엑셀 생성 실패: '+(e.message||'')); }
         };
+        // 🧾 [국세청 통합] 미발행(발행대상) + 발행완료(이력)를 업체·월·기간별로 모두 모아 홈택스 일괄발급 엑셀로 내려받기.
+        window.exportNtsAll = async function(){
+            const range=(taxG('inv-range-mode')==='range');
+            let qs, periodLabel, from='', to='', month='';
+            if(range){ from=taxG('inv-from'); to=taxG('inv-to'); if(!from&&!to){ showToast('시작일 또는 종료일을 선택하세요.'); return; } qs='from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to); periodLabel=(from||'')+'~'+(to||''); }
+            else { month=taxG('inv-month'); qs='month='+encodeURIComponent(month); periodLabel=month||'전체'; }
+            const vendRaw=((document.getElementById('inv-vendor')||{}).value||'').trim();
+            const vendF=vendRaw.toLowerCase(); const vendDig=vendRaw.replace(/[^0-9]/g,'');
+            showToast('국세청 통합 자료 생성 중…');
+            try{
+                // 1) 미발행(정산완료=발행대상)
+                let settled=[]; try{ const d=await fetch(`${API_URL}/api/admin/tax/settled?${qs}`).then(r=>r.json()); settled=(d&&d.vendors)||[]; }catch(_){}
+                // 2) 발행완료(이력) — 월 모드는 month로, 기간 모드는 전체 조회 후 작성일자로 필터
+                let issued=[]; try{ let iv=await fetch(`${API_URL}/api/admin/tax/invoices?month=${encodeURIComponent(month)}`).then(r=>r.json()); issued=Array.isArray(iv)?iv:[]; }catch(_){}
+                if(range){ const f=from?from.replace(/-/g,''):'', t=to?to.replace(/-/g,''):''; issued=issued.filter(r=>{ const w=(((r.payloadObj&&r.payloadObj.writeDate)||r.created_at||'')+'').replace(/[^0-9]/g,'').slice(0,8); return (!f||w>=f)&&(!t||w<=t); }); }
+                issued=issued.filter(r=>(r.issueStatus==='issued')||String(r.ntsStatus||'').indexOf('nts_sent')===0||r.ntsStatus==='not_sent');
+                // 업체 필터(업체명/사업자번호 부분일치)
+                if(vendF||vendDig){
+                    settled=settled.filter(v=>{ const nm=String(v.bizName||v.seller||'').toLowerCase(); const bz=String(v.bizNo||'').replace(/[^0-9]/g,''); return (vendF&&nm.indexOf(vendF)>=0)||(vendDig&&bz&&bz.indexOf(vendDig)>=0); });
+                    issued=issued.filter(r=>{ const rec=(r.payloadObj&&r.payloadObj.recipient)||{}; const nm=String(r.recipientName||rec.name||'').toLowerCase(); const bz=String(r.recipientBizNo||rec.bizNo||'').replace(/[^0-9]/g,''); return (vendF&&nm.indexOf(vendF)>=0)||(vendDig&&bz&&bz.indexOf(vendDig)>=0); });
+                }
+                if(!settled.length && !issued.length){ showToast('해당 조건(업체·월·기간)의 자료가 없습니다.'); return; }
+                if(!window.XLSX){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=()=>rej(new Error('XLSX 로드 실패')); document.head.appendChild(s); }); }
+                const _d=v=>String(v==null?'':v); const _digits=v=>_d(v).replace(/[^0-9]/g,''); const _ymd=s=>_digits(_d(s).slice(0,10)).slice(0,8);
+                const defW = range ? (from?from.replace(/-/g,''):(to?to.replace(/-/g,''):'')) : (month?(month.replace(/-/g,'')+'01'):'');
+                const HEAD=['작성일자(YYYYMMDD)','공급받는자 등록번호','종사업장번호','공급받는자 상호','공급받는자 대표자명','공급받는자 사업장주소','업태','종목','이메일','품목일자(YYYYMMDD)','품목명','규격','수량','단가','공급가액','세액','품목비고','합계 공급가액','합계 세액','비고','영수(01)/청구(02)'];
+                const data=[];
+                // (A) 발행완료(이력)
+                issued.forEach(r=>{ const p=r.payloadObj||{}; const rec=p.recipient||{}; const it=(p.items&&p.items[0])||{};
+                    const w=_ymd(p.writeDate||r.created_at)||defW; const yc=(p.purposeType==='claim')?'02':'01';
+                    const regNo=_digits(r.recipientBizNo||rec.bizNo)||'9999999999999';
+                    data.push([ w, regNo, _d(rec.subBizNo), _d(r.recipientName||rec.name), _d(rec.ceoName), _d(rec.address), _d(rec.bizType||rec.uptae), _d(rec.bizItem||rec.jongmok), _d(rec.email), w, _d(it.name||p.memo||'수수료'), _d(it.spec), (it.qty!=null&&it.qty!==''?Number(it.qty):1), (it.unitPrice!=null&&it.unitPrice!==''?Number(it.unitPrice):''), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(it.remark), Number(r.supplyAmount)||0, Number(r.taxAmount)||0, _d(p.memo), yc ]); });
+                // (B) 미발행(발행대상) — 업체별 수수료 1줄
+                settled.forEach(v=>{ const supply=(v.commissionTotal!=null?v.commissionTotal:v.fee); const tax=(v.vatOnFees!=null?v.vatOnFees:v.vat); const regNo=_digits(v.bizNo)||'9999999999999';
+                    data.push([ defW, regNo, '', _d(v.bizName||v.seller), _d(v.bizCeo), _d(v.bizAddr), _d(v.bizIndustry), _d(v.bizItem), _d(v.taxEmail), defW, '수수료', '', 1, '', Number(supply)||0, Number(tax)||0, '', Number(supply)||0, Number(tax)||0, '플랫폼 이용 수수료', '02' ]); });
+                const aoa=[
+                    ['전자세금계산서 일괄발급 — 국세청 업로드용 통합 데이터 (총 '+data.length+'건 · 미발행 '+settled.length+' + 발행완료 '+issued.length+')'],
+                    ['① 홈택스 ▸ 계산서·영수증·카드 ▸ 전자(세금)계산서 발급 ▸ 일괄/공동매입분 발급 ▸ "전자(세금)계산서 일괄발급(100건 초과)" 이동'],
+                    ['② [엑셀양식 내려받기]로 공식 양식을 받은 뒤, 아래 7행부터의 데이터 행을 복사해 공식 양식 7행(데이터 시작)에 붙여넣기'],
+                    ['③ 공급자 정보는 홈택스에서 자동 입력 · 외국인 등록번호 9999999999999 · 영수(01)/청구(02) 필수 · ⚠ 이미 발행한 건을 재업로드하면 중복발행되니 발행 전 확인'],
+                    [''],
+                    HEAD,
+                    ...data
+                ];
+                const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(aoa);
+                ws['!cols']=HEAD.map(h=>({wch:Math.max(9,Math.min(26,String(h).length*1.8))}));
+                XLSX.utils.book_append_sheet(wb, ws, '일괄발급_통합');
+                const vlab=vendRaw.replace(/[\\/:*?"<>|]/g,'').slice(0,20);
+                XLSX.writeFile(wb, '전자세금계산서_통합일괄발급_'+(periodLabel||'전체')+(vlab?('_'+vlab):'')+'_'+data.length+'건.xlsx');
+                showToast('✅ 국세청 통합 엑셀 완료 — 총 '+data.length+'건(미발행 '+settled.length+' · 발행완료 '+issued.length+')');
+            }catch(e){ showToast('통합 엑셀 생성 실패: '+(e.message||'')); }
+        };
         window.taxHistCheckAll=function(cb){ document.querySelectorAll('.tax-hsel').forEach(x=>x.checked=cb.checked); };
         window.taxPrintHist=function(i){ const r=window.taxHistoryRows[i]; if(!r) return; const p=r.payloadObj||{}; taxPrintInvoice({ supplier:p.supplier||{name:r.supplierName,bizNo:r.supplierBizNo}, recipient:p.recipient||{name:r.recipientName,bizNo:r.recipientBizNo}, month:r.batchMonth||'', supplyAmount:r.supplyAmount, taxAmount:r.taxAmount, totalAmount:r.totalAmount, invoiceNo:r.invoiceNo, writeDate:(p.writeDate||'') }); };
         window.taxPrintSelected=function(){ const sel=Array.from(document.querySelectorAll('.tax-hsel:checked')).map(x=>Number(x.dataset.i)); if(!sel.length){ showToast('출력할 항목을 선택하세요.'); return; } sel.forEach((i,k)=>setTimeout(()=>taxPrintHist(i), k*300)); };
@@ -7676,6 +7735,8 @@
                 const d=await fetch(`${API_URL}/api/admin/tax/settled?${qs}`).then(r=>r.json());
                 window.taxSettled=d.vendors||[];
                 window.taxSettledAdminRevenue=d.adminRevenue||0; renderSettledAdminRevenue();
+                // 업체(거래처) 자동완성 — 통합 엑셀/업체별 조회용
+                try{ const dl=document.getElementById('inv-vendor-list'); if(dl){ const seen=new Set(); dl.innerHTML=(window.taxSettled||[]).map(v=>{ const nm=(v.bizName||v.seller||'').trim(); if(!nm||seen.has(nm))return''; seen.add(nm); return '<option value="'+nm.replace(/"/g,'&quot;')+'">'; }).join(''); } }catch(_){}
                 if(!window.taxSettled.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;line-height:1.7;">해당 기간에 <b>발행 대상</b>이 없습니다.<br><span style="font-size:11px;">· 아직 <b>정산(지급)</b>을 완료한 매출이 없거나<br>· 정산완료 매출을 <b>이미 모두 세금계산서 발행</b>했을 수 있습니다. (발행 이력은 아래에서 확인)<br>· 정산 전이라면 <b>정산</b> 화면에서 먼저 지급을 완료하세요.</span></td></tr>'; return; }
                 const _dt=(s)=>taxEscH((s||'').replace('T',' ').substring(0,10));
                 const _bizFmt=(s)=>{ s=taxDigits(s); return s.length===10?(s.slice(0,3)+'-'+s.slice(3,5)+'-'+s.slice(5)):(s||''); };
