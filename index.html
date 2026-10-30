@@ -2594,7 +2594,7 @@
                 <span><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg> 전자세금계산서 발행</span>
                 <button class="close-btn-x" onclick="closeModal('tax-invoice-form-modal')">&times;</button>
             </div>
-            <div style="padding:16px 20px; overflow-y:auto; overflow-x:auto;">
+            <div style="padding:16px 20px; overflow-y:auto; overflow-x:hidden;">
                 <style>
                     #tax-invoice-form-modal .tif-tabs{display:flex;gap:0;border-bottom:2px solid #0f2f52;margin-bottom:14px;}
                     #tax-invoice-form-modal .tif-tab{padding:9px 22px;font-size:14px;font-weight:800;border:1px solid #cbd5e1;border-bottom:none;background:#f1f5f9;color:#64748b;cursor:pointer;border-radius:8px 8px 0 0;margin-right:4px;}
@@ -2602,7 +2602,10 @@
                     #tax-invoice-form-modal .tif-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-bottom:10px;font-size:13px;}
                     #tax-invoice-form-modal .tif-row>label{font-weight:700;color:#334155;}
                     #tax-invoice-form-modal .tif-blocks{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
-                    @media(max-width:820px){#tax-invoice-form-modal .tif-blocks{grid-template-columns:1fr;}}
+                    @media(max-width:1000px){#tax-invoice-form-modal .tif-blocks{grid-template-columns:1fr;}}
+                    #tax-invoice-form-modal .tif-block{min-width:0;}
+                    #tax-invoice-form-modal .tif-block input{min-width:0;}
+                    #tax-invoice-form-modal .tif-paywrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
                     #tax-invoice-form-modal .tif-block{border-radius:10px;padding:12px;}
                     #tax-invoice-form-modal .tif-block.sup{background:#fdf2f8;border:1px solid #f9a8d4;}
                     #tax-invoice-form-modal .tif-block.rec{background:#eff6ff;border:1px solid #93c5fd;}
@@ -2706,7 +2709,8 @@
                     </table>
                 </div>
                 <!-- 현금/수표/어음/외상미수금 + 청구/영수 -->
-                <table class="tif-pay" style="margin-top:12px;">
+                <div class="tif-paywrap">
+                <table class="tif-pay" style="margin-top:12px;min-width:560px;">
                     <thead><tr><th>현금</th><th>수표</th><th>어음</th><th>외상미수금</th><th style="width:180px;">이 금액을</th></tr></thead>
                     <tbody><tr>
                         <td><input id="tif-cash" inputmode="numeric"></td>
@@ -2719,6 +2723,7 @@
                         </td>
                     </tr></tbody>
                 </table>
+                </div>
                 <!-- 하단 버튼 -->
                 <div class="tif-foot">
                     <button class="btn btn-outline" style="padding:10px 20px;" onclick="tifPreview()">발급미리보기</button>
@@ -5673,67 +5678,47 @@
                 })();
 
                 applyFilter();
-                // ☁️ 클라우드 보관함 뷰 — 토글 ON이면 로컬 대신 클라우드에 복사된 목록을 표시.
-                if(window.__sfCloudView){ try{ _sfRenderCloud(ov); }catch(_){} }
+                // ☁️ 클라우드 뷰 — 파일검색과 '완전 동일'한 폴더·파일 그리드 위에 업로드 진행을 오버레이(투명→진행바→불투명).
+                if(window.__sfCloudView){ try{ _sfCloudOverlay(ov); }catch(_){} }
             }
-            // ☁️ 클라우드 보관함 렌더(토글 뷰) — 공유폴더 데이터를 그대로 표시하고, 아이콘별 업로드 진행률을 프로그레스바로 보여준다.
-            //    · 저장됨: 클라우드에 이미 올라간 파일(로컬 삭제와 무관하게 유지)
-            //    · 미저장(반투명): 업로드 대상 → 순차 업로드하며 진행바 표시
-            //    · 클라우드 전용: 로컬엔 없지만 클라우드에 남아있는 파일(클릭 시 로컬로 복원)
-            async function _sfRenderCloud(ov){
+            // ☁️ 클라우드 진행 오버레이용 프로그레스바 생성(파일/폴더 카드 공통)
+            function _sfBar(el){ let bar=el.querySelector('.rc-clbar'); if(!bar){ bar=document.createElement('div'); bar.className='rc-clbar'; bar.style.cssText='position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(15,47,82,.15);z-index:5;overflow:hidden;'; bar.innerHTML='<div style="height:100%;width:0;background:#0f2f52;transition:width .45s ease;"></div>'; const host=el.querySelector('.rc-thumbbox')||el; try{ if(getComputedStyle(host).position==='static') host.style.position='relative'; }catch(_){} host.appendChild(bar); } return bar.firstChild; }
+            // 현재 그리드(파일검색과 동일)의 카드에 클라우드 저장상태를 칠한다: 저장됨=불투명, 미저장=반투명+진행바, 폴더=하위 업로드 비율.
+            function _sfCloudPaint(ov){
                 const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
-                grid.innerHTML='<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">☁️ 클라우드 보관함 준비 중…</div>';
-                const R=window.RCFolder; const _b=(rp)=>{ const a=String(rp||'').split('/'); return a[a.length-1]||rp; };
-                let local=[]; try{ if(R&&R.chosen()) local=await window.RCMirror.walk(R); }catch(_){ local=[]; }
-                let cloud=[]; try{ cloud=await window.RCMirror.list(); }catch(_){ cloud=[]; }
+                const have=window.__sfCloudHave||{}; const all=window.__sfCloudAll||[];
+                const curPrefix=path.length?(path.join('/')+'/'):'';
+                grid.querySelectorAll('.rc-gf[data-here="1"]').forEach(el=>{ const fn=el.getAttribute('data-fname'); if(!fn) return; const rp=curPrefix+fn;
+                    if(have[rp]){ el.style.opacity=''; const b=el.querySelector('.rc-clbar'); if(b) b.remove(); el.setAttribute('data-cloud','1'); }
+                    else { el.style.opacity='0.5'; el.style.transition='opacity .35s'; const f=_sfBar(el); if((parseFloat(f.style.width)||0)<6) f.style.width='6%'; } });
+                grid.querySelectorAll('.rc-gfd').forEach(el=>{ const nm=el.getAttribute('data-name'); if(!nm) return; const pre=curPrefix+nm+'/'; const sub=all.filter(x=>x.rpath.indexOf(pre)===0); const tot=sub.length; const up=sub.filter(x=>have[x.rpath]).length; const pct=tot?Math.round(up/tot*100):100;
+                    if(pct>=100){ el.style.opacity=''; const b=el.querySelector('.rc-clbar'); if(b) b.remove(); } else { el.style.opacity=String(0.5+0.45*(pct/100)); el.style.transition='opacity .35s'; const f=_sfBar(el); f.style.width=pct+'%'; } });
+            }
+            // 파일검색과 동일한 그리드 위에 클라우드 업로드 진행을 오버레이 + 백그라운드 업로드(전체 트리).
+            async function _sfCloudOverlay(ov){
+                let st=null; try{ st=await window.RCMirror.status(); }catch(_){}
+                const canUpload=!!(st&&st.enabled);
+                let cloud=[]; try{ cloud=await window.RCMirror.list(); }catch(_){}
                 const have={}; cloud.forEach(it=>have[it.rpath]=it);
-                const localSet=new Set(local.map(f=>f.rpath));
-                const cloudOnly=cloud.filter(it=>!localSet.has(it.rpath));
-                const pend=local.filter(f=>!(have[f.rpath]&&have[f.rpath].size===f.size));
-                const total=local.length+cloudOnly.length;
-                const head='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 2px 12px;">'
-                    +'<div style="font-weight:800;font-size:15px;color:#0f2f52;">☁️ 클라우드 <span style="color:#94a3b8;font-weight:600;">('+total+')</span></div>'
-                    +'<div style="font-size:12px;color:#64748b;">공유폴더 데이터를 클라우드에 보관합니다. 로컬에서 지워도 클라우드 사본은 유지됩니다. (로컬 보기로 돌아가려면 상단 \'클라우드\' 다시 누르기)</div>'
-                    +'<div style="flex:1;"></div>'
-                    +(pend.length?('<span id="_sf-cloud-prog" style="flex:none;font-size:12px;font-weight:700;color:#0f2f52;">업로드 대기 '+pend.length+'개</span>'):'')
-                    +'</div>';
-                if(!total){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+((R&&R.chosen())?'표시할 데이터가 없습니다.':'먼저 파일검색에서 <b>공유폴더를 지정</b>하세요.')+'</div>'; return; }
-                const zoom=(flt.zoom||150); const ESC=_sfEsc;
-                const localCard=f=>{ const done=have[f.rpath]&&have[f.rpath].size===f.size;
-                    return '<div class="rc-cl" data-rpath="'+ESC(f.rpath)+'" title="'+ESC(f.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;'+(done?'':'opacity:.5;')+'transition:opacity .35s;">'
-                        +'<div style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;color:#5b7fa6;">'+(done?'☁️':'📄')+'</div>'
-                        +'<div class="rc-cl-badge" style="position:absolute;top:6px;right:6px;background:'+(done?'#16a34a':'#94a3b8')+';color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;">'+(done?'저장됨':'대기')+'</div>'
-                        +'<div style="position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(15,47,82,.12);"><div class="rc-cl-bar" style="height:100%;width:'+(done?100:0)+'%;background:#0f2f52;transition:width .4s ease;"></div></div>'
-                        +'</div>'
-                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(_b(f.rpath))+'</div>'
-                        +'</div>'; };
-                const cloudCard=it=>'<div class="rc-cloudf" data-rpath="'+ESC(it.rpath)+'" title="'+ESC(it.rpath)+' (클릭: 로컬로 복원)" style="position:relative;overflow:hidden;background:#fff;border:1px dashed #bcd0e6;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
-                        +'<div style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;color:#5b7fa6;">☁️</div><div style="position:absolute;top:6px;right:6px;background:#0f2f52;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;">클라우드</div></div>'
-                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(_b(it.rpath))+'</div>'
-                        +'</div>';
-                grid.innerHTML=head+'<div class="_sf-secgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;">'+local.map(localCard).join('')+cloudOnly.map(cloudCard).join('')+'</div>';
-                // 클라우드 전용 파일 클릭 → 로컬 복원
-                grid.querySelectorAll('.rc-cloudf').forEach(el=>{ el.addEventListener('click',async()=>{ const rp=el.getAttribute('data-rpath'); if(!confirm('이 파일을 로컬 공유폴더로 복원할까요?\n'+rp)) return; try{ showToast('복원 중…'); await window.RCMirror.restoreOne(rp); showToast('✅ 복원 완료: '+_b(rp)); if(window.__sfCloudView) _sfRenderCloud(ov); }catch(e){ showToast('복원 실패: '+(e.message||'')); } }); });
-                // 미저장 로컬 파일 → 순차 업로드하며 아이콘별 진행바 갱신
-                const cardByPath={}; grid.querySelectorAll('.rc-cl').forEach(el=>cardByPath[el.getAttribute('data-rpath')]=el);
-                const progEl=grid.querySelector('#_sf-cloud-prog');
-                if(pend.length){
-                    let okc=0;
-                    for(let i=0;i<pend.length;i++){ if(!window.__sfCloudView) break;   // 뷰 벗어나면 중단
-                        const f=pend[i]; const card=cardByPath[f.rpath]; const bar=card&&card.querySelector('.rc-cl-bar'); const badge=card&&card.querySelector('.rc-cl-badge');
-                        if(progEl) progEl.textContent='업로드 중 ('+(i+1)+'/'+pend.length+')';
-                        if(badge){ badge.textContent='업로드'; badge.style.background='#0f2f52'; }
-                        try{ if(bar) bar.style.width='15%';
-                            const blob=await R.getFileAt(f.pathArr,f.fname); if(!blob) throw new Error('로컬 파일 읽기 실패');
-                            if(bar) bar.style.width='55%';
-                            await window.RCMirror.uploadOne(f.rpath,blob,f.mime,f.mtime);
-                            if(bar) bar.style.width='100%'; if(card) card.style.opacity='1'; if(badge){ badge.textContent='저장됨'; badge.style.background='#16a34a'; }
-                            okc++;
-                        }catch(e){ if(bar){ bar.style.background='#dc2626'; bar.style.width='100%'; } if(badge){ badge.textContent='실패'; badge.style.background='#dc2626'; }
-                            if(String(e.message||'').indexOf('용량')>=0){ showToast('클라우드 용량이 부족합니다. 용량을 구매해 주세요.'); break; } }
+                let all=[]; try{ if(window.RCFolder&&window.RCFolder.chosen()) all=await window.RCMirror.walk(window.RCFolder); }catch(_){}
+                window.__sfCloudHave=have; window.__sfCloudAll=all;
+                _sfCloudPaint(ov);
+                if(!canUpload) return;
+                const pend=all.filter(f=>!have[f.rpath]);
+                if(!pend.length || window.__sfCloudUploading) return;
+                window.__sfCloudUploading=true;
+                (async()=>{ try{
+                    for(const f of pend){ if(!window.__sfCloudView){ break; }
+                        try{
+                            // 현재 보이는 카드면 '업로드 중' 진행바 표시
+                            if(f.pathArr.join('/')===path.join('/')){ const grid=ov.querySelector('#_sf-grid'); const card=grid&&[].slice.call(grid.querySelectorAll('.rc-gf[data-here="1"]')).find(x=>x.getAttribute('data-fname')===f.fname); if(card){ const fill=_sfBar(card); fill.style.width='45%'; } }
+                            const blob=await window.RCFolder.getFileAt(f.pathArr,f.fname); if(!blob) continue;
+                            await window.RCMirror.uploadOne(f.rpath, blob, f.mime, f.mtime);
+                            have[f.rpath]={ rpath:f.rpath, size:f.size }; window.__sfCloudHave=have;
+                            _sfCloudPaint(ov);
+                        }catch(e){ if(String((e&&e.message)||'').indexOf('용량')>=0){ showToast('클라우드 용량이 부족합니다. 용량을 구매해 주세요.'); break; } }
                     }
-                    if(progEl) progEl.textContent='업로드 완료 '+okc+'/'+pend.length;
-                }
+                } finally { window.__sfCloudUploading=false; _sfCloudPaint(ov); } })();
             }
             render();
         }
@@ -7754,7 +7739,7 @@
                 { const vr=((document.getElementById('inv-vendor')||{}).value||'').trim(); const vf=vr.toLowerCase(), vd=vr.replace(/[^0-9]/g,'');
                   if(vf||vd){ window.taxSettled=(window.taxSettled||[]).filter(v=>{ const nm=String(v.bizName||v.seller||'').toLowerCase(); const bz=String(v.bizNo||'').replace(/[^0-9]/g,''); return (vf&&nm.indexOf(vf)>=0)||(vd&&bz&&bz.indexOf(vd)>=0); }); } }
                 window.taxSettledAdminRevenue=(window.taxSettled||[]).reduce((s,v)=>s+(Number(v.payFee)||0),0); renderSettledAdminRevenue();
-                if(!window.taxSettled.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:#94a3b8;line-height:1.7;">해당 기간에 <b>발행 대상</b>이 없습니다.<br><span style="font-size:11px;">· 아직 <b>정산(지급)</b>을 완료한 매출이 없거나<br>· 정산완료 매출을 <b>이미 모두 세금계산서 발행</b>했을 수 있습니다. (발행 이력은 아래에서 확인)<br>· 정산 전이라면 <b>정산</b> 화면에서 먼저 지급을 완료하세요.</span></td></tr>'; return; }
+                if(!window.taxSettled.length){ body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:18px;color:#94a3b8;line-height:1.7;font-size:13px;">해당 조건(월·기간·업체)에 <b>구매확정된 거래</b>가 없습니다.<br><span style="font-size:12px;">· 전체 업체 기준으로 조회됩니다(정산 여부 무관).<br>· 구매확정된 거래가 있어야 수수료 세금계산서 대상으로 나타납니다.</span></td></tr>'; return; }
                 const _dt=(s)=>taxEscH((s||'').replace('T',' ').substring(0,10));
                 const _bizFmt=(s)=>{ s=taxDigits(s); return s.length===10?(s.slice(0,3)+'-'+s.slice(3,5)+'-'+s.slice(5)):(s||''); };
                 body.innerHTML=window.taxSettled.map((v,i)=>{
@@ -7763,18 +7748,18 @@
                     const headRow=`<tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
                         <td style="text-align:center;"><input type="checkbox" class="settled-vsel" data-i="${i}"></td>
                         <td style="font-weight:800;min-width:200px;">
-                            <div style="font-weight:900;font-size:13px;">${taxEscH(v.bizName||v.seller)} <span style="font-size:10px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span> <span style="font-size:10px;color:#64748b;font-weight:600;">· ${v.count}건</span></div>
-                            ${v.brands?`<div style="font-size:11px;color:#0f2f52;margin-top:1px;">🏪 ${taxEscH(v.brands)}</div>`:''}
-                            <div style="font-size:10px;margin-top:1px;">🏦 ${(v.account||v.bank)?('<span style="color:#0f766e;font-weight:700;">'+taxEscH(v.account||v.bank)+'</span>'):'<span style="color:#dc2626;font-weight:700;">계좌 미등록 ⚠</span>'}</div>
-                            ${v.taxEmail?`<div style="font-size:10px;color:#94a3b8;margin-top:1px;">📧 ${taxEscH(v.taxEmail)}</div>`:''}
+                            <div style="font-weight:900;font-size:15px;">${taxEscH(v.bizName||v.seller)} <span style="font-size:12px;color:#94a3b8;font-weight:400;">(ID: ${taxEscH(v.seller)})</span> <span style="font-size:12px;color:#64748b;font-weight:600;">· ${v.count}건</span></div>
+                            ${v.brands?`<div style="font-size:12px;color:#0f2f52;margin-top:2px;">🏪 ${taxEscH(v.brands)}</div>`:''}
+                            <div style="font-size:12px;margin-top:2px;">🏦 ${(v.account||v.bank)?('<span style="color:#0f766e;font-weight:700;">'+taxEscH(v.account||v.bank)+'</span>'):'<span style="color:#dc2626;font-weight:700;">계좌 미등록 ⚠</span>'}</div>
+                            ${v.taxEmail?`<div style="font-size:12px;color:#94a3b8;margin-top:2px;">📧 ${taxEscH(v.taxEmail)}</div>`:''}
                         </td>
-                        <td style="text-align:center;font-size:11px;">${ready?_bizFmt(v.bizNo):'<span style="color:#dc2626;font-weight:700;">미등록 ⚠</span>'}</td>
-                        <td style="text-align:right;font-weight:800;">${taxFmt(v.fee)}</td>
-                        <td style="text-align:right;font-weight:800;color:#b45309;">${taxFmt(v.vat)}</td>
-                        <td style="text-align:right;font-weight:900;color:#7c3aed;">${taxFmt(v.payFee)}</td>
-                        <td style="text-align:right;font-weight:900;color:#166534;">${taxFmt(v.payout)}</td>
-                        <td style="font-size:11px;">${_dt(v.settledAt)}</td>
-                        <td style="text-align:center;"><button class="btn ${ready?'btn-success':'btn-outline'}" style="padding:5px 12px;font-size:11px;" onclick="issueSettledOne(${i})"${ready?'':' title="사업자번호 미등록 — 발행 전 회원정보에서 등록 권장"'}>발행·PDF</button></td>
+                        <td style="text-align:center;font-size:13px;">${ready?_bizFmt(v.bizNo):'<span style="color:#dc2626;font-weight:700;">미등록 ⚠</span>'}</td>
+                        <td style="text-align:right;font-weight:800;font-size:13px;">${taxFmt(v.fee)}</td>
+                        <td style="text-align:right;font-weight:800;font-size:13px;color:#b45309;">${taxFmt(v.vat)}</td>
+                        <td style="text-align:right;font-weight:900;font-size:13px;color:#7c3aed;">${taxFmt(v.payFee)}</td>
+                        <td style="text-align:right;font-weight:900;font-size:13px;color:#166534;">${taxFmt(v.payout)}</td>
+                        <td style="font-size:12px;">${_dt(v.settledAt)}</td>
+                        <td style="text-align:center;"><button class="btn ${ready?'btn-success':'btn-outline'}" style="padding:6px 14px;font-size:13px;" onclick="issueSettledOne(${i})"${ready?'':' title="사업자번호 미등록 — 발행 전 회원정보에서 등록 권장"'}>발행·PDF</button></td>
                     </tr>`;
                     // 거래 항목(주문 건별) 행 — 세금계산서 품목 라인 미리보기
                     const itemRows=(v.items||[]).map(it=>`<tr style="font-size:11px;color:#475569;">
