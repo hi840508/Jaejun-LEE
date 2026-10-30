@@ -1108,12 +1108,33 @@ function issueToken(name) {
     return token;
 }
 function revokeToken(token) { if (token) { SESSIONS.delete(String(token)); db.run(`DELETE FROM sessions WHERE token = ?`, [String(token)], () => {}); } }
-// 🔐 다기기 로그인 허용(비파괴) — 새 로그인이 기존 세션을 죽이지 않는다.
-//   (기존 '단일 세션 강제'는 알림 클릭·재진입 시 연쇄 로그아웃을 유발해 매우 불편 → 세션 유지 우선.)
-//   토큰은 각자 유효(TTL 30일)하며 정리는 명시적 로그아웃/만료로만. force_logout 미발송.
+// 🔐 단일 세션(마지막 로그인 우선) — '자격증명으로 새로 로그인'할 때만 호출.
+//   같은 계정의 다른 토큰을 모두 무효화하고, 해당 소켓들에 force_logout을 보내 로그아웃시킨다.
+//   ※ 토큰 재사용(auth/ping 재진입)에서는 호출하지 않으므로 알림 클릭·재진입에 의한 연쇄 로그아웃은 발생하지 않는다.
+//   ※ 원격제어 에이전트 장기토큰(issueToken@agent)은 호출하지 않아 영향 없음.
 function _enforceSingleSession(name, keepToken) {
-    // 의도적으로 아무 것도 하지 않음(다기기 동시 로그인 유지). 필요 시 정책을 여기서 재도입.
-    return;
+    try {
+        const keep = String(keepToken || '');
+        // 1) 같은 사용자의 다른 토큰 revoke(메모리+DB)
+        const kill = [];
+        SESSIONS.forEach((v, tok) => { if (v && v.name === name && String(tok) !== keep) kill.push(tok); });
+        kill.forEach(tok => SESSIONS.delete(tok));
+        if (kill.length) db.run(`DELETE FROM sessions WHERE name=? AND token<>?`, [name, keep], () => {});
+        // 2) 해당 사용자의 소켓 중 keep 토큰이 아닌 것 → force_logout 후 끊기
+        try {
+            io.sockets.sockets.forEach(sk => {
+                try {
+                    if (sk.data && sk.data.user === name) {
+                        const tk = sk.handshake && sk.handshake.auth && sk.handshake.auth.token;
+                        if (String(tk || '') !== keep) {
+                            sk.emit('force_logout', { reason: '다른 기기 또는 브라우저에서 로그인되어 이 세션은 로그아웃되었습니다.' });
+                            setTimeout(() => { try { sk.disconnect(true); } catch (_) {} }, 600);
+                        }
+                    }
+                } catch (_) {}
+            });
+        } catch (_) {}
+    } catch (_) {}
 }
 // 🔐 세션 유효기간 30일(길게 — 전원 로그아웃 방지). TTL 초과 세션은 무효화(created 없는 레거시 세션은 통과).
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -2512,7 +2533,7 @@ app.post('/api/auth/login-with-otp', (req, res) => {
         // OTP 사용 처리 + 비밀번호 강제 변경 플래그 설정
         db.run(`UPDATE users SET reset_otp_used = 1, force_pwd_change = 1 WHERE name = ?`, [name], (e2) => {
             row.force_pwd_change = 1;
-            res.json({ success: true, user: Object.assign(stripPwd(row), { isAdmin: isAdminName(row.name) }), token: issueToken(row.name), mustChangePassword: true, isAdmin: isAdminName(row.name) });
+            { const _tk2 = issueToken(row.name); _enforceSingleSession(row.name, _tk2); res.json({ success: true, user: Object.assign(stripPwd(row), { isAdmin: isAdminName(row.name) }), token: _tk2, mustChangePassword: true, isAdmin: isAdminName(row.name) }); }
         });
     });
 });

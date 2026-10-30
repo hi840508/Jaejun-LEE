@@ -6097,8 +6097,14 @@
             socket = io(API_URL, { transports: ['websocket', 'polling'], auth: { token: window.EARTH_TOKEN || localStorage.getItem('earth_token') || '', isApp: !!window.rayApp } });
             // 🔧 핸들러를 안전 래핑 — 핸들러 미정의/예외가 소켓 등록·이후 로그인 초기화를 중단시키지 않도록
             socket.on('receive_message', d => { try { if(typeof handleReceiveMessage==='function') handleReceiveMessage(d); } catch(e){ try{ if(window.__earthDiag) __earthDiag('receive_message: '+(e.message||e), true); }catch(_){} } });
-            // 🔐 다기기 로그인 허용 — force_logout이 오더라도 무시(로그인 상태 유지). 알림 재진입 등으로 세션이 풀리지 않게 한다.
-            socket.on('force_logout', function(){ /* no-op: 다기기 동시 로그인 유지 */ });
+            // 🔐 단일 세션 — 다른 기기/브라우저에서 새로 로그인되면 이 세션은 로그아웃(마지막 로그인 우선).
+            //   토큰 재사용(알림 재진입)에서는 서버가 force_logout을 보내지 않으므로 연쇄 로그아웃은 발생하지 않음.
+            socket.on('force_logout', function(d){
+                try{ if(window.__forcedOut) return; window.__forcedOut=true; }catch(_){}
+                try{ showToast((d&&d.reason)||'다른 기기에서 로그인되어 로그아웃되었습니다.'); }catch(_){}
+                try{ localStorage.removeItem('earth_token'); window.EARTH_TOKEN=''; }catch(_){}
+                setTimeout(function(){ try{ if(typeof logout==='function') logout(); else location.reload(); }catch(_){ try{ location.reload(); }catch(__){} } }, 1200);
+            });
             socket.on('rc_signal', d => { try { if(window._rcOnSignal) window._rcOnSignal(d); } catch(_){} });
             // 🚀 [v9] 재접속 처리 — 서버에 오프라인 큐가 없으므로 재연결 시 채팅목록/현재방 히스토리를 다시 동기화 + 대기 첨부 flush
             socket.on('connect', () => {
