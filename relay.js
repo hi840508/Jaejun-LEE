@@ -3285,6 +3285,40 @@ app.post('/api/admin/backup-price', (req, res) => {
     if (!(price >= 0)) return res.status(400).json({ error: '금액을 확인하세요.' });
     db.run(`INSERT INTO settings(key,value) VALUES('backup_sub_price',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(price)], () => res.json({ ok: true, price }));
 });
+// 💰 운영 재무 현황 — 월 고정 운영비(서버/AWS 등, 관리자 입력) + R2 변동비(추정) + 클라우드저장소 구독 매출. 실제 비용 예측용.
+app.get('/api/admin/ops-finance', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const out = { fixedKrw: 0, subPrice: 9900, subCount: 0, subMonthlyKrw: 0, r2Bytes: 0, r2FreeBytes: (10 * 1024 * 1024 * 1024), usdPerGB: 0.015, usdKrw: 1380 };
+    db.get(`SELECT value FROM settings WHERE key='ops_fixed_krw'`, [], (e1, r1) => {
+        out.fixedKrw = Math.max(0, Math.floor(Number(r1 && r1.value) || 0));
+        db.get(`SELECT value FROM settings WHERE key='backup_sub_price'`, [], (e2, r2) => {
+            out.subPrice = Math.max(0, Math.floor(Number(r2 && r2.value) || 9900));
+            // 활성 클라우드저장소 구독 수·월매출(구독 amount 합)
+            db.all(`SELECT amount FROM subscriptions WHERE kind='backup' AND status='active'`, [], (e3, subs) => {
+                subs = subs || []; out.subCount = subs.length;
+                out.subMonthlyKrw = subs.reduce((s, x) => s + (Math.floor(Number(x.amount) || 0)), 0);
+                // R2 총 사용량(미러 + 구매 저장 등은 mirror_files/cloud_storage 기준 근사)
+                db.get(`SELECT COALESCE(SUM(size),0) AS b FROM mirror_files`, [], (e4, r4) => {
+                    out.r2Bytes = Number(r4 && r4.b) || 0;
+                    const GB = out.r2Bytes / (1024 * 1024 * 1024), freeGB = out.r2FreeBytes / (1024 * 1024 * 1024);
+                    const billGB = Math.max(0, GB - freeGB);
+                    out.r2Krw = Math.round(billGB * out.usdPerGB * out.usdKrw);
+                    out.totalCostKrw = out.fixedKrw + out.r2Krw;        // 예상 월 총 운영비
+                    out.netKrw = out.subMonthlyKrw - out.totalCostKrw;  // 순손익(구독매출 - 운영비)
+                    res.json(out);
+                });
+            });
+        });
+    });
+});
+app.post('/api/admin/ops-fixed', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const krw = Math.max(0, Math.floor(Number(req.body.fixedKrw) || 0));
+    db.run(`INSERT INTO settings(key,value) VALUES('ops_fixed_krw',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(krw)], (e) => {
+        if (e) return res.status(500).json({ error: e.message });
+        res.json({ ok: true, fixedKrw: krw });
+    });
+});
 app.post('/api/mirror/upload-url', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
     if (!requireMirrorOn(req, res)) return;
