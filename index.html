@@ -4606,6 +4606,30 @@
                 }catch(e){ go.disabled=false; go.textContent='선택 용량으로 구독 시작'; showToast(e.message||'구독 취소'); }
             };
         };
+        // ☁️ 용량 변경/증설 — 현재 구독의 용량을 다른 옵션으로 변경(즉시 반영, 금액은 다음 청구부터).
+        window._openCapacityChange = function(sub, onDone){
+            const _gb=g=>g>=1024?((g/1024)+'TB'):(g+'GB');
+            const opts=(sub&&sub.options&&sub.options.length)?sub.options:[{gb:100,price:2500},{gb:500,price:12500},{gb:1024,price:25600},{gb:5120,price:128000}];
+            const curGb=(sub&&sub.capacityGb)||0; window.__ccSel=curGb||opts[0].gb;
+            const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4660;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:18px;';
+            const rows=opts.map((t,i)=>'<label class="_cc-opt" data-gb="'+t.gb+'" style="display:flex;align-items:center;gap:10px;border:2px solid '+((curGb?t.gb===curGb:i===0)?'#0b2b4b':'#e2e8f0')+';border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;">'
+                +'<input type="radio" name="_cc" value="'+t.gb+'" '+((curGb?t.gb===curGb:i===0)?'checked':'')+' style="accent-color:#0b2b4b;">'
+                +'<div style="flex:1;font-weight:800;font-size:14px;">'+_gb(t.gb)+(t.gb===curGb?' <span style="font-size:11px;color:#166534;">(현재)</span>':'')+'</div>'
+                +'<div style="font-weight:900;font-size:15px;">월 '+t.price.toLocaleString()+'원</div></label>').join('');
+            ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:420px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:86vh;overflow:auto;">'
+                +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div style="font-weight:800;font-size:16px;">＋ 클라우드 용량 변경</div><button id="_cc-x" style="margin-left:auto;border:0;background:#f1f5f9;border-radius:8px;width:30px;height:30px;cursor:pointer;">✕</button></div>'
+                +'<div style="font-size:12px;color:#64748b;margin-bottom:12px;">새 용량은 <b>즉시 반영</b>되고, 변경된 월요금은 <b>다음 결제부터</b> 적용됩니다.</div>'
+                +rows
+                +'<button id="_cc-go" style="width:100%;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;cursor:pointer;margin-top:4px;">이 용량으로 변경</button>'
+                +'</div>';
+            document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+            ov.querySelector('#_cc-x').onclick=()=>ov.remove();
+            ov.querySelectorAll('._cc-opt').forEach(el=>el.addEventListener('click',()=>{ window.__ccSel=Number(el.getAttribute('data-gb')); ov.querySelectorAll('._cc-opt').forEach(x=>x.style.borderColor=(x===el?'#0b2b4b':'#e2e8f0')); const rb=el.querySelector('input'); if(rb) rb.checked=true; }));
+            ov.querySelector('#_cc-go').onclick=async()=>{ const gb=window.__ccSel; const go=ov.querySelector('#_cc-go'); go.disabled=true; go.textContent='변경 중…';
+                try{ const r=await fetch(API_URL+'/api/mirror/change-capacity',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({gb})}); const d=await r.json(); if(!r.ok||!d.ok){ if(d.needSubscribe){ ov.remove(); if(window.openCloudBackup) openCloudBackup(); return; } throw new Error(d.error||'변경 실패'); }
+                    ov.remove(); showToast('✅ 용량을 '+_gb(gb)+'(으)로 변경했습니다. 월 '+(Number(d.amount)||0).toLocaleString()+'원(다음 결제부터)'); if(onDone) onDone(); }
+                catch(e){ go.disabled=false; go.textContent='이 용량으로 변경'; showToast('변경 실패: '+(e.message||e)); } };
+        };
         window.openMirrorPanel = async function(){
             const fmt=(b)=>{ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
             const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -4624,8 +4648,8 @@
                 // 구독 배너(카드 자동결제) — 미구독이면 구독 시작, 구독 중이면 상태+관리
                 const subBanner = billingOn
                     ? (subActive
-                        ? '<div style="display:flex;align-items:center;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:12px;"><span style="font-weight:800;color:#166534;">월 구독 중</span><span style="font-size:12px;color:#64748b;">· 월 '+subPrice.toLocaleString()+'원 자동결제</span><button id="_mir-manage" style="margin-left:auto;padding:6px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">구독 관리</button></div>'
-                        : '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px;margin-bottom:12px;"><div style="font-weight:800;color:#0f2f52;margin-bottom:4px;">클라우드저장소 월 구독</div><div style="font-size:12px;color:#64748b;margin-bottom:8px;">월 '+subPrice.toLocaleString()+'원(카드 자동결제)으로 데이터를 안전하게 저장·복원합니다.</div><button id="_mir-sub" style="width:100%;padding:11px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;cursor:pointer;">월 '+subPrice.toLocaleString()+'원 구독 시작</button></div>')
+                        ? '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-weight:800;color:#166534;">월 구독 중</span><span style="font-size:12px;color:#64748b;">· '+(s.tierLabel?(s.tierLabel+' · '):'')+'월 '+(Number(sub&&sub.amount)||subPrice).toLocaleString()+'원 자동결제</span></div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button id="_mir-chcap" style="flex:1;min-width:110px;padding:8px 12px;border:none;border-radius:8px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-size:12px;font-weight:800;cursor:pointer;">＋ 용량 변경/증설</button><button id="_mir-manage" style="flex:1;min-width:110px;padding:8px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">구독 관리(해지 등)</button></div></div>'
+                        : '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px;margin-bottom:12px;"><div style="font-weight:800;color:#0f2f52;margin-bottom:4px;">클라우드저장소 월 구독</div><div style="font-size:12px;color:#64748b;margin-bottom:8px;">기본 100MB 무료 · 추가 용량 '+((sub&&sub.gbPrice)||25)+'원/GB(100GB '+(((sub&&sub.gbPrice)||25)*100).toLocaleString()+'원). 용량을 선택해 구독하세요.</div><button id="_mir-sub" style="width:100%;padding:11px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;cursor:pointer;">용량 선택하고 구독 시작</button></div>')
                     : '';
                 body.innerHTML= subBanner
                   +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><label style="font-weight:700;">클라우드저장소 사용</label>'
@@ -4636,6 +4660,7 @@
                 const prog=body.querySelector('#_mir-prog');
                 { const sb=body.querySelector('#_mir-sub'); if(sb) sb.onclick=()=>{ ov.remove(); if(window.openCloudBackup) openCloudBackup(); }; }
                 { const mg=body.querySelector('#_mir-manage'); if(mg) mg.onclick=()=>{ ov.remove(); if(typeof switchTab==='function') switchTab('wallet'); }; }
+                { const cc=body.querySelector('#_mir-chcap'); if(cc) cc.onclick=()=>{ _openCapacityChange(sub, ()=>refresh()); }; }
                 body.querySelector('#_mir-tog').onclick=async()=>{ await window.RCMirror.enable(!s.enabled); refresh(); };
                 body.querySelector('#_mir-bk').onclick=async()=>{ if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('먼저 공유폴더를 지정하세요.'); return; } prog.textContent='백업 시작…'; try{ const r=await window.RCMirror.backupAll((d,t,nm,st)=>{ prog.textContent='('+d+'/'+t+') '+st+': '+nm; }); prog.textContent='✅ 백업 완료 — 업로드 '+r.up+' · 건너뜀 '+r.skip+' · 실패 '+r.fail; refresh(); }catch(e){ prog.textContent='❌ '+(e.message||e); } };
                 body.querySelector('#_mir-rs').onclick=async()=>{ if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('먼저 공유폴더를 지정하세요.'); return; } const ok=await window._sfConfirm('클라우드 백업본을 현재 공유폴더로 복원합니다. 같은 이름 파일은 덮어씁니다.\n계속하시겠습니까?','복원'); if(!ok) return; prog.textContent='복원 시작…'; try{ const r=await window.RCMirror.restoreAll((d,t,rp)=>{ prog.textContent='('+d+'/'+t+') 복원: '+rp; }); prog.textContent='✅ 복원 완료 — 성공 '+r.ok+' · 실패 '+r.fail; }catch(e){ prog.textContent='❌ '+(e.message||e); } };
@@ -5760,10 +5785,11 @@
                 const ESC=(typeof _sfEsc==='function')?_sfEsc:(s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
                 const zoom=(flt.zoom||150);
                 if(!items.length){ grid.innerHTML='<div style="padding:44px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">클라우드 저장소에 데이터가 없습니다.<br><span style="font-size:12px;">PC에서 파일검색 ▸ 클라우드 저장소로 올리면 모바일에서도 바로 조회됩니다.</span></div>'; return; }
+                const _isImg=n=>/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(n);
                 const cards=items.map(it=>{ const nm=_b(it.rpath); const sub=(it.rpath||'').split('/').slice(0,-1).join(' / ');
-                    return '<div class="rc-clview" data-rpath="'+ESC(it.rpath)+'" title="'+ESC(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
-                        +'<div style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;color:#5b7fa6;">'+_sfCloudIcon(nm)+'</div>'
-                        +'<button class="rc-clshare" data-rpath="'+ESC(it.rpath)+'" title="다른 계정으로 즉시 공유" style="position:absolute;top:6px;right:6px;width:28px;height:28px;border:none;border-radius:8px;background:rgba(15,47,82,.82);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">🤝</button></div>'
+                    return '<div class="rc-clview" data-rpath="'+ESC(it.rpath)+'"'+(_isImg(nm)?' data-img="1"':'')+' title="'+ESC(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
+                        +'<div class="rc-clthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="rc-clic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;color:#5b7fa6;">'+_sfCloudIcon(nm)+'</div>'
+                        +'<button class="rc-clshare" data-rpath="'+ESC(it.rpath)+'" title="다른 계정으로 즉시 공유" style="position:absolute;top:6px;right:6px;width:28px;height:28px;border:none;border-radius:8px;background:rgba(15,47,82,.82);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;">🤝</button></div>'
                         +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
                         +(sub?('<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub)+'</div>'):'')
                         +'</div>'; }).join('');
@@ -5771,6 +5797,14 @@
                     +'<div class="_sf-secgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;">'+cards+'</div>';
                 grid.querySelectorAll('.rc-clview').forEach(el=>el.addEventListener('click',()=>{ _sfOpenCloudFile(el.getAttribute('data-rpath')); }));
                 grid.querySelectorAll('.rc-clshare').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _sfShareCloudFile(el.getAttribute('data-rpath')); }));
+                // 🖼 이미지 클라우드 파일 → 프리사인 URL로 썸네일 지연 로드(동시 4개)
+                (async()=>{ const imgCards=[].slice.call(grid.querySelectorAll('.rc-clview[data-img="1"]')); let i=0; const CONC=4;
+                    async function w(){ while(i<imgCards.length){ if(!window.__sfCloudView) return; const el=imgCards[i++]; const rp=el.getAttribute('data-rpath');
+                        try{ const d=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:rp})}).then(r=>r.json());
+                            if(d&&d.url){ const box=el.querySelector('.rc-clthumb'); const ic=el.querySelector('.rc-clic'); if(box){ const im=new Image(); im.onload=()=>{ if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+d.url+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'); }; im.src=d.url; } } }catch(_){}
+                    } }
+                    const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws);
+                })();
             }
             function _sfCloudIcon(nm){ const l=String(nm||'').toLowerCase(); if(/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(l)) return '🖼️'; if(/\.(mp4|mov|webm|avi|mkv)$/.test(l)) return '🎞️'; if(/\.(pdf)$/.test(l)) return '📕'; if(/\.(ply|stl|obj|glb|gltf)$/.test(l)) return '🧊'; if(/\.(dcm|dicom)$/.test(l)) return '🩻'; if(/\.(docx?|xlsx?|pptx?|hwp|txt|csv)$/.test(l)) return '📄'; return '📁'; }
             // 클라우드 파일을 즉시 조회 — 프리사인 URL로 이미지/영상/문서는 미리보기, 그 외는 새 탭.

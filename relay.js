@@ -3201,10 +3201,14 @@ function _mirrorUsage(name, cb) {   // cb(err, {used, quota, purchased, enabled,
         if (e) return cb(e);
         db.get(`SELECT purchasedBytes FROM cloud_storage WHERE name = ?`, [name], (e2, c) => {
             db.get(`SELECT enabled FROM mirror_prefs WHERE userName = ?`, [name], (e3, p) => {
-                // ☁️ 활성 구독 용량(capacity_gb) → 저장 용량 연동
-                db.get(`SELECT amount, capacity_gb FROM subscriptions WHERE owner=? AND kind='backup' AND status='active' ORDER BY id DESC LIMIT 1`, [name], (e4, sub) => {
+                // ☁️ 활성 구독 용량(capacity_gb) → 저장 용량 연동. 구버전 구독(capacity_gb=0)은 금액/GB요금으로 환산.
+                db.get(`SELECT id, amount, capacity_gb FROM subscriptions WHERE owner=? AND kind='backup' AND status='active' ORDER BY id DESC LIMIT 1`, [name], (e4, sub) => {
                     const purchased = (c && c.purchasedBytes) || 0;
-                    const capGb = sub ? Math.max(0, Math.floor(Number(sub.capacity_gb) || 0)) : 0;
+                    let capGb = sub ? Math.max(0, Math.floor(Number(sub.capacity_gb) || 0)) : 0;
+                    if (sub && !capGb && Number(sub.amount) > 0 && CLOUD_GB_PRICE > 0) {
+                        capGb = Math.max(1, Math.round(Number(sub.amount) / CLOUD_GB_PRICE));   // 구버전 보정
+                        db.run(`UPDATE subscriptions SET capacity_gb=? WHERE id=?`, [capGb, sub.id], () => {});   // 영구 백필
+                    }
                     const subBytes = capGb * GB_BYTES;
                     const tierLabel = capGb ? (capGb >= 1024 ? ((capGb / 1024) + 'TB') : (capGb + 'GB')) : null;
                     cb(null, { used: (r && r.used) || 0, purchased, subBytes, capacityGb: capGb, tierLabel, quota: CLOUD_FREE_BYTES + purchased + subBytes, enabled: !!(p && p.enabled) });
@@ -3305,6 +3309,25 @@ app.post('/api/mirror/unsubscribe', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     db.run(`UPDATE subscriptions SET status='canceled', updated_at=? WHERE owner=? AND kind='backup' AND status IN ('active','paused','failed')`, [new Date().toISOString(), me], function () {
         db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,0) ON CONFLICT(userName) DO UPDATE SET enabled=0`, [me], () => res.json({ ok: true }));
+    });
+});
+// ☁️ 용량 변경(증설/감축) — 활성 구독의 capacity_gb·amount·goodsName 갱신. 용량은 즉시 반영, 변경 금액은 다음 청구부터 적용.
+//    구독이 없으면 신규 구독으로 안내(needSubscribe).
+app.post('/api/mirror/change-capacity', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    let gb = Math.max(0, Math.floor(Number(req.body && req.body.gb) || 0));
+    if (!CLOUD_CAP_OPTIONS.includes(gb)) return res.status(400).json({ error: '선택 가능한 용량이 아닙니다.' });
+    db.get(`SELECT id FROM subscriptions WHERE owner=? AND kind='backup' AND status='active' ORDER BY id DESC LIMIT 1`, [me], (e, sub) => {
+        if (e) return res.status(500).json({ error: e.message });
+        if (!sub) return res.status(409).json({ error: '활성 구독이 없습니다. 먼저 구독하세요.', needSubscribe: true });
+        const amount = Math.round(gb * CLOUD_GB_PRICE);
+        const capLabel = gb >= 1024 ? ((gb / 1024) + 'TB') : (gb + 'GB');
+        const goods = 'RAYCloud 클라우드저장소 (' + capLabel + ')';
+        db.run(`UPDATE subscriptions SET capacity_gb=?, amount=?, goodsName=?, label=?, updated_at=? WHERE id=?`,
+            [gb, amount, goods, ('클라우드저장소 ' + capLabel), new Date().toISOString(), sub.id], (ue) => {
+                if (ue) return res.status(500).json({ error: ue.message });
+                res.json({ ok: true, gb, amount, capLabel });
+            });
     });
 });
 // ☁️ [관리자] 백업 월 구독료 설정
