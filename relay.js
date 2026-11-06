@@ -992,6 +992,7 @@ function initTables() {
         db.run(`ALTER TABLE subscriptions ADD COLUMN kind TEXT DEFAULT 'generic'`, () => {});   // 🔁 구독 종류: generic | backup(클라우드저장소)
         db.run(`ALTER TABLE subscriptions ADD COLUMN capacity_gb INTEGER DEFAULT 0`, () => {});   // ☁️ 클라우드저장소 구독 용량(GB)
         db.run(`ALTER TABLE subscriptions ADD COLUMN cancel_at TEXT`, () => {});   // 🗓 해지 예정일(이 날까지 이용, 이후 만료 · 월할 유지)
+        db.run(`ALTER TABLE subscriptions ADD COLUMN consent_at TEXT`, () => {});   // ✅ 정기결제 동의 시각(감사 로그)
         // 💳 [KICC PG 대비] 결제 세션 상태 추적(멱등·재조회·정산 대사용). 리다이렉트/결제창 비동기 흐름의 단일 진실원천.
         //   status: requested(결제요청·창오픈) → authorized(승인토큰 수신) → approved(최종승인/매입) → failed | canceled | expired
         db.run(`CREATE TABLE IF NOT EXISTS pg_payments (
@@ -1038,8 +1039,9 @@ function initTables() {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('mirror_enabled', '0')`, () => {});
             // ☁️ [공유폴더 백업 구독] 월 구독료(원). 관리자 변경 가능.
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('backup_sub_price', '9900')`, () => {});
-            // ☁️ [클라우드저장소] GB당 월요금(원). 기본 25원/GB(=100GB 2,500원). 관리자 변경 가능.
-            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('cloud_gb_price', '25')`, () => {});
+            // ☁️ [클라우드저장소] GB당 월요금(원). 기본 50원/GB(=100GB 5,000원). 관리자 변경 가능.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('cloud_gb_price', '50')`, () => {});
+            db.run(`UPDATE settings SET value='50' WHERE key='cloud_gb_price' AND value='25'`, () => {});   // 기존 기본값(25) → 50 상향(관리자 지정값은 25가 아니면 유지)
         });
 
         // 🧾 전자세금계산서 이력 + 정산 기본 변수(모두 settings로 변경 가능): VAT율 10%, 결제수수료율 2.7%, SW 월사용료 10000원
@@ -3150,10 +3152,10 @@ const CLOUD_PRICE_PER_GB = 60;
 // ☁️ 클라우드저장소 — 무료 100MB 초과분은 GB당 월요금(cloud_gb_price, 기본 25원/GB = 100GB 2,500원)으로 용량 구독.
 const GB_BYTES = 1024 * 1024 * 1024;
 const CLOUD_CAP_OPTIONS = [100, 500, 1024, 5120];   // 구독 선택 용량(GB): 100GB·500GB·1TB·5TB
-let CLOUD_GB_PRICE = 25;   // 원/GB (설정에서 로드)
+let CLOUD_GB_PRICE = 50;   // 원/GB (설정에서 로드, 기본 50 = 100GB 5,000원)
 function _loadCloudGbPrice(cb) {
     db.get(`SELECT value FROM settings WHERE key='cloud_gb_price'`, [], (e, r) => {
-        const v = Math.max(1, Math.floor(Number(r && r.value) || 25));
+        const v = Math.max(1, Math.floor(Number(r && r.value) || 50));
         CLOUD_GB_PRICE = v; if (cb) cb(v);
     });
 }
@@ -3292,6 +3294,9 @@ app.get('/api/mirror/subscription', (req, res) => {
 app.post('/api/mirror/subscribe', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     if (PG_PROVIDER !== 'kicc') return res.status(400).json({ error: '카드결제(PG)가 활성화되어야 백업 구독을 이용할 수 있습니다.' });
+    // ✅ 정기결제(자동갱신) 동의 필수 — 전자상거래법상 사전 동의 확인
+    const agreed = !!(req.body && (req.body.agreed === true || req.body.agreed === 1 || req.body.agreed === '1'));
+    if (!agreed) return res.status(400).json({ error: '정기결제(매월 자동결제) 동의가 필요합니다.', needConsent: true });
     db.get(`SELECT * FROM billing_keys WHERE owner=? AND status='active' ORDER BY id DESC LIMIT 1`, [me], (e, card) => {
         if (e) return res.status(500).json({ error: e.message });
         if (!card) return res.status(409).json({ error: '등록된 결제 카드가 없습니다. 먼저 카드를 등록하세요.', needCard: true });
@@ -3305,8 +3310,8 @@ app.post('/api/mirror/subscribe', (req, res) => {
                 const capLabel = gb >= 1024 ? ((gb / 1024) + 'TB') : (gb + 'GB');
                 const goods = 'RAYCloud 클라우드저장소 (' + capLabel + ')';
                 const now = new Date(); const next = _addIntervalISO(now.toISOString(), 'monthly', 1);
-                db.run(`INSERT INTO subscriptions (owner, billingId, seller, amount, goodsName, intervalType, intervalCount, nextChargeAt, status, kind, label, capacity_gb, created_at, updated_at) VALUES (?,?,?,?,?, 'monthly', 1, ?, 'active', 'backup', ?, ?, ?, ?)`,
-                    [me, card.id, _adminAccount(), amount, goods, next, ('클라우드저장소 ' + capLabel), gb, now.toISOString(), now.toISOString()], function (ie) {
+                db.run(`INSERT INTO subscriptions (owner, billingId, seller, amount, goodsName, intervalType, intervalCount, nextChargeAt, status, kind, label, capacity_gb, consent_at, created_at, updated_at) VALUES (?,?,?,?,?, 'monthly', 1, ?, 'active', 'backup', ?, ?, ?, ?, ?)`,
+                    [me, card.id, _adminAccount(), amount, goods, next, ('클라우드저장소 ' + capLabel), gb, now.toISOString(), now.toISOString(), now.toISOString()], function (ie) {
                         if (ie) return res.status(500).json({ error: ie.message });
                         const subId = this.lastID;
                         db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,1) ON CONFLICT(userName) DO UPDATE SET enabled=1`, [me]);   // 백업 즉시 활성화
