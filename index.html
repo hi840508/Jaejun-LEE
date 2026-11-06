@@ -5911,13 +5911,22 @@
                     let top=r.bottom+6; if(top+mh>innerHeight-8) top=Math.max(8, r.top-mh-6);
                     menu.style.left=left+'px'; menu.style.top=top+'px';
                 }catch(_){ menu.style.left='20px'; menu.style.top='60px'; }
-                const close=()=>back.remove();
+                // 닫기: 메뉴 밖 클릭/우클릭(문서 전역 캡처) + ESC. 백드롭 fixed가 변형된 조상 때문에 안 먹는 경우까지 대비.
+                let closed=false;
+                const onDown=(e)=>{ if(menu.contains(e.target)) return; e.preventDefault(); e.stopPropagation(); close(); };
+                const onCtx=(e)=>{ e.preventDefault(); e.stopPropagation(); close(); };
+                const onKey=(e)=>{ if(e.key==='Escape'){ e.preventDefault(); close(); } };
+                const close=()=>{ if(closed) return; closed=true; try{ document.removeEventListener('pointerdown',onDown,true); document.removeEventListener('mousedown',onDown,true); document.removeEventListener('contextmenu',onCtx,true); document.removeEventListener('keydown',onKey,true); }catch(_){} try{ back.remove(); }catch(_){} };
                 back.addEventListener('click',e=>{ if(e.target===back) close(); });
+                back.addEventListener('contextmenu',e=>{ e.preventDefault(); close(); });
+                // 메뉴를 연 클릭이 즉시 닫지 않도록 다음 틱에 전역 리스너 등록
+                setTimeout(()=>{ if(closed) return; document.addEventListener('pointerdown',onDown,true); document.addEventListener('mousedown',onDown,true); document.addEventListener('contextmenu',onCtx,true); document.addEventListener('keydown',onKey,true); },0);
                 menu.querySelector('#_ca-open').onclick=()=>{ close(); if(typeof _sfOpenCloudFile==='function') _sfOpenCloudFile(rpath); };
                 menu.querySelector('#_ca-share').onclick=()=>{ close(); if(typeof _sfShareCloudFile==='function') _sfShareCloudFile(rpath); };
                 menu.querySelector('#_ca-del').onclick=async()=>{
+                    close();
                     const ok=await (window._sfConfirm?window._sfConfirm('이 파일을 클라우드에서 완전히 삭제할까요?\n'+nm+'\n\n(복원할 수 없습니다)','삭제'):Promise.resolve(confirm('클라우드에서 삭제할까요?')));
-                    if(!ok){ close(); return; } close();
+                    if(!ok) return;
                     try{ await window.RCMirror.del(rpath); showToast('삭제했습니다.'); if(window.__sfCloudReload) window.__sfCloudReload(); }catch(err){ showToast('삭제 실패: '+((err&&err.message)||err)); }
                 };
             };
