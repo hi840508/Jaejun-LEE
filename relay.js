@@ -3424,6 +3424,42 @@ app.get('/api/mirror/list', (req, res) => {
         res.json({ items: rows || [] });
     });
 });
+// ☁️🤝 클라우드 → 클라우드 즉시 공유 — 보낸 사람의 클라우드 파일을 받는 사람의 클라우드로 서버측 복사(다운로드/재업로드 없음).
+//    받는 사람 용량이 충분하면 즉시 그의 클라우드저장소에서 조회 가능. (대화방/공유에서 호출)
+app.post('/api/mirror/share-to', async (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const rpath = String(req.body.rpath || ''); const to = String(req.body.to || '').trim();
+    if (!rpath || !to) return res.status(400).json({ error: 'rpath·to 필요' });
+    if (to === me) return res.status(400).json({ error: '본인에게는 공유할 수 없습니다.' });
+    db.get(`SELECT rpath, key, size, mime, mtime FROM mirror_files WHERE userName=? AND rpath=?`, [me, rpath], (e, src) => {
+        if (e) return res.status(500).json({ error: e.message });
+        if (!src) return res.status(404).json({ error: '클라우드에 없는 파일입니다.' });
+        db.get(`SELECT name FROM users WHERE name=?`, [to], (e2, u) => {
+            if (!u) return res.status(404).json({ error: '받는 회원을 찾을 수 없습니다.' });
+            // 받는 사람 용량 확인 — 부족하면 구독 유도용 에러
+            _mirrorUsage(to, (e3, usage) => {
+                const used = (usage && usage.used) || 0, quota = (usage && usage.quota) || CLOUD_FREE_BYTES;
+                if (used + (src.size || 0) > quota) return res.status(409).json({ error: '받는 분의 클라우드 용량이 부족합니다.', needCapacity: true });
+                const base = String(rpath).split('/').pop();
+                const destRpath = '공유받음/' + me + '/' + base;
+                const destKey = _mirrorKey(to, destRpath);
+                (async () => {
+                    try {
+                        const { CopyObjectCommand } = require('@aws-sdk/client-s3');
+                        await _r2.client.send(new CopyObjectCommand({ Bucket: _r2.bucket, CopySource: encodeURIComponent(_r2.bucket + '/' + src.key), Key: destKey, MetadataDirective: 'COPY' }));
+                        db.run(`INSERT INTO mirror_files (userName, rpath, key, size, mime, mtime) VALUES (?,?,?,?,?,?) ON CONFLICT(userName, rpath) DO UPDATE SET key=?, size=?, mime=?, mtime=?`,
+                            [to, destRpath, destKey, src.size || 0, src.mime || '', Date.now(), destKey, src.size || 0, src.mime || '', Date.now()], (ie) => {
+                                if (ie) return res.status(500).json({ error: ie.message });
+                                try { io.to('user:' + to).emit('cloud_shared', { from: me, name: base, rpath: destRpath }); } catch (_) {}
+                                res.json({ ok: true, to, rpath: destRpath, name: base });
+                            });
+                    } catch (ce) { res.status(500).json({ error: '클라우드 복사 실패: ' + ((ce && ce.message) || ce) }); }
+                })();
+            });
+        });
+    });
+});
 app.post('/api/mirror/download-url', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
     if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
