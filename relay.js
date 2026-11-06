@@ -991,6 +991,7 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, billingId INTEGER, seller TEXT, amount INTEGER, goodsName TEXT, intervalType TEXT DEFAULT 'monthly', intervalCount INTEGER DEFAULT 1, nextChargeAt TEXT, status TEXT DEFAULT 'active', failCount INTEGER DEFAULT 0, lastChargedAt TEXT, lastPgCno TEXT, label TEXT, created_at TEXT, updated_at TEXT)`, () => {});
         db.run(`ALTER TABLE subscriptions ADD COLUMN kind TEXT DEFAULT 'generic'`, () => {});   // 🔁 구독 종류: generic | backup(클라우드저장소)
         db.run(`ALTER TABLE subscriptions ADD COLUMN capacity_gb INTEGER DEFAULT 0`, () => {});   // ☁️ 클라우드저장소 구독 용량(GB)
+        db.run(`ALTER TABLE subscriptions ADD COLUMN cancel_at TEXT`, () => {});   // 🗓 해지 예정일(이 날까지 이용, 이후 만료 · 월할 유지)
         // 💳 [KICC PG 대비] 결제 세션 상태 추적(멱등·재조회·정산 대사용). 리다이렉트/결제창 비동기 흐름의 단일 진실원천.
         //   status: requested(결제요청·창오픈) → authorized(승인토큰 수신) → approved(최종승인/매입) → failed | canceled | expired
         db.run(`CREATE TABLE IF NOT EXISTS pg_payments (
@@ -1612,6 +1613,13 @@ function _subscriptionSweep() {
         db.all(`SELECT * FROM subscriptions WHERE status='active' AND nextChargeAt IS NOT NULL AND nextChargeAt<=? ORDER BY id LIMIT 50`, [nowISO], (e, rows) => {
             if (e || !rows || !rows.length) return;
             rows.forEach(sub => {
+                // 🗓 해지 예정일 도래 → 청구하지 않고 만료(이용기간 종료). 클라우드저장소는 미러 off(용량 회수).
+                if (sub.cancel_at && new Date(sub.cancel_at) <= new Date()) {
+                    db.run(`UPDATE subscriptions SET status='canceled', updated_at=? WHERE id=?`, [new Date().toISOString(), sub.id]);
+                    if (sub.kind === 'backup') db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,0) ON CONFLICT(userName) DO UPDATE SET enabled=0`, [sub.owner]);
+                    console.log('[구독 해지예정 만료]', sub.id, sub.owner);
+                    return;
+                }
                 _billingCharge({ billingId: sub.billingId, amount: sub.amount, goodsName: sub.goodsName, seller: sub.seller, subscriptionId: sub.id }, (err, out) => {
                     const now = new Date();
                     if (err) {
@@ -1731,8 +1739,16 @@ function _subAction(req, res, apply) {
     });
 }
 app.post('/api/pg/subscriptions/:id/pause', (req, res) => _subAction(req, res, (sub) => db.run(`UPDATE subscriptions SET status='paused', updated_at=? WHERE id=?`, [new Date().toISOString(), sub.id], () => res.json({ ok: true, status: 'paused' }))));
-app.post('/api/pg/subscriptions/:id/resume', (req, res) => _subAction(req, res, (sub) => { const next = (sub.nextChargeAt && new Date(sub.nextChargeAt) > new Date()) ? sub.nextChargeAt : _addIntervalISO(new Date().toISOString(), sub.intervalType, sub.intervalCount); db.run(`UPDATE subscriptions SET status='active', failCount=0, nextChargeAt=?, updated_at=? WHERE id=?`, [next, new Date().toISOString(), sub.id], () => res.json({ ok: true, status: 'active', nextChargeAt: next })); }));
-app.post('/api/pg/subscriptions/:id/cancel', (req, res) => _subAction(req, res, (sub) => db.run(`UPDATE subscriptions SET status='canceled', updated_at=? WHERE id=?`, [new Date().toISOString(), sub.id], () => res.json({ ok: true, status: 'canceled' }))));
+app.post('/api/pg/subscriptions/:id/resume', (req, res) => _subAction(req, res, (sub) => { const next = (sub.nextChargeAt && new Date(sub.nextChargeAt) > new Date()) ? sub.nextChargeAt : _addIntervalISO(new Date().toISOString(), sub.intervalType, sub.intervalCount); db.run(`UPDATE subscriptions SET status='active', failCount=0, cancel_at=NULL, nextChargeAt=?, updated_at=? WHERE id=?`, [next, new Date().toISOString(), sub.id], () => { if (sub.kind === 'backup') db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,1) ON CONFLICT(userName) DO UPDATE SET enabled=1`, [sub.owner]); res.json({ ok: true, status: 'active', nextChargeAt: next }); }); }));
+// 해지 — 클라우드저장소(backup)는 '월할 유지': 이미 결제한 기간(nextChargeAt)까지 이용 후 만료. 그 외 구독은 즉시 해지.
+app.post('/api/pg/subscriptions/:id/cancel', (req, res) => _subAction(req, res, (sub) => {
+    const now = new Date();
+    if (sub.kind === 'backup' && sub.status === 'active' && sub.nextChargeAt && new Date(sub.nextChargeAt) > now) {
+        db.run(`UPDATE subscriptions SET cancel_at=?, updated_at=? WHERE id=?`, [sub.nextChargeAt, now.toISOString(), sub.id], () => res.json({ ok: true, status: 'active', canceling: true, cancelAt: sub.nextChargeAt }));
+    } else {
+        db.run(`UPDATE subscriptions SET status='canceled', updated_at=? WHERE id=?`, [now.toISOString(), sub.id], () => { if (sub.kind === 'backup') db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,0) ON CONFLICT(userName) DO UPDATE SET enabled=0`, [sub.owner]); res.json({ ok: true, status: 'canceled' }); });
+    }
+}));
 app.post('/api/pg/subscriptions/:id/charge-now', (req, res) => _subAction(req, res, (sub) => {
     if (sub.status === 'canceled') return res.status(409).json({ error: '해지된 구독입니다.' });
     _billingCharge({ billingId: sub.billingId, amount: sub.amount, seller: sub.seller, goodsName: sub.goodsName, subscriptionId: sub.id }, (err, out) => {
@@ -3266,7 +3282,7 @@ app.get('/api/mirror/subscription', (req, res) => {
             {
                 const curGb = sub ? Math.max(0, Math.floor(Number(sub.capacity_gb) || 0)) : 0;
                 const opts = _cloudOptions();
-                res.json({ active: !!(sub && sub.status === 'active'), status: sub ? sub.status : null, subId: sub ? sub.id : null, nextChargeAt: sub ? sub.nextChargeAt : null, hasCard: !!card, cardMaskNo: card ? card.cardMaskNo : '', issuerName: card ? card.issuerName : '', billingEnabled: PG_PROVIDER === 'kicc',
+                res.json({ active: !!(sub && sub.status === 'active'), status: sub ? sub.status : null, subId: sub ? sub.id : null, nextChargeAt: sub ? sub.nextChargeAt : null, cancelAt: sub ? (sub.cancel_at || null) : null, canceling: !!(sub && sub.cancel_at), hasCard: !!card, cardMaskNo: card ? card.cardMaskNo : '', issuerName: card ? card.issuerName : '', billingEnabled: PG_PROVIDER === 'kicc',
                     gbPrice: CLOUD_GB_PRICE, options: opts, capacityGb: curGb, amount: sub ? sub.amount : 0, price: (opts[0] ? opts[0].price : 2500) });
             }
         });
@@ -3307,8 +3323,16 @@ app.post('/api/mirror/subscribe', (req, res) => {
 // ☁️🔁 구독 해지 — 백업 구독 취소 + 미러 비활성(복원/목록은 계속 가능).
 app.post('/api/mirror/unsubscribe', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
-    db.run(`UPDATE subscriptions SET status='canceled', updated_at=? WHERE owner=? AND kind='backup' AND status IN ('active','paused','failed')`, [new Date().toISOString(), me], function () {
-        db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,0) ON CONFLICT(userName) DO UPDATE SET enabled=0`, [me], () => res.json({ ok: true }));
+    // 월할 유지: 결제한 기간(nextChargeAt)까지 이용 후 만료. 기간이 없으면 즉시 해지.
+    db.get(`SELECT id, nextChargeAt FROM subscriptions WHERE owner=? AND kind='backup' AND status='active' ORDER BY id DESC LIMIT 1`, [me], (e, sub) => {
+        const now = new Date();
+        if (sub && sub.nextChargeAt && new Date(sub.nextChargeAt) > now) {
+            db.run(`UPDATE subscriptions SET cancel_at=?, updated_at=? WHERE id=?`, [sub.nextChargeAt, now.toISOString(), sub.id], () => res.json({ ok: true, canceling: true, cancelAt: sub.nextChargeAt }));
+        } else {
+            db.run(`UPDATE subscriptions SET status='canceled', updated_at=? WHERE owner=? AND kind='backup' AND status IN ('active','paused','failed')`, [now.toISOString(), me], function () {
+                db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,0) ON CONFLICT(userName) DO UPDATE SET enabled=0`, [me], () => res.json({ ok: true }));
+            });
+        }
     });
 });
 // ☁️ 용량 변경(증설/감축) — 활성 구독의 capacity_gb·amount·goodsName 갱신. 용량은 즉시 반영, 변경 금액은 다음 청구부터 적용.

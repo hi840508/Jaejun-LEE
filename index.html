@@ -4646,9 +4646,13 @@
                 if(s.serviceEnabled===false){ body.innerHTML='<div style="color:#b45309;font-weight:800;margin-bottom:8px;">클라우드 미러 백업이 현재 중지되어 있습니다.</div><div style="font-size:13px;color:#475569;line-height:1.7;">관리자 설정으로 새 백업이 잠시 멈춰 있습니다.<br>이미 백업된 파일의 목록·복원은 계속 사용할 수 있습니다.</div>'; return; }
                 const pct=s.quota? Math.min(100,Math.round(s.used/s.quota*100)):0;
                 // 구독 배너(카드 자동결제) — 미구독이면 구독 시작, 구독 중이면 상태+관리
+                const _ymd=iso=>{ try{ return new Date(iso).toLocaleDateString('ko-KR'); }catch(_){ return ''; } };
+                const canceling=!!(sub&&sub.canceling);
                 const subBanner = billingOn
                     ? (subActive
-                        ? '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-weight:800;color:#166534;">월 구독 중</span><span style="font-size:12px;color:#64748b;">· '+(s.tierLabel?(s.tierLabel+' · '):'')+'월 '+(Number(sub&&sub.amount)||subPrice).toLocaleString()+'원 자동결제</span></div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button id="_mir-chcap" style="flex:1;min-width:110px;padding:8px 12px;border:none;border-radius:8px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-size:12px;font-weight:800;cursor:pointer;">＋ 용량 변경/증설</button><button id="_mir-manage" style="flex:1;min-width:110px;padding:8px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">구독 관리(해지 등)</button></div></div>'
+                        ? (canceling
+                            ? '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px 12px;margin-bottom:12px;"><div style="font-weight:800;color:#b45309;margin-bottom:4px;">해지 예정</div><div style="font-size:12px;color:#64748b;margin-bottom:8px;">'+_ymd(sub.cancelAt)+'까지 이용 가능하며 이후 자동으로 종료됩니다(추가 청구 없음). 계속 쓰려면 아래에서 유지하세요.</div><button id="_mir-resume" style="width:100%;padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,#166534,#0e7a3a);color:#fff;font-weight:800;cursor:pointer;">구독 유지(해지 취소)</button></div>'
+                            : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-weight:800;color:#166534;">월 구독 중</span><span style="font-size:12px;color:#64748b;">· '+(s.tierLabel?(s.tierLabel+' · '):'')+'월 '+(Number(sub&&sub.amount)||subPrice).toLocaleString()+'원 자동결제'+(sub&&sub.nextChargeAt?(' · 다음 '+_ymd(sub.nextChargeAt)):'')+'</span></div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button id="_mir-chcap" style="flex:1;min-width:110px;padding:8px 12px;border:none;border-radius:8px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-size:12px;font-weight:800;cursor:pointer;">＋ 용량 변경/증설</button><button id="_mir-manage" style="flex:1;min-width:110px;padding:8px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">구독 관리(해지 등)</button></div></div>')
                         : '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px;margin-bottom:12px;"><div style="font-weight:800;color:#0f2f52;margin-bottom:4px;">클라우드저장소 월 구독</div><div style="font-size:12px;color:#64748b;margin-bottom:8px;">기본 100MB 무료 · 추가 용량 '+((sub&&sub.gbPrice)||25)+'원/GB(100GB '+(((sub&&sub.gbPrice)||25)*100).toLocaleString()+'원). 용량을 선택해 구독하세요.</div><button id="_mir-sub" style="width:100%;padding:11px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;cursor:pointer;">용량 선택하고 구독 시작</button></div>')
                     : '';
                 body.innerHTML= subBanner
@@ -4661,6 +4665,7 @@
                 { const sb=body.querySelector('#_mir-sub'); if(sb) sb.onclick=()=>{ ov.remove(); if(window.openCloudBackup) openCloudBackup(); }; }
                 { const mg=body.querySelector('#_mir-manage'); if(mg) mg.onclick=()=>{ ov.remove(); if(typeof switchTab==='function') switchTab('wallet'); }; }
                 { const cc=body.querySelector('#_mir-chcap'); if(cc) cc.onclick=()=>{ _openCapacityChange(sub, ()=>refresh()); }; }
+                { const rs=body.querySelector('#_mir-resume'); if(rs) rs.onclick=async()=>{ if(!(sub&&sub.subId)) return; try{ const r=await fetch(API_URL+'/api/pg/subscriptions/'+sub.subId+'/resume',{method:'POST',credentials:'include'}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'실패'); showToast('✅ 구독을 유지합니다(해지 취소).'); refresh(); }catch(e){ showToast('실패: '+(e.message||e)); } }; }
                 body.querySelector('#_mir-tog').onclick=async()=>{ await window.RCMirror.enable(!s.enabled); refresh(); };
                 body.querySelector('#_mir-bk').onclick=async()=>{ if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('먼저 공유폴더를 지정하세요.'); return; } prog.textContent='백업 시작…'; try{ const r=await window.RCMirror.backupAll((d,t,nm,st)=>{ prog.textContent='('+d+'/'+t+') '+st+': '+nm; }); prog.textContent='✅ 백업 완료 — 업로드 '+r.up+' · 건너뜀 '+r.skip+' · 실패 '+r.fail; refresh(); }catch(e){ prog.textContent='❌ '+(e.message||e); } };
                 body.querySelector('#_mir-rs').onclick=async()=>{ if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('먼저 공유폴더를 지정하세요.'); return; } const ok=await window._sfConfirm('클라우드 백업본을 현재 공유폴더로 복원합니다. 같은 이름 파일은 덮어씁니다.\n계속하시겠습니까?','복원'); if(!ok) return; prog.textContent='복원 시작…'; try{ const r=await window.RCMirror.restoreAll((d,t,rp)=>{ prog.textContent='('+d+'/'+t+') 복원: '+rp; }); prog.textContent='✅ 복원 완료 — 성공 '+r.ok+' · 실패 '+r.fail; }catch(e){ prog.textContent='❌ '+(e.message||e); } };
@@ -4808,7 +4813,7 @@
                     const net=(Number(finance.subMonthlyKrw)||0)-totalCost;
                     const awsRow = awsOk
                         ? '<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>· AWS 이번 달 <b style="color:#166534;">실시간(MTD)</b></span><span>$'+(Number(aws.usd)||0).toFixed(2)+' ≈ '+won(awsKrw)+'</span></div>'
-                        : '<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>· AWS 이번 달 실시간</span><span style="color:#b45309;">미연동'+(aws&&aws.reason==='package'?'(패키지)':(aws&&aws.msg?'':''))+'</span></div>';
+                        : '<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>· AWS 이번 달 실시간</span><span style="color:#b45309;">미연동'+(aws&&aws.reason==='package'?'(패키지 미설치)':((aws&&/Credentials/i.test(aws.msg||''))?'(서버 자격증명 없음)':((aws&&/Denied|AccessDenied/i.test(aws.msg||''))?'(권한 없음)':'')))+'</span></div>';
                     financeHtml='<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:0 0 18px;">'
                       +'<div style="font-weight:800;font-size:14px;margin-bottom:10px;">💰 운영 재무 현황 (월)</div>'
                       + awsRow
@@ -14559,10 +14564,13 @@ pdfjsScript,
                     const next = s.nextChargeAt ? new Date(s.nextChargeAt).toLocaleDateString('ko-KR') : '-';
                     const per = (typeLbl[s.intervalType]||s.intervalType)+(s.intervalCount>1?(' x'+s.intervalCount):'');
                     let act='';
-                    if(s.status==='active'){ act = `<button class="btn btn-outline" title="지금 바로 이번 금액을 카드로 결제" style="padding:3px 8px; font-size:11px;" onclick="subAct(${s.id},'charge-now')">즉시청구</button> <button class="btn btn-outline" title="다음 자동결제를 멈춤(데이터 유지, 재개 가능)" style="padding:3px 8px; font-size:11px;" onclick="subAct(${s.id},'pause')">일시정지</button> <button class="btn btn-outline" title="자동결제 중단(데이터 열람·복원은 유지)" style="padding:3px 8px; font-size:11px; color:#b91c1c;" onclick="subAct(${s.id},'cancel')">해지</button>`; }
+                    const _cancelAt = s.cancel_at ? new Date(s.cancel_at).toLocaleDateString('ko-KR') : '';
+                    if(s.status==='active' && s.cancel_at){ act = `<button class="btn btn-outline" title="해지를 취소하고 계속 이용" style="padding:3px 8px; font-size:11px; color:#166534;" onclick="subAct(${s.id},'resume')">구독 유지</button>`; }
+                    else if(s.status==='active'){ act = `<button class="btn btn-outline" title="지금 바로 이번 금액을 카드로 결제" style="padding:3px 8px; font-size:11px;" onclick="subAct(${s.id},'charge-now')">즉시청구</button> <button class="btn btn-outline" title="다음 자동결제를 멈춤(데이터 유지, 재개 가능)" style="padding:3px 8px; font-size:11px;" onclick="subAct(${s.id},'pause')">일시정지</button> <button class="btn btn-outline" title="예약 해지: 이번 결제기간까지 이용 후 종료" style="padding:3px 8px; font-size:11px; color:#b91c1c;" onclick="subAct(${s.id},'cancel')">해지</button>`; }
                     else if(s.status==='paused'){ act = `<button class="btn btn-outline" title="자동결제 다시 시작" style="padding:3px 8px; font-size:11px; color:#166534;" onclick="subAct(${s.id},'resume')">재개</button> <button class="btn btn-outline" title="자동결제 중단" style="padding:3px 8px; font-size:11px; color:#b91c1c;" onclick="subAct(${s.id},'cancel')">해지</button>`; }
                     else if(s.status==='failed'){ act = `<button class="btn btn-outline" style="padding:3px 8px; font-size:11px; color:#166534;" onclick="subAct(${s.id},'resume')">재개</button>`; }
-                    return `<tr><td>${esc(s.goodsName||'')}</td><td style="text-align:right;">${Number(s.amount||0).toLocaleString()}원</td><td>${per}</td><td>${next}</td><td style="text-align:center;">${badge(s.status)}</td><td style="text-align:center; white-space:nowrap;">${act||'-'}</td></tr>`;
+                    const stBadge = (s.status==='active' && s.cancel_at) ? `<span style="color:#b45309; background:#fff7ed; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700;">해지 예정</span>` : badge(s.status);
+                    return `<tr><td>${esc(s.goodsName||'')}</td><td style="text-align:right;">${Number(s.amount||0).toLocaleString()}원</td><td>${per}</td><td>${_cancelAt?('~'+_cancelAt+' 까지'):next}</td><td style="text-align:center;">${stBadge}</td><td style="text-align:center; white-space:nowrap;">${act||'-'}</td></tr>`;
                 }).join('');
             }catch(e){ panel.style.display='none'; }
         };
@@ -14595,7 +14603,7 @@ pdfjsScript,
             if(action==='charge-now' && !confirm('지금 바로 이번 주기 금액을 결제(즉시청구)할까요?\n등록된 카드로 즉시 청구됩니다.')) return;
             if(action==='pause' && !confirm('구독을 일시정지할까요?\n다음 청구가 멈추고, 저장된 데이터는 유지됩니다. 언제든 [재개]할 수 있습니다.')) return;
             if(action==='resume' && !confirm('구독을 재개할까요?\n다음 주기부터 자동결제가 다시 시작됩니다.')) return;
-            if(action==='cancel' && !confirm('구독을 해지할까요?\n자동결제가 중단됩니다. (이미 저장된 데이터의 열람·복원은 계속 가능)')) return;
+            if(action==='cancel' && !confirm('구독을 해지할까요?\n이미 결제한 이번 기간까지는 계속 이용하고, 기간이 끝나면 자동 종료됩니다(추가 청구 없음). 종료 후에는 기본 100MB만 사용됩니다. 기간 중 언제든 [구독 유지]로 취소할 수 있어요.')) return;
             try{ await window.subscriptionAction(id, action); showToast(action==='charge-now'?'✅ 즉시청구 완료':action==='cancel'?'구독 해지됨':action==='pause'?'일시정지됨':'재개됨'); loadBillingUI(); }
             catch(e){ showToast(e.message||'처리 실패'); }
         };
