@@ -878,6 +878,10 @@ function initTables() {
         //   mirror_files: 사용자별 미러된 파일 목록(rpath=공유폴더 상대경로). mirror_prefs: 사용자별 on/off.
         db.run(`CREATE TABLE IF NOT EXISTS mirror_files (userName TEXT, rpath TEXT, key TEXT, size INTEGER DEFAULT 0, mime TEXT, mtime INTEGER, PRIMARY KEY(userName, rpath))`);
         db.run(`CREATE TABLE IF NOT EXISTS mirror_prefs (userName TEXT PRIMARY KEY, enabled INTEGER DEFAULT 0)`);
+        // ☁️🤝 클라우드 공유 = 소유자 파일에 대한 "기간제 접근 권한"(복사 아님). 받는 사람은 만료일까지 열람·다운로드만, 용량 차감 없음.
+        db.run(`CREATE TABLE IF NOT EXISTS mirror_shares (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, rpath TEXT, key TEXT, size INTEGER DEFAULT 0, mime TEXT, name TEXT, toUser TEXT, createdAt INTEGER, expireAt INTEGER, UNIQUE(owner, rpath, toUser))`);
+        // ☁️🚫 소유자가 클라우드에서 지운 파일 — 로컬에 남아 있어도 자동미러가 다시 올리지 않도록 제외(at 이후 수정되면 재백업).
+        db.run(`CREATE TABLE IF NOT EXISTS mirror_excludes (userName TEXT, rpath TEXT, at INTEGER, PRIMARY KEY(userName, rpath))`);
 
         // 🔗 [비회원 외부 공유] QR+웹링크로 Alpha K 미가입 고객에게 파일 전달 → 랜딩페이지에서 가입안내 + 공유폴더 다운로드
         db.run(`CREATE TABLE IF NOT EXISTS guest_shares (token TEXT PRIMARY KEY, owner TEXT, fileName TEXT, url TEXT, mime TEXT, size INTEGER, createdAt INTEGER, expiresAt INTEGER, downloads INTEGER DEFAULT 0)`);
@@ -3151,6 +3155,7 @@ const CLOUD_FREE_BYTES = 100 * 1024 * 1024;
 const CLOUD_PRICE_PER_GB = 60;
 // ☁️ 클라우드저장소 — 무료 100MB 초과분은 GB당 월요금(cloud_gb_price, 기본 25원/GB = 100GB 2,500원)으로 용량 구독.
 const GB_BYTES = 1024 * 1024 * 1024;
+const CLOUD_SHARE_DAYS = 14;   // ☁️🤝 공유 접근 권한 유효기간(일) — 받는 사람은 이 기간 동안 열람·다운로드 가능
 const CLOUD_CAP_OPTIONS = [100, 500, 1024, 5120];   // 구독 선택 용량(GB): 100GB·500GB·1TB·5TB
 let CLOUD_GB_PRICE = 50;   // 원/GB (설정에서 로드, 기본 50 = 100GB 5,000원)
 function _loadCloudGbPrice(cb) {
@@ -3416,6 +3421,8 @@ app.post('/api/admin/cloud-reset', async (req, res) => {
         const mf = await run(`DELETE FROM mirror_files`);
         const cs = await run(`DELETE FROM cloud_storage`);
         await run(`DELETE FROM mirror_prefs`);
+        await run(`DELETE FROM mirror_shares`);
+        await run(`DELETE FROM mirror_excludes`);
         let r2Deleted = 0;
         try {
             if (_r2) {
@@ -3492,6 +3499,7 @@ app.post('/api/mirror/commit', (req, res) => {
     db.run(`INSERT INTO mirror_files (userName, rpath, key, size, mime, mtime) VALUES (?,?,?,?,?,?) ON CONFLICT(userName, rpath) DO UPDATE SET key=?, size=?, mime=?, mtime=?`,
         [name, rpath, key, size, mime, mtime, key, size, mime, mtime], (e) => {
             if (e) return res.status(500).json({ error: e.message });
+            db.run(`DELETE FROM mirror_excludes WHERE userName=? AND rpath=?`, [name, rpath], () => {});   // 명시적 재업로드 → 제외 해제
             _mirrorUsage(name, (e2, u) => res.json({ ok: true, used: u ? u.used : 0, quota: u ? u.quota : 0 }));
         });
 });
@@ -3502,9 +3510,9 @@ app.get('/api/mirror/list', (req, res) => {
         res.json({ items: rows || [] });
     });
 });
-// ☁️🤝 클라우드 → 클라우드 즉시 공유 — 보낸 사람의 클라우드 파일을 받는 사람의 클라우드로 서버측 복사(다운로드/재업로드 없음).
-//    받는 사람 용량이 충분하면 즉시 그의 클라우드저장소에서 조회 가능. (대화방/공유에서 호출)
-app.post('/api/mirror/share-to', async (req, res) => {
+// ☁️🤝 클라우드 공유 = 소유자 파일에 대한 "기간제(14일) 접근 권한" 부여(복사 아님, 받는 사람 용량 차감 없음).
+//    받는 사람은 만료일까지 열람·다운로드만 가능. 원본은 소유자 것이며, 소유자가 삭제하면 권한도 사라짐. (대화방/공유에서 호출)
+app.post('/api/mirror/share-to', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
     const rpath = String(req.body.rpath || ''); const to = String(req.body.to || '').trim();
@@ -3515,27 +3523,53 @@ app.post('/api/mirror/share-to', async (req, res) => {
         if (!src) return res.status(404).json({ error: '클라우드에 없는 파일입니다.' });
         db.get(`SELECT name FROM users WHERE name=?`, [to], (e2, u) => {
             if (!u) return res.status(404).json({ error: '받는 회원을 찾을 수 없습니다.' });
-            // 받는 사람 용량 확인 — 부족하면 구독 유도용 에러
-            _mirrorUsage(to, (e3, usage) => {
-                const used = (usage && usage.used) || 0, quota = (usage && usage.quota) || CLOUD_FREE_BYTES;
-                if (used + (src.size || 0) > quota) return res.status(409).json({ error: '받는 분의 클라우드 용량이 부족합니다.', needCapacity: true });
-                const base = String(rpath).split('/').pop();
-                const destRpath = '공유받음/' + me + '/' + base;
-                const destKey = _mirrorKey(to, destRpath);
-                (async () => {
-                    try {
-                        const { CopyObjectCommand } = require('@aws-sdk/client-s3');
-                        await _r2.client.send(new CopyObjectCommand({ Bucket: _r2.bucket, CopySource: encodeURIComponent(_r2.bucket + '/' + src.key), Key: destKey, MetadataDirective: 'COPY' }));
-                        db.run(`INSERT INTO mirror_files (userName, rpath, key, size, mime, mtime) VALUES (?,?,?,?,?,?) ON CONFLICT(userName, rpath) DO UPDATE SET key=?, size=?, mime=?, mtime=?`,
-                            [to, destRpath, destKey, src.size || 0, src.mime || '', Date.now(), destKey, src.size || 0, src.mime || '', Date.now()], (ie) => {
-                                if (ie) return res.status(500).json({ error: ie.message });
-                                try { io.to('user:' + to).emit('cloud_shared', { from: me, name: base, rpath: destRpath }); } catch (_) {}
-                                res.json({ ok: true, to, rpath: destRpath, name: base });
-                            });
-                    } catch (ce) { res.status(500).json({ error: '클라우드 복사 실패: ' + ((ce && ce.message) || ce) }); }
-                })();
-            });
+            const base = String(rpath).split('/').pop();
+            const now = Date.now(); const expireAt = now + CLOUD_SHARE_DAYS * 86400000;
+            // 권한 레코드만 생성/갱신(재공유 시 기간 연장). 복사·용량차감 없음.
+            db.run(`INSERT INTO mirror_shares (owner, rpath, key, size, mime, name, toUser, createdAt, expireAt) VALUES (?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(owner, rpath, toUser) DO UPDATE SET key=excluded.key, size=excluded.size, mime=excluded.mime, name=excluded.name, expireAt=excluded.expireAt`,
+                [me, rpath, src.key, src.size || 0, src.mime || '', base, to, now, expireAt], (ie) => {
+                    if (ie) return res.status(500).json({ error: ie.message });
+                    try { io.to('user:' + to).emit('cloud_shared', { from: me, name: base, expireAt, days: CLOUD_SHARE_DAYS }); } catch (_) {}
+                    res.json({ ok: true, to, name: base, expireAt, days: CLOUD_SHARE_DAYS });
+                });
         });
+    });
+});
+// ☁️🤝 받은 공유 목록 — 아직 유효한(만료 전) 권한만. 만료분은 지연 정리.
+app.get('/api/mirror/shared-with-me', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    const now = Date.now();
+    db.run(`DELETE FROM mirror_shares WHERE expireAt <= ?`, [now], () => {
+        db.all(`SELECT id, owner, name, size, mime, createdAt, expireAt FROM mirror_shares WHERE toUser=? AND expireAt>? ORDER BY createdAt DESC`, [name, now], (e, rows) => {
+            if (e) return res.status(500).json({ error: e.message });
+            res.json({ items: (rows || []).map(r => Object.assign({}, r, { daysLeft: Math.max(0, Math.ceil((r.expireAt - now) / 86400000)) })) });
+        });
+    });
+});
+// ☁️🤝 받은 공유 파일 다운로드 URL — 권한(만료 전·본인 대상) 확인 후 소유자 키로 프리사인.
+app.post('/api/mirror/shared-download-url', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const id = Math.floor(Number(req.body.id) || 0);
+    db.get(`SELECT key, mime, expireAt FROM mirror_shares WHERE id=? AND toUser=?`, [id, name], (e, row) => {
+        if (e || !row) return res.status(404).json({ error: '없는 공유' });
+        if (row.expireAt <= Date.now()) return res.status(410).json({ error: '공유 기간이 만료되었습니다.', expired: true });
+        try {
+            const { GetObjectCommand } = require('@aws-sdk/client-s3');
+            const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+            getSignedUrl(_r2.client, new GetObjectCommand({ Bucket: _r2.bucket, Key: row.key }), { expiresIn: 3600 })
+                .then(url => res.json({ url, mime: row.mime })).catch(err => res.status(500).json({ error: err.message }));
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+});
+// ☁️🤝 받은 공유를 내 목록에서 제거(소유자 원본은 그대로). 또는 소유자가 특정 대상 공유 회수.
+app.post('/api/mirror/shared-remove', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    const id = Math.floor(Number(req.body.id) || 0);
+    db.run(`DELETE FROM mirror_shares WHERE id=? AND (toUser=? OR owner=?)`, [id, name, name], (e) => {
+        if (e) return res.status(500).json({ error: e.message });
+        res.json({ ok: true });
     });
 });
 app.post('/api/mirror/download-url', (req, res) => {
@@ -3552,10 +3586,22 @@ app.post('/api/mirror/download-url', (req, res) => {
         } catch (err) { res.status(500).json({ error: err.message }); }
     });
 });
+// ☁️ 내가 제외(삭제)한 rpath 목록 — 자동미러 재업로드 방지용. {rpath: at}
+app.get('/api/mirror/excludes', (req, res) => {
+    const name = requireUser(req, res); if (!name) return;
+    db.all(`SELECT rpath, at FROM mirror_excludes WHERE userName=?`, [name], (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        const m = {}; (rows || []).forEach(r => { m[r.rpath] = r.at || 0; });
+        res.json({ excludes: m });
+    });
+});
 app.post('/api/mirror/delete', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
     const rpath = String(req.body.rpath || '');
     db.get(`SELECT key FROM mirror_files WHERE userName = ? AND rpath = ?`, [name, rpath], (e, row) => {
+        // 로컬에 남아있어도 자동미러가 다시 올리지 않도록 제외 등록(이후 수정되면 재백업). + 이 파일에 걸린 공유 권한 회수.
+        db.run(`INSERT INTO mirror_excludes (userName, rpath, at) VALUES (?,?,?) ON CONFLICT(userName, rpath) DO UPDATE SET at=excluded.at`, [name, rpath, Date.now()], () => {});
+        db.run(`DELETE FROM mirror_shares WHERE owner=? AND rpath=?`, [name, rpath], () => {});
         if (!row) return res.json({ ok: true });
         db.run(`DELETE FROM mirror_files WHERE userName = ? AND rpath = ?`, [name, rpath], () => {
             if (_r2) { try { const { DeleteObjectCommand } = require('@aws-sdk/client-s3'); _r2.client.send(new DeleteObjectCommand({ Bucket: _r2.bucket, Key: row.key })).catch(() => {}); } catch (_) {} }
