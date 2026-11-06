@@ -5816,8 +5816,10 @@
                 const have=window.__sfCloudHave||{}; const all=window.__sfCloudAll||[];
                 const curPrefix=path.length?(path.join('/')+'/'):'';
                 grid.querySelectorAll('.rc-gf[data-here="1"]').forEach(el=>{ const fn=el.getAttribute('data-fname'); if(!fn) return; const rp=curPrefix+fn;
-                    if(have[rp]){ el.style.opacity=''; const b=el.querySelector('.rc-clbar'); if(b) b.remove(); el.setAttribute('data-cloud','1'); }
-                    else { el.style.opacity='0.5'; el.style.transition='opacity .35s'; const f=_sfBar(el); if((parseFloat(f.style.width)||0)<6) f.style.width='6%'; } });
+                    if(have[rp]){ el.style.opacity=''; const b=el.querySelector('.rc-clbar'); if(b) b.remove(); el.setAttribute('data-cloud','1');
+                        // 🤝 클라우드 저장된 파일 → 다른 계정 즉시 공유 버튼
+                        if(!el.querySelector('.rc-clshare')){ const host=el.querySelector('.rc-thumbbox')||el; try{ if(getComputedStyle(host).position==='static') host.style.position='relative'; }catch(_){} const sb=document.createElement('button'); sb.className='rc-clshare'; sb.title='다른 계정으로 즉시 공유'; sb.textContent='🤝'; sb.style.cssText='position:absolute;top:6px;right:6px;width:28px;height:28px;border:none;border-radius:8px;background:rgba(15,47,82,.82);color:#fff;font-size:14px;cursor:pointer;z-index:6;display:flex;align-items:center;justify-content:center;'; sb.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); _sfShareCloudFile(rp); }); host.appendChild(sb); } }
+                    else { el.style.opacity='0.5'; el.style.transition='opacity .35s'; const f=_sfBar(el); if((parseFloat(f.style.width)||0)<6) f.style.width='6%'; const old=el.querySelector('.rc-clshare'); if(old) old.remove(); } });
                 grid.querySelectorAll('.rc-gfd').forEach(el=>{ const nm=el.getAttribute('data-name'); if(!nm) return; const pre=curPrefix+nm+'/'; const sub=all.filter(x=>x.rpath.indexOf(pre)===0); const tot=sub.length; const up=sub.filter(x=>have[x.rpath]).length; const pct=tot?Math.round(up/tot*100):100;
                     if(pct>=100){ el.style.opacity=''; const b=el.querySelector('.rc-clbar'); if(b) b.remove(); } else { el.style.opacity=String(0.5+0.45*(pct/100)); el.style.transition='opacity .35s'; const f=_sfBar(el); f.style.width=pct+'%'; } });
             }
