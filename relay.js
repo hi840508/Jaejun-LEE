@@ -989,7 +989,8 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS billing_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, billKey TEXT, issuerName TEXT, issuerCode TEXT, cardMaskNo TEXT, payMethodTypeCode TEXT, label TEXT, status TEXT DEFAULT 'active', created_at TEXT, updated_at TEXT)`, () => {});
         // 🔁 [정기결제 구독] 빌키 기반 자동 반복청구 스케줄. intervalType: monthly|weekly|daily, nextChargeAt(ISO) 도래 시 크론이 청구. status: active|paused|canceled|failed.
         db.run(`CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, billingId INTEGER, seller TEXT, amount INTEGER, goodsName TEXT, intervalType TEXT DEFAULT 'monthly', intervalCount INTEGER DEFAULT 1, nextChargeAt TEXT, status TEXT DEFAULT 'active', failCount INTEGER DEFAULT 0, lastChargedAt TEXT, lastPgCno TEXT, label TEXT, created_at TEXT, updated_at TEXT)`, () => {});
-        db.run(`ALTER TABLE subscriptions ADD COLUMN kind TEXT DEFAULT 'generic'`, () => {});   // 🔁 구독 종류: generic | backup(공유폴더 백업)
+        db.run(`ALTER TABLE subscriptions ADD COLUMN kind TEXT DEFAULT 'generic'`, () => {});   // 🔁 구독 종류: generic | backup(클라우드저장소)
+        db.run(`ALTER TABLE subscriptions ADD COLUMN capacity_gb INTEGER DEFAULT 0`, () => {});   // ☁️ 클라우드저장소 구독 용량(GB)
         // 💳 [KICC PG 대비] 결제 세션 상태 추적(멱등·재조회·정산 대사용). 리다이렉트/결제창 비동기 흐름의 단일 진실원천.
         //   status: requested(결제요청·창오픈) → authorized(승인토큰 수신) → approved(최종승인/매입) → failed | canceled | expired
         db.run(`CREATE TABLE IF NOT EXISTS pg_payments (
@@ -1036,6 +1037,8 @@ function initTables() {
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('mirror_enabled', '0')`, () => {});
             // ☁️ [공유폴더 백업 구독] 월 구독료(원). 관리자 변경 가능.
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('backup_sub_price', '9900')`, () => {});
+            // ☁️ [클라우드저장소] GB당 월요금(원). 기본 25원/GB(=100GB 2,500원). 관리자 변경 가능.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('cloud_gb_price', '25')`, () => {});
         });
 
         // 🧾 전자세금계산서 이력 + 정산 기본 변수(모두 settings로 변경 가능): VAT율 10%, 결제수수료율 2.7%, SW 월사용료 10000원
@@ -3128,15 +3131,18 @@ app.post('/api/lockfile/:token/open', (req, res) => {
 // ☁️ 클라우드 저장 용량 — 100MB 무료(미구독). 구독 등급별 용량 연동.
 const CLOUD_FREE_BYTES = 100 * 1024 * 1024;
 const CLOUD_PRICE_PER_GB = 60;
-// 🏷 클라우드저장소 구독 등급(월 카드결제) — 구독 시 해당 용량 제공. 가격은 등급 선택으로 결정.
-const CLOUD_TIERS = [
-    { key: 'basic', label: '베이직', gb: 100,  price: 9900 },
-    { key: 'pro',   label: '프로',   gb: 1024, price: 29000 },
-    { key: 'max',   label: '맥스',   gb: 4096, price: 99000 }
-];
-function _tierByKey(k) { return CLOUD_TIERS.find(t => t.key === k) || null; }
-function _tierByAmount(amt) { amt = Math.floor(Number(amt) || 0); let best = null; CLOUD_TIERS.forEach(t => { if (t.price <= amt && (!best || t.price > best.price)) best = t; }); return best || CLOUD_TIERS.find(t => t.price === amt) || null; }
+// ☁️ 클라우드저장소 — 무료 100MB 초과분은 GB당 월요금(cloud_gb_price, 기본 25원/GB = 100GB 2,500원)으로 용량 구독.
 const GB_BYTES = 1024 * 1024 * 1024;
+const CLOUD_CAP_OPTIONS = [100, 500, 1024, 5120];   // 구독 선택 용량(GB): 100GB·500GB·1TB·5TB
+let CLOUD_GB_PRICE = 25;   // 원/GB (설정에서 로드)
+function _loadCloudGbPrice(cb) {
+    db.get(`SELECT value FROM settings WHERE key='cloud_gb_price'`, [], (e, r) => {
+        const v = Math.max(1, Math.floor(Number(r && r.value) || 25));
+        CLOUD_GB_PRICE = v; if (cb) cb(v);
+    });
+}
+setTimeout(() => _loadCloudGbPrice(), 1600);
+function _cloudOptions() { return CLOUD_CAP_OPTIONS.map(gb => ({ gb, price: Math.round(gb * CLOUD_GB_PRICE) })); }
 app.get('/api/cloud/usage/:name', (req, res) => {
     db.get(`SELECT purchasedBytes, usedBytes FROM cloud_storage WHERE name = ?`, [req.params.name], (err, row) => {
         const purchased = (row && row.purchasedBytes) || 0;
@@ -3195,12 +3201,13 @@ function _mirrorUsage(name, cb) {   // cb(err, {used, quota, purchased, enabled,
         if (e) return cb(e);
         db.get(`SELECT purchasedBytes FROM cloud_storage WHERE name = ?`, [name], (e2, c) => {
             db.get(`SELECT enabled FROM mirror_prefs WHERE userName = ?`, [name], (e3, p) => {
-                // 🏷 활성 구독 등급 → 저장 용량 연동
-                db.get(`SELECT amount FROM subscriptions WHERE owner=? AND kind='backup' AND status='active' ORDER BY id DESC LIMIT 1`, [name], (e4, sub) => {
+                // ☁️ 활성 구독 용량(capacity_gb) → 저장 용량 연동
+                db.get(`SELECT amount, capacity_gb FROM subscriptions WHERE owner=? AND kind='backup' AND status='active' ORDER BY id DESC LIMIT 1`, [name], (e4, sub) => {
                     const purchased = (c && c.purchasedBytes) || 0;
-                    const tier = sub ? _tierByAmount(sub.amount) : null;
-                    const subBytes = tier ? (tier.gb * GB_BYTES) : 0;
-                    cb(null, { used: (r && r.used) || 0, purchased, subBytes, tier: tier ? tier.key : null, tierLabel: tier ? tier.label : null, quota: CLOUD_FREE_BYTES + purchased + subBytes, enabled: !!(p && p.enabled) });
+                    const capGb = sub ? Math.max(0, Math.floor(Number(sub.capacity_gb) || 0)) : 0;
+                    const subBytes = capGb * GB_BYTES;
+                    const tierLabel = capGb ? (capGb >= 1024 ? ((capGb / 1024) + 'TB') : (capGb + 'GB')) : null;
+                    cb(null, { used: (r && r.used) || 0, purchased, subBytes, capacityGb: capGb, tierLabel, quota: CLOUD_FREE_BYTES + purchased + subBytes, enabled: !!(p && p.enabled) });
                 });
             });
         });
@@ -3252,12 +3259,12 @@ app.get('/api/mirror/subscription', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
     db.get(`SELECT * FROM subscriptions WHERE owner=? AND kind='backup' AND status IN ('active','paused','failed') ORDER BY id DESC LIMIT 1`, [me], (e, sub) => {
         db.get(`SELECT id, cardMaskNo, issuerName FROM billing_keys WHERE owner=? AND status='active' ORDER BY id DESC LIMIT 1`, [me], (e2, card) => {
-            db.get(`SELECT value FROM settings WHERE key='backup_sub_price'`, [], (e3, row) => {
-                const price = Math.floor(Number(row && row.value) || 9900);
-                const curTier = sub ? _tierByAmount(sub.amount) : null;
-                res.json({ active: !!(sub && sub.status === 'active'), status: sub ? sub.status : null, subId: sub ? sub.id : null, nextChargeAt: sub ? sub.nextChargeAt : null, price, hasCard: !!card, cardMaskNo: card ? card.cardMaskNo : '', issuerName: card ? card.issuerName : '', billingEnabled: PG_PROVIDER === 'kicc',
-                    tiers: CLOUD_TIERS, tier: curTier ? curTier.key : null, tierLabel: curTier ? curTier.label : null, tierGb: curTier ? curTier.gb : 0, amount: sub ? sub.amount : 0 });
-            });
+            {
+                const curGb = sub ? Math.max(0, Math.floor(Number(sub.capacity_gb) || 0)) : 0;
+                const opts = _cloudOptions();
+                res.json({ active: !!(sub && sub.status === 'active'), status: sub ? sub.status : null, subId: sub ? sub.id : null, nextChargeAt: sub ? sub.nextChargeAt : null, hasCard: !!card, cardMaskNo: card ? card.cardMaskNo : '', issuerName: card ? card.issuerName : '', billingEnabled: PG_PROVIDER === 'kicc',
+                    gbPrice: CLOUD_GB_PRICE, options: opts, capacityGb: curGb, amount: sub ? sub.amount : 0, price: (opts[0] ? opts[0].price : 2500) });
+            }
         });
     });
 });
@@ -3271,19 +3278,22 @@ app.post('/api/mirror/subscribe', (req, res) => {
         db.get(`SELECT id FROM subscriptions WHERE owner=? AND kind='backup' AND status='active'`, [me], (e2, ex) => {
             if (ex) { db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,1) ON CONFLICT(userName) DO UPDATE SET enabled=1`, [me]); return res.json({ ok: true, already: true, subId: ex.id, enabled: true }); }
             {
-                // 🏷 등급 선택 — tier 지정 시 해당 등급가·용량, 미지정 시 베이직(또는 설정가)
-                const tier = _tierByKey(String((req.body && req.body.tier) || '')) || CLOUD_TIERS[0];
-                const amount = tier.price; const goods = 'RAYCloud 클라우드저장소 (' + tier.label + ' ' + tier.gb + 'GB)';
+                // ☁️ 용량 선택(GB) — gb 지정 시 그 용량, 미지정 시 최소 옵션. 금액 = gb × GB당요금.
+                let gb = Math.max(0, Math.floor(Number(req.body && req.body.gb) || 0));
+                if (!CLOUD_CAP_OPTIONS.includes(gb)) gb = CLOUD_CAP_OPTIONS[0];
+                const amount = Math.round(gb * CLOUD_GB_PRICE);
+                const capLabel = gb >= 1024 ? ((gb / 1024) + 'TB') : (gb + 'GB');
+                const goods = 'RAYCloud 클라우드저장소 (' + capLabel + ')';
                 const now = new Date(); const next = _addIntervalISO(now.toISOString(), 'monthly', 1);
-                db.run(`INSERT INTO subscriptions (owner, billingId, seller, amount, goodsName, intervalType, intervalCount, nextChargeAt, status, kind, label, created_at, updated_at) VALUES (?,?,?,?,?, 'monthly', 1, ?, 'active', 'backup', ?, ?, ?)`,
-                    [me, card.id, _adminAccount(), amount, goods, next, ('클라우드저장소 ' + tier.label), now.toISOString(), now.toISOString()], function (ie) {
+                db.run(`INSERT INTO subscriptions (owner, billingId, seller, amount, goodsName, intervalType, intervalCount, nextChargeAt, status, kind, label, capacity_gb, created_at, updated_at) VALUES (?,?,?,?,?, 'monthly', 1, ?, 'active', 'backup', ?, ?, ?, ?)`,
+                    [me, card.id, _adminAccount(), amount, goods, next, ('클라우드저장소 ' + capLabel), gb, now.toISOString(), now.toISOString()], function (ie) {
                         if (ie) return res.status(500).json({ error: ie.message });
                         const subId = this.lastID;
                         db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,1) ON CONFLICT(userName) DO UPDATE SET enabled=1`, [me]);   // 백업 즉시 활성화
                         _billingCharge({ billingId: card.id, amount, goodsName: goods, seller: _adminAccount(), subscriptionId: subId }, (err, out) => {
-                            if (err) { db.run(`UPDATE subscriptions SET failCount=1, updated_at=? WHERE id=?`, [new Date().toISOString(), subId]); return res.json({ ok: true, subId, enabled: true, tier: tier.key, gb: tier.gb, firstCharge: { ok: false, error: err.message } }); }
+                            if (err) { db.run(`UPDATE subscriptions SET failCount=1, updated_at=? WHERE id=?`, [new Date().toISOString(), subId]); return res.json({ ok: true, subId, enabled: true, gb: gb, firstCharge: { ok: false, error: err.message } }); }
                             db.run(`UPDATE subscriptions SET lastChargedAt=?, lastPgCno=? WHERE id=?`, [new Date().toISOString(), out.tid || null, subId]);
-                            res.json({ ok: true, subId, enabled: true, tier: tier.key, gb: tier.gb, firstCharge: { ok: true, amount: out.amount, approvalNo: out.approvalNo } });
+                            res.json({ ok: true, subId, enabled: true, gb: gb, firstCharge: { ok: true, amount: out.amount, approvalNo: out.approvalNo } });
                         });
                     });
             }
@@ -3307,7 +3317,7 @@ app.post('/api/admin/backup-price', (req, res) => {
 // 💰 운영 재무 현황 — 월 고정 운영비(서버/AWS 등, 관리자 입력) + R2 변동비(추정) + 클라우드저장소 구독 매출. 실제 비용 예측용.
 app.get('/api/admin/ops-finance', (req, res) => {
     if (!requireAdmin(req, res)) return;
-    const out = { fixedKrw: 0, subPrice: 9900, subCount: 0, subMonthlyKrw: 0, r2Bytes: 0, r2FreeBytes: (10 * 1024 * 1024 * 1024), usdPerGB: 0.015, usdKrw: 1380 };
+    const out = { fixedKrw: 0, subPrice: 9900, subCount: 0, subMonthlyKrw: 0, r2Bytes: 0, r2FreeBytes: (10 * 1024 * 1024 * 1024), usdPerGB: 0.015, usdKrw: 1380, gbPrice: CLOUD_GB_PRICE };
     db.get(`SELECT value FROM settings WHERE key='ops_fixed_krw'`, [], (e1, r1) => {
         out.fixedKrw = Math.max(0, Math.floor(Number(r1 && r1.value) || 0));
         db.get(`SELECT value FROM settings WHERE key='backup_sub_price'`, [], (e2, r2) => {
@@ -3328,6 +3338,20 @@ app.get('/api/admin/ops-finance', (req, res) => {
                 });
             });
         });
+    });
+});
+// ☁️ [관리자] 클라우드저장소 GB당 월요금 조회·설정 (기본 25원/GB = 100GB 2,500원)
+app.get('/api/admin/cloud-gb-price', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ gbPrice: CLOUD_GB_PRICE, options: _cloudOptions() });
+});
+app.post('/api/admin/cloud-gb-price', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const v = Math.max(1, Math.floor(Number(req.body.gbPrice) || 0));
+    if (!(v >= 1)) return res.status(400).json({ error: 'GB당 요금을 확인하세요.' });
+    db.run(`INSERT INTO settings(key,value) VALUES('cloud_gb_price',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(v)], (e) => {
+        if (e) return res.status(500).json({ error: e.message });
+        _loadCloudGbPrice(() => res.json({ ok: true, gbPrice: CLOUD_GB_PRICE, options: _cloudOptions() }));
     });
 });
 app.post('/api/admin/ops-fixed', (req, res) => {
