@@ -3406,6 +3406,32 @@ app.post('/api/admin/cloud-gb-price', (req, res) => {
         _loadCloudGbPrice(() => res.json({ ok: true, gbPrice: CLOUD_GB_PRICE, options: _cloudOptions() }));
     });
 });
+// 🧹 [관리자] 클라우드 저장소·구독 테스트 데이터 초기화 — 깨끗한 상태에서 흐름 점검용.
+//    삭제: 클라우드 구독(backup) + 미러 파일 DB + 저장소 사용량 + 미러 on/off + R2의 mirror/ 오브젝트(가능 시).
+app.post('/api/admin/cloud-reset', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const run = (sql) => new Promise(r => db.run(sql, function () { r(this ? this.changes : 0); }));
+    try {
+        const subs = await run(`DELETE FROM subscriptions WHERE kind='backup'`);
+        const mf = await run(`DELETE FROM mirror_files`);
+        const cs = await run(`DELETE FROM cloud_storage`);
+        await run(`DELETE FROM mirror_prefs`);
+        let r2Deleted = 0;
+        try {
+            if (_r2) {
+                const { ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
+                let token;
+                do {
+                    const out = await _r2.client.send(new ListObjectsV2Command({ Bucket: _r2.bucket, Prefix: 'mirror/', ContinuationToken: token }));
+                    const keys = (out.Contents || []).map(o => ({ Key: o.Key }));
+                    if (keys.length) { await _r2.client.send(new DeleteObjectsCommand({ Bucket: _r2.bucket, Delete: { Objects: keys } })); r2Deleted += keys.length; }
+                    token = out.IsTruncated ? out.NextContinuationToken : null;
+                } while (token);
+            }
+        } catch (e) { console.warn('[cloud-reset] R2 정리 일부 실패:', e && e.message); }
+        res.json({ ok: true, subscriptions: subs, mirrorFiles: mf, cloudStorage: cs, r2Deleted });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.post('/api/admin/ops-fixed', (req, res) => {
     if (!requireAdmin(req, res)) return;
     const krw = Math.max(0, Math.floor(Number(req.body.fixedKrw) || 0));
