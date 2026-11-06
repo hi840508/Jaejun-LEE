@@ -4594,28 +4594,32 @@
                 +'· 결제 카드 정보는 서버에 저장되지 않고 PG(카드사)에서 안전하게 처리됩니다.'
                 +'</div>'
                 +'<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:#0f172a;font-weight:700;margin-bottom:10px;cursor:pointer;"><input type="checkbox" id="_bk-agree" style="margin-top:2px;width:16px;height:16px;accent-color:#0b2b4b;"><span>위 <b>정기결제(매월 자동결제)·안내 사항</b>에 동의합니다. <span style="color:#dc2626;">(필수)</span></span></label>'
+                +'<div id="_bk-status" style="display:none;font-size:12px;margin-bottom:8px;padding:8px 10px;border-radius:8px;"></div>'
                 +'<button id="_bk-go" style="width:100%;padding:13px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;cursor:pointer;margin-bottom:8px;opacity:.6;" disabled>동의 후 구독 시작</button>'
                 +'<button id="_bk-cancel" style="width:100%;padding:9px;border:none;background:transparent;color:#64748b;cursor:pointer;">나중에</button>'
+                +(st.sim?'<div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:6px;">※ 현재 시뮬레이터 모드 — 실제 청구 없이 흐름이 완료됩니다.</div>':'<div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:6px;">카드 결제창이 열리지 않으면 웹브라우저(Chrome/Edge)에서 시도하거나, 관리자는 Admin ▸ 카드결제 PG 설정에서 시뮬레이터로 테스트하세요.</div>')
                 +'</div>';
             document.body.appendChild(ov); ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
             ov.querySelectorAll('._bk-opt').forEach(el=>el.addEventListener('click',()=>{ window.__bkSelGb=Number(el.getAttribute('data-gb')); ov.querySelectorAll('._bk-opt').forEach(x=>x.style.borderColor=(x===el?'#0b2b4b':'#e2e8f0')); const rb=el.querySelector('input'); if(rb) rb.checked=true; }));
             // ✅ 동의 체크 시에만 구독 버튼 활성화
             { const ag=ov.querySelector('#_bk-agree'); const go0=ov.querySelector('#_bk-go'); if(ag&&go0) ag.addEventListener('change',()=>{ go0.disabled=!ag.checked; go0.style.opacity=ag.checked?'1':'.6'; go0.textContent=ag.checked?'선택 용량으로 구독 시작':'동의 후 구독 시작'; }); }
             ov.querySelector('#_bk-cancel').onclick=()=>ov.remove();
+            const _bkStatus=(msg,kind)=>{ const el=ov.querySelector('#_bk-status'); if(!el) return; el.style.display='block'; el.textContent=msg; el.style.background=(kind==='err'?'#fef2f2':'#eff6ff'); el.style.color=(kind==='err'?'#b91c1c':'#0f2f52'); el.style.border='1px solid '+(kind==='err'?'#fecaca':'#bfdbfe'); };
             ov.querySelector('#_bk-go').onclick=async()=>{
                 const ag=ov.querySelector('#_bk-agree'); if(!ag||!ag.checked){ showToast('정기결제 동의가 필요합니다.'); return; }
                 const go=ov.querySelector('#_bk-go'); go.disabled=true; go.textContent='처리 중…';
                 const selGb=window.__bkSelGb||opts[0].gb; const osel=opts.find(t=>t.gb===selGb)||opts[0];
                 try{
-                    if(!st.hasCard){ await window.registerBilling({goodsName:'클라우드저장소 카드등록'}); }   // 카드 먼저 등록
+                    if(!st.hasCard){ _bkStatus('카드 등록 창을 여는 중… (결제창에서 카드 정보를 입력해 주세요)'); await window.registerBilling({goodsName:'클라우드저장소 카드등록'}); }   // 카드 먼저 등록
+                    _bkStatus('구독 처리 중…');
                     const r=await fetch(`${API_URL}/api/mirror/subscribe`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({gb:selGb, agreed:true}) });
                     const d=await r.json().catch(()=>({}));
-                    if(!r.ok||!d.ok){ if(d.needCard){ go.disabled=false; go.textContent='선택 용량으로 구독 시작'; return showToast('카드 등록이 필요합니다.'); } throw new Error(d.error||'구독 실패'); }
+                    if(!r.ok||!d.ok){ if(d.needCard){ go.disabled=false; go.textContent='선택 용량으로 구독 시작'; _bkStatus('카드 등록이 필요합니다. 카드 등록 후 다시 시도해 주세요.','err'); return; } throw new Error(d.error||'구독 실패'); }
                     ov.remove();
                     showToast('✅ 클라우드저장소 구독 시작 — '+_gb(selGb)+(d.firstCharge&&d.firstCharge.ok?` · 월 ${osel.price.toLocaleString()}원 결제 완료`:''));
                     try{ if(window.openMirrorPanel) openMirrorPanel(); }catch(_){}
                     try{ if(window.RCMirror && RCMirror.backupAll) RCMirror.backupAll(); }catch(_){}
-                }catch(e){ go.disabled=false; go.textContent='선택 용량으로 구독 시작'; showToast(e.message||'구독 취소'); }
+                }catch(e){ go.disabled=false; go.textContent='선택 용량으로 구독 시작'; _bkStatus('진행 실패: '+((e&&e.message)||'카드 결제창을 완료하지 못했습니다')+' — 웹브라우저에서 시도하거나 관리자에게 PG 설정(시뮬레이터) 확인을 요청하세요.','err'); }
             };
         };
         // ☁️ 용량 변경/증설 — 현재 구독의 용량을 다른 옵션으로 변경(즉시 반영, 금액은 다음 청구부터).

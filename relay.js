@@ -3284,7 +3284,7 @@ app.get('/api/mirror/subscription', (req, res) => {
             {
                 const curGb = sub ? Math.max(0, Math.floor(Number(sub.capacity_gb) || 0)) : 0;
                 const opts = _cloudOptions();
-                res.json({ active: !!(sub && sub.status === 'active'), status: sub ? sub.status : null, subId: sub ? sub.id : null, nextChargeAt: sub ? sub.nextChargeAt : null, cancelAt: sub ? (sub.cancel_at || null) : null, canceling: !!(sub && sub.cancel_at), hasCard: !!card, cardMaskNo: card ? card.cardMaskNo : '', issuerName: card ? card.issuerName : '', billingEnabled: PG_PROVIDER === 'kicc',
+                res.json({ active: !!(sub && sub.status === 'active'), status: sub ? sub.status : null, subId: sub ? sub.id : null, nextChargeAt: sub ? sub.nextChargeAt : null, cancelAt: sub ? (sub.cancel_at || null) : null, canceling: !!(sub && sub.cancel_at), hasCard: !!card, cardMaskNo: card ? card.cardMaskNo : '', issuerName: card ? card.issuerName : '', billingEnabled: PG_PROVIDER === 'kicc', sim: _kiccIsSim(),
                     gbPrice: CLOUD_GB_PRICE, options: opts, capacityGb: curGb, amount: sub ? sub.amount : 0, price: (opts[0] ? opts[0].price : 2500) });
             }
         });
