@@ -5475,7 +5475,7 @@
  "#rc-folder-page #_sf-grid{min-height:0;}",
  "#rc-folder-page img{-webkit-user-drag:none;user-drag:none;}",
  "#rc-folder-page .rc-gf *{pointer-events:none;}",
- "#rc-folder-page .rc-gf .rc-gf-chk,#rc-folder-page .rc-gf .rc-more,#rc-folder-page .rc-gf .rc-clmenu{pointer-events:auto;}",
+ "#rc-folder-page .rc-gf .rc-gf-chk,#rc-folder-page .rc-gf .rc-more,#rc-folder-page .rc-gf .rc-clmenu,#rc-folder-page .rc-gf .rc-clup{pointer-events:auto;}",
  "#rc-folder-page ._sf-ic{width:36px;height:36px;border-radius:10px;border:1px solid #ededf0;background:#fff;color:#4b5563;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0;transition:background .12s;}",
  "#rc-folder-page ._sf-ic:hover{background:#f4f5f7;}",
  "#rc-folder-page ._sf-txt{height:36px;border-radius:10px;border:1px solid #ededf0;background:#fff;color:#374151;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;display:flex;align-items:center;gap:5px;flex:none;white-space:nowrap;}",
@@ -6002,18 +6002,40 @@
             }
             // ☁️ 클라우드 진행 오버레이용 프로그레스바 생성(파일/폴더 카드 공통)
             function _sfBar(el){ let bar=el.querySelector('.rc-clbar'); if(!bar){ bar=document.createElement('div'); bar.className='rc-clbar'; bar.style.cssText='position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(15,47,82,.15);z-index:5;overflow:hidden;'; bar.innerHTML='<div style="height:100%;width:0;background:#0f2f52;transition:width .45s ease;"></div>'; const host=el.querySelector('.rc-thumbbox')||el; try{ if(getComputedStyle(host).position==='static') host.style.position='relative'; }catch(_){} host.appendChild(bar); } return bar.firstChild; }
-            // 현재 그리드(파일검색과 동일)의 카드에 클라우드 저장상태를 칠한다: 저장됨=불투명, 미저장=반투명+진행바, 폴더=하위 업로드 비율.
+            // 📤 단일 파일을 클라우드에 올림(로컬 전용 → 저장됨). 올리기 버튼에서 호출.
+            async function _sfUploadOne(rpath, fname, btn){
+                if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('공유폴더가 필요합니다.'); return; }
+                try{ const st=await window.RCMirror.status(); if(st && st.serviceEnabled===false){ showToast('클라우드 서비스가 중지되어 있습니다(관리자 설정).'); return; } }catch(_){}
+                if(btn){ btn.disabled=true; btn.textContent='올리는 중…'; }
+                try{
+                    const blob=await window.RCFolder.getFileAt(path, fname); if(!blob) throw new Error('파일을 읽지 못했습니다.');
+                    await window.RCMirror.uploadOne(rpath, blob, blob.type||'', blob.lastModified||Date.now());
+                    showToast('✅ 클라우드에 올렸습니다.'); if(window.__sfCloudReload) window.__sfCloudReload();
+                }catch(e){ if(btn){ btn.disabled=false; btn.textContent='☁ 올리기'; }
+                    if(String((e&&e.message)||'').indexOf('용량')>=0){ showToast('무료 용량을 초과했습니다 — 용량 구독 화면을 엽니다.'); try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} }
+                    else showToast('올리기 실패: '+((e&&e.message)||e)); }
+            }
+            // 현재 그리드(파일검색과 동일)의 카드에 클라우드 저장상태를 명확한 뱃지로 표시: ☁저장됨(+관리) / 로컬 전용(+올리기). 폴더=하위 업로드 비율.
             function _sfCloudPaint(ov){
                 const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
                 const have=window.__sfCloudHave||{}; const all=window.__sfCloudAll||[];
                 const curPrefix=path.length?(path.join('/')+'/'):'';
+                const _setBadge=(host,txt,bg)=>{ let b=host.querySelector('.rc-clbadge'); if(!b){ b=document.createElement('div'); b.className='rc-clbadge'; host.appendChild(b); } b.textContent=txt; b.style.cssText='position:absolute;bottom:6px;left:6px;padding:3px 7px;border-radius:6px;background:'+bg+';color:#fff;font-size:10px;font-weight:800;z-index:5;pointer-events:none;'; };
                 grid.querySelectorAll('.rc-gf[data-here="1"]').forEach(el=>{ const fn=el.getAttribute('data-fname'); if(!fn) return; const rp=curPrefix+fn;
-                    if(have[rp]){ el.style.opacity=''; const b=el.querySelector('.rc-clbar'); if(b) b.remove(); el.setAttribute('data-cloud','1');
-                        // 클라우드 저장된 파일 → 텍스트 라벨 "관리" 버튼(열기·공유·삭제 메뉴)
-                        if(!el.querySelector('.rc-clmenu')){ const host=el.querySelector('.rc-thumbbox')||el; try{ if(getComputedStyle(host).position==='static') host.style.position='relative'; }catch(_){} const sb=document.createElement('button'); sb.className='rc-clmenu'; sb.title='열기·공유·삭제'; sb.textContent='관리 ▾'; sb.style.cssText='position:absolute;top:6px;right:6px;padding:5px 10px;border:none;border-radius:8px;background:rgba(15,47,82,.92);color:#fff;font-size:11px;font-weight:800;cursor:pointer;z-index:6;'; sb.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); _sfCloudActions(rp, sb); }); host.appendChild(sb); } }
-                    else { el.style.opacity='0.5'; el.style.transition='opacity .35s'; const f=_sfBar(el); if((parseFloat(f.style.width)||0)<6) f.style.width='6%'; const old=el.querySelector('.rc-clmenu'); if(old) old.remove(); } });
+                    const host=el.querySelector('.rc-thumbbox')||el; try{ if(getComputedStyle(host).position==='static') host.style.position='relative'; }catch(_){}
+                    el.style.opacity='';   // 반투명 표시 폐지 — 상태는 뱃지로만 명확히 전달
+                    const bar=el.querySelector('.rc-clbar'); if(bar) bar.remove();
+                    if(have[rp]){ el.setAttribute('data-cloud','1');
+                        _setBadge(host,'☁ 저장됨','rgba(16,122,58,.92)');
+                        const up=host.querySelector('.rc-clup'); if(up) up.remove();
+                        if(!host.querySelector('.rc-clmenu')){ const sb=document.createElement('button'); sb.className='rc-clmenu'; sb.title='열기·공유·삭제'; sb.textContent='관리 ▾'; sb.style.cssText='position:absolute;top:6px;right:6px;padding:5px 10px;border:none;border-radius:8px;background:rgba(15,47,82,.92);color:#fff;font-size:11px;font-weight:800;cursor:pointer;z-index:6;'; sb.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); _sfCloudActions(rp, sb); }); host.appendChild(sb); }
+                    } else { el.removeAttribute('data-cloud');
+                        _setBadge(host,'로컬 전용','rgba(100,116,139,.92)');
+                        const mn=host.querySelector('.rc-clmenu'); if(mn) mn.remove();
+                        if(!host.querySelector('.rc-clup')){ const ub=document.createElement('button'); ub.className='rc-clup'; ub.title='클라우드에 올리기'; ub.textContent='☁ 올리기'; ub.style.cssText='position:absolute;top:6px;right:6px;padding:5px 10px;border:none;border-radius:8px;background:rgba(34,68,107,.92);color:#fff;font-size:11px;font-weight:800;cursor:pointer;z-index:6;'; ub.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); _sfUploadOne(rp, fn, ub); }); host.appendChild(ub); }
+                    } });
                 grid.querySelectorAll('.rc-gfd').forEach(el=>{ const nm=el.getAttribute('data-name'); if(!nm) return; const pre=curPrefix+nm+'/'; const sub=all.filter(x=>x.rpath.indexOf(pre)===0); const tot=sub.length; const up=sub.filter(x=>have[x.rpath]).length; const pct=tot?Math.round(up/tot*100):100;
-                    if(pct>=100){ el.style.opacity=''; const b=el.querySelector('.rc-clbar'); if(b) b.remove(); } else { el.style.opacity=String(0.5+0.45*(pct/100)); el.style.transition='opacity .35s'; const f=_sfBar(el); f.style.width=pct+'%'; } });
+                    if(pct>=100){ el.style.opacity=''; const b=el.querySelector('.rc-clbar'); if(b) b.remove(); } else { el.style.opacity=String(0.6+0.4*(pct/100)); el.style.transition='opacity .35s'; const f=_sfBar(el); f.style.width=pct+'%'; } });
             }
             // 파일검색과 동일한 그리드 위에 클라우드 업로드 진행을 오버레이 + 백그라운드 업로드(전체 트리).
             async function _sfCloudOverlay(ov){
