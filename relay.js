@@ -3125,9 +3125,18 @@ app.post('/api/lockfile/:token/open', (req, res) => {
     });
 });
 
-// ☁️ 클라우드 저장 용량 (Alpha K 지갑 결제) — 100MB 무료, 500GB당 3만원(= GB당 60원)
+// ☁️ 클라우드 저장 용량 — 100MB 무료(미구독). 구독 등급별 용량 연동.
 const CLOUD_FREE_BYTES = 100 * 1024 * 1024;
 const CLOUD_PRICE_PER_GB = 60;
+// 🏷 클라우드저장소 구독 등급(월 카드결제) — 구독 시 해당 용량 제공. 가격은 등급 선택으로 결정.
+const CLOUD_TIERS = [
+    { key: 'basic', label: '베이직', gb: 100,  price: 9900 },
+    { key: 'pro',   label: '프로',   gb: 1024, price: 29000 },
+    { key: 'max',   label: '맥스',   gb: 4096, price: 99000 }
+];
+function _tierByKey(k) { return CLOUD_TIERS.find(t => t.key === k) || null; }
+function _tierByAmount(amt) { amt = Math.floor(Number(amt) || 0); let best = null; CLOUD_TIERS.forEach(t => { if (t.price <= amt && (!best || t.price > best.price)) best = t; }); return best || CLOUD_TIERS.find(t => t.price === amt) || null; }
+const GB_BYTES = 1024 * 1024 * 1024;
 app.get('/api/cloud/usage/:name', (req, res) => {
     db.get(`SELECT purchasedBytes, usedBytes FROM cloud_storage WHERE name = ?`, [req.params.name], (err, row) => {
         const purchased = (row && row.purchasedBytes) || 0;
@@ -3181,13 +3190,18 @@ app.post('/api/cloud/usage', (req, res) => {
 // 원하는 사용자만 클라우드 지갑(cloud_storage, GB당 60원)으로 결제해 공유폴더 파일을 R2에 백업.
 // 원본 손실(디스크 고장) 대비 클라우드 사본. 업로드=브라우저→R2 프리사인 PUT(무료 egress), 복원=프리사인 GET.
 function _mirrorKey(user, rpath) { return 'mirror/' + crypto.createHash('sha1').update(user + '|' + rpath).digest('hex'); }
-function _mirrorUsage(name, cb) {   // cb(err, {used, quota, purchased, enabled})
+function _mirrorUsage(name, cb) {   // cb(err, {used, quota, purchased, enabled, tier, subBytes})
     db.get(`SELECT COALESCE(SUM(size),0) AS used FROM mirror_files WHERE userName = ?`, [name], (e, r) => {
         if (e) return cb(e);
         db.get(`SELECT purchasedBytes FROM cloud_storage WHERE name = ?`, [name], (e2, c) => {
             db.get(`SELECT enabled FROM mirror_prefs WHERE userName = ?`, [name], (e3, p) => {
-                const purchased = (c && c.purchasedBytes) || 0;
-                cb(null, { used: (r && r.used) || 0, purchased, quota: CLOUD_FREE_BYTES + purchased, enabled: !!(p && p.enabled) });
+                // 🏷 활성 구독 등급 → 저장 용량 연동
+                db.get(`SELECT amount FROM subscriptions WHERE owner=? AND kind='backup' AND status='active' ORDER BY id DESC LIMIT 1`, [name], (e4, sub) => {
+                    const purchased = (c && c.purchasedBytes) || 0;
+                    const tier = sub ? _tierByAmount(sub.amount) : null;
+                    const subBytes = tier ? (tier.gb * GB_BYTES) : 0;
+                    cb(null, { used: (r && r.used) || 0, purchased, subBytes, tier: tier ? tier.key : null, tierLabel: tier ? tier.label : null, quota: CLOUD_FREE_BYTES + purchased + subBytes, enabled: !!(p && p.enabled) });
+                });
             });
         });
     });
@@ -3240,7 +3254,9 @@ app.get('/api/mirror/subscription', (req, res) => {
         db.get(`SELECT id, cardMaskNo, issuerName FROM billing_keys WHERE owner=? AND status='active' ORDER BY id DESC LIMIT 1`, [me], (e2, card) => {
             db.get(`SELECT value FROM settings WHERE key='backup_sub_price'`, [], (e3, row) => {
                 const price = Math.floor(Number(row && row.value) || 9900);
-                res.json({ active: !!(sub && sub.status === 'active'), status: sub ? sub.status : null, subId: sub ? sub.id : null, nextChargeAt: sub ? sub.nextChargeAt : null, price, hasCard: !!card, cardMaskNo: card ? card.cardMaskNo : '', issuerName: card ? card.issuerName : '', billingEnabled: PG_PROVIDER === 'kicc' });
+                const curTier = sub ? _tierByAmount(sub.amount) : null;
+                res.json({ active: !!(sub && sub.status === 'active'), status: sub ? sub.status : null, subId: sub ? sub.id : null, nextChargeAt: sub ? sub.nextChargeAt : null, price, hasCard: !!card, cardMaskNo: card ? card.cardMaskNo : '', issuerName: card ? card.issuerName : '', billingEnabled: PG_PROVIDER === 'kicc',
+                    tiers: CLOUD_TIERS, tier: curTier ? curTier.key : null, tierLabel: curTier ? curTier.label : null, tierGb: curTier ? curTier.gb : 0, amount: sub ? sub.amount : 0 });
             });
         });
     });
@@ -3254,20 +3270,23 @@ app.post('/api/mirror/subscribe', (req, res) => {
         if (!card) return res.status(409).json({ error: '등록된 결제 카드가 없습니다. 먼저 카드를 등록하세요.', needCard: true });
         db.get(`SELECT id FROM subscriptions WHERE owner=? AND kind='backup' AND status='active'`, [me], (e2, ex) => {
             if (ex) { db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,1) ON CONFLICT(userName) DO UPDATE SET enabled=1`, [me]); return res.json({ ok: true, already: true, subId: ex.id, enabled: true }); }
-            db.get(`SELECT value FROM settings WHERE key='backup_sub_price'`, [], (e3, row) => {
-                const amount = Math.floor(Number(row && row.value) || 9900); const now = new Date(); const next = _addIntervalISO(now.toISOString(), 'monthly', 1);
+            {
+                // 🏷 등급 선택 — tier 지정 시 해당 등급가·용량, 미지정 시 베이직(또는 설정가)
+                const tier = _tierByKey(String((req.body && req.body.tier) || '')) || CLOUD_TIERS[0];
+                const amount = tier.price; const goods = 'RAYCloud 클라우드저장소 (' + tier.label + ' ' + tier.gb + 'GB)';
+                const now = new Date(); const next = _addIntervalISO(now.toISOString(), 'monthly', 1);
                 db.run(`INSERT INTO subscriptions (owner, billingId, seller, amount, goodsName, intervalType, intervalCount, nextChargeAt, status, kind, label, created_at, updated_at) VALUES (?,?,?,?,?, 'monthly', 1, ?, 'active', 'backup', ?, ?, ?)`,
-                    [me, card.id, _adminAccount(), amount, 'RAYCloud 공유폴더 백업 서비스', next, '공유폴더 백업 구독', now.toISOString(), now.toISOString()], function (ie) {
+                    [me, card.id, _adminAccount(), amount, goods, next, ('클라우드저장소 ' + tier.label), now.toISOString(), now.toISOString()], function (ie) {
                         if (ie) return res.status(500).json({ error: ie.message });
                         const subId = this.lastID;
                         db.run(`INSERT INTO mirror_prefs (userName, enabled) VALUES (?,1) ON CONFLICT(userName) DO UPDATE SET enabled=1`, [me]);   // 백업 즉시 활성화
-                        _billingCharge({ billingId: card.id, amount, goodsName: 'RAYCloud 공유폴더 백업 서비스', seller: _adminAccount(), subscriptionId: subId }, (err, out) => {
-                            if (err) { db.run(`UPDATE subscriptions SET failCount=1, updated_at=? WHERE id=?`, [new Date().toISOString(), subId]); return res.json({ ok: true, subId, enabled: true, firstCharge: { ok: false, error: err.message } }); }
+                        _billingCharge({ billingId: card.id, amount, goodsName: goods, seller: _adminAccount(), subscriptionId: subId }, (err, out) => {
+                            if (err) { db.run(`UPDATE subscriptions SET failCount=1, updated_at=? WHERE id=?`, [new Date().toISOString(), subId]); return res.json({ ok: true, subId, enabled: true, tier: tier.key, gb: tier.gb, firstCharge: { ok: false, error: err.message } }); }
                             db.run(`UPDATE subscriptions SET lastChargedAt=?, lastPgCno=? WHERE id=?`, [new Date().toISOString(), out.tid || null, subId]);
-                            res.json({ ok: true, subId, enabled: true, firstCharge: { ok: true, amount: out.amount, approvalNo: out.approvalNo } });
+                            res.json({ ok: true, subId, enabled: true, tier: tier.key, gb: tier.gb, firstCharge: { ok: true, amount: out.amount, approvalNo: out.approvalNo } });
                         });
                     });
-            });
+            }
         });
     });
 });
@@ -3318,6 +3337,28 @@ app.post('/api/admin/ops-fixed', (req, res) => {
         if (e) return res.status(500).json({ error: e.message });
         res.json({ ok: true, fixedKrw: krw });
     });
+});
+// ☁️ AWS 실시간 비용(이번 달 MTD) — Cost Explorer. 자격증명=EC2 IAM 역할(ce:GetCostAndUsage) 또는 env AWS_ACCESS_KEY_ID/SECRET.
+let _awsCostCache = { at: 0, data: null };
+app.get('/api/admin/aws-cost', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    // CE는 요청당 $0.01 → 10분 캐시
+    if (_awsCostCache.data && (Date.now() - _awsCostCache.at) < 10 * 60 * 1000) return res.json(_awsCostCache.data);
+    let CE; try { CE = require('@aws-sdk/client-cost-explorer'); } catch (_) { return res.json({ configured: false, reason: 'package', msg: '@aws-sdk/client-cost-explorer 미설치' }); }
+    try {
+        const client = new CE.CostExplorerClient({ region: 'us-east-1' });   // 자격증명 체인: env → 공유설정 → EC2 IAM 역할
+        const now = new Date(); const y = now.getUTCFullYear(), m = now.getUTCMonth();
+        const start = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+        const end = new Date(Date.UTC(y, m + 1, 1)).toISOString().slice(0, 10);
+        const out = await client.send(new CE.GetCostAndUsageCommand({ TimePeriod: { Start: start, End: end }, Granularity: 'MONTHLY', Metrics: ['UnblendedCost'] }));
+        const r0 = (out.ResultsByTime && out.ResultsByTime[0]) || {}; const amt = r0.Total && r0.Total.UnblendedCost;
+        const usd = Number(amt && amt.Amount) || 0; const krw = Math.round(usd * 1380);
+        const data = { configured: true, usd, unit: (amt && amt.Unit) || 'USD', krw, start, end };
+        _awsCostCache = { at: Date.now(), data };
+        res.json(data);
+    } catch (e) {
+        res.json({ configured: false, reason: 'error', msg: String((e && e.message) || e) });
+    }
 });
 app.post('/api/mirror/upload-url', (req, res) => {
     const name = requireUser(req, res); if (!name) return;

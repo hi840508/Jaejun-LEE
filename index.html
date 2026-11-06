@@ -4566,35 +4566,42 @@
         };
         // ☁️🔁 백업 구독 안내 모달
         window._openBackupSubscribeModal = function(st){
-            const price = Number(st.price)||9900;
+            const tiers = (st.tiers&&st.tiers.length)?st.tiers:[{key:'basic',label:'베이직',gb:100,price:(Number(st.price)||9900)}];
+            window.__bkSel = tiers[0].key;
             const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:4650;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
             const cardLine = st.hasCard
-                ? `<div style="font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;margin-bottom:14px;">결제 카드: <b>${(st.issuerName||'카드')} ${st.cardMaskNo||''}</b></div>`
-                : `<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:14px;">등록된 결제 카드가 없습니다. 카드 등록 후 자동으로 구독이 시작됩니다.</div>`;
-            const btnLabel = st.hasCard ? `월 ${price.toLocaleString()}원 구독 시작` : `카드 등록하고 구독 시작`;
-            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:420px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
+                ? `<div style="font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;margin:4px 0 14px;">결제 카드: <b>${(st.issuerName||'카드')} ${st.cardMaskNo||''}</b></div>`
+                : `<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin:4px 0 14px;">등록된 결제 카드가 없습니다. 카드 등록 후 자동으로 구독이 시작됩니다.</div>`;
+            const _gb=g=>g>=1024?((g/1024)+'TB'):(g+'GB');
+            const tierCards = tiers.map((t,i)=>'<label class="_bk-tier" data-key="'+t.key+'" style="display:flex;align-items:center;gap:10px;border:2px solid '+(i===0?'#0b2b4b':'#e2e8f0')+';border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;">'
+                +'<input type="radio" name="_bk-tier" value="'+t.key+'" '+(i===0?'checked':'')+' style="accent-color:#0b2b4b;">'
+                +'<div style="flex:1;"><div style="font-weight:800;font-size:14px;">'+t.label+' <span style="color:#0f2f52;">'+_gb(t.gb)+'</span></div></div>'
+                +'<div style="font-weight:900;font-size:15px;color:#0f172a;">월 '+t.price.toLocaleString()+'원</div></label>').join('');
+            ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:440px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:90vh;overflow:auto;">'
                 +'<div style="font-weight:800;font-size:18px;margin-bottom:6px;">☁️ 클라우드저장소</div>'
-                +'<div style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:14px;">파일검색(공유폴더) 데이터를 클라우드에 저장합니다. 로컬에서 지워도 유지되고, 어느 기기에서든 열람·복원할 수 있습니다.</div>'
-                +`<div style="font-size:26px;font-weight:900;margin-bottom:4px;">월 ${price.toLocaleString()}<span style="font-size:15px;font-weight:700;">원</span></div>`
-                +'<div style="font-size:11px;color:#94a3b8;margin-bottom:14px;">매월 자동 결제 · 언제든 지갑에서 해지 가능'+(st.sim?' · (시뮬레이터: 실제 청구 없음)':'')+'</div>'
+                +'<div style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:14px;">파일검색(공유폴더) 데이터를 클라우드에 저장합니다. 로컬에서 지워도 유지되고, 어느 기기에서든 열람·복원할 수 있습니다. <b>등급을 선택하세요.</b></div>'
+                +tierCards
+                +'<div style="font-size:11px;color:#94a3b8;margin:4px 0 8px;">매월 자동 결제 · 언제든 지갑(결제 관리)에서 등급 변경·해지 가능</div>'
                 +cardLine
-                +'<button id="_bk-go" style="width:100%;padding:13px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;cursor:pointer;margin-bottom:8px;">'+btnLabel+'</button>'
+                +'<button id="_bk-go" style="width:100%;padding:13px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;cursor:pointer;margin-bottom:8px;">선택 등급으로 구독 시작</button>'
                 +'<button id="_bk-cancel" style="width:100%;padding:9px;border:none;background:transparent;color:#64748b;cursor:pointer;">나중에</button>'
                 +'</div>';
             document.body.appendChild(ov); ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
+            ov.querySelectorAll('._bk-tier').forEach(el=>el.addEventListener('click',()=>{ window.__bkSel=el.getAttribute('data-key'); ov.querySelectorAll('._bk-tier').forEach(x=>x.style.borderColor=(x===el?'#0b2b4b':'#e2e8f0')); const rb=el.querySelector('input'); if(rb) rb.checked=true; }));
             ov.querySelector('#_bk-cancel').onclick=()=>ov.remove();
             ov.querySelector('#_bk-go').onclick=async()=>{
                 const go=ov.querySelector('#_bk-go'); go.disabled=true; go.textContent='처리 중…';
+                const tierKey=window.__bkSel||tiers[0].key; const tsel=tiers.find(t=>t.key===tierKey)||tiers[0];
                 try{
-                    if(!st.hasCard){ await window.registerBilling({goodsName:'공유폴더 백업 카드등록'}); }   // 카드 먼저 등록
-                    const r=await fetch(`${API_URL}/api/mirror/subscribe`, { method:'POST', credentials:'include' });
+                    if(!st.hasCard){ await window.registerBilling({goodsName:'클라우드저장소 카드등록'}); }   // 카드 먼저 등록
+                    const r=await fetch(`${API_URL}/api/mirror/subscribe`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({tier:tierKey}) });
                     const d=await r.json().catch(()=>({}));
-                    if(!r.ok||!d.ok){ if(d.needCard){ go.disabled=false; go.textContent=btnLabel; return showToast('카드 등록이 필요합니다.'); } throw new Error(d.error||'구독 실패'); }
+                    if(!r.ok||!d.ok){ if(d.needCard){ go.disabled=false; go.textContent='선택 등급으로 구독 시작'; return showToast('카드 등록이 필요합니다.'); } throw new Error(d.error||'구독 실패'); }
                     ov.remove();
-                    showToast('✅ 백업 구독이 시작되었습니다'+(d.firstCharge&&d.firstCharge.ok?` · 월 ${price.toLocaleString()}원 결제 완료`:''));
-                    try{ if(window.openMirrorPanel) openMirrorPanel(); }catch(_){}   // 바로 백업 패널 열기
+                    showToast('✅ 클라우드저장소 구독 시작 — '+tsel.label+' '+_gb(tsel.gb)+(d.firstCharge&&d.firstCharge.ok?` · 월 ${tsel.price.toLocaleString()}원 결제 완료`:''));
+                    try{ if(window.openMirrorPanel) openMirrorPanel(); }catch(_){}
                     try{ if(window.RCMirror && RCMirror.backupAll) RCMirror.backupAll(); }catch(_){}
-                }catch(e){ go.disabled=false; go.textContent=btnLabel; showToast(e.message||'구독 취소'); }
+                }catch(e){ go.disabled=false; go.textContent='선택 등급으로 구독 시작'; showToast(e.message||'구독 취소'); }
             };
         };
         window.openMirrorPanel = async function(){
@@ -4621,7 +4628,7 @@
                 body.innerHTML= subBanner
                   +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><label style="font-weight:700;">클라우드저장소 사용</label>'
                   +'<button id="_mir-tog" style="margin-left:auto;padding:7px 14px;border-radius:999px;border:none;font-weight:800;cursor:pointer;'+(s.enabled?'background:#16a34a;color:#fff;':'background:#e2e8f0;color:#475569;')+'">'+(s.enabled?'ON':'OFF')+'</button></div>'
-                  +'<div style="background:#f1f5f9;border-radius:10px;padding:12px;margin-bottom:14px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span>현재 용량</span><span><b>'+fmt(s.used)+'</b> / '+fmt(s.quota)+' ('+pct+'%)</span></div><div style="height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+(pct>=90?'#dc2626':'#0f2f52')+';"></div></div><div style="font-size:11px;color:#94a3b8;margin-top:6px;">기본 '+fmt(s.freeBytes)+' 제공</div></div>'
+                  +'<div style="background:#f1f5f9;border-radius:10px;padding:12px;margin-bottom:14px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span>현재 용량'+(s.tierLabel?(' <span style="color:#0f2f52;font-weight:800;">· '+s.tierLabel+'</span>'):'')+'</span><span><b>'+fmt(s.used)+'</b> / '+fmt(s.quota)+' ('+pct+'%)</span></div><div style="height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+(pct>=90?'#dc2626':'#0f2f52')+';"></div></div><div style="font-size:11px;color:#94a3b8;margin-top:6px;">'+(s.tierLabel?('구독 등급 '+s.tierLabel+' · 용량 '+fmt(s.subBytes||0)):('미구독 · 기본 '+fmt(s.freeBytes)+' 제공'))+'</div></div>'
                   +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><button id="_mir-bk" style="padding:11px;border:none;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-radius:10px;font-weight:800;cursor:pointer;">⬆️ 지금 저장</button><button id="_mir-rs" style="padding:11px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:10px;font-weight:800;cursor:pointer;">⬇️ 복원</button></div>'
                   +'<div id="_mir-prog" style="font-size:12px;color:#475569;margin-top:12px;white-space:pre-line;"></div>';
                 const prog=body.querySelector('#_mir-prog');
@@ -4752,6 +4759,7 @@
                 try{ const r=await fetch(API_URL+'/api/admin/r2-usage'); if(r.ok) usage=await r.json(); }catch(_){}
                 let cloud=null; try{ const r=await fetch(API_URL+'/api/admin/cloud-usage'); if(r.ok) cloud=await r.json(); }catch(_){}
                 let finance=null; try{ const r=await fetch(API_URL+'/api/admin/ops-finance'); if(r.ok) finance=await r.json(); }catch(_){}
+                let aws=null; try{ const r=await fetch(API_URL+'/api/admin/aws-cost'); if(r.ok) aws=await r.json(); }catch(_){}
                 const last=bk.last||{}; const items=(bk.items||[]).slice(0,20);
                 let usageHtml='';
                 if(usage){ const pct=usage.freeLimit?Math.min(100,Math.round(usage.total/usage.freeLimit*100)):0; const g=usage.groups||{};
@@ -4764,19 +4772,29 @@
                 let financeHtml='';
                 if(finance){
                     const won=v=>(Math.round(Number(v)||0)).toLocaleString()+'원';
-                    const net=Number(finance.netKrw)||0;
+                    // AWS 실시간(이번 달 MTD) — 연동되면 실제값을 총운영비에 사용, 미연동이면 수동 고정비 사용
+                    const awsOk=!!(aws&&aws.configured);
+                    const awsKrw=awsOk?(Number(aws.krw)||0):0;
+                    const fixedKrw=Number(finance.fixedKrw)||0;
+                    const r2Krw=Number(finance.r2Krw)||0;
+                    const totalCost=(awsOk?awsKrw:fixedKrw)+r2Krw;   // AWS 연동 시 실제 AWS + R2, 아니면 수동고정 + R2
+                    const net=(Number(finance.subMonthlyKrw)||0)-totalCost;
+                    const awsRow = awsOk
+                        ? '<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>· AWS 이번 달 <b style="color:#166534;">실시간(MTD)</b></span><span>$'+(Number(aws.usd)||0).toFixed(2)+' ≈ '+won(awsKrw)+'</span></div>'
+                        : '<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>· AWS 이번 달 실시간</span><span style="color:#b45309;">미연동'+(aws&&aws.reason==='package'?'(패키지)':(aws&&aws.msg?'':''))+'</span></div>';
                     financeHtml='<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:0 0 18px;">'
                       +'<div style="font-weight:800;font-size:14px;margin-bottom:10px;">💰 운영 재무 현황 (월)</div>'
-                      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><span style="font-size:13px;color:#334155;min-width:130px;">고정 운영비(서버·AWS)</span>'
-                      +'<input id="_ao-fixedcost" type="number" min="0" value="'+(Number(finance.fixedKrw)||0)+'" style="width:120px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;text-align:right;"> 원'
+                      + awsRow
+                      +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>· R2(Cloudflare) 저장 변동비(추정)</span><span>'+won(r2Krw)+'</span></div>'
+                      +'<div style="display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap;"><span style="font-size:13px;color:#334155;min-width:150px;">· 기타 고정비(수동)'+(awsOk?' <span style="font-size:10px;color:#94a3b8;">(AWS 실시간 사용 중)</span>':'')+'</span>'
+                      +'<input id="_ao-fixedcost" type="number" min="0" value="'+fixedKrw+'" style="width:110px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;text-align:right;"> 원'
                       +'<button id="_ao-fixedsave" style="padding:6px 12px;border:none;border-radius:7px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-size:12px;font-weight:800;cursor:pointer;">저장</button>'
-                      +'<span style="font-size:11px;color:#94a3b8;">※ EC2 등 매월 고정 청구액을 입력(예: 21,000)</span></div>'
-                      +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>· R2 저장 변동비(추정)</span><span>'+won(finance.r2Krw)+'</span></div>'
-                      +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;padding:6px 0;border-top:1px solid #e2e8f0;margin-top:4px;"><span>예상 월 총 운영비</span><span style="color:#b45309;">'+won(finance.totalCostKrw)+'</span></div>'
+                      +'<span style="font-size:11px;color:#94a3b8;">'+(awsOk?'AWS 미포함 기타 고정비(도메인 등)':'AWS 미연동 시 매월 청구액 입력(예: 21,000)')+'</span></div>'
+                      +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;padding:6px 0;border-top:1px solid #e2e8f0;margin-top:4px;"><span>예상 월 총 운영비</span><span style="color:#b45309;">'+won(totalCost)+(awsOk?' <span style="font-size:10px;color:#94a3b8;font-weight:600;">(AWS 실시간)</span>':'')+'</span></div>'
                       +'<div style="height:1px;background:#e2e8f0;margin:8px 0;"></div>'
-                      +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>· 클라우드저장소 구독 매출 (활성 '+finance.subCount+'명 × '+won(finance.subPrice)+')</span><span style="color:#166534;">'+won(finance.subMonthlyKrw)+'</span></div>'
+                      +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>· 클라우드저장소 구독 매출 (활성 '+finance.subCount+'명)</span><span style="color:#166534;">'+won(finance.subMonthlyKrw)+'</span></div>'
                       +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;padding:6px 0;border-top:1px solid #e2e8f0;margin-top:4px;"><span>월 순손익 (매출 − 운영비)</span><span style="color:'+(net>=0?'#166534':'#dc2626')+';">'+(net>=0?'+':'')+won(net)+'</span></div>'
-                      +'<div style="font-size:11px;color:#94a3b8;margin-top:6px;line-height:1.6;">· R2는 egress(다운로드) 무료 · 실제 청구는 Cloudflare/AWS 대시보드에서 확인 · 고정비는 관리자가 매월 청구액으로 갱신</div>'
+                      +'<div style="font-size:11px;color:#94a3b8;margin-top:6px;line-height:1.6;">'+(awsOk?('· AWS 비용은 Cost Explorer 실시간(이번 달 누계) · 전일까지 반영, 10분 캐시'):('· AWS 실시간 미연동: EC2 IAM 역할에 <b>ce:GetCostAndUsage</b> 권한 부여 또는 서버 env에 AWS 키 설정 시 자동 표시'+(aws&&aws.reason==='package'?' · 서버에 @aws-sdk/client-cost-explorer 설치 필요':'')))+'<br>· R2는 egress(다운로드) 무료</div>'
                       +'</div>';
                 }
                 let cloudHtml='';
