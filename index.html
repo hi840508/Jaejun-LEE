@@ -5203,13 +5203,18 @@
             try{
                 if((!pathArr || pathArr.length===0) && window.RCMirror && window.RCMirror.list){   // 루트에서 클라우드 저장소 파일을 항상 서랍에 포함(구독·관리자 플래그 무관, 로그인 사용자 본인 데이터)
                     const cl=await window.RCMirror.list();
-                    for(const it of (cl||[])){ const rp=(it&&it.rpath)||''; const nm=rp.split('/').pop(); if(!nm) continue;
-                        const cat=_rcCatOf(nm); if(!cat) continue; const low=nm.toLowerCase();
-                        let ptype='RAYCLOUD_LOAD_IMAGE';
-                        if(cat==='3D') ptype='RAYCLOUD_LOAD_MESH'; else if(cat==='PICTURE'||RC_DCM_RE.test(low)) ptype='RAYCLOUD_LOAD_2D';
-                        const subf=(rp.split('/').slice(0,-1).join('/'))||'';
-                        items.push({ name:nm, cat:(cat==='DICOM'?'2D':cat), date:'', time:'', folder:('☁️ 클라우드'+(subf?(' · '+subf):'')), thumb:'', payload:{ type:ptype, name:nm, ref:{ cloud:true, rpath:rp } } });
-                    }
+                    // 📁 상위 폴더별로 그룹 → 같은 폴더의 DICOM 2장 이상은 'CT 시리즈' 1건으로 묶는다(로컬과 동일).
+                    const byFolder={};
+                    for(const it of (cl||[])){ const rp=(it&&it.rpath)||''; const nm=rp.split('/').pop(); if(!nm) continue; if(!_rcCatOf(nm)) continue;
+                        const subf=(rp.split('/').slice(0,-1).join('/'))||''; (byFolder[subf]=byFolder[subf]||[]).push({rp:rp, nm:nm, low:nm.toLowerCase()}); }
+                    Object.keys(byFolder).forEach(subf=>{ const arr=byFolder[subf]; const folderLbl='☁️ 클라우드'+(subf?(' · '+subf):'');
+                        const dcms=arr.filter(x=>RC_DCM_RE.test(x.low)).sort((a,b)=>a.nm.localeCompare(b.nm,undefined,{numeric:true}));
+                        if(dcms.length>=2){ items.push({ name:'CT 시리즈 ('+dcms.length+'장)', cat:'2D', date:'', time:'', folder:folderLbl, thumb:'', payload:{ type:'RAYCLOUD_LOAD_DICOM', name:'CT Series ('+dcms.length+')', ref:{ cloud:true, dcmSeries:true, rpaths:dcms.map(d=>d.rp) } } }); }
+                        else if(dcms.length===1){ items.push({ name:dcms[0].nm, cat:'2D', date:'', time:'', folder:folderLbl, thumb:'', payload:{ type:'RAYCLOUD_LOAD_DICOM', name:dcms[0].nm, ref:{ cloud:true, rpath:dcms[0].rp } } }); }
+                        arr.filter(x=>!RC_DCM_RE.test(x.low)).forEach(x=>{ const cat=_rcCatOf(x.nm); if(!cat||cat==='DICOM') return;
+                            let ptype='RAYCLOUD_LOAD_IMAGE'; if(cat==='3D') ptype='RAYCLOUD_LOAD_MESH'; else if(cat==='PICTURE') ptype='RAYCLOUD_LOAD_2D';
+                            items.push({ name:x.nm, cat:cat, date:'', time:'', folder:folderLbl, thumb:'', payload:{ type:ptype, name:x.nm, ref:{ cloud:true, rpath:x.rp } } }); });
+                    });
                 }
             }catch(_){}
             try{ post({ type:'RAYCLOUD_MANIFEST', items:items }); }catch(_){}
@@ -5384,15 +5389,25 @@
                     const ref=ev.data.ref||{}; const pa=Array.isArray(ref.pathArr)?ref.pathArr:[]; const fn=ref.fname; const mid=ev.data.mid;
                     const reply=(payload,error)=>{ try{ post({ type:'RAYCLOUD_RESOLVED', mid:mid, payload:payload||null, error:error||null }); }catch(_){} };
                     // ☁️ 클라우드 보관함 파일 — 프리사인 다운로드 URL로 즉시 해석(로컬 파일과 동일하게 뷰어에서 열람)
-                    if(ref.cloud && ref.rpath){
+                    if(ref.cloud && (ref.rpath || (Array.isArray(ref.rpaths) && ref.rpaths.length))){
                         try{
-                            const dj=await fetch(`${API_URL}/api/mirror/download-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:ref.rpath})}).then(r=>r.json());
-                            if(!dj||!dj.url){ reply(null,'클라우드 파일 URL을 가져오지 못했습니다.'); return; }
+                            const _presign=async(rp)=>{ try{ const dj=await fetch(`${API_URL}/api/mirror/download-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:rp})}).then(r=>r.json()); return (dj&&dj.url)||null; }catch(_){ return null; } };
+                            // 🩻 CT 시리즈(여러 DICOM 슬라이스) — 모든 슬라이스 URL을 받아 3D 볼륨으로 로드
+                            if(ref.dcmSeries && Array.isArray(ref.rpaths) && ref.rpaths.length){
+                                const list=ref.rpaths.slice().sort((a,b)=>String(a).split('/').pop().localeCompare(String(b).split('/').pop(),undefined,{numeric:true}));
+                                const got=(await _rcMapLimit(list,6,_presign)).filter(Boolean);
+                                if(!got.length){ reply(null,'CT 슬라이스 URL을 가져오지 못했습니다.'); return; }
+                                try{ (window.__rcViewerUrls=window.__rcViewerUrls||[]).push.apply(window.__rcViewerUrls, got); }catch(_){}
+                                reply({ type:'RAYCLOUD_LOAD_DICOM', urls:got, name:'CT Series ('+got.length+')' }); return;
+                            }
+                            const url=await _presign(ref.rpath);
+                            if(!url){ reply(null,'클라우드 파일 URL을 가져오지 못했습니다.'); return; }
                             const nm=String(ref.rpath).split('/').pop(); const low=nm.toLowerCase(); let payload;
-                            if(/\.(ply|stl|obj|glb|gltf)$/.test(low)) payload={ type:'RAYCLOUD_LOAD_MESH', urls:[dj.url], names:[nm] };
-                            else if(RC_IMG_RE.test(low) || RC_DCM_RE.test(low)) payload={ type:'RAYCLOUD_LOAD_2D', url:dj.url, name:nm };
-                            else payload={ type:'RAYCLOUD_LOAD_IMAGE', url:dj.url, name:nm };
-                            try{ (window.__rcViewerUrls=window.__rcViewerUrls||[]).push(dj.url); }catch(_){}
+                            if(/\.(ply|stl|obj|glb|gltf)$/.test(low)) payload={ type:'RAYCLOUD_LOAD_MESH', urls:[url], names:[nm] };
+                            else if(RC_DCM_RE.test(low)) payload={ type:'RAYCLOUD_LOAD_DICOM', urls:[url], name:nm };   // 단일 DICOM도 뷰어가 디코드(2D 이미지 디코드 아님)
+                            else if(RC_IMG_RE.test(low)) payload={ type:'RAYCLOUD_LOAD_2D', url:url, name:nm };
+                            else payload={ type:'RAYCLOUD_LOAD_IMAGE', url:url, name:nm };
+                            try{ (window.__rcViewerUrls=window.__rcViewerUrls||[]).push(url); }catch(_){}
                             reply(payload);
                         }catch(e){ reply(null, String((e&&e.message)||e)); }
                         return;
@@ -8304,6 +8319,36 @@
         // 🏥 [공용] 거래처 편집기 — 상점운영자 화면과 관리자 회원 모달이 동일하게 사용.
         //   기능: 검색 · 추가 · 편집(상호/전화/주소+주소검색/대표자/사업자번호/이메일) · 가입회원 후보매칭 · 연결/연결해제 · 저장.
         //   연결된 거래처는 편집 잠금(연결 해제 후 편집). rows는 전달된 배열을 직접 갱신, onSave(cleanRows) 호출.
+        // 🖨 거래처 택배 주소 라벨 인쇄 — 상자에 붙이는 용도. A4 2열 라벨(받는 분/주소/전화 + 보내는 분).
+        window._printClinicLabels = function(labels, sender){
+            labels=(labels||[]).filter(l=>l && (String(l.name||'').trim() || String(l.addr||'').trim()));
+            if(!labels.length){ showToast('인쇄할 거래처(상호·주소)가 없습니다.'); return; }
+            const E=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+            const sName=sender&&(sender.name||''), sAddr=sender&&(sender.addr||''), sPhone=sender&&(sender.phone||'');
+            const card=l=>'<div class="lbl">'
+                +'<div class="hd">받는 분 (RECEIVER)</div>'
+                +'<div class="nm">'+E(l.name||'')+(l.ceo?(' <span class="ceo">'+E(l.ceo)+' 귀하</span>'):' <span class="ceo">귀하</span>')+'</div>'
+                +'<div class="ad">'+E(l.addr||'(주소 미입력)')+'</div>'
+                +'<div class="ph">Tel. '+E(l.phone||'-')+'</div>'
+                +((sName||sAddr||sPhone)?('<div class="fr"><b>보내는 분</b> '+E(sName)+(sPhone?(' · '+E(sPhone)):'')+(sAddr?('<br>'+E(sAddr)):'')+'</div>'):'')
+                +'</div>';
+            const html='<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>택배 주소 라벨</title>'
+                +'<style>@page{size:A4;margin:9mm;}*{box-sizing:border-box;}body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;margin:0;color:#111;}'
+                +'.grid{display:grid;grid-template-columns:1fr 1fr;gap:6mm;}'
+                +'.lbl{border:2px solid #111;border-radius:5px;padding:7mm 8mm;page-break-inside:avoid;min-height:47mm;}'
+                +'.hd{font-size:10px;color:#666;letter-spacing:1.5px;}'
+                +'.nm{font-size:22px;font-weight:800;margin:3px 0 10px;line-height:1.2;}.nm .ceo{font-size:14px;font-weight:600;color:#333;}'
+                +'.ad{font-size:17px;line-height:1.55;font-weight:600;}'
+                +'.ph{font-size:15px;margin-top:10px;font-weight:700;}'
+                +'.fr{font-size:11px;color:#555;margin-top:12px;border-top:1px dashed #aaa;padding-top:7px;line-height:1.5;}'
+                +'@media print{.noprint{display:none;}}</style></head><body>'
+                +'<div class="grid">'+labels.map(card).join('')+'</div>'
+                +'<div class="noprint" style="text-align:center;margin-top:14px;"><button onclick="window.print()" style="padding:9px 20px;font-size:14px;font-weight:800;background:#0b2b4b;color:#fff;border:0;border-radius:8px;cursor:pointer;">🖨 인쇄 / PDF 저장</button></div>'
+                +'</body></html>';
+            if(typeof _printHtmlViaIframe==='function') _printHtmlViaIframe(html);
+            else { const w=window.open('','_blank'); if(w){ w.document.write(html); w.document.close(); } else showToast('팝업이 차단되었습니다.'); }
+            showToast('택배 라벨 '+labels.length+'건 인쇄 창을 준비했습니다.');
+        };
         window.renderClinicEditor = function(hostEl, rows, onSave){
             if(!hostEl) return; const F=(s)=>taxEscH(s||'');
             hostEl.__ceRows = rows; hostEl.__ceSearch = hostEl.__ceSearch || '';
@@ -8337,7 +8382,8 @@
                         +addrRow
                         +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+_fld(i,'ceo','대표자(선택)',c.ceo,'130px',locked)+_fld(i,'bizNo','사업자번호(선택)',c.bizNo,'150px',locked)+_fld(i,'email','이메일(선택)',c.email,'',locked)+'</div>'
                         +'</div>'
-                        +'<button data-ce="del" data-i="'+i+'" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;flex:none;">✕</button>'
+                        +'<div style="display:flex;flex-direction:column;gap:6px;flex:none;"><button data-ce="printone" data-i="'+i+'" title="이 거래처 택배 라벨 인쇄" style="border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:8px;width:34px;height:34px;font-size:15px;cursor:pointer;">🖨</button>'
+                        +'<button data-ce="del" data-i="'+i+'" title="삭제" style="border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:8px;width:34px;height:34px;font-weight:800;cursor:pointer;">✕</button></div>'
                         +'</div>'+matchBox+'</div>';
                 }).join('');
             }
@@ -8345,7 +8391,8 @@
                 hostEl.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">'
                     +'<input class="ce-search" value="'+F(hostEl.__ceSearch)+'" placeholder="🔍 거래처 검색 (상호·전화·주소·대표자)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>'
                     +'<div class="ce-rows">'+rowsHtml()+'</div>'
-                    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:12px;border-top:1px solid #eef2f7;">'
+                    +'<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid #eef2f7;">'
+                    +'<button data-ce="print" class="btn btn-outline" style="padding:9px 16px;margin-right:auto;" title="거래처 택배 주소 라벨을 인쇄(상자 부착용)">🖨 택배 라벨 인쇄</button>'
                     +'<button data-ce="add" class="btn btn-outline" style="padding:9px 16px;">＋ 거래처 추가</button>'
                     +'<button data-ce="save" class="btn" style="padding:9px 20px;background:var(--gradient-btn);color:#fff;font-weight:800;">저장</button></div>';
                 const s=hostEl.querySelector('.ce-search'); if(s){ s.oninput=()=>{ hostEl.__ceSearch=s.value; const rc=hostEl.querySelector('.ce-rows'); if(rc) rc.innerHTML=rowsHtml(); }; }
@@ -8362,6 +8409,7 @@
                     else if(act==='apply'){ let cand={}; try{ cand=JSON.parse(decodeURIComponent(b.dataset.cand)); }catch(_){} const c=rr[i]; if(c){ c.name=cand.bizName||cand.storeName||c.name; c.phone=cand.phone||c.phone; c.addr=cand.addr||c.addr; c.ceo=cand.ceo||''; c.bizNo=cand.bizNo||''; c.email=cand.email||''; c.memberId=cand.name; c.linked=true; c.linkedInfo=cand; } hostEl.__ceRepaint(); showToast('가입 회원 정보로 채웠습니다. [저장]을 눌러 반영하세요.'); }
                     else if(act==='addr'){ if(window._openDaumPostcode) window._openDaumPostcode(function(data){ const c=rr[i]; if(!c) return; let ad=data.roadAddress||data.jibunAddress||data.address||''; if(data.buildingName) ad+=' ('+data.buildingName+')'; c.addr=ad; const inp=hostEl.querySelector('.ce-row[data-i="'+i+'"] input[data-k="addr"]'); if(inp) inp.value=c.addr; }); }
                     else if(act==='save'){ if(typeof hostEl.__ceSave==='function'){ const clean=(rr||[]).map(c=>({ name:(c.name||'').trim(), phone:(c.phone||'').trim(), addr:(c.addr||'').trim(), ceo:(c.ceo||'').trim(), email:(c.email||'').trim(), bizNo:(c.bizNo||'').trim()||undefined, memberId:c.memberId||undefined })).filter(c=>c.name||c.phone); if(clean.some(c=>c.name && !c.phone)){ showToast('거래처 전화번호를 입력해 주세요.'); return; } hostEl.__ceSave(clean); } }
+                    else if(act==='print' || act==='printone'){ const _sender=()=>{ try{ return { name:(currentUser&&(currentUser.biz_company||currentUser.realname||currentUser.name))||'', phone:(currentUser&&currentUser.phone)||'', addr:(currentUser&&(currentUser.biz_addr||currentUser.shipping_address))||'' }; }catch(_){ return {}; } }; const src=(act==='printone')?[rr[i]].filter(Boolean):(rr||[]); const labels=src.map(c=>({name:c.name,ceo:c.ceo,phone:c.phone,addr:c.addr})); if(window._printClinicLabels) window._printClinicLabels(labels, _sender()); }
                 });
             }
             hostEl.__ceSave = onSave;

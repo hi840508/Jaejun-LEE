@@ -2398,6 +2398,7 @@ app.post('/api/auth/register', (req, res) => {
         [name, hashPassword(password), realname, bank, account, 0, phone || '', email || '', shipping_address || '', business_type || 'individual', license_no || null, approvalStatus, privacyAgreedAt, termsAgreedAt, biz_no, biz_company, biz_ceo, biz_addr, biz_industry, biz_item, tax_email, cardPw, JSON.stringify(partnerClinics)], (err) => {
         if (err) return res.status(500).json({ error: "회원 ID 중복 또는 생성 에러" });
         try { _syncClinicsOnRegister(name); } catch (_) {}   // 🏥 다른 회원이 거래처로 적어둔 이 회원의 정보를 실제 가입정보로 업데이트+연결
+        try { _autoFriendOnRegister(name); } catch (_) {}    // 🤝 이 회원을 거래처로 등록해 둔 상점/회원과 자동 친구 연결(미가입 거래처가 가입한 케이스)
         res.json({
             name, realname, bank, account,
             phone: phone || '', email: email || '', shipping_address: shipping_address || '',
@@ -5712,6 +5713,26 @@ function _syncClinicsOnRegister(newName) {
                 });
                 if (changed) db.run(`UPDATE users SET partner_clinics=? WHERE name=?`, [JSON.stringify(arr), r.name], () => {});
             });
+        });
+    });
+}
+// 🤝 새 회원 가입 시 — 이 회원을 '거래처'로 등록해 둔 상점/회원(users.partner_clinics + stores.partner_clinics)과 자동으로 친구 연결.
+//    (기존 회원 케이스는 거래처 저장 시 _autoFriendFromClinics 가 처리. 이 함수는 '미가입 거래처가 나중에 가입'하는 케이스를 담당.)
+function _autoFriendOnRegister(newName) {
+    db.get(`SELECT name, realname, biz_company, phone, shipping_address, biz_addr, email FROM users WHERE name=?`, [newName], (e, nu) => {
+        if (e || !nu) return;
+        const linkIfMatch = (clinicsJson, ownerName, src) => {
+            if (!ownerName || ownerName === newName) return;
+            let arr = []; try { arr = JSON.parse(clinicsJson || '[]') || []; } catch (_) { return; }
+            for (const c of arr) {
+                try { if (_clinicMatchedUser(c, [nu], {}, ownerName) === nu.name) { _linkFriends(ownerName, nu.name, () => {}); console.log('🤝 거래처 자동 친구(가입):', ownerName, '→', nu.name, '(' + src + ')'); break; } } catch (_) {}
+            }
+        };
+        db.all(`SELECT name, partner_clinics FROM users WHERE partner_clinics IS NOT NULL AND partner_clinics!='' AND name!=?`, [newName], (e2, urows) => {
+            (urows || []).forEach(r => linkIfMatch(r.partner_clinics, r.name, 'user'));
+        });
+        db.all(`SELECT owner, partner_clinics FROM stores WHERE partner_clinics IS NOT NULL AND partner_clinics!=''`, [], (e3, srows) => {
+            (srows || []).forEach(r => linkIfMatch(r.partner_clinics, r.owner, 'store'));
         });
     });
 }
