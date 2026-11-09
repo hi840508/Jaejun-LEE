@@ -1034,6 +1034,12 @@
       .input-group input:focus,.input-group textarea:focus,.input-group select:focus{ border-color:var(--navy) !important; box-shadow:var(--ak-ring) !important; }
       /* 키보드 포커스 접근성 */
       a:focus-visible,button:focus-visible,[tabindex]:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{ outline:none; box-shadow:var(--ak-ring); }
+      /* 👁 시인성 보강 — 뮤트 텍스트 대비 강화 + 아주 작은 보조 글씨 하한 상향(가독성) */
+      :root{ --text-sub:#4b5a6b; --chrome-sub:#4b5a6b; }
+      #rc-folder-page{ font-size:14px; }
+      #rc-folder-page ._sf-tchip, #rc-folder-page ._sf-pchip, #rc-folder-page ._sf-txt{ font-size:12.5px !important; }
+      /* 카드가 배경에 묻히지 않도록 공통 패널에 또렷한 경계 보장 */
+      .panel{ border:1px solid var(--border-color); background:var(--panel-bg); }
       /* 모션 — 화면 전환 진입 애니메이션(은은한 페이드업) */
       @keyframes akFadeUp{ from{ opacity:0; transform:translateY(9px); } to{ opacity:1; transform:none; } }
       .tab-content.active{ animation: akFadeUp .3s var(--ak-ease) both; }
@@ -5323,7 +5329,7 @@
                 else setTimeout(heavy, 30);
             };
             window._lvClose = cleanup;
-            // 🔻 뷰어 툴바(저장하기 줄) 맨 오른쪽에 닫기 버튼을 끼워 넣는다.
+            // 🔻 뷰어 툴바(저장하기 줄) 맨 오른쪽에 닫기 버튼을 끼워 넣는다.(보조)
             //    같은 출처로 서빙하므로 iframe 내부 DOM 에 접근할 수 있다. 실패하면 떠 있는 닫기 버튼으로 대체.
             function _lvInjectClose(){
                 try{
@@ -5340,14 +5346,17 @@
                     return true;
                 }catch(_){ return false; }
             }
+            // 🔻 항상 보이는 '닫기' 버튼 — 뷰어 어디서든 한 번에 빠져나갈 수 있게 상단 우측에 고정(안전영역 반영).
             function _lvFallbackClose(){
                 if(ov.querySelector('#_lv-close-fb')) return;
                 const b = document.createElement('button');
                 b.id = '_lv-close-fb'; b.title = 'Viewer 닫기';
-                b.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg><span>Viewer 닫기</span>';
-                b.style.cssText = 'position:absolute;top:10px;right:12px;z-index:5;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,43,75,.3);';
+                b.innerHTML = '<span style="font-size:17px;line-height:1;">✕</span><span>닫기</span>';
+                b.style.cssText = 'position:absolute;top:calc(9px + env(safe-area-inset-top,0px));right:calc(11px + env(safe-area-inset-right,0px));z-index:30;display:inline-flex;align-items:center;gap:7px;background:rgba(11,43,75,.94);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:11px;padding:9px 16px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.4);backdrop-filter:saturate(1.2) blur(2px);';
+                b.onmouseenter=()=>{ b.style.background='rgba(197,27,125,.96)'; }; b.onmouseleave=()=>{ b.style.background='rgba(11,43,75,.94)'; };
                 b.onclick = cleanup; ov.appendChild(b);
             }
+            _lvFallbackClose();   // ✅ 항상 즉시 표시(툴바 삽입 성공 여부와 무관하게 닫기 버튼 보장)
             // 💬 채팅은 우측 하단 말풍선 버튼으로 연다(뷰어 z-index 3900 < 채팅 4001 이라 위로 열림).
 
             // 뷰어 준비(CBCT_READY) 전에는 보내둔 payload 를 모아 두었다가 준비되면 한 번에 보낸다.
@@ -5363,9 +5372,7 @@
             ov.remove = function(){ window.removeEventListener('message', onMsg); _origRemove(); };
             // 뷰어가 READY 를 안 보내는 구버전 대비 — 로드 후 일정 시간이 지나면 전송 시작
             fr.addEventListener('load', ()=>{
-                // 툴바가 그려질 때까지 몇 번 더 시도하고, 끝내 안 되면 떠 있는 닫기 버튼을 쓴다.
-                let tries = 0;
-                const t = setInterval(()=>{ if(_lvInjectClose() || ++tries > 20){ clearInterval(t); if(tries > 20) _lvFallbackClose(); } }, 250);
+                // 닫기 버튼은 이미 플로팅으로 항상 표시됨. (툴바 삽입은 하지 않음 — 모바일 가로 넘침·숨김 방지)
                 setTimeout(()=>{ if(!viewerReady){ viewerReady = true; try{ stat.style.display='none'; }catch(_){} while(queue.length){ try{ fr.contentWindow.postMessage(queue.shift(),'*'); }catch(_){} } } }, 2500);
             });
 
@@ -5578,10 +5585,9 @@
                     + '<div class="yt-search-bar" style="flex:none;width:300px;max-width:42vw;"><input type="text" id="_sf-global-q" placeholder="통합 검색" onkeyup="if(event.key===\'Enter\') doScreenSearch(this.value,\'files\')"><button onclick="doScreenSearch(document.getElementById(\'_sf-global-q\').value,\'files\')" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><button onclick="openScreenKeyboard()" aria-label="가상 키보드" style="border-radius:0 20px 20px 0;border-left:none;font-size:17px;">⌨️</button></div>'
                     // 뒤로/경로(breadcrumb)는 통합검색·키보드를 가리지 않도록 별도 줄(파일 목록 바로 위)로 이동함
                     + '<div style="flex:1;min-width:8px;"></div>'   // 통합검색(좌) ↔ 공유폴더/폴더추가(우) 분리
-                    + '<button id="_sf-exit2" title="파일검색 닫기" style="flex:none;padding:5px 11px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:20px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">✕ 닫기</button>'
-                    + '<span style="font-size:11px;color:#94a3b8;font-weight:800;flex:none;">공유폴더</span>'
-                    + roots.map(r=>'<span class="_sf-root" data-id="'+r.id+'" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 10px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid '+(r.active?'#0b2b4b':'#e2e8f0')+';background:'+(r.active?'linear-gradient(135deg,#22446b,#0b2b4b)':'#fff')+';color:'+(r.active?'#fff':'#334155')+';white-space:nowrap;'+(r.active?'box-shadow:0 3px 10px rgba(16,34,54,.20);':'')+'">'+_SFIC.folder+' '+_sfEsc(r.name)+'<b class="_sf-root-x" data-id="'+r.id+'" title="이 폴더 목록에서 제거" style="color:'+(r.active?'#cfe0ff':'#b6bdc7')+';font-weight:900;font-size:14px;line-height:1;padding:0 2px;">×</b></span>').join('')
-                    + '<button id="_sf-addroot" style="flex:none;display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;border:1px solid #e2e8f0;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">'+_SFIC.plus+' 폴더 추가</button>'
+                    + '<button id="_sf-exit2" title="파일검색 닫기" style="flex:none;padding:6px 13px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">✕ 닫기</button>'
+                    // 🗂 로컬 저장소 — 추가된 공유폴더들을 하나의 드롭다운으로 묶어 관리(가로 공간 누적 방지)
+                    + '<button id="_sf-localstore" title="로컬 저장소(공유폴더) — 폴더 전환·추가·관리" style="flex:none;display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;"><span style="opacity:.85;">'+_SFIC.folder+'</span> 로컬 저장소'+((roots.find(r=>r.active)||{}).name?(' · '+_sfEsc((roots.find(r=>r.active)||{}).name)):'')+' <span style="color:#94a3b8;font-weight:700;">('+roots.length+') ▾</span></button>'
                     // ☁️ 클라우드 저장소 — 공유폴더 옆에서 바로 구독/클라우드 뷰 진입(사이드바 버튼 미노출 환경 대응)
                     + '<button id="_sf-addcloud" style="flex:none;display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;border:1px solid #bcd0e6;background:'+(window.__sfCloudView?'linear-gradient(135deg,#22446b,#0b2b4b)':'#eef4f8')+';color:'+(window.__sfCloudView?'#fff':'#0f2f52')+';font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">'+_SFIC.cloud+' 클라우드 저장소'+(window.__sfCloudView?' ✓':'')+'</button>'
                     // 🧊 Viewer 버튼은 좌측 사이드바(즐겨찾기 아래)로 이동됨 — 여기서는 제거.
@@ -5711,13 +5717,28 @@
                 const doUpload=()=>{ const inp=document.createElement('input'); inp.type='file'; inp.multiple=true; inp.style.display='none'; document.body.appendChild(inp); inp.onchange=async()=>{ const fs=[].slice.call(inp.files||[]); let ok=0; for(const f of fs){ try{ await R.writeFileAt(path,f.name,f); ok++; }catch(_){} } try{ inp.remove(); }catch(_){} showToast('업로드: '+ok+'개'); render(); }; inp.click(); };
                 const kb=ov.querySelector('#_sf-kebab'); if(kb) kb.onclick=(e)=>{ const items=[]; if(connected){ items.push({label:'📁 새 폴더',fn:doNewFolder}); items.push({label:'⬆ 업로드',fn:doUpload}); items.push({label:'➕ 공유폴더 추가',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); items.push({label:'🔌 전체 연결 해제',danger:true,fn:async()=>{ if(confirm('이 기기의 공유폴더 연결을 모두 해제할까요? (폴더의 실제 파일은 삭제되지 않습니다)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } }}); } else { items.push({label:'📂 공유폴더 지정',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); } if(typeof isAdmin!=='undefined' && isAdmin){ items.push({label:(window.CLOUD_MIRROR_ENABLED?'☁️ 클라우드 기능 끄기(Admin)':'☁️ 클라우드 기능 켜기(Admin)'),fn:()=>{ window.toggleCloudMirrorAdmin&&window.toggleCloudMirrorAdmin(); }}); } const r=kb.getBoundingClientRect(); ctxMenu(r.right-180, r.bottom+4, items); };
                 // 📁 다중 공유폴더 칩: 전환 / 제거 / 추가
-                ov.querySelectorAll('._sf-root').forEach(el=>{ const id=el.getAttribute('data-id');
-                    el.addEventListener('click',async(e)=>{ if(e.target && e.target.closest && e.target.closest('._sf-root-x')) return; try{ if(R.setActiveRoot) await R.setActiveRoot(id); }catch(_){} path=[]; render(); });
-                });
-                ov.querySelectorAll('._sf-root-x').forEach(el=>{ const id=el.getAttribute('data-id');
-                    el.addEventListener('click',async(e)=>{ e.stopPropagation(); e.preventDefault(); if(!confirm('이 공유폴더를 목록에서 제거할까요? (폴더의 실제 파일은 삭제되지 않습니다)')) return; try{ if(R.removeRoot) await R.removeRoot(id); }catch(_){} path=[]; render(); });
-                });
-                const addRootBtn=ov.querySelector('#_sf-addroot'); if(addRootBtn) addRootBtn.addEventListener('click',async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } });
+                // 🗂 로컬 저장소 드롭다운 — 추가된 공유폴더 전환/제거/추가를 한 곳에서(가로 칩 누적 제거)
+                { const lsBtn=ov.querySelector('#_sf-localstore'); if(lsBtn) lsBtn.addEventListener('click',(e)=>{ e.stopPropagation(); _sfOpenLocalStore(lsBtn); }); }
+                function _sfOpenLocalStore(anchor){
+                    document.querySelectorAll('#_sf-ls-dd').forEach(x=>x.remove());
+                    const dd=document.createElement('div'); dd.id='_sf-ls-dd';
+                    dd.style.cssText='position:fixed;z-index:100080;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 14px 40px rgba(15,23,42,.22);min-width:240px;max-width:min(92vw,340px);max-height:70vh;overflow:auto;padding:6px;';
+                    const rowCss='display:flex;align-items:center;gap:8px;padding:10px 11px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700;';
+                    const items=(roots||[]).map(r=>'<div class="_ls-row" data-id="'+r.id+'" style="'+rowCss+(r.active?'background:#eef4f8;color:#0b2b4b;':'color:#334155;')+'">'
+                        +'<span style="flex:none;opacity:.8;">'+_SFIC.folder+'</span>'
+                        +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+_sfEsc(r.name)+(r.active?' <span style="font-size:10px;color:#16a34a;font-weight:800;">● 사용중</span>':'')+'</span>'
+                        +'<button class="_ls-x" data-id="'+r.id+'" title="목록에서 제거" style="flex:none;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:26px;height:26px;font-weight:900;cursor:pointer;">×</button></div>').join('');
+                    dd.innerHTML=(roots.length?items:'<div style="padding:16px;text-align:center;color:#94a3b8;font-size:12px;">추가된 공유폴더가 없습니다.</div>')
+                        +'<div style="border-top:1px solid #f1f5f9;margin-top:4px;padding-top:4px;"><button id="_ls-add" style="'+rowCss+'width:100%;border:none;background:#f0fdf4;color:#166534;justify-content:center;">'+_SFIC.plus+' 공유폴더 추가</button></div>';
+                    document.body.appendChild(dd);
+                    try{ const r=anchor.getBoundingClientRect(); let left=Math.min(r.left, innerWidth-dd.offsetWidth-8); if(left<8) left=8; let top=r.bottom+6; if(top+dd.offsetHeight>innerHeight-8) top=Math.max(8, r.top-dd.offsetHeight-6); dd.style.left=left+'px'; dd.style.top=top+'px'; }catch(_){ dd.style.left='16px'; dd.style.top='60px'; }
+                    const close=()=>{ try{ dd.remove(); }catch(_){} document.removeEventListener('pointerdown',onDoc,true); };
+                    const onDoc=(e)=>{ if(!dd.contains(e.target) && e.target!==anchor){ close(); } };
+                    setTimeout(()=>document.addEventListener('pointerdown',onDoc,true),0);
+                    dd.querySelectorAll('._ls-row').forEach(el=>el.addEventListener('click',async(e)=>{ if(e.target.closest('._ls-x')) return; const id=el.getAttribute('data-id'); close(); try{ if(R.setActiveRoot) await R.setActiveRoot(id); }catch(_){} path=[]; render(); }));
+                    dd.querySelectorAll('._ls-x').forEach(el=>el.addEventListener('click',async(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); const ok=await (window._sfConfirm?window._sfConfirm('이 공유폴더를 목록에서 제거할까요?\n(폴더의 실제 파일은 삭제되지 않습니다)','제거'):Promise.resolve(confirm('이 공유폴더를 목록에서 제거할까요?'))); if(!ok) return; close(); try{ if(R.removeRoot) await R.removeRoot(id); }catch(_){} path=[]; render(); }));
+                    const addB=dd.querySelector('#_ls-add'); if(addB) addB.addEventListener('click',async()=>{ close(); const ok=await R.pick(); if(ok){ path=[]; render(); } });
+                }
                 // ☁️ 클라우드 저장소 버튼 — 구독 확인 후 클라우드 뷰 토글(파일검색과 동일 화면 + 업로드 진행 오버레이)
                 const addCloudBtn=ov.querySelector('#_sf-addcloud'); if(addCloudBtn) addCloudBtn.addEventListener('click',async()=>{
                     if(window.__sfCloudView){ window.__sfCloudView=false; render(); return; }   // 끄기
