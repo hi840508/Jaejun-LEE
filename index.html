@@ -5990,11 +5990,19 @@
                 grid.querySelectorAll('.rc-clview').forEach(el=>el.addEventListener('click',()=>{ _sfOpenCloudFile(el.getAttribute('data-rpath')); }));
                 grid.querySelectorAll('.rc-clmenu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _sfCloudActions(el.getAttribute('data-rpath'), el); }));
                 _sfSharedBanner(grid);
-                // 🖼 이미지 클라우드 파일 → 프리사인 URL로 썸네일 지연 로드(동시 4개)
-                (async()=>{ const imgCards=[].slice.call(grid.querySelectorAll('.rc-clview[data-img="1"]')); let i=0; const CONC=4;
-                    async function w(){ while(i<imgCards.length){ if(!window.__sfCloudView) return; const el=imgCards[i++]; const rp=el.getAttribute('data-rpath');
-                        try{ const d=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:rp})}).then(r=>r.json());
-                            if(d&&d.url){ const box=el.querySelector('.rc-clthumb'); const ic=el.querySelector('.rc-clic'); if(box){ const im=new Image(); im.onload=()=>{ if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+d.url+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'); }; im.src=d.url; } } }catch(_){}
+                // 🖼 썸네일: 로컬 폴더가 연결된 기기(앱/오너 PC)는 로컬 원본으로 실제 미리보기 생성(이미지·영상·DICOM 등),
+                //         로컬에 없는 파일(타기기 업로드분)·미연결 기기는 이미지에 한해 프리사인 URL로 로드.
+                (async()=>{
+                    const R=window.RCFolder; let localMap={};
+                    if(connected && R){ try{ const all=await window.RCMirror.walk(R); (all||[]).forEach(f=>{ localMap[f.rpath]={pathArr:f.pathArr, fname:f.fname, mime:f.mime}; }); }catch(_){} }
+                    const cards=[].slice.call(grid.querySelectorAll('.rc-clview')); let i=0; const CONC=4;
+                    async function w(){ while(i<cards.length){ if(!window.__sfCloudView) return; const el=cards[i++]; const rp=el.getAttribute('data-rpath'); const nm=String(rp).split('/').pop();
+                        const box=el.querySelector('.rc-clthumb'); const ic=el.querySelector('.rc-clic'); if(!box || box.querySelector('img')) continue;
+                        let set=false;
+                        const lm=localMap[rp];
+                        if(lm && R){ try{ const f=await R.getFileAt(lm.pathArr, lm.fname); if(f){ const t=await R.getThumb(f, lm.mime||'', lm.fname); if(t){ if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'); set=true; } } }catch(_){} }
+                        if(!set && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(nm)){ try{ const d=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:rp})}).then(r=>r.json());
+                            if(d&&d.url){ const im=new Image(); im.onload=()=>{ if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+d.url+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'); }; im.src=d.url; } }catch(_){} }
                     } }
                     const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws);
                 })();
