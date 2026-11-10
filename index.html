@@ -4051,6 +4051,8 @@
             async function _dirAt(pathArr){ let h=await _loadHandle(); if(!h) return null; for(const seg of (pathArr||[])){ h=await h.getDirectoryHandle(seg,{create:false}); } return h; }
             async function listAt(pathArr){ if(!(await _ensurePerm(true))) return {folders:[],files:[]}; let h; try{ h=await _dirAt(pathArr); }catch(_){ return {folders:[],files:[]}; } if(!h) return {folders:[],files:[]}; const folders=[], files=[]; try{ for await (const [nm,ent] of h.entries()){ if(ent.kind==='directory') folders.push(nm); else { try{ const f=await ent.getFile(); files.push({fname:nm,size:f.size,mime:f.type||'',mtime:f.lastModified||0}); }catch(_){} } } }catch(_){} folders.sort((a,b)=>a.localeCompare(b)); return {folders,files}; }
             async function getFileAt(pathArr, name){ try{ const h=await _dirAt(pathArr); const fh=await h.getFileHandle(_safe(name),{create:false}); return await fh.getFile(); }catch(_){ return null; } }
+            // 특정 루트(공유폴더) 기준으로 파일 읽기 — 활성 루트를 바꾸지 않고 환자 그리드 썸네일 등에 사용.
+            async function getFileAtRoot(rootId, pathArr, name){ try{ const rs=await _loadRoots(); const root=rs.find(r=>String(r.id)===String(rootId)); let h=root&&root.handle; if(!h) return null; try{ if((await h.queryPermission({mode:'read'}))!=='granted') await h.requestPermission({mode:'read'}); }catch(_){} for(const p of (pathArr||[])){ h=await h.getDirectoryHandle(_safe(p)); } const fh=await h.getFileHandle(_safe(name),{create:false}); return await fh.getFile(); }catch(_){ return null; } }
             async function writeFileAt(pathArr, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _dirAt(pathArr); const safe=_safe(name); const fh=await h.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return safe; }
             // 대화방 이름 폴더(없으면 생성)에 저장 — 자동 수신용
             async function writeFileInRoom(roomName, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _loadHandle(); const parts=String(roomName||'received').split('/').map(_safe).filter(Boolean); if(!parts.length) parts.push('received'); let dir=h; for(const p of parts){ dir=await dir.getDirectoryHandle(p,{create:true}); } const safe=_safe(name); const fh=await dir.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return parts.join('/')+'/'+safe; }
@@ -4299,7 +4301,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, scanPatients };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, scanPatients, getFileAtRoot };
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
@@ -5693,7 +5695,7 @@
                     + '<div class="yt-search-bar" style="flex:none;width:300px;max-width:42vw;"><input type="text" id="_sf-global-q" placeholder="통합 검색" onkeyup="if(event.key===\'Enter\') doScreenSearch(this.value,\'files\')"><button onclick="doScreenSearch(document.getElementById(\'_sf-global-q\').value,\'files\')" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><button onclick="openScreenKeyboard()" aria-label="가상 키보드" style="border-radius:0 20px 20px 0;border-left:none;font-size:17px;">⌨️</button></div>'
                     // 뒤로/경로(breadcrumb)는 통합검색·키보드를 가리지 않도록 별도 줄(파일 목록 바로 위)로 이동함
                     + '<div style="flex:1;min-width:8px;"></div>'   // 통합검색(좌) ↔ 공유폴더/폴더추가(우) 분리
-                    + '<button id="_sf-exit2" title="파일검색 닫기" style="flex:none;padding:6px 13px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">✕ 닫기</button>'
+                    + '<button id="_sf-viewerbtn" title="실시간 뷰어 열기(DATA 서랍에서 영상 선택)" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:10px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;">🧊 Viewer</button>'
                     // 🗂 로컬 저장소 — 추가된 공유폴더들을 하나의 드롭다운으로 묶어 관리(가로 공간 누적 방지)
                     + '<button id="_sf-localstore" title="로컬 저장소(공유폴더) — 폴더 전환·추가·관리" style="flex:none;display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;"><span style="opacity:.85;">'+_SFIC.folder+'</span> 로컬 저장소 <span style="color:#94a3b8;font-weight:700;">▾</span></button>'
                     // ☁️ 클라우드 저장소 — 공유폴더 옆에서 바로 구독/클라우드 뷰 진입(사이드바 버튼 미노출 환경 대응)
@@ -5806,8 +5808,10 @@
                     : '';
                 ov.innerHTML=head+rootsRow+filter+toolbar+crumbRow+mobileCloudBar+grid;
                 { const mb=ov.querySelector('#_sf-mcloud'); if(mb) mb.addEventListener('click',()=>{ window.__sfCloudView=!window.__sfCloudView; render(); }); }
-                // ✕ 파일검색 닫기 — 모든 기기/상태에서 즉시 패널 종료(빠져나가기 보장). 클라우드 뷰 내 '← 뒤로'는 파일목록으로 복귀.
-                ov.querySelectorAll('#_sf-exit, #_sf-exit2').forEach(function(xb){ xb.addEventListener('click', function(){ try{ window.__sfCloudView=false; }catch(_){} close(); }); });
+                // ✕ 파일검색 닫기(모바일 바) — 즉시 패널 종료
+                ov.querySelectorAll('#_sf-exit').forEach(function(xb){ xb.addEventListener('click', function(){ try{ window.__sfCloudView=false; }catch(_){} close(); }); });
+                // 🧊 Viewer — 실시간 뷰어 열기(DATA 서랍)
+                { const vb=ov.querySelector('#_sf-viewerbtn'); if(vb) vb.addEventListener('click', function(){ try{ window.openLiveViewerFromSidebar&&window.openLiveViewerFromSidebar(); }catch(_){ showToast('뷰어를 열 수 없습니다.'); } }); }
 
                 // 닫기·메뉴는 상단바(캡처 영역)의 표준 햄버거/로고로 통일 — X 버튼 제거. switchTab이 공유폴더를 닫고 전환.
                 const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } };
@@ -5826,7 +5830,7 @@
                 const kb=ov.querySelector('#_sf-kebab'); if(kb) kb.onclick=(e)=>{ const items=[]; if(connected){ items.push({label:'📁 새 폴더',fn:doNewFolder}); items.push({label:'⬆ 업로드',fn:doUpload}); items.push({label:'➕ 공유폴더 추가',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); items.push({label:'🔌 전체 연결 해제',danger:true,fn:async()=>{ if(confirm('이 기기의 공유폴더 연결을 모두 해제할까요? (폴더의 실제 파일은 삭제되지 않습니다)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } }}); } else { items.push({label:'📂 공유폴더 지정',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); } if(typeof isAdmin!=='undefined' && isAdmin){ items.push({label:(window.CLOUD_MIRROR_ENABLED?'☁️ 클라우드 기능 끄기(Admin)':'☁️ 클라우드 기능 켜기(Admin)'),fn:()=>{ window.toggleCloudMirrorAdmin&&window.toggleCloudMirrorAdmin(); }}); } const r=kb.getBoundingClientRect(); ctxMenu(r.right-180, r.bottom+4, items); };
                 // 📁 다중 공유폴더 칩: 전환 / 제거 / 추가
                 // 🗂 로컬 저장소 드롭다운 — 추가된 공유폴더 전환/제거/추가를 한 곳에서(가로 칩 누적 제거)
-                { const lsBtn=ov.querySelector('#_sf-localstore'); if(lsBtn) lsBtn.addEventListener('click',(e)=>{ e.stopPropagation(); if(window.__sfPatientFilter){ window.__sfPatientFilter=null; render(); _sfOpenLocalStore(lsBtn); } else { _sfOpenLocalStore(lsBtn); } }); }
+                { const lsBtn=ov.querySelector('#_sf-localstore'); if(lsBtn) lsBtn.addEventListener('click',(e)=>{ e.stopPropagation(); if(window.__sfPatientFilter||window.__sfSearchQuery){ window.__sfPatientFilter=null; window.__sfSearchQuery=null; render(); _sfOpenLocalStore(lsBtn); } else { _sfOpenLocalStore(lsBtn); } }); }
                 function _sfOpenLocalStore(anchor){
                     document.querySelectorAll('#_sf-ls-dd').forEach(x=>x.remove());
                     const dd=document.createElement('div'); dd.id='_sf-ls-dd';
@@ -6018,9 +6022,9 @@
                 };
                 const qi=ov.querySelector('#_sf-q'); if(qi){ qi.addEventListener('input',()=>{ flt.q=(qi.value||'').toLowerCase().trim(); applyFilter(); });
                     // Enter = 통합 검색(모든 폴더·하위폴더·DICOM 헤더)
-                    qi.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); const q=(qi.value||'').trim(); if(q){ window._sfDeepSearch(q); } } });
+                    qi.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); const q=(qi.value||'').trim(); if(q){ if(window.doScreenSearch) window.doScreenSearch(q,'files'); else window._sfDeepSearch(q); } } });
                 }
-                const dsBtn=ov.querySelector('#_sf-deepsearch'); if(dsBtn) dsBtn.addEventListener('click',()=>{ const q=((ov.querySelector('#_sf-q')||{}).value||'').trim(); if(q) window._sfDeepSearch(q); else showToast('검색어를 입력한 뒤 눌러 주세요.'); });
+                const dsBtn=ov.querySelector('#_sf-deepsearch'); if(dsBtn) dsBtn.addEventListener('click',()=>{ const q=((ov.querySelector('#_sf-q')||{}).value||'').trim(); if(q){ if(window.doScreenSearch) window.doScreenSearch(q,'files'); else window._sfDeepSearch(q); } else showToast('검색어를 입력한 뒤 눌러 주세요.'); });
                 ov.querySelectorAll('._sf-tchip').forEach(c=>c.addEventListener('click',()=>{ flt.type=c.getAttribute('data-type'); ov.querySelectorAll('._sf-tchip').forEach(x=>x.style.cssText=CHIP+(x.getAttribute('data-type')===flt.type?CHIPON:'')); applyFilter(); }));
                 ov.querySelectorAll('._sf-pchip').forEach(c=>c.addEventListener('click',()=>{ flt.period=c.getAttribute('data-period'); ov.querySelectorAll('._sf-pchip').forEach(x=>x.style.cssText=CHIP+(x.getAttribute('data-period')===flt.period?CHIPON:'')); applyFilter(); }));
                 const fi=ov.querySelector('#_sf-from'), ti=ov.querySelector('#_sf-to'); if(fi) fi.addEventListener('change',()=>{ flt.from=fi.value; applyFilter(); }); if(ti) ti.addEventListener('change',()=>{ flt.to=ti.value; applyFilter(); });
@@ -6082,8 +6086,9 @@
                     if(!window.__sbLoaded){ window.__sbLoaded=true; if(window._sbLoadPatients) window._sbLoadPatients(); }
                     if(!window.__pmsScanOnce && window.RCFolder && window.RCFolder.scanPatients && window.RCFolder.supported){ window.__pmsScanOnce=true; (async()=>{ try{ await window.RCFolder.scanPatients(); window.__sbLoaded=false; if(window._sbLoadPatients){ window.__sbLoaded=true; window._sbLoadPatients(); } }catch(_){} })(); }
                 }catch(_){}
-                // ☁️ 클라우드 저장소(어느 기기서나 동일) / 🧑‍⚕️ 환자 필터(같은 파일 UI로 그 환자 데이터만) / 기본=폴더 목록
-                if(window.__sfCloudView){ window.__sfPatientFilter=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
+                // ☁️ 클라우드 / 🔎 통합검색 결과(메인 목록) / 🧑‍⚕️ 환자 필터 / 기본=폴더 목록
+                if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfSearchQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
+                else if(window.__sfSearchQuery){ try{ _sbHighlightPatient(); _sfRenderSearchResults(ov, window.__sfSearchQuery); }catch(_){} }
                 else if(window.__sfPatientFilter){ try{ _sbHighlightPatient(); _sfRenderPatientGrid(ov, window.__sfPatientFilter); }catch(_){} }
                 else { try{ _sbHighlightPatient(); }catch(_){} }
             }
@@ -6228,6 +6233,37 @@
                     catch(e){ showToast('연결 실패: '+((e&&e.message)||e)); }
                 });
             }
+            // 🔎 통합검색 결과 — 모달이 아니라 '메인 파일 목록'에 해당 파일만 카드 그리드로 표시(모든 폴더 검색).
+            async function _sfRenderSearchResults(ov, q){
+                const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
+                const ESC=(typeof _sfEsc==='function')?_sfEsc:(s=>String(s==null?'':s));
+                const zoom=(flt.zoom||150);
+                const _clear='<button id="_sr-clear" style="flex:none;padding:6px 12px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:9px;font-weight:800;font-size:12px;cursor:pointer;">✕ 검색 지우기</button>';
+                grid.innerHTML='<div style="display:flex;align-items:center;gap:8px;margin:4px 2px 12px;"><div style="font-weight:800;font-size:15px;color:#0f2f52;">🔎 \''+ESC(q)+'\' 검색 중…</div>'+_clear+'</div>';
+                { const cb=grid.querySelector('#_sr-clear'); if(cb) cb.onclick=()=>{ window.__sfSearchQuery=null; const gi=ov.querySelector('#_sf-global-q'); if(gi) gi.value=''; if(window.__sfRender) window.__sfRender(); }; }
+                const R=window.RCFolder; let res=[]; try{ if(R&&R.searchAll) res=await R.searchAll(q); }catch(_){}
+                if(window.__sfSearchQuery!==q) return;
+                const head='<div style="display:flex;align-items:center;gap:8px;margin:4px 2px 12px;flex-wrap:wrap;"><div style="font-weight:800;font-size:15px;color:#0f2f52;">🔎 \''+ESC(q)+'\' <span style="color:#94a3b8;font-weight:600;">('+res.length+'건)</span></div>'+_clear+'</div>';
+                const _wire=()=>{ const cb=grid.querySelector('#_sr-clear'); if(cb) cb.onclick=()=>{ window.__sfSearchQuery=null; const gi=ov.querySelector('#_sf-global-q'); if(gi) gi.value=''; if(window.__sfRender) window.__sfRender(); }; };
+                if(!res.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;line-height:1.8;">일치하는 파일이 없습니다.<br><span style="font-size:12px;">파일명·폴더명·DICOM(환자·검사·시리즈·모달리티)으로 검색합니다.</span></div>'; _wire(); return; }
+                const card=(r)=>{ const nm=r.fname||''; const folder=(r.path&&r.path.length)?r.path.join('/'):''; const rpath=(folder?folder+'/':'')+nm; const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):''; const metaLine=r.meta?[r.meta.patient&&('환자 '+r.meta.patient),r.meta.modality].filter(Boolean).join(' · '):'';
+                    return '<div class="_sr-file" data-rootid="'+ESC(r.rootId)+'" data-rpath="'+ESC(rpath)+'" title="'+ESC(nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
+                        +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+tile+'</div>'+(metaLine?('<span style="position:absolute;top:6px;left:7px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;z-index:2;">'+ESC((r.meta&&r.meta.modality)||'🩻')+'</span>'):'')+'</div>'
+                        +'<div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
+                        +'<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(r.rootName||'')+(folder?(' / '+ESC(folder)):'')+'</div>'
+                        +'</div>'; };
+                const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
+                grid.innerHTML=head+'<div class="_sf-secgrid" style="'+secStyle+'">'+res.map(card).join('')+'</div>';
+                _wire();
+                grid.querySelectorAll('._sr-file').forEach(el=>el.addEventListener('click',()=>{ const rootId=el.getAttribute('data-rootid'); const rpath=el.getAttribute('data-rpath'); _sfOpenPmsFile({ rootId:rootId, rpath:rpath, fname:String(rpath).split('/').pop() }); }));
+                // 🖼 썸네일 지연 로드
+                (async()=>{ const R2=window.RCFolder; if(!R2||!R2.getFileAtRoot||!R2.getThumb) return; const cards=[].slice.call(grid.querySelectorAll('._sr-file')); let i=0; const CONC=3;
+                    async function w(){ while(i<cards.length){ if(window.__sfSearchQuery!==q) return; const el=cards[i++]; const box=el.querySelector('._pt-thumb'); if(!box||box.querySelector('img')) continue; const rootId=el.getAttribute('data-rootid'); const parts=String(el.getAttribute('data-rpath')||'').split('/'); const fn=parts.pop();
+                        try{ const f=await R2.getFileAtRoot(rootId, parts, fn); if(!f) continue; const t=await R2.getThumb(f, f.type||'', fn); if(t){ const ic=box.querySelector('._pt-ic'); if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:1;">'); } }catch(_){}
+                    } }
+                    const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws);
+                })();
+            }
             // 🧑‍⚕️ 환자 필터 뷰 — 같은 파일 목록 UI(날짜별 카드 그리드)로 '그 환자의 데이터만' 표시. 선택 해제는 로컬/클라우드 저장소 클릭.
             async function _sfRenderPatientGrid(ov, key){
                 const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
@@ -6255,8 +6291,8 @@
                 files.forEach(f=>{ const k=_ptDobFmt(f.studyDate)||'날짜 미상'; if(!gmap[k]){ gmap[k]=[]; order.push(k); } gmap[k].push(f); });
                 const card=(f)=>{ const nm=f.fname||''; const manual=(f.source==='manual'); const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):'';
                     return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" title="'+ESC(nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
-                        +'<div style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+tile+'</div>'
-                        +(f.modality?('<span style="position:absolute;top:6px;left:7px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;">'+ESC(f.modality)+'</span>'):'')
+                        +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+tile+'</div>'
+                        +(f.modality?('<span style="position:absolute;top:6px;left:7px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;z-index:2;">'+ESC(f.modality)+'</span>'):'')
                         +'<button class="_pt-menu" title="열기·연결관리" style="position:absolute;top:6px;right:6px;padding:4px 9px;border:none;border-radius:8px;background:rgba(15,47,82,.92);color:#fff;font-size:11px;font-weight:800;cursor:pointer;z-index:3;">⋯</button></div>'
                         +'<div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
                         +'<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(f.rootName||'')+(manual?' · 🔗연결':'')+'</div>'
@@ -6271,6 +6307,13 @@
                     if(f.manual){ items.push({label:'↔ 다른 환자로 이전',fn:()=>_sfPatientPicker(async(toKey)=>{ if(!toKey||toKey===key) return; try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:toKey, file:f})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('이전했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('이전 실패: '+((err&&err.message)||err)); } }) });
                         items.push({label:'🔗 연결 해제',danger:true,fn:async()=>{ try{ const r=await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:f.rootId,rpath:f.rpath})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('연결을 해제했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('해제 실패: '+((err&&err.message)||err)); } }}); }
                     const r=el.getBoundingClientRect(); ctxMenu(r.right-170, r.bottom+4, items); }));
+                // 🖼 썸네일 지연 로드 — 로컬 폴더(루트별)에서 원본을 읽어 DICOM/이미지/3D 미리보기 생성(활성 루트 불변)
+                (async()=>{ const R2=window.RCFolder; if(!R2||!R2.getFileAtRoot||!R2.getThumb) return; const cards=[].slice.call(grid.querySelectorAll('._pt-file')); let i=0; const CONC=3;
+                    async function w(){ while(i<cards.length){ if(window.__sfPatientFilter!==key) return; const el=cards[i++]; const box=el.querySelector('._pt-thumb'); if(!box||box.querySelector('img')) continue; const rootId=el.getAttribute('data-rootid'); const parts=String(el.getAttribute('data-rpath')||'').split('/'); const fn=parts.pop();
+                        try{ const f=await R2.getFileAtRoot(rootId, parts, fn); if(!f) continue; const t=await R2.getThumb(f, f.type||'', fn); if(t){ const ic=box.querySelector('._pt-ic'); if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:1;">'); } }catch(_){}
+                    } }
+                    const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws);
+                })();
             }
             async function _sfRenderCloudList(ov){
                 window.__sfCloudReload=()=>{ try{ _sfRenderCloudList(ov); }catch(_){} };
@@ -9114,7 +9157,10 @@
         // 🔎 화면별 통합검색: 파일검색=파일만(공유폴더 deep search) · 상점검색=상점/상품만(회원 제외, 회원검색은 메신저 담당)
         window.doScreenSearch = function(v, scope){
             v = (v!=null?String(v):'').trim();
-            if(scope==='files'){ if(v && window._sfDeepSearch) window._sfDeepSearch(v); else if(!v) showToast('검색어를 입력하세요.'); return; }
+            if(scope==='files'){ // 🔎 모달 대신 '메인 파일 목록'에 검색 결과를 인라인 표시
+                window.__sfSearchQuery = v||null; window.__sfPatientFilter=null; window.__sfCloudView=false;
+                if(window.__sfRender) window.__sfRender(); else if(v && window._sfDeepSearch) window._sfDeepSearch(v);
+                return; }
             // 상점 검색: 빈 값이면 검색 결과 패널을 닫고 상점 목록으로 초기화
             if(!v){ if(window.resetMarketView) window.resetMarketView(); return; }
             try{ const g=document.getElementById('topbar-global-search'); if(g) g.value=v; }catch(_){}
@@ -9794,7 +9840,7 @@
             try{ if(window.renderSidebarCategories) renderSidebarCategories(); if(window.renderMobileChips) renderMobileChips(); }catch(_){}
         };
         // ☁️ 클라우드(파일검색→클라우드 복사) 전역 활성화 플래그 — 관리자가 켜야 파일검색에 '클라우드' 버튼 노출.
-        window.CLOUD_MIRROR_ENABLED = false; window.__sfCloudView = false; window.__sfPatientView = false; window.__sfPatientFilter = null; window.__sbLoaded = false;
+        window.CLOUD_MIRROR_ENABLED = false; window.__sfCloudView = false; window.__sfPatientView = false; window.__sfPatientFilter = null; window.__sbLoaded = false; window.__sfSearchQuery = null;
         window.loadCloudMirrorFlag = async function(){
             try{ const d=await (await fetch(API_URL+'/api/settings/cloud-mirror')).json(); window.CLOUD_MIRROR_ENABLED = !!(d&&d.enabled); }catch(_){ window.CLOUD_MIRROR_ENABLED=false; }
             try{ const b=document.getElementById('sb-cloud'); if(b) b.style.display = window.CLOUD_MIRROR_ENABLED ? '' : 'none'; }catch(_){}
