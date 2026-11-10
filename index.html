@@ -4140,32 +4140,39 @@
             //    patientKey = PatientID(있으면) | 없으면 'nb:'+이름+생년월일. 같은 시리즈(폴더) 반복 파싱은 캐시로 최소화.
             function _pmsKey(meta){ const pid=String((meta&&meta.pid)||'').trim(); if(pid) return pid; const nm=String((meta&&meta.patient)||'').trim(); const dob=String((meta&&meta.dob)||'').trim(); if(!nm&&!dob) return ''; return 'nb:'+nm.toLowerCase().replace(/\s+/g,'')+'|'+dob; }
             async function scanPatients(onProg){
-                const rs=await _loadRoots(); const groups={}; let scanned=0;
+                // ⚡ 성능: CT 한 건당 수백 슬라이스를 전부 읽지 않고 '시리즈(폴더)당 대표 1건'만 헤더 파싱·인덱싱 → 스캔/동기화 폭증 방지(타임아웃 해결).
+                const rs=await _loadRoots(); const groups={}; let scanned=0; let series=0; const CAP=4000;
                 for(const root of rs){ const h=root.handle; if(!h) continue;
                     try{ if((await h.queryPermission({mode:'read'}))!=='granted') await h.requestPermission({mode:'read'}); }catch(_){}
                     async function walk(dir, pathArr){
+                        if(series>=CAP) return;
                         let ents=[]; try{ for await (const e of dir.values()) ents.push(e); }catch(_){ return; }
-                        for(const ent of ents){
-                            if(ent.kind==='directory'){ if(pathArr.length<8) await walk(ent, pathArr.concat([ent.name])); continue; }
-                            const nm=ent.name; if(!/\.dcm$/i.test(nm)) continue;
-                            scanned++; if(onProg && (scanned&63)===0){ try{ onProg(scanned, Object.keys(groups).length); }catch(_){} }
-                            let f=null; try{ f=await ent.getFile(); }catch(_){ continue; }
-                            const ck=root.id+'|'+pathArr.join('/')+'/'+nm+'|'+f.size+'|'+(f.lastModified||0);
-                            let meta=_metaCache.get(ck); if(meta===undefined){ try{ meta=await _readDicomMeta(f); }catch(_){ meta=null; } _metaCache.set(ck, meta); }
-                            if(!meta) continue;
-                            const key=_pmsKey(meta); if(!key) continue;
-                            const rpath=(pathArr.join('/')+'/'+nm);
-                            let g=groups[key]; if(!g){ g={ patientKey:key, patientId:String(meta.pid||''), name:String(meta.patient||''), dob:String(meta.dob||''), sex:String(meta.sex||''), lastStudy:String(meta.date||''), files:[] }; groups[key]=g; }
-                            if(meta.date && meta.date>g.lastStudy) g.lastStudy=meta.date;
-                            if(!g.name && meta.patient) g.name=String(meta.patient);
-                            g.files.push({ rootId:root.id, rootName:root.name, rpath:rpath, fname:nm, modality:String(meta.modality||''), studyDate:String(meta.date||''), mtime:(f.lastModified||0) });
+                        const dcms=ents.filter(e=>e.kind!=='directory' && /\.dcm$/i.test(e.name));
+                        if(dcms.length){
+                            dcms.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+                            const ent=dcms[0]; const nm=ent.name; scanned+=dcms.length; series++;
+                            let f=null; try{ f=await ent.getFile(); }catch(_){}
+                            if(f){ const ck=root.id+'|'+pathArr.join('/')+'|'+dcms.length;
+                                let meta=_metaCache.get(ck); if(meta===undefined){ try{ meta=await _readDicomMeta(f); }catch(_){ meta=null; } _metaCache.set(ck, meta); }
+                                if(meta){ const key=_pmsKey(meta); if(key){ const rpath=(pathArr.join('/')+'/'+nm);
+                                    let g=groups[key]; if(!g){ g={ patientKey:key, patientId:String(meta.pid||''), name:String(meta.patient||''), dob:String(meta.dob||''), sex:String(meta.sex||''), lastStudy:String(meta.date||''), files:[] }; groups[key]=g; }
+                                    if(meta.date && meta.date>g.lastStudy) g.lastStudy=meta.date;
+                                    if(!g.name && meta.patient) g.name=String(meta.patient);
+                                    if(g.patientId!==(meta.pid||'') && meta.pid) g.patientId=String(meta.pid);
+                                    g.files.push({ rootId:root.id, rootName:root.name, rpath:rpath, fname:(dcms.length>1?(nm+' (시리즈 '+dcms.length+'컷)'):nm), modality:String(meta.modality||''), studyDate:String(meta.date||''), mtime:(f.lastModified||0) });
+                                } }
+                            }
+                            if(onProg){ try{ onProg(scanned, Object.keys(groups).length); }catch(_){} }
                         }
+                        for(const e of ents){ if(e.kind==='directory' && pathArr.length<8){ await walk(e, pathArr.concat([e.name])); if(series>=CAP) return; } }
                     }
                     try{ await walk(h, []); }catch(_){}
                 }
                 const patients=Object.values(groups);
-                if(patients.length){ try{ await fetch(API_URL+'/api/pms/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patients})}); }catch(_){} }
-                return { patients:patients.length, scanned };
+                // 📦 동기화는 40명씩 분할(대형 payload·타임아웃 방지)
+                const CH=40;
+                for(let i=0;i<patients.length;i+=CH){ try{ await fetch(API_URL+'/api/pms/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patients:patients.slice(i,i+CH)})}); }catch(_){} }
+                return { patients:patients.length, scanned, series };
             }
             let _syncTimer=null;
             function _scheduleSync(){ if(_syncTimer) clearTimeout(_syncTimer); _syncTimer=setTimeout(()=>{ try{ syncIndex(); }catch(_){} }, 1500); }
@@ -5348,6 +5355,8 @@
             });
         };
         window._sbPatientFilter = function(q){ q=String(q||'').toLowerCase().trim(); document.querySelectorAll('#sb-pt-list ._sbpt').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.indexOf(q)>=0)?'':'none'; }); };
+        // 🎨 선택된 환자 버튼 강조(다른 색) — 현재 어떤 환자가 선택됐는지 명확히
+        window._sbHighlightPatient = function(){ const k=window.__sfPatientFilter||''; document.querySelectorAll('#sb-pt-list ._sbpt').forEach(el=>{ const on=(el.getAttribute('data-key')===k && !!k); el.style.background=on?'#dceafb':'#fff'; el.style.borderColor=on?'#0b2b4b':'#e6edf4'; el.style.boxShadow=on?'inset 0 0 0 1.5px #0b2b4b':''; }); };
         window._sbPatientAdd = function(){ if(window._sfCreatePatient) window._sfCreatePatient(null, ()=>window._sbLoadPatients()); else showToast('파일검색을 먼저 열어 주세요.'); };
         window._sbLoadPatients = async function(){
             const list=document.getElementById('sb-pt-list'); if(!list) return;
@@ -5368,6 +5377,7 @@
                 el.addEventListener('dragleave',()=>{ el.style.background='#fff'; el.style.borderColor='#e6edf4'; });
                 el.addEventListener('drop',(e)=>{ e.preventDefault(); el.style.background='#fff'; el.style.borderColor='#e6edf4'; if(window._sfAssignDraggedToPatient) window._sfAssignDraggedToPatient(key); });
             });
+            try{ window._sbHighlightPatient&&window._sbHighlightPatient(); }catch(_){}
         };
         window.rcOpenInLiveViewer = async function(pathArr, fname, alsoNames){
             // 📱 모바일/미지원 기기: RCFolder 없거나 비연결이어도 클라우드 데이터는 열람 가능하도록 안전 스텁 사용.
@@ -5816,7 +5826,7 @@
                 const kb=ov.querySelector('#_sf-kebab'); if(kb) kb.onclick=(e)=>{ const items=[]; if(connected){ items.push({label:'📁 새 폴더',fn:doNewFolder}); items.push({label:'⬆ 업로드',fn:doUpload}); items.push({label:'➕ 공유폴더 추가',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); items.push({label:'🔌 전체 연결 해제',danger:true,fn:async()=>{ if(confirm('이 기기의 공유폴더 연결을 모두 해제할까요? (폴더의 실제 파일은 삭제되지 않습니다)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } }}); } else { items.push({label:'📂 공유폴더 지정',fn:async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } }}); } if(typeof isAdmin!=='undefined' && isAdmin){ items.push({label:(window.CLOUD_MIRROR_ENABLED?'☁️ 클라우드 기능 끄기(Admin)':'☁️ 클라우드 기능 켜기(Admin)'),fn:()=>{ window.toggleCloudMirrorAdmin&&window.toggleCloudMirrorAdmin(); }}); } const r=kb.getBoundingClientRect(); ctxMenu(r.right-180, r.bottom+4, items); };
                 // 📁 다중 공유폴더 칩: 전환 / 제거 / 추가
                 // 🗂 로컬 저장소 드롭다운 — 추가된 공유폴더 전환/제거/추가를 한 곳에서(가로 칩 누적 제거)
-                { const lsBtn=ov.querySelector('#_sf-localstore'); if(lsBtn) lsBtn.addEventListener('click',(e)=>{ e.stopPropagation(); _sfOpenLocalStore(lsBtn); }); }
+                { const lsBtn=ov.querySelector('#_sf-localstore'); if(lsBtn) lsBtn.addEventListener('click',(e)=>{ e.stopPropagation(); if(window.__sfPatientFilter){ window.__sfPatientFilter=null; render(); _sfOpenLocalStore(lsBtn); } else { _sfOpenLocalStore(lsBtn); } }); }
                 function _sfOpenLocalStore(anchor){
                     document.querySelectorAll('#_sf-ls-dd').forEach(x=>x.remove());
                     const dd=document.createElement('div'); dd.id='_sf-ls-dd';
@@ -6067,12 +6077,15 @@
 
                 applyFilter();
                 // ☁️ 클라우드 뷰 — 로컬 그리드가 있으면(데스크톱) 오버레이, 없으면(모바일/폴더 미지정) 클라우드 파일만 목록으로 조회.
-                // ☁️ 클라우드 저장소(어느 기기서나 동일) / 기본=폴더 목록. 환자 리스트는 좌측 사이드바로 이동(파일 그리드는 원복).
-                if(window.__sfCloudView){ try{ window._sbPatientPanel&&window._sbPatientPanel(false); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
-                else { try{ window._sbPatientPanel&&window._sbPatientPanel(true);
-                    if(!window.__pmsScanOnce && window.RCFolder && window.RCFolder.scanPatients && window.RCFolder.supported){ window.__pmsScanOnce=true; (async()=>{ try{ await window.RCFolder.scanPatients(); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} })(); }
-                    if(window._sbLoadPatients) window._sbLoadPatients();
-                }catch(_){} }
+                // 좌측 환자 리스트는 파일검색(로컬/클라우드) 공통 유지. 환자 목록 fetch는 1회만(매 렌더 금지 → 타임아웃 방지).
+                try{ window._sbPatientPanel&&window._sbPatientPanel(true);
+                    if(!window.__sbLoaded){ window.__sbLoaded=true; if(window._sbLoadPatients) window._sbLoadPatients(); }
+                    if(!window.__pmsScanOnce && window.RCFolder && window.RCFolder.scanPatients && window.RCFolder.supported){ window.__pmsScanOnce=true; (async()=>{ try{ await window.RCFolder.scanPatients(); window.__sbLoaded=false; if(window._sbLoadPatients){ window.__sbLoaded=true; window._sbLoadPatients(); } }catch(_){} })(); }
+                }catch(_){}
+                // ☁️ 클라우드 저장소(어느 기기서나 동일) / 🧑‍⚕️ 환자 필터(같은 파일 UI로 그 환자 데이터만) / 기본=폴더 목록
+                if(window.__sfCloudView){ window.__sfPatientFilter=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
+                else if(window.__sfPatientFilter){ try{ _sbHighlightPatient(); _sfRenderPatientGrid(ov, window.__sfPatientFilter); }catch(_){} }
+                else { try{ _sbHighlightPatient(); }catch(_){} }
             }
             // ☁️ 클라우드 전용 목록(모바일/폴더 미지정) — 클라우드 저장소 파일을 바로 조회(다운로드 아님).
             // ☁️ 클라우드 파일 동작 메뉴 — 누른 버튼 바로 옆에 뜨는 팝오버(열기/공유/삭제, 텍스트 라벨).
@@ -6164,7 +6177,7 @@
                 grid.insertAdjacentElement('afterbegin', sec);
                 const qi=sec.querySelector('#_pt-q'); if(qi) qi.addEventListener('click',e=>e.stopPropagation());
                 if(qi) qi.oninput=()=>{ const q=(qi.value||'').toLowerCase().trim(); sec.querySelectorAll('._pt-card').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.indexOf(q)>=0)?'':'none'; }); };
-                sec.querySelectorAll('._pt-card').forEach(el=>el.addEventListener('click',()=>_sfRenderPatientDetail(ov, el.getAttribute('data-key'))));
+                sec.querySelectorAll('._pt-card').forEach(el=>el.addEventListener('click',()=>{ window.__sfPatientFilter=el.getAttribute('data-key'); if(window.__sfRender) window.__sfRender(); }));
                 const ad=sec.querySelector('#_pt-add'); if(ad) ad.addEventListener('click',()=>_sfCreatePatient(null, ()=>_sfInjectPatientCards(ov)));
             }
             // 🧑‍⚕️ 환자 수동 생성/수정 모달
@@ -6215,46 +6228,49 @@
                     catch(e){ showToast('연결 실패: '+((e&&e.message)||e)); }
                 });
             }
-            async function _sfRenderPatientDetail(ov, key){
+            // 🧑‍⚕️ 환자 필터 뷰 — 같은 파일 목록 UI(날짜별 카드 그리드)로 '그 환자의 데이터만' 표시. 선택 해제는 로컬/클라우드 저장소 클릭.
+            async function _sfRenderPatientGrid(ov, key){
                 const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
                 const ESC=(typeof _sfEsc==='function')?_sfEsc:(s=>String(s==null?'':s));
+                const zoom=(flt.zoom||150);
                 grid.innerHTML='<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">환자 데이터 불러오는 중…</div>';
                 let d={card:null,files:[]}; try{ d=await (await fetch(API_URL+'/api/pms/patients/'+encodeURIComponent(key)+'/files')).json(); }catch(_){}
+                if(window.__sfPatientFilter!==key) return;   // 그 사이 선택이 바뀌면 무시
                 const c=d.card||{}; const files=d.files||[]; const meta=_ptSexAge(c.dob,c.sex);
-                const _back=()=>{ if(window.__sfRender) window.__sfRender(); };
                 const head='<div style="margin:4px 2px 12px;">'
-                    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><button id="_pt-dback" style="flex:none;padding:7px 12px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:9px;font-weight:800;font-size:12px;cursor:pointer;">← 파일 목록</button>'
-                    +'<button id="_pt-edit" style="flex:none;padding:7px 12px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;">✏️ 정보 수정</button>'
-                    +'<button id="_pt-del" style="flex:none;padding:7px 12px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;">환자 삭제</button></div>'
-                    +'<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #d4dde8;border-radius:14px;padding:14px 16px;box-shadow:0 5px 16px rgba(16,34,54,.07);">'
-                    +'<div style="flex:none;width:52px;height:52px;border-radius:50%;background:#eef4f8;display:flex;align-items:center;justify-content:center;font-size:26px;">🧑‍⚕️</div>'
-                    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:18px;color:#0f172a;">'+ESC(c.name||'(이름없음)')+'</div>'
-                    +'<div style="font-size:12.5px;color:#64748b;margin-top:2px;">'+(meta||'')+(c.patientId?('  ·  ID '+ESC(c.patientId)):'')+(_ptDobFmt(c.dob)?('  ·  생년월일 '+_ptDobFmt(c.dob)):'')+'</div>'
-                    +'<div style="font-size:11.5px;color:#94a3b8;margin-top:3px;">총 영상 '+files.length+'건 · '+ESC(String(c.modalities||'').split(',').filter(Boolean).join(', '))+'</div></div></div></div>';
+                    +'<div style="display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,#eef4fb,#e2ecf7);border:1px solid #cdd9e6;border-radius:14px;padding:12px 15px;">'
+                    +'<div style="flex:none;width:46px;height:46px;border-radius:50%;background:'+(String(c.sex).toUpperCase()==='M'?'#3b82f6':(String(c.sex).toUpperCase()==='F'?'#ec4899':'#334155'))+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;">'+ESC((String(c.name||'·').trim()[0]||'·'))+'</div>'
+                    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:17px;color:#0f172a;">'+ESC(c.name||'(이름없음)')+' <span style="font-size:12px;color:#0b2b4b;font-weight:700;background:#dceafb;border:1px solid #0b2b4b;border-radius:7px;padding:1px 8px;margin-left:4px;">선택됨</span></div>'
+                    +'<div style="font-size:12px;color:#475569;margin-top:2px;">'+(meta||'')+(c.patientId?('  ·  ID '+ESC(c.patientId)):'')+(_ptDobFmt(c.dob)?('  ·  생 '+_ptDobFmt(c.dob)):'')+'  ·  영상 '+files.length+'건</div></div>'
+                    +'<button id="_pt-edit" title="환자 정보 수정" style="flex:none;padding:7px 11px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;">✏️ 수정</button>'
+                    +'<button id="_pt-del" title="환자 삭제" style="flex:none;padding:7px 11px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;">삭제</button></div>'
+                    +'<div style="font-size:11.5px;color:#94a3b8;margin-top:7px;padding-left:2px;">※ 전체 보기로 돌아가려면 상단 <b>로컬 저장소</b> 또는 <b>클라우드 저장소</b>를 누르세요.</div></div>';
                 const _wireHead=()=>{
-                    const b=grid.querySelector('#_pt-dback'); if(b) b.onclick=_back;
-                    const ed=grid.querySelector('#_pt-edit'); if(ed) ed.onclick=()=>_sfCreatePatient(c, ()=>_sfRenderPatientDetail(ov,key));
-                    const dl=grid.querySelector('#_pt-del'); if(dl) dl.onclick=async()=>{ const ok=await (window._sfConfirm?window._sfConfirm('이 환자 카드를 삭제할까요?\n(연결 링크만 삭제 · 원본 영상 파일은 보존됩니다. DICOM은 재스캔 시 다시 생길 수 있어요)','삭제'):Promise.resolve(confirm('환자 카드를 삭제할까요?'))); if(!ok) return; try{ const r=await fetch(API_URL+'/api/pms/patient/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:key})}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'실패'); showToast('삭제되었습니다.'); _back(); }catch(e){ showToast('삭제 실패: '+((e&&e.message)||e)); } };
+                    const ed=grid.querySelector('#_pt-edit'); if(ed) ed.onclick=()=>_sfCreatePatient(c, ()=>{ if(window._sbLoadPatients) window._sbLoadPatients(); _sfRenderPatientGrid(ov,key); });
+                    const dl=grid.querySelector('#_pt-del'); if(dl) dl.onclick=async()=>{ const ok=await (window._sfConfirm?window._sfConfirm('이 환자 카드를 삭제할까요?\n(연결 링크만 삭제 · 원본 영상 파일은 보존됩니다. DICOM은 재스캔 시 다시 생길 수 있어요)','삭제'):Promise.resolve(confirm('환자 카드를 삭제할까요?'))); if(!ok) return; try{ const r=await fetch(API_URL+'/api/pms/patient/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:key})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('삭제되었습니다.'); window.__sfPatientFilter=null; window.__sbLoaded=false; if(window._sbLoadPatients){ window.__sbLoaded=true; window._sbLoadPatients(); } if(window.__sfRender) window.__sfRender(); }catch(e){ showToast('삭제 실패: '+((e&&e.message)||e)); } };
                 };
-                if(!files.length){ grid.innerHTML=head+'<div style="padding:30px;text-align:center;color:#94a3b8;">연결된 영상이 없습니다. 파일 목록에서 파일 카드의 메뉴(⋯)로 이 환자에 연결할 수 있어요.</div>'; _wireHead(); return; }
-                // 날짜(스터디)별 그룹
+                if(!files.length){ grid.innerHTML=head+'<div style="padding:30px;text-align:center;color:#94a3b8;">연결된 영상이 없습니다. 파일을 좌측 환자로 드래그하거나, 파일 우클릭 ▸ 환자에 연결로 추가할 수 있어요.</div>'; _wireHead(); return; }
+                // 📅 검사일(스터디)별 그룹 — 파일 목록과 동일한 날짜 섹션 + 카드 그리드
                 const gmap={}; const order=[];
                 files.forEach(f=>{ const k=_ptDobFmt(f.studyDate)||'날짜 미상'; if(!gmap[k]){ gmap[k]=[]; order.push(k); } gmap[k].push(f); });
-                const fileRow=(f)=>{ const nm=f.fname||''; const folder=String(f.rpath||'').split('/').slice(0,-1).join('/'); const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):'📄'; const manual=(f.source==='manual');
-                    return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid #e6edf4;border-radius:11px;background:#fff;cursor:pointer;margin-bottom:7px;">'
-                        +'<div style="flex:none;transform:scale(.62);transform-origin:left center;width:34px;">'+tile+'</div>'
-                        +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(nm)+'</div><div style="font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(f.modality?('['+ESC(f.modality)+'] '):'')+ESC(f.rootName||'')+(folder?(' / '+ESC(folder)):'')+(manual?' · 🔗수동귀속':' · 🩻DICOM')+'</div></div>'
-                        +(manual?'<button class="_pt-move" title="다른 환자로 이전" style="flex:none;padding:6px 10px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">이전</button><button class="_pt-detach" title="귀속 해제" style="flex:none;padding:6px 10px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">해제</button>':'')
-                        +'<button class="_pt-open" style="flex:none;padding:6px 12px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f2f52;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">열기</button>'
+                const card=(f)=>{ const nm=f.fname||''; const manual=(f.source==='manual'); const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):'';
+                    return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" title="'+ESC(nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
+                        +'<div style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+tile+'</div>'
+                        +(f.modality?('<span style="position:absolute;top:6px;left:7px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;">'+ESC(f.modality)+'</span>'):'')
+                        +'<button class="_pt-menu" title="열기·연결관리" style="position:absolute;top:6px;right:6px;padding:4px 9px;border:none;border-radius:8px;background:rgba(15,47,82,.92);color:#fff;font-size:11px;font-weight:800;cursor:pointer;z-index:3;">⋯</button></div>'
+                        +'<div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
+                        +'<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(f.rootName||'')+(manual?' · 🔗연결':'')+'</div>'
                         +'</div>'; };
-                const secs=order.map(k=>'<div style="margin-bottom:12px;"><div style="font-weight:800;font-size:13.5px;color:#334155;padding:8px 2px;">📅 '+ESC(k)+' <span style="color:#94a3b8;font-weight:600;">('+gmap[k].length+')</span></div>'+gmap[k].map(fileRow).join('')+'</div>').join('');
+                const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
+                const secs=order.map(k=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(k)+' <span style="color:#94a3b8;font-weight:600;">('+gmap[k].length+')</span></div><div class="_sf-secgrid" style="'+secStyle+'">'+gmap[k].map(card).join('')+'</div></div>').join('');
                 grid.innerHTML=head+secs;
                 _wireHead();
-                const _byEl=el=>{ const row=el.closest('._pt-file'); return { rootId:row.getAttribute('data-rootid'), rpath:row.getAttribute('data-rpath'), fname:(row.getAttribute('data-rpath')||'').split('/').pop() }; };
-                grid.querySelectorAll('._pt-file').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-open')||e.target.closest('._pt-move')||e.target.closest('._pt-detach')) return; _sfOpenPmsFile(_byEl(el)); }));
-                grid.querySelectorAll('._pt-open').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _sfOpenPmsFile(_byEl(el)); }));
-                grid.querySelectorAll('._pt-detach').forEach(el=>el.addEventListener('click',async(e)=>{ e.stopPropagation(); const f=_byEl(el); try{ const r=await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:f.rootId,rpath:f.rpath})}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'실패'); showToast('귀속을 해제했습니다.'); _sfRenderPatientDetail(ov,key); }catch(err){ showToast('해제 실패: '+((err&&err.message)||err)); } }));
-                grid.querySelectorAll('._pt-move').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el); _sfPatientPicker(async(toKey)=>{ if(!toKey||toKey===key) return; try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:toKey, file:f})}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'실패'); showToast('다른 환자로 이전했습니다.'); _sfRenderPatientDetail(ov,key); }catch(err){ showToast('이전 실패: '+((err&&err.message)||err)); } }); }));
+                const _byEl=el=>{ const row=el.closest('._pt-file'); return { rootId:row.getAttribute('data-rootid'), rpath:row.getAttribute('data-rpath'), fname:(row.getAttribute('data-rpath')||'').split('/').pop(), manual:row.getAttribute('data-manual')==='1' }; };
+                grid.querySelectorAll('._pt-file').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')) return; _sfOpenPmsFile(_byEl(el)); }));
+                grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el); const items=[{label:'📂 열기',fn:()=>_sfOpenPmsFile(f)}];
+                    if(f.manual){ items.push({label:'↔ 다른 환자로 이전',fn:()=>_sfPatientPicker(async(toKey)=>{ if(!toKey||toKey===key) return; try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:toKey, file:f})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('이전했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('이전 실패: '+((err&&err.message)||err)); } }) });
+                        items.push({label:'🔗 연결 해제',danger:true,fn:async()=>{ try{ const r=await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:f.rootId,rpath:f.rpath})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('연결을 해제했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('해제 실패: '+((err&&err.message)||err)); } }}); }
+                    const r=el.getBoundingClientRect(); ctxMenu(r.right-170, r.bottom+4, items); }));
             }
             async function _sfRenderCloudList(ov){
                 window.__sfCloudReload=()=>{ try{ _sfRenderCloudList(ov); }catch(_){} };
@@ -6425,8 +6441,8 @@
             }
             // 🔙 패널 재렌더/닫기를 전역으로 노출(클라우드 뷰 등에서 '뒤로/닫기' 호출용)
             window.__sfRender = render; window.__sfClose = close;
-            // 🧑‍⚕️ 좌측 환자 리스트에서 환자 상세를 파일 영역에 열기
-            window._sfShowPatient = function(key){ try{ _sfRenderPatientDetail(ov, key); }catch(_){} };
+            // 🧑‍⚕️ 좌측 환자 클릭 = 그 환자로 '필터'(같은 파일 UI 유지, 해당 환자 데이터만). 해제는 로컬/클라우드 저장소 클릭.
+            window._sfShowPatient = function(key){ window.__sfPatientFilter=key; window.__sfCloudView=false; try{ render(); }catch(_){} };
             window._sfCreatePatient = _sfCreatePatient;
             window._sfAssignDraggedToPatient = async function(patientKey){ const refs=window.__sfDragFileRef||[]; if(!patientKey||!refs.length) return; let ok=0; for(const f of refs){ try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey, file:f})}); const d=await r.json(); if(r.ok&&d.ok) ok++; }catch(_){} } window.__sfDragFileRef=null; if(ok){ showToast('✅ '+ok+'개 파일을 환자에 연결했습니다.'); try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} } else showToast('연결 실패'); };
             render();
@@ -9778,7 +9794,7 @@
             try{ if(window.renderSidebarCategories) renderSidebarCategories(); if(window.renderMobileChips) renderMobileChips(); }catch(_){}
         };
         // ☁️ 클라우드(파일검색→클라우드 복사) 전역 활성화 플래그 — 관리자가 켜야 파일검색에 '클라우드' 버튼 노출.
-        window.CLOUD_MIRROR_ENABLED = false; window.__sfCloudView = false; window.__sfPatientView = false;
+        window.CLOUD_MIRROR_ENABLED = false; window.__sfCloudView = false; window.__sfPatientView = false; window.__sfPatientFilter = null; window.__sbLoaded = false;
         window.loadCloudMirrorFlag = async function(){
             try{ const d=await (await fetch(API_URL+'/api/settings/cloud-mirror')).json(); window.CLOUD_MIRROR_ENABLED = !!(d&&d.enabled); }catch(_){ window.CLOUD_MIRROR_ENABLED=false; }
             try{ const b=document.getElementById('sb-cloud'); if(b) b.style.display = window.CLOUD_MIRROR_ENABLED ? '' : 'none'; }catch(_){}
