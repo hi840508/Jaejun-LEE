@@ -3624,8 +3624,8 @@ function _pmsRecalc(owner, keys, cb) {
     list.forEach(k => {
         db.get(`SELECT COUNT(*) c, GROUP_CONCAT(DISTINCT modality) mods, MAX(studyDate) ls FROM pms_files WHERE owner=? AND patientKey=?`, [owner, k], (e, r) => {
             const c = (r && r.c) || 0;
-            if (!c) { db.run(`DELETE FROM pms_patients WHERE owner=? AND patientKey=?`, [owner, k], () => { if (++done === list.length) cb && cb(); }); return; }
             const mods = (r && r.mods) ? r.mods.split(',').filter(Boolean).join(',') : '';
+            // 빈 카드도 삭제하지 않는다(수동 생성 환자·파일 없는 환자 유지). 삭제는 명시적 DELETE로만.
             db.run(`UPDATE pms_patients SET fileCount=?, modalities=?, lastStudy=?, updatedAt=? WHERE owner=? AND patientKey=?`, [c, mods, (r && r.ls) || '', Date.now(), owner, k], () => { if (++done === list.length) cb && cb(); });
         });
     });
@@ -3679,12 +3679,54 @@ app.post('/api/pms/assign', (req, res) => {
     if (!key || !rpath || !rootId) return res.status(400).json({ error: 'patientKey·file(rootId,rpath) 필요' });
     db.get(`SELECT patientKey FROM pms_patients WHERE owner=? AND patientKey=?`, [owner, key], (e, card) => {
         if (!card) return res.status(404).json({ error: '환자 카드를 찾을 수 없습니다.' });
-        db.run(`INSERT INTO pms_files (owner, patientKey, rootId, rootName, rpath, fname, modality, studyDate, mtime, source) VALUES (?,?,?,?,?,?,?,?,?, 'manual')
-                ON CONFLICT(owner, rootId, rpath) DO UPDATE SET patientKey=excluded.patientKey, source='manual'`,
-            [owner, key, rootId, String(f.rootName || ''), rpath, String(f.fname || ''), String(f.modality || ''), String(f.studyDate || ''), Math.floor(Number(f.mtime) || 0)], (ie) => {
-                if (ie) return res.status(500).json({ error: ie.message });
-                _pmsRecalc(owner, [key], () => res.json({ ok: true }));
-            });
+        db.get(`SELECT patientKey FROM pms_files WHERE owner=? AND rootId=? AND rpath=?`, [owner, rootId, rpath], (e0, prev) => {
+            db.run(`INSERT INTO pms_files (owner, patientKey, rootId, rootName, rpath, fname, modality, studyDate, mtime, source) VALUES (?,?,?,?,?,?,?,?,?, 'manual')
+                    ON CONFLICT(owner, rootId, rpath) DO UPDATE SET patientKey=excluded.patientKey, source='manual'`,
+                [owner, key, rootId, String(f.rootName || ''), rpath, String(f.fname || ''), String(f.modality || ''), String(f.studyDate || ''), Math.floor(Number(f.mtime) || 0)], (ie) => {
+                    if (ie) return res.status(500).json({ error: ie.message });
+                    _pmsRecalc(owner, [key, prev && prev.patientKey].filter(Boolean), () => res.json({ ok: true }));   // 이전 환자도 집계 갱신(이전=이동)
+                });
+        });
+    });
+});
+// 🧑‍⚕️ 환자 카드 수동 생성/수정 — DICOM 없이도 환자를 등록할 수 있다.
+app.post('/api/pms/patient', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const b = req.body || {};
+    const pid = String(b.patientId || '').trim(), name = String(b.name || '').trim(), dob = String(b.dob || '').trim(), sex = String(b.sex || '').trim();
+    if (!name && !pid) return res.status(400).json({ error: '이름 또는 환자ID가 필요합니다.' });
+    let key = String(b.patientKey || '').trim();
+    if (!key) key = pid ? pid : (name ? ('nb:' + name.toLowerCase().replace(/\s+/g, '') + '|' + dob) : ('man:' + crypto.randomBytes(5).toString('hex')));
+    db.run(`INSERT INTO pms_patients (owner, patientKey, patientId, name, dob, sex, modalities, fileCount, lastStudy, updatedAt) VALUES (?,?,?,?,?,?, '', 0, '', ?)
+            ON CONFLICT(owner, patientKey) DO UPDATE SET patientId=excluded.patientId, name=excluded.name, dob=excluded.dob, sex=excluded.sex, updatedAt=excluded.updatedAt`,
+        [owner, key, pid, name, dob, sex, Date.now()], (e) => {
+            if (e) return res.status(500).json({ error: e.message });
+            _pmsRecalc(owner, [key], () => res.json({ ok: true, patientKey: key }));
+        });
+});
+// 🧑‍⚕️ 환자 카드 삭제 — 카드 + 연결된 파일 링크 제거(원본 파일은 보존). DICOM 기반은 재스캔 시 다시 생길 수 있음.
+app.post('/api/pms/patient/delete', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const key = String(req.body.patientKey || '').trim(); if (!key) return res.status(400).json({ error: 'patientKey 필요' });
+    db.run(`DELETE FROM pms_files WHERE owner=? AND patientKey=?`, [owner, key], () => {
+        db.run(`DELETE FROM pms_patients WHERE owner=? AND patientKey=?`, [owner, key], (e) => {
+            if (e) return res.status(500).json({ error: e.message });
+            res.json({ ok: true });
+        });
+    });
+});
+// 📎 귀속 해제 — 수동 귀속 파일을 환자에서 떼어낸다(원본 보존). DICOM 자동귀속은 재스캔 시 유지됨.
+app.post('/api/pms/detach', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const rootId = String(req.body.rootId || ''), rpath = String(req.body.rpath || '');
+    if (!rootId || !rpath) return res.status(400).json({ error: 'rootId·rpath 필요' });
+    db.get(`SELECT patientKey, source FROM pms_files WHERE owner=? AND rootId=? AND rpath=?`, [owner, rootId, rpath], (e, row) => {
+        if (!row) return res.json({ ok: true });
+        if (row.source !== 'manual') return res.status(400).json({ error: 'DICOM 자동귀속 파일은 해제할 수 없습니다(수동 귀속만 해제 가능).' });
+        db.run(`DELETE FROM pms_files WHERE owner=? AND rootId=? AND rpath=?`, [owner, rootId, rpath], (de) => {
+            if (de) return res.status(500).json({ error: de.message });
+            _pmsRecalc(owner, [row.patientKey], () => res.json({ ok: true }));
+        });
     });
 });
 
