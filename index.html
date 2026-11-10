@@ -1288,11 +1288,20 @@
                     </div>
                     <div class="yt-sb-divider" id="sb-search-divider"></div>
                     <!-- 🧰 도구 -->
-                    <div class="yt-sb-section">
+                    <div class="yt-sb-section" id="sb-tools-section">
                         <div class="yt-sb-title">도구</div>
                         <!-- ☁️ 클라우드(구독) — 관리자 활성화(cloud_mirror_enabled) 시에만 노출. 파일검색 UI로 클라우드 보관함 열람 -->
                         <button class="yt-sb-item" id="sb-cloud" style="display:none;" onclick="openCloudFromSidebar()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg></span><span>클라우드</span></button>
                         <button class="yt-sb-item" id="sb-viewer" onclick="openLiveViewerFromSidebar()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span><span>Viewer</span></button>
+                    </div>
+                    <!-- 🧑‍⚕️ 파일검색 중일 때 좌측 기능리스트를 환자 리스트로 전환(환자 폴더 역할) -->
+                    <div class="yt-sb-section" id="sb-patient-panel" style="display:none;flex:1;min-height:0;flex-direction:column;padding:6px 8px;">
+                        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                            <div style="flex:1;font-size:12px;font-weight:800;color:var(--primary);">🧑‍⚕️ 환자 <span id="sb-pt-count" style="color:#94a3b8;font-weight:600;"></span></div>
+                            <button onclick="_sbPatientAdd()" title="환자 추가" style="flex:none;width:30px;height:30px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;cursor:pointer;font-size:17px;line-height:1;color:#0f2f52;">＋</button>
+                        </div>
+                        <input id="sb-pt-q" oninput="_sbPatientFilter(this.value)" placeholder="이름·ID·생년월일 검색" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:9px;font-size:12.5px;margin-bottom:8px;">
+                        <div id="sb-pt-list" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;"></div>
                     </div>
                     <!-- 즐겨찾기 목록은 마켓(상점검색) 상단 가로 표시(#market-fav-row). 하위 호환용 숨김 컨테이너. -->
                     <div id="yt-sb-favs" style="display:none;"></div>
@@ -4091,7 +4100,14 @@
                     const buf=new Uint8Array(await file.slice(0, 300*1024).arrayBuffer());
                     const ds=window.dicomParser.parseDicom(buf, { untilTag:'x7fe00010' });   // 픽셀데이터 전까지만(부분버퍼 OK)
                     const g=(t)=>{ try{ return (ds.string(t)||'').replace(/\^/g,' ').trim(); }catch(_){ return ''; } };
-                    return { patient:g('x00100010'), pid:g('x00100020'), dob:g('x00100030'), sex:g('x00100040'), study:g('x00081030'), series:g('x0008103e'), modality:g('x00080060'), date:g('x00080020') };
+                    // 🈳 한글/다국어 텍스트(환자명·검사·시리즈) — SpecificCharacterSet(0008,0005)에 맞춰 디코드. EUC-KR을 Latin-1로 읽어 깨지던 문제 수정.
+                    const scs=(g('x00080005')||'').toUpperCase();
+                    const _dec=(t)=>{ try{ const el=ds.elements[t]; if(el && el.length>0){ const ba=ds.byteArray; const bytes=new Uint8Array(ba.buffer, (ba.byteOffset||0)+el.dataOffset, el.length);
+                        let enc; if(/192|UTF-8/.test(scs)) enc='utf-8'; else if(/149|KSC|KOREAN/.test(scs)) enc='euc-kr'; else if(/58|GB|CHINESE/.test(scs)) enc='gb18030'; else if(/87|JP|JAPAN/.test(scs)) enc='shift_jis';
+                        else { let hi=false; for(let i=0;i<bytes.length;i++){ if(bytes[i]>=0x80){ hi=true; break; } } enc=hi?'euc-kr':'utf-8'; }   // SCS 미지정+고바이트 → 한국 PACS 다수 EUC-KR
+                        try{ return new TextDecoder(enc,{fatal:false}).decode(bytes).replace(/\^/g,' ').replace(/\u0000/g,'').trim(); }catch(_){} }
+                      }catch(_){} return g(t); };
+                    return { patient:_dec('x00100010'), pid:g('x00100020'), dob:g('x00100030'), sex:g('x00100040'), study:_dec('x00081030'), series:_dec('x0008103e'), modality:g('x00080060'), date:g('x00080020') };
                 }catch(_){ return null; }
             }
             async function searchAll(query, onProg){
@@ -5319,6 +5335,40 @@
                 window.rcOpenInLiveViewer(p, null);
             }catch(e){ showToast('뷰어를 열 수 없습니다.'); }
         };
+        // 🧑‍⚕️ [PMS] 좌측 사이드바 환자 리스트 — 파일검색 중에는 기능리스트(구매/판매/설정)를 환자 리스트로 전환(환자 폴더 역할). 도구(Viewer)는 유지.
+        window.__sbPatients = [];
+        window._sbPatientPanel = function(on){
+            const sb=document.getElementById('yt-sidebar'); if(!sb) return;
+            const keep={ 'sb-search-section':1,'sb-search-divider':1,'sb-tools-section':1,'sb-patient-panel':1,'yt-sb-favs':1 };
+            Array.from(sb.children).forEach(ch=>{
+                if(ch.id==='sb-patient-panel'){ ch.style.display=on?'flex':'none'; return; }
+                if(keep[ch.id]) return;
+                if(on){ if(!ch.hasAttribute('data-sbsaved')) ch.setAttribute('data-sbsaved', ch.style.display||''); ch.style.display='none'; }
+                else { if(ch.hasAttribute('data-sbsaved')){ ch.style.display=ch.getAttribute('data-sbsaved'); ch.removeAttribute('data-sbsaved'); } }
+            });
+        };
+        window._sbPatientFilter = function(q){ q=String(q||'').toLowerCase().trim(); document.querySelectorAll('#sb-pt-list ._sbpt').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.indexOf(q)>=0)?'':'none'; }); };
+        window._sbPatientAdd = function(){ if(window._sfCreatePatient) window._sfCreatePatient(null, ()=>window._sbLoadPatients()); else showToast('파일검색을 먼저 열어 주세요.'); };
+        window._sbLoadPatients = async function(){
+            const list=document.getElementById('sb-pt-list'); if(!list) return;
+            let items=[]; try{ items=(await (await fetch(API_URL+'/api/pms/patients')).json()).items||[]; }catch(_){}
+            window.__sbPatients=items;
+            const cnt=document.getElementById('sb-pt-count'); if(cnt) cnt.textContent='('+items.length+')';
+            const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+            const _sa=(dob,sex)=>{ let s=({M:'남성',F:'여성'})[String(sex||'').toUpperCase()]||''; let age=''; const d=String(dob||'').replace(/[^0-9]/g,''); if(d.length>=8){ const y=+d.slice(0,4),m=+d.slice(4,6),day=+d.slice(6,8); const n=new Date(); let a=n.getFullYear()-y; if(n.getMonth()+1<m||(n.getMonth()+1===m&&n.getDate()<day))a--; if(a>=0&&a<150) age=a+'세'; } return [s,age].filter(Boolean).join(' · '); };
+            if(!items.length){ list.innerHTML='<div style="padding:18px 8px;text-align:center;color:#94a3b8;font-size:12px;line-height:1.7;">등록된 환자가 없습니다.<br>DICOM이 있으면 자동 생성되고,<br>＋로 직접 추가할 수 있어요.</div>'; return; }
+            list.innerHTML=items.map(p=>{ const sx=String(p.sex||'').toUpperCase(); const bg=sx==='M'?'#3b82f6':(sx==='F'?'#ec4899':'#334155'); const ini=(String(p.name||'·').trim()[0]||'·'); const meta=_sa(p.dob,p.sex);
+                return '<div class="_sbpt" data-key="'+E(p.patientKey)+'" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid #e6edf4;border-radius:11px;background:#fff;cursor:pointer;transition:background .12s,border-color .12s;">'
+                    +'<div style="flex:none;width:34px;height:34px;border-radius:50%;background:'+bg+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">'+E(ini)+'</div>'
+                    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+E(p.name||'(이름없음)')+(meta?(' <span style="font-size:10px;color:#94a3b8;font-weight:600;">('+E(meta)+')</span>'):'')+'</div><div style="font-size:10.5px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(p.patientId?('ID '+E(p.patientId)):'')+' · 영상 '+(p.fileCount||0)+'</div></div>'
+                    +'</div>'; }).join('');
+            list.querySelectorAll('._sbpt').forEach(el=>{ const key=el.getAttribute('data-key');
+                el.addEventListener('click',()=>{ if(window._sfShowPatient) window._sfShowPatient(key); });
+                el.addEventListener('dragover',(e)=>{ if(window.__sfDragFileRef&&window.__sfDragFileRef.length){ e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} el.style.background='#eef4f8'; el.style.borderColor='#0b2b4b'; } });
+                el.addEventListener('dragleave',()=>{ el.style.background='#fff'; el.style.borderColor='#e6edf4'; });
+                el.addEventListener('drop',(e)=>{ e.preventDefault(); el.style.background='#fff'; el.style.borderColor='#e6edf4'; if(window._sfAssignDraggedToPatient) window._sfAssignDraggedToPatient(key); });
+            });
+        };
         window.rcOpenInLiveViewer = async function(pathArr, fname, alsoNames){
             // 📱 모바일/미지원 기기: RCFolder 없거나 비연결이어도 클라우드 데이터는 열람 가능하도록 안전 스텁 사용.
             let R = window.RCFolder;
@@ -5607,7 +5657,7 @@
             document.body.appendChild(ov); window.__sfOv=ov;
             // 🧭 좌측/하단 네비에서 '공유폴더' 항목을 현재 위치로 하이라이트(다른 탭 active 해제). switchTab으로 나가면 자동 해제됨.
             try{ if(!_sfPick){ document.querySelectorAll('.yt-sb-item,.yt-bn-item').forEach(function(el){ el.classList.remove('active'); }); var _sb=document.getElementById('sb-sharedfolder'); if(_sb) _sb.classList.add('active'); } }catch(_){}
-            const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; window.__sfPath=null; };
+            const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; window.__sfPath=null; try{ window._sbPatientPanel&&window._sbPatientPanel(false); }catch(_){} };
 
             function ctxMenu(x,y,items){ const old=document.getElementById('_sf-ctx'); if(old)old.remove(); const m=document.createElement('div'); m.id='_sf-ctx'; m.style.cssText='position:fixed;z-index:4500;background:#fff;color:#0f172a;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.22);padding:6px;min-width:170px;'; m.style.left=Math.min(x,window.innerWidth-190)+'px'; m.style.top=Math.min(y,window.innerHeight-42*items.length-10)+'px'; items.forEach(it=>{ const b=document.createElement('div'); b.textContent=it.label; b.style.cssText='padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;'+(it.danger?'color:#dc2626;':''); b.onmouseenter=()=>b.style.background='#f1f5f9'; b.onmouseleave=()=>b.style.background=''; b.onclick=()=>{ m.remove(); it.fn(); }; m.appendChild(b); }); document.body.appendChild(m); const rm=(e)=>{ if(!m.contains(e.target)){ try{m.remove();}catch(_){} document.removeEventListener('mousedown',rm); } }; setTimeout(()=>document.addEventListener('mousedown',rm),0); }
 
@@ -5886,11 +5936,13 @@
                         const multi = selected.has(fnm) && selected.size>1;
                         window.__rcDragFiles = multi ? Array.from(selected) : [fnm];
                         window.__rcDragFile = fnm;
+                        // 🧑‍⚕️ 좌측 환자 리스트로 드롭해 귀속할 수 있도록 파일 참조(루트·경로) 저장
+                        try{ const _ar=(roots.find(r=>r.active)||{}); window.__sfDragFileRef=(multi?Array.from(selected):[fnm]).map(nm=>({ rootId:_ar.id||'', rootName:_ar.name||'', rpath:(path.length?path.join('/')+'/':'')+nm, fname:nm, mtime:0, modality:'' })); }catch(_){ window.__sfDragFileRef=null; }
                         e.dataTransfer.setData('application/x-rc-file', fnm);
                         e.dataTransfer.setData('text/plain', multi ? (Array.from(selected).join(', ')) : fnm);
                         e.dataTransfer.effectAllowed='copy';
                     }catch(_){} });
-                    el.addEventListener('dragend',()=>{ window.__rcDragFile=null; window.__rcDragFiles=null; });
+                    el.addEventListener('dragend',()=>{ window.__rcDragFile=null; window.__rcDragFiles=null; window.__sfDragFileRef=null; });
                     // 우클릭 메뉴 — 로컬 파일은 전체 기능, 비로컬(원격) 파일도 최소 메뉴가 뜨게 한다.
                     el.addEventListener('contextmenu',(e)=>{ e.preventDefault();
                         const items=[];
@@ -6015,9 +6067,12 @@
 
                 applyFilter();
                 // ☁️ 클라우드 뷰 — 로컬 그리드가 있으면(데스크톱) 오버레이, 없으면(모바일/폴더 미지정) 클라우드 파일만 목록으로 조회.
-                // ☁️ 클라우드 저장소(어느 기기서나 동일) / 기본=폴더(+환자 카드 상단 자동표시)
-                if(window.__sfCloudView){ try{ _sfRenderCloudList(ov); }catch(_){} }
-                else { try{ _sfInjectPatientCards(ov); }catch(_){} }
+                // ☁️ 클라우드 저장소(어느 기기서나 동일) / 기본=폴더 목록. 환자 리스트는 좌측 사이드바로 이동(파일 그리드는 원복).
+                if(window.__sfCloudView){ try{ window._sbPatientPanel&&window._sbPatientPanel(false); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
+                else { try{ window._sbPatientPanel&&window._sbPatientPanel(true);
+                    if(!window.__pmsScanOnce && window.RCFolder && window.RCFolder.scanPatients && window.RCFolder.supported){ window.__pmsScanOnce=true; (async()=>{ try{ await window.RCFolder.scanPatients(); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} })(); }
+                    if(window._sbLoadPatients) window._sbLoadPatients();
+                }catch(_){} }
             }
             // ☁️ 클라우드 전용 목록(모바일/폴더 미지정) — 클라우드 저장소 파일을 바로 조회(다운로드 아님).
             // ☁️ 클라우드 파일 동작 메뉴 — 누른 버튼 바로 옆에 뜨는 팝오버(열기/공유/삭제, 텍스트 라벨).
@@ -6370,6 +6425,10 @@
             }
             // 🔙 패널 재렌더/닫기를 전역으로 노출(클라우드 뷰 등에서 '뒤로/닫기' 호출용)
             window.__sfRender = render; window.__sfClose = close;
+            // 🧑‍⚕️ 좌측 환자 리스트에서 환자 상세를 파일 영역에 열기
+            window._sfShowPatient = function(key){ try{ _sfRenderPatientDetail(ov, key); }catch(_){} };
+            window._sfCreatePatient = _sfCreatePatient;
+            window._sfAssignDraggedToPatient = async function(patientKey){ const refs=window.__sfDragFileRef||[]; if(!patientKey||!refs.length) return; let ok=0; for(const f of refs){ try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey, file:f})}); const d=await r.json(); if(r.ok&&d.ok) ok++; }catch(_){} } window.__sfDragFileRef=null; if(ok){ showToast('✅ '+ok+'개 파일을 환자에 연결했습니다.'); try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} } else showToast('연결 실패'); };
             render();
         }
         // 📤 공유 대상 선택 — ①나에게 보내기(내 다른 기기, 온라인만 선택) ②친구. 선택 파일 R2 1회 업로드 후 각 대상으로 전송.
@@ -8718,6 +8777,7 @@
             // 공유폴더(파일검색) 전체화면이 열려 있으면 확실히 닫고 페이지 전환(간헐적으로 안 닫히던 문제 — id로도 제거).
             try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){}
             try{ document.querySelectorAll('#rc-folder-page').forEach(function(e){ try{ e.remove(); }catch(_){} }); window.__sfOv=null; window.__sfCloudView=false; window.__sfPatientView=false; }catch(_){}
+            try{ window._sbPatientPanel&&window._sbPatientPanel(false); }catch(_){}
             window.currentMarketFilter = null; // 상점 탭 이동시 필터 초기화
             window.currentMarketFilterStore = null;
             // 🚀 [v8+] 톱바 검색 placeholder도 기본값 복원 (상점 내부 검색 잔존 버그 수정)
