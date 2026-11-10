@@ -882,6 +882,10 @@ function initTables() {
         db.run(`CREATE TABLE IF NOT EXISTS mirror_shares (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, rpath TEXT, key TEXT, size INTEGER DEFAULT 0, mime TEXT, name TEXT, toUser TEXT, createdAt INTEGER, expireAt INTEGER, UNIQUE(owner, rpath, toUser))`);
         // ☁️🚫 소유자가 클라우드에서 지운 파일 — 로컬에 남아 있어도 자동미러가 다시 올리지 않도록 제외(at 이후 수정되면 재백업).
         db.run(`CREATE TABLE IF NOT EXISTS mirror_excludes (userName TEXT, rpath TEXT, at INTEGER, PRIMARY KEY(userName, rpath))`);
+        // 🧑‍⚕️ [PMS] 환자 통합 인덱스 — 여러 폴더·기기에 흩어진 동일 환자 영상을 DICOM 헤더로 묶어 '환자 카드'로 집계.
+        //    patientKey = PatientID(있으면) | 없으면 'nb:'+이름+생년월일. 원본 영상은 로컬에 그대로, 메타만 서버 동기화.
+        db.run(`CREATE TABLE IF NOT EXISTS pms_patients (owner TEXT, patientKey TEXT, patientId TEXT, name TEXT, dob TEXT, sex TEXT, modalities TEXT, fileCount INTEGER DEFAULT 0, lastStudy TEXT, updatedAt INTEGER, PRIMARY KEY(owner, patientKey))`);
+        db.run(`CREATE TABLE IF NOT EXISTS pms_files (owner TEXT, patientKey TEXT, rootId TEXT, rootName TEXT, rpath TEXT, fname TEXT, modality TEXT, studyDate TEXT, mtime INTEGER, source TEXT DEFAULT 'dicom', PRIMARY KEY(owner, rootId, rpath))`);
 
         // 🔗 [비회원 외부 공유] QR+웹링크로 Alpha K 미가입 고객에게 파일 전달 → 랜딩페이지에서 가입안내 + 공유폴더 다운로드
         db.run(`CREATE TABLE IF NOT EXISTS guest_shares (token TEXT PRIMARY KEY, owner TEXT, fileName TEXT, url TEXT, mime TEXT, size INTEGER, createdAt INTEGER, expiresAt INTEGER, downloads INTEGER DEFAULT 0)`);
@@ -3608,6 +3612,79 @@ app.post('/api/mirror/delete', (req, res) => {
             if (_r2) { try { const { DeleteObjectCommand } = require('@aws-sdk/client-s3'); _r2.client.send(new DeleteObjectCommand({ Bucket: _r2.bucket, Key: row.key })).catch(() => {}); } catch (_) {} }
             res.json({ ok: true });
         });
+    });
+});
+
+// ===================== 🧑‍⚕️ [PMS] 환자 통합 인덱스 =====================
+// 클라이언트가 로컬 폴더의 DICOM 헤더를 파싱해 보낸 환자별 파일 목록을 병합 저장 → 어느 기기·주문화면에서든 환자 검색.
+function _pmsRecalc(owner, keys, cb) {
+    const list = Array.from(new Set((keys || []).filter(Boolean)));
+    if (!list.length) return cb && cb();
+    let done = 0;
+    list.forEach(k => {
+        db.get(`SELECT COUNT(*) c, GROUP_CONCAT(DISTINCT modality) mods, MAX(studyDate) ls FROM pms_files WHERE owner=? AND patientKey=?`, [owner, k], (e, r) => {
+            const c = (r && r.c) || 0;
+            if (!c) { db.run(`DELETE FROM pms_patients WHERE owner=? AND patientKey=?`, [owner, k], () => { if (++done === list.length) cb && cb(); }); return; }
+            const mods = (r && r.mods) ? r.mods.split(',').filter(Boolean).join(',') : '';
+            db.run(`UPDATE pms_patients SET fileCount=?, modalities=?, lastStudy=?, updatedAt=? WHERE owner=? AND patientKey=?`, [c, mods, (r && r.ls) || '', Date.now(), owner, k], () => { if (++done === list.length) cb && cb(); });
+        });
+    });
+}
+app.post('/api/pms/sync', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const patients = Array.isArray(req.body.patients) ? req.body.patients : [];
+    if (!patients.length) return res.json({ ok: true, patients: 0, files: 0 });
+    const keys = []; let fileN = 0;
+    db.serialize(() => {
+        patients.forEach(p => {
+            const key = String(p.patientKey || '').trim(); if (!key) return; keys.push(key);
+            db.run(`INSERT INTO pms_patients (owner, patientKey, patientId, name, dob, sex, modalities, fileCount, lastStudy, updatedAt) VALUES (?,?,?,?,?,?,?,0,?,?)
+                    ON CONFLICT(owner, patientKey) DO UPDATE SET patientId=excluded.patientId, name=excluded.name, dob=excluded.dob, sex=excluded.sex, updatedAt=excluded.updatedAt`,
+                [owner, key, String(p.patientId || ''), String(p.name || ''), String(p.dob || ''), String(p.sex || ''), '', String(p.lastStudy || ''), Date.now()], () => {});
+            (Array.isArray(p.files) ? p.files : []).forEach(f => {
+                const rpath = String(f.rpath || ''); const rootId = String(f.rootId || ''); if (!rpath || !rootId) return; fileN++;
+                db.run(`INSERT INTO pms_files (owner, patientKey, rootId, rootName, rpath, fname, modality, studyDate, mtime, source) VALUES (?,?,?,?,?,?,?,?,?,?)
+                        ON CONFLICT(owner, rootId, rpath) DO UPDATE SET patientKey=excluded.patientKey, rootName=excluded.rootName, fname=excluded.fname, modality=excluded.modality, studyDate=excluded.studyDate, mtime=excluded.mtime, source=excluded.source`,
+                    [owner, key, rootId, String(f.rootName || ''), rpath, String(f.fname || ''), String(f.modality || ''), String(f.studyDate || ''), Math.floor(Number(f.mtime) || 0), String(f.source || 'dicom')], () => {});
+            });
+        });
+        _pmsRecalc(owner, keys, () => res.json({ ok: true, patients: keys.length, files: fileN }));
+    });
+});
+app.get('/api/pms/patients', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const q = String(req.query.q || '').trim().toLowerCase();
+    db.all(`SELECT patientKey, patientId, name, dob, sex, modalities, fileCount, lastStudy FROM pms_patients WHERE owner=? ORDER BY (lastStudy IS NULL), lastStudy DESC, name`, [owner], (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        let items = rows || [];
+        if (q) items = items.filter(r => [r.name, r.patientId, r.dob].some(v => String(v || '').toLowerCase().includes(q)));
+        res.json({ items });
+    });
+});
+app.get('/api/pms/patients/:key/files', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const key = String(req.params.key || '');
+    db.all(`SELECT rootId, rootName, rpath, fname, modality, studyDate, mtime, source FROM pms_files WHERE owner=? AND patientKey=? ORDER BY (studyDate IS NULL), studyDate DESC, mtime DESC`, [owner, key], (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        db.get(`SELECT patientKey, patientId, name, dob, sex, modalities, fileCount, lastStudy FROM pms_patients WHERE owner=? AND patientKey=?`, [owner, key], (e2, card) => {
+            res.json({ card: card || null, files: rows || [] });
+        });
+    });
+});
+// 📎 수동 귀속 — 특정 파일을 특정 환자 카드에 연결(비-DICOM/추가 파일). 4단계.
+app.post('/api/pms/assign', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const key = String(req.body.patientKey || '').trim(); const f = req.body.file || {};
+    const rpath = String(f.rpath || ''); const rootId = String(f.rootId || '');
+    if (!key || !rpath || !rootId) return res.status(400).json({ error: 'patientKey·file(rootId,rpath) 필요' });
+    db.get(`SELECT patientKey FROM pms_patients WHERE owner=? AND patientKey=?`, [owner, key], (e, card) => {
+        if (!card) return res.status(404).json({ error: '환자 카드를 찾을 수 없습니다.' });
+        db.run(`INSERT INTO pms_files (owner, patientKey, rootId, rootName, rpath, fname, modality, studyDate, mtime, source) VALUES (?,?,?,?,?,?,?,?,?, 'manual')
+                ON CONFLICT(owner, rootId, rpath) DO UPDATE SET patientKey=excluded.patientKey, source='manual'`,
+            [owner, key, rootId, String(f.rootName || ''), rpath, String(f.fname || ''), String(f.modality || ''), String(f.studyDate || ''), Math.floor(Number(f.mtime) || 0)], (ie) => {
+                if (ie) return res.status(500).json({ error: ie.message });
+                _pmsRecalc(owner, [key], () => res.json({ ok: true }));
+            });
     });
 });
 
