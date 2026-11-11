@@ -4053,6 +4053,8 @@
             async function getFileAt(pathArr, name){ try{ const h=await _dirAt(pathArr); const fh=await h.getFileHandle(_safe(name),{create:false}); return await fh.getFile(); }catch(_){ return null; } }
             // 특정 루트(공유폴더) 기준으로 파일 읽기 — 활성 루트를 바꾸지 않고 환자 그리드 썸네일 등에 사용.
             async function getFileAtRoot(rootId, pathArr, name){ try{ const rs=await _loadRoots(); const root=rs.find(r=>String(r.id)===String(rootId)); let h=root&&root.handle; if(!h) return null; try{ if((await h.queryPermission({mode:'read'}))!=='granted') await h.requestPermission({mode:'read'}); }catch(_){} for(const p of (pathArr||[])){ h=await h.getDirectoryHandle(_safe(p)); } const fh=await h.getFileHandle(_safe(name),{create:false}); return await fh.getFile(); }catch(_){ return null; } }
+            // 특정 루트의 폴더 내 파일명 목록(환자 DICOM 시리즈 로드용)
+            async function listFilesAtRoot(rootId, pathArr){ try{ const rs=await _loadRoots(); const root=rs.find(r=>String(r.id)===String(rootId)); let h=root&&root.handle; if(!h) return []; for(const p of (pathArr||[])){ h=await h.getDirectoryHandle(_safe(p)); } const out=[]; for await (const [nm,ent] of h.entries()){ if(ent.kind!=='directory') out.push(nm); } return out; }catch(_){ return []; } }
             async function writeFileAt(pathArr, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _dirAt(pathArr); const safe=_safe(name); const fh=await h.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return safe; }
             // 대화방 이름 폴더(없으면 생성)에 저장 — 자동 수신용
             async function writeFileInRoom(roomName, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _loadHandle(); const parts=String(roomName||'received').split('/').map(_safe).filter(Boolean); if(!parts.length) parts.push('received'); let dir=h; for(const p of parts){ dir=await dir.getDirectoryHandle(p,{create:true}); } const safe=_safe(name); const fh=await dir.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return parts.join('/')+'/'+safe; }
@@ -4301,7 +4303,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, scanPatients, getFileAtRoot };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, scanPatients, getFileAtRoot, listFilesAtRoot };
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
@@ -5312,6 +5314,7 @@
                 else if(cat==='PICTURE') items.push({ name:n, cat:'PICTURE', date:dt, time:tm, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_2D', name:n, ref:ref } });
                 else items.push({ name:n, cat:(cat==='DOCUMENT'?'DOCUMENT':'FILES'), date:dt, time:tm, folder:folderNm, thumb:'', payload:{ type:'RAYCLOUD_LOAD_IMAGE', name:n, ref:ref } });
             }
+            items.forEach(it=>{ if(!it.source) it.source='local'; });   // 🗂 여기까지는 로컬 저장소
             // ☁️ 클라우드 보관함 파일도 Data 서랍에서 열람 — 구독자(클라우드 활성)에게 루트 목록에 함께 노출.
             //    로컬에 없는(또는 추가된) 클라우드 사본까지 보이므로, 로컬에서 지운 파일도 여기서 열 수 있다.
             try{
@@ -5331,7 +5334,10 @@
                     });
                 }
             }catch(_){}
+            items.forEach(it=>{ if(!it.source) it.source='cloud'; });   // ☁️ 나머지는 클라우드 저장소
             try{ post({ type:'RAYCLOUD_MANIFEST', items:items }); }catch(_){}
+            // 🧑‍⚕️ 환자 리스트도 뷰어 서랍에 전달(소스 전환 탭)
+            try{ const pl=(await (await fetch(API_URL+'/api/pms/patients')).json()).items||[]; post({ type:'RAYCLOUD_PATIENTS', patients:pl }); }catch(_){}
             return items.length;
         }
 
@@ -5537,6 +5543,19 @@
                     return;
                 }
                 // ⚡ [온디맨드] 서랍에서 파일 클릭 → 그 파일만 지금 읽어 payload 생성해 돌려준다(RAYCLOUD_RESOLVED).
+                // 🧑‍⚕️ 뷰어 '환자리스트' 탭에서 환자 선택 → 그 환자의 파일 목록을 서랍으로 전달
+                if(ev.data.type==='RAYCLOUD_REQUEST_PATIENT'){
+                    const key=ev.data.key; const mid=ev.data.mid;
+                    const reply=(items,error)=>{ try{ post({ type:'RAYCLOUD_PATIENT_FILES', key:key, mid:mid, items:items||[], error:error||null }); }catch(_){} };
+                    try{
+                        const d=await (await fetch(API_URL+'/api/pms/patients/'+encodeURIComponent(key)+'/files')).json();
+                        const files=(d&&d.files)||[]; const _fd=s=>{ const x=String(s||'').replace(/[^0-9]/g,''); return x.length>=8?(x.slice(0,4)+'-'+x.slice(4,6)+'-'+x.slice(6,8)):''; };
+                        const items=files.map(f=>{ const nm=String(f.rpath||'').split('/').pop(); const low=nm.toLowerCase(); let cat='FILES'; if(/\.(ply|stl|obj|glb|gltf)$/.test(low))cat='3D'; else if(RC_DCM_RE.test(low))cat='2D'; else if(RC_IMG_RE.test(low))cat='PICTURE'; else if(/\.(pdf|docx?|hwp|txt|csv)$/.test(low))cat='DOCUMENT';
+                            return { name:nm, cat:cat, date:_fd(f.studyDate), time:'', folder:[(f.rootName||''),(f.modality||'')].filter(Boolean).join(' · '), patient:(d.card&&d.card.name)||'', thumb:'', source:'patient', payload:{ type:(cat==='3D'?'RAYCLOUD_LOAD_MESH':(cat==='2D'?'RAYCLOUD_LOAD_DICOM':'RAYCLOUD_LOAD_IMAGE')), name:nm, ref:{ pms:true, rootId:f.rootId, rpath:f.rpath } } }; });
+                        reply(items);
+                    }catch(e){ reply([], String((e&&e.message)||e)); }
+                    return;
+                }
                 if(ev.data.type==='RAYCLOUD_REQUEST_OPEN'){
                     const ref=ev.data.ref||{}; const pa=Array.isArray(ref.pathArr)?ref.pathArr:[]; const fn=ref.fname; const mid=ev.data.mid;
                     const reply=(payload,error)=>{ try{ post({ type:'RAYCLOUD_RESOLVED', mid:mid, payload:payload||null, error:error||null }); }catch(_){} };
@@ -5560,6 +5579,25 @@
                             else if(RC_IMG_RE.test(low)) payload={ type:'RAYCLOUD_LOAD_2D', url:url, name:nm };
                             else payload={ type:'RAYCLOUD_LOAD_IMAGE', url:url, name:nm };
                             try{ (window.__rcViewerUrls=window.__rcViewerUrls||[]).push(url); }catch(_){}
+                            reply(payload);
+                        }catch(e){ reply(null, String((e&&e.message)||e)); }
+                        return;
+                    }
+                    // 🧑‍⚕️ 환자 리스트 파일(로컬 루트별) — 활성 루트 불변으로 읽어 로드(.dcm은 같은 폴더 전체 시리즈)
+                    if(ref.pms && ref.rootId && ref.rpath){
+                        try{
+                            const parts=String(ref.rpath).split('/'); const fname=parts.pop(); const pathArr=parts; const low=String(fname).toLowerCase();
+                            if(RC_DCM_RE.test(low)){
+                                let names=[]; try{ names=await R.listFilesAtRoot(ref.rootId, pathArr); }catch(_){}
+                                const dcms=(names||[]).filter(n=>RC_DCM_RE.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})); const list=dcms.length?dcms:[fname];
+                                const urls=[]; for(const n of list){ try{ const f=await R.getFileAtRoot(ref.rootId, pathArr, n); if(f){ const u=URL.createObjectURL(f); urls.push(u); (window.__rcViewerUrls=window.__rcViewerUrls||[]).push(u); } }catch(_){} }
+                                if(!urls.length){ reply(null,'DICOM을 읽지 못했습니다(이 기기에 없는 폴더일 수 있음).'); return; }
+                                reply({ type:'RAYCLOUD_LOAD_DICOM', urls:urls, name:(list.length>1?('CT Series ('+list.length+')'):fname) }); return;
+                            }
+                            const f=await R.getFileAtRoot(ref.rootId, pathArr, fname);
+                            if(!f){ reply(null,'파일을 찾지 못했습니다(이 기기에 없는 폴더일 수 있음).'); return; }
+                            const u=URL.createObjectURL(f); (window.__rcViewerUrls=window.__rcViewerUrls||[]).push(u);
+                            let payload; if(/\.(ply|stl|obj|glb|gltf)$/.test(low)) payload={ type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[fname] }; else if(RC_IMG_RE.test(low)) payload={ type:'RAYCLOUD_LOAD_2D', url:u, name:fname }; else payload={ type:'RAYCLOUD_LOAD_IMAGE', url:u, name:fname };
                             reply(payload);
                         }catch(e){ reply(null, String((e&&e.message)||e)); }
                         return;
