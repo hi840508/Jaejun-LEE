@@ -1447,7 +1447,7 @@
                 <div id="brand-inner-wrap" style="display:none;">
                     <div class="filter-chip-bar" id="brand-filter-chips">
                         <span class="chip-label">정렬 ·</span>
-                        <span class="filter-chip active" data-sort="latest" onclick="setSortFilter('latest', this)">신상순</span>
+                        <span class="filter-chip active" data-sort="latest" onclick="setSortFilter('latest', this)">등록일순</span>
                         <span class="filter-chip" data-sort="price_asc" onclick="setSortFilter('price_asc', this)">가격 낮은순</span>
                         <span class="filter-chip" data-sort="price_desc" onclick="setSortFilter('price_desc', this)">가격 높은순</span>
                     </div>
@@ -6527,12 +6527,12 @@
                 const head='<div style="display:flex;align-items:center;gap:8px;margin:4px 2px 10px;flex-wrap:wrap;">'
                     +'<button id="_cl-back" title="뒤로" style="flex:none;padding:7px 12px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:9px;font-weight:800;font-size:12px;cursor:pointer;">← 뒤로</button>'
                     +'<div style="font-weight:800;font-size:15px;color:#0f2f52;">클라우드 저장소 <span style="color:#94a3b8;font-weight:600;">('+items.length+')</span></div>'
-                    +'<div style="font-size:11px;color:#64748b;font-weight:500;">· 모든 기기에서 동일하게 보임 · 탭하여 열기 · 관리 ▾</div>'
-                    +(connected?'<button id="_cl-backup" style="margin-left:auto;padding:7px 14px;border:none;border-radius:9px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;font-size:12px;cursor:pointer;">☁ 지금 백업</button>':'')
+                    +'<div style="font-size:11px;color:#64748b;font-weight:500;">· 모든 기기에서 동일하게 보임 · 탭하여 열기</div>'
+                    +'<button id="_cl-viewer" title="실시간 뷰어로 열기" style="margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:10px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;">🧊 Viewer</button>'
                     +'</div>';
                 const wireHead=()=>{
                     const bb=grid.querySelector('#_cl-back'); if(bb) bb.onclick=()=>{ try{ window.__sfCloudView=false; if(window.__sfRender) window.__sfRender(); else if(window.__sfClose) window.__sfClose(); }catch(_){ if(window.__sfClose) window.__sfClose(); } };
-                    const bk=grid.querySelector('#_cl-backup'); if(bk) bk.onclick=async()=>{ if(!window.RCFolder||!window.RCFolder.chosen()){ showToast('먼저 공유폴더를 지정하세요.'); return; } bk.disabled=true; const o=bk.textContent; bk.textContent='백업 중…'; try{ const r=await window.RCMirror.backupAll((d,t,nm,stt)=>{ bk.textContent='('+d+'/'+t+') '+stt; }); showToast('✅ 백업 완료 — 업로드 '+r.up+' · 건너뜀 '+r.skip+(r.fail?(' · 실패 '+r.fail):'')); _sfRenderCloudList(ov); }catch(e){ bk.disabled=false; bk.textContent=o; showToast('백업 실패: '+((e&&e.message)||e)); } };
+                    const vb=grid.querySelector('#_cl-viewer'); if(vb) vb.onclick=()=>{ try{ window.rcOpenInLiveViewer((window.__sfPath||[]).slice(), null); }catch(_){} };
                 };
                 if(!items.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">클라우드 저장소에 데이터가 없습니다.<br><span style="font-size:12px;">파일검색 ▸ 클라우드 저장소에 올리면 다른 PC·모바일에서도 바로 보입니다.</span></div>'; wireHead(); _sfSharedBanner(grid); return; }
                 // 📅 날짜별 그룹(mtime 내림차순) — PC 파일검색과 동일한 섹션 구조.
@@ -6544,7 +6544,7 @@
                 const card=(it)=>{ const nm=_b(it.rpath); const sub=(it.rpath||'').split('/').slice(0,-1).join(' / ');
                     return '<div class="rc-clview" data-rpath="'+ESC(it.rpath)+'"'+(_isImg(nm)?' data-img="1"':'')+' title="'+ESC(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
                         +'<div class="rc-clthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="rc-clic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+_sfFileTile(nm)+'</div>'
-                        +'<button class="rc-clmenu" data-rpath="'+ESC(it.rpath)+'" title="열기·공유·삭제" style="position:absolute;top:6px;right:6px;padding:5px 10px;border:none;border-radius:8px;background:rgba(15,47,82,.92);color:#fff;font-size:11px;font-weight:800;cursor:pointer;z-index:3;">관리 ▾</button></div>'
+                        +'<button class="rc-clmenu" data-rpath="'+ESC(it.rpath)+'" title="열기·공유·삭제" style="position:absolute;bottom:5px;right:5px;width:26px;height:26px;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+_SFIC.dots+'</button></div>'
                         +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
                         +(sub?('<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub)+'</div>'):'')
                         +'</div>'; };
@@ -14252,7 +14252,8 @@ pdfjsScript,
             window.currentMarketFilterStore = store;
             const ms = document.getElementById('market-search'); if(ms) ms.value = '';
             document.getElementById('market-filter-nav').style.display = 'flex';
-            document.getElementById('market-filter-title').innerText = `${store.name}`;
+            // 상점명은 헤더 경로(크럼)에 표시하므로 네비의 중복 제목은 숨김 — 즐겨찾기/문의/장바구니만 남김
+            { const _t=document.getElementById('market-filter-title'); if(_t){ _t.innerText=`${store.name}`; _t.style.display='none'; } }
 
             // 즐겨찾기 아이콘 버튼 상태 동기화
             const favBtn = document.getElementById('market-filter-fav-btn');
@@ -14265,22 +14266,25 @@ pdfjsScript,
             const inquireBtn = document.getElementById('market-filter-inquire-btn');
             if(inquireBtn) inquireBtn.style.display = (store.owner !== currentUser.name) ? 'inline-block' : 'none';
 
-            // 🚀 배경 화면 / 소개 표시
+            // 🚀 큰 배경 배너는 숨김 — 상점명·아이콘은 파일검색 '경로' 위치(헤더)에 간결히 표시
             const backdrop = document.getElementById('brand-backdrop');
-            const backdropImg = document.getElementById('brand-backdrop-img');
-            const overlay = document.getElementById('brand-backdrop-overlay');
-            const descBox = document.getElementById('brand-backdrop-desc');
-            if(store.background) {
-                backdrop.style.display = 'block';
-                // 가로 폭에 맞춰 전체 배경이 보이도록 contain(크롭 없음), 남는 영역은 어두운 회색(#333)으로 채움
-                backdropImg.style.background = `#333 url('${store.background.replace(/'/g, "\\'")}') center/contain no-repeat`;
-            } else {
-                backdrop.style.display = 'block';
-                backdropImg.style.background = 'linear-gradient(135deg, #52525b, #27272a)';
+            if(backdrop) backdrop.style.display = 'none';
+            // 📍 헤더 경로 위치에 상점 아이콘+이름(+나가기) 표시
+            const crumb = document.getElementById('market-store-crumb');
+            const spacer = document.getElementById('market-head-spacer');
+            if(crumb){
+                const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+                const logoSm = store.logo
+                    ? `<img src="${esc(store.logo)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;border:1px solid #e2e8f0;">`
+                    : `<div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#52525b,#27272a);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;flex:none;">${esc(store.name.substring(0,1))}</div>`;
+                crumb.innerHTML = `<button onclick="clearMarketFilter()" title="상점 나가기" style="flex:none;width:30px;height:30px;border:1px solid #e2e8f0;background:#fff;border-radius:8px;cursor:pointer;color:#475569;font-size:15px;line-height:1;">←</button>`
+                    + logoSm
+                    + `<span style="flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw;">${esc(store.name)}</span>`;
+                crumb.style.display='flex';
             }
-            const logoHtml = store.logo ? `<img src="${store.logo}" style="width:48px; height:48px; border-radius:50%; border:2px solid #fff; object-fit:cover; box-shadow:0 2px 6px rgba(0,0,0,0.2);">` : `<div style="width:48px; height:48px; border-radius:50%; background:rgba(255,255,255,0.3); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold;">${store.name.substring(0,1)}</div>`;
-            overlay.innerHTML = `${logoHtml}<div><div style="font-size:18px; font-weight:900; text-shadow:0 1px 3px rgba(0,0,0,0.5);">${store.name}</div><div style="font-size:12px; opacity:0.9;">운영자: ${store.owner}</div></div>`;
-            if(store.description) { descBox.style.display = 'block'; descBox.innerText = store.description; } else { descBox.style.display = 'none'; }
+            if(spacer) spacer.style.display='none';
+            // 🧭 상점 내부에서는 카테고리칩(전체/치과기공소…) 숨김 — 정렬칩만 사용
+            try{ const _chips=document.getElementById('yt-mobile-chips'); if(_chips) _chips.style.display='none'; }catch(_){}
 
             // 🚀 쇼케이스 숨기고 브랜드 내부 그리드 표시
             document.getElementById('brand-showcase-wrap').style.display = 'none';
@@ -14305,6 +14309,10 @@ pdfjsScript,
             window.currentMarketFilterStore = null;
             document.getElementById('market-filter-nav').style.display = 'none';
             document.getElementById('brand-backdrop').style.display = 'none';
+            // 📍 헤더 상점 크럼 숨기고 스페이서·카테고리칩 복원
+            try{ const c=document.getElementById('market-store-crumb'); if(c){ c.style.display='none'; c.innerHTML=''; } }catch(_){}
+            try{ const sp=document.getElementById('market-head-spacer'); if(sp) sp.style.display=''; }catch(_){}
+            try{ const _chips=document.getElementById('yt-mobile-chips'); if(_chips) _chips.style.display='flex'; }catch(_){}
             // 외부 제휴 상점 iframe 닫기(src 해제로 백그라운드 로딩 중단)
             const _ext = document.getElementById('external-store-wrap'); if(_ext) _ext.style.display = 'none';
             const _extf = document.getElementById('external-store-frame'); if(_extf) _extf.src = 'about:blank';
