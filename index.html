@@ -1459,6 +1459,9 @@
                 </div>
             </div>
 
+            <!-- 👤 계정 설정 페이지 — 계정 관리 버튼이 모달 대신 이 페이지로 표시(결제관리/구매목록과 동일) -->
+            <div id="tab-account" class="tab-content"><div class="panel" style="padding:16px 18px; max-width:720px;" id="account-page-host"></div></div>
+
             <!-- 🏪 상점 생성 페이지 -->
             <div id="tab-store-create" class="tab-content">
                 <div class="panel" style="padding:14px 16px;">
@@ -5431,6 +5434,7 @@
         // 🧑 좌측 이름 클릭 → 해당 인물 필터
         window._sbOpenPatient = function(key){
             window.__accountMode=false;
+            try{ window.__selectedPatientKey=key; window.__selectedPatient=(window.__sbPatients||[]).find(p=>p.patientKey===key)||{patientKey:key}; }catch(_){}
             // ☁️ 클라우드 우선 — 클라우드 보기 중이면 로컬로 튀지 않고 클라우드 유지
             if(window.__sfCloudView){ try{ window.__sfPatientFilter=null; }catch(_){} return; }
             window.__sfStoreView=false; window.__sfPatientFilter=key;
@@ -5479,8 +5483,10 @@
             const home=document.getElementById('tb-acct-home');
             const uname=document.getElementById('topbar-uname-wrap');
             const exit=document.getElementById('tb-acct-exit');
+            const pic=document.getElementById('my-profile-pic');
             if(home) home.style.display = acc?'inline-flex':'none';
             if(uname) uname.style.display = acc?'none':'';
+            if(pic) pic.style.display = acc?'none':'';   // 계정모드에선 사진 숨김(홈아이콘+나가기만)
             if(exit) exit.style.display = acc?'inline':'none';
             const btn=document.getElementById('topbar-account-btn'); if(btn) btn.title = acc?'파일검색으로 나가기':'계정 · 구매/판매/설정';
         };
@@ -6640,7 +6646,12 @@
                 grid.innerHTML=head+secs;
                 _wireHead();
                 const _byEl=el=>{ const row=el.closest('._pt-file'); return { rootId:row.getAttribute('data-rootid'), rpath:row.getAttribute('data-rpath'), fname:(row.getAttribute('data-rpath')||'').split('/').pop(), manual:row.getAttribute('data-manual')==='1' }; };
-                grid.querySelectorAll('._pt-file').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')) return; _sfOpenPmsFile(_byEl(el)); }));
+                // 📎 첨부 선택 모드(의뢰서 첨부 등): 환자 파일을 다중 선택 → ✔ 선택 첨부
+                const _pick=!!window.__sfPickResolve; const _ptSel=new Map();
+                grid.querySelectorAll('._pt-file').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')) return; const f=_byEl(el);
+                    if(_pick){ const k=f.rootId+'|'+f.rpath; if(_ptSel.has(k)){ _ptSel.delete(k); el.style.outline=''; } else { const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); _ptSel.set(k,{rootId:f.rootId,parts,fn}); el.style.outline='3px solid #0b2b4b'; el.style.outlineOffset='-3px'; } const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.textContent='✔ 선택 첨부 ('+_ptSel.size+')'; return; }
+                    _sfOpenPmsFile(f); }));
+                if(_pick){ const pa=ov.querySelector('#_sf-pickattach'); if(pa){ pa.onclick=async()=>{ if(!_ptSel.size){ showToast('첨부할 파일을 선택하세요.'); return; } showToast('파일 읽는 중… ('+_ptSel.size+'개)'); const files=[]; const R2=window.RCFolder; for(const v of _ptSel.values()){ try{ let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(v.rootId,v.parts,v.fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(v.parts,v.fn); }catch(_){} } if(f) files.push(f); }catch(_){} } const cb=window.__sfPickResolve; window.__sfPickResolve=null; try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){} if(cb) cb(files); }; } }
                 grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el); const items=[{label:'📂 열기',fn:()=>_sfOpenPmsFile(f)}];
                     if(f.manual){ items.push({label:'↔ 다른 환자로 이전',fn:()=>_sfPatientPicker(async(toKey)=>{ if(!toKey||toKey===key) return; try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:toKey, file:f})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('이전했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('이전 실패: '+((err&&err.message)||err)); } }) });
                         items.push({label:'🔗 연결 해제',danger:true,fn:async()=>{ try{ const r=await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:f.rootId,rpath:f.rpath})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('연결을 해제했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('해제 실패: '+((err&&err.message)||err)); } }}); }
@@ -7103,8 +7114,10 @@
             return new Promise(function(resolve){
                 if(!(window.RCFolder && window.RCFolder.supported)){ showToast('이 기기는 공유폴더를 지원하지 않습니다(모바일/사파리). 내 PC에서 선택해 주세요.'); resolve([]); return; }
                 window.__sfPickResolve = function(files){ resolve(files||[]); };
+                // 🧑‍⚕️ 선택된 환자가 있으면 그 환자 데이터(파일)를 먼저 보여준다
+                try{ if(window.__selectedPatientKey){ window.__sfPatientFilter=window.__selectedPatientKey; window.__sfCloudView=false; window.__sfStoreView=false; } }catch(_){}
                 try{ openSharedFolderPanel(); }catch(_){ resolve([]); }
-                showToast('📁 첨부할 파일을 선택한 뒤 [✔ 선택 첨부]를 누르세요.');
+                showToast(window.__selectedPatientKey?'📁 선택 환자의 파일입니다. 첨부할 파일을 선택한 뒤 [✔ 선택 첨부]를 누르세요.':'📁 첨부할 파일을 선택한 뒤 [✔ 선택 첨부]를 누르세요.');
             });
         };
 
@@ -7390,9 +7403,22 @@
                 }).catch(()=>{});
             } catch(e){}
             document.getElementById('modal-profile-pic').src = currentUser.profilePic || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>";
-            tempProfilePicBase64 = currentUser.profilePic; openModal('profile-modal');
+            tempProfilePicBase64 = currentUser.profilePic;
+            // 📄 모달 대신 메인 페이지(tab-account)로 표시
+            try{ _ensureAccountTab(); if(window.switchTab) switchTab('account'); }catch(_){ openModal('profile-modal'); }
             if(window.applyAdminUIState) applyAdminUIState(isAdmin);
         }
+        // 계정 설정 모달 콘텐츠를 메인 페이지(tab-account)로 1회 이동
+        window._ensureAccountTab = function(){
+            const host=document.getElementById('account-page-host'); const modal=document.getElementById('profile-modal');
+            if(!host || !modal || host.getAttribute('data-moved')) return;
+            const mc=modal.querySelector('.modal-content'); if(!mc) return;
+            const hdr=mc.querySelector('.modal-header'); if(hdr) hdr.remove();
+            const title=document.createElement('h3'); title.style.cssText='font-size:18px;font-weight:900;margin:0 0 12px;color:var(--primary);'; title.textContent='계정 설정';
+            host.appendChild(title);
+            while(mc.firstChild) host.appendChild(mc.firstChild);
+            host.setAttribute('data-moved','1');
+        };
         function previewProfilePic(e) { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = function(evt) { tempProfilePicBase64 = evt.target.result; document.getElementById('modal-profile-pic').src = tempProfilePicBase64; }; reader.readAsDataURL(file); }
         
         async function saveProfile() {
@@ -14387,8 +14413,12 @@ pdfjsScript,
         }
 
         function enterBrandStore(store) {
-            // 🔧 즐겨찾기 등 다른 탭에서 상점 클릭 시 market 탭으로 전환(화면 전환 안 되던 문제). 이미 market이면 재전환 안 함(쇼케이스 리셋 방지).
-            try { const _tm = document.getElementById('tab-market'); if (_tm && !_tm.classList.contains('active') && typeof switchTab === 'function') switchTab('market'); } catch(_){}
+            // 🖥 파일검색 오버레이(#rc-folder-page)가 열려 있으면 닫아야 상점 화면이 보인다(내 상점/메신저에서 진입 시 안 보이던 문제).
+            try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } document.querySelectorAll('#rc-folder-page').forEach(function(e){ try{ e.remove(); }catch(_){} }); }catch(_){}
+            window.__sfStoreView=false; window.__sfCloudView=false;
+            // 🔧 market 탭을 확실히 활성화(이미 active면 유지). 좌측바는 파일검색(환자) 모드로 유지(주문 자동입력 맥락).
+            try { const _tm = document.getElementById('tab-market'); if (_tm && !_tm.classList.contains('active')){ document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active')); _tm.classList.add('active'); } } catch(_){}
+            try{ window.__accountMode=false; if(window._sbPatientPanel) window._sbPatientPanel(true); }catch(_){}
             window.currentMarketFilter = store.id;
             window.currentMarketFilterStore = store;
             const ms = document.getElementById('market-search'); if(ms) ms.value = '';
@@ -19820,6 +19850,17 @@ pdfjsScript,
                 const si=document.getElementById('rx-oi-ptsearch'); if(si) si.value=name;
                 showToast('✅ 환자 정보를 불러왔습니다.');
             };
+            // 🧑‍⚕️ 선택된 환자(파일검색에서 선택)가 있으면 의뢰서 폼 열 때 자동 입력(수정 가능)
+            window.rxAutofillSelectedPatient = function(){
+                const p = window.__selectedPatient; if(!p || !(p.name||p.patientKey)) return;
+                const set=(id,v)=>{ const x=document.getElementById(id); if(x&&v!=null&&v!=='') x.value=v; };
+                if(p.name) set('rx-oi-patient', p.name);
+                const dob=String(p.dob||'').replace(/[^0-9]/g,''); if(dob.length>=8) set('rx-oi-birth', dob.slice(0,4)+'-'+dob.slice(4,6)+'-'+dob.slice(6,8));
+                const sx=String(p.sex||'').toUpperCase(); if(sx==='M') set('rx-oi-gender','남성'); else if(sx==='F') set('rx-oi-gender','여성');
+                if(p.chartNumber) set('rx-oi-chart', p.chartNumber);
+                try{ if(window.rxOrderState) window.rxOrderState.patientKey=p.patientKey||''; }catch(_){}
+                const si=document.getElementById('rx-oi-ptsearch'); if(si&&p.name) si.value=p.name;
+            };
             // 바깥 클릭 시 드롭다운 닫기
             try{ document.addEventListener('click',function(e){ const dd=document.getElementById('rx-oi-ptdd'); if(!dd||dd.style.display==='none') return; if(e.target.closest&&(e.target.closest('#rx-oi-ptdd')||e.target.closest('#rx-oi-ptsearch'))) return; dd.style.display='none'; }, true); }catch(_){}
 
@@ -19847,6 +19888,7 @@ pdfjsScript,
                     </div>`, 780);
                 rxSetAmPm('am');
                 _renderRxItems();
+                try{ rxAutofillSelectedPatient(); }catch(_){}
             };
 
             /* ---------- 상세 의뢰서 ---------- */
@@ -19883,6 +19925,7 @@ pdfjsScript,
                     </div>`, 820);
                 rxSetAmPm('am');
                 _renderRxItems();
+                try{ rxAutofillSelectedPatient(); }catch(_){}
             };
 
             function syncRxItemsFromDOM(){
