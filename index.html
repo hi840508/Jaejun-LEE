@@ -1447,11 +1447,14 @@
 
                 <!-- 🚀 브랜드 내부 또는 전체 상품 검색 결과 영역 -->
                 <div id="brand-inner-wrap" style="display:none;">
-                    <div class="filter-chip-bar" id="brand-filter-chips">
-                        <span class="chip-label">정렬 ·</span>
-                        <span class="filter-chip active" data-sort="latest" onclick="setSortFilter('latest', this)">등록일순</span>
-                        <span class="filter-chip" data-sort="price_asc" onclick="setSortFilter('price_asc', this)">가격 낮은순</span>
-                        <span class="filter-chip" data-sort="price_desc" onclick="setSortFilter('price_desc', this)">가격 높은순</span>
+                    <!-- 🦷 보철 카테고리 칩(좌, 파일검색 유형칩 자리) + 정렬 리스트박스(우, 파일검색 최신순/이름순 자리) -->
+                    <div id="brand-filter-chips" style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;overflow-x:auto;margin-bottom:10px;">
+                        <div id="brand-cat-chips" style="display:flex;gap:8px;align-items:center;flex:1;min-width:0;flex-wrap:nowrap;overflow-x:auto;"></div>
+                        <select id="brand-sort-sel" onchange="setSortFilter(this.value)" title="정렬" style="flex:none;padding:7px 12px;border:1px solid var(--border-color);border-radius:9px;font-size:13px;font-weight:600;color:#374151;background:#fff;cursor:pointer;">
+                            <option value="latest">등록일순</option>
+                            <option value="price_asc">가격 낮은순</option>
+                            <option value="price_desc">가격 높은순</option>
+                        </select>
                     </div>
                     <!-- 내부 상품 검색은 상단 통합검색이 대체 — 숨김 입력만 유지(loadMarketplace 호환) -->
                     <input type="hidden" id="market-search" value="">
@@ -1537,7 +1540,7 @@
                             <div style="font-size:11px; color:#94a3b8; margin:4px 12px 0;">세금계산서 발행에 사용됩니다. (사업자=사업자등록번호 / 개인=주민등록번호)</div>
                             <!-- 🦷 치과 기공소: 취급 보철 품목 + 수가 체크리스트(선택한 항목만 등록) -->
                             <div id="new-brand-rx-wrap" style="display:none; margin:10px 12px 0; border:1px solid var(--border-color); border-radius:10px; overflow:hidden;">
-                                <div style="padding:8px 12px; background:var(--primary-soft); font-size:12px; font-weight:700; color:var(--primary);">🦷 보철 품목 · 수가 관리 <span style="color:var(--danger);">*</span> (필수 · 취급 품목을 1개 이상 선택)</div>
+                                <div style="padding:8px 12px; background:var(--primary-soft); font-size:12px; font-weight:700; color:var(--primary);">🦷 품목 · 수가 관리 <span style="color:var(--danger);">*</span> (필수 · 취급 품목을 1개 이상 선택)</div>
                                 <div style="font-size:11px; color:#94a3b8; padding:6px 12px 0;">취급할 품목을 <b>체크</b>하고 <b>수가/폰틱</b>을 입력하세요. <b>공개</b>에 체크된 품목만 구매자에게 노출됩니다. (등록 후 상점 관리 → 보철 품목·수가 관리에서 수정 가능)</div>
                                 <div id="new-brand-rx-list" style="max-height:300px; overflow-y:auto; padding:6px 8px;"></div>
                             </div>
@@ -10787,7 +10790,7 @@
                             <button class="btn btn-outline" style="padding:5px 11px; font-size:11px; font-weight:700; border-radius:8px;" title="상점 노출 상태를 전환합니다" onclick="toggleBrandStatus('${st.id}', '${st.status}')">${st.status === 'active' ? '휴무로 전환' : '운영 시작'}</button>
                             <button class="btn" style="padding:6px 10px; font-size:11px;" onclick="enterBrandStoreById('${st.id}')">내 상점 입장(고객 화면)</button>
                             <button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:var(--primary); border-color:var(--primary);" onclick="editBrandFull('${st.id}')">✏️ 전체 편집(이름·소개·로고)</button>
-                            ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#7c3aed; border-color:#c4b5fd;" onclick="openRxItemsModal('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🦷 보철 품목·수가 관리</button>` : ''}
+                            ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#7c3aed; border-color:#c4b5fd;" onclick="openRxItemsModal('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🦷 품목·수가 관리</button>` : ''}
                             ${currentCat === 'dental_lab' ? `<button class="btn btn-outline" style="padding:6px 10px; font-size:11px; font-weight:700; color:#0e7490; border-color:#a5f3fc;" onclick="openClinicManage('${st.id}', '${st.name.replace(/'/g, "\\'")}')">🏥 거래처 관리</button>` : ''}
                             <button class="btn btn-warning" style="padding:6px 10px; font-size:11px;" onclick="openPromoQR('${st.id}', '${st.name.replace(/'/g, "\\'")}')">홍보 QR</button>
                             <button class="btn btn-danger" style="padding:6px 10px; font-size:11px;" onclick="closeOwnBrandStore('${st.id}')">폐쇄</button>
@@ -14470,9 +14473,8 @@ pdfjsScript,
             if(topbarSearch) { topbarSearch.value = ''; topbarSearch.placeholder = '상품·상점·회원 통합 검색'; }
 
             // 필터 초기화
-            window.marketSortMode = 'latest'; window.marketTypeFilter = 'all';
-            document.querySelectorAll('#brand-filter-chips .filter-chip[data-sort]').forEach(c => c.classList.toggle('active', c.dataset.sort === 'latest'));
-            document.querySelectorAll('#brand-filter-chips .filter-chip[data-type]').forEach(c => c.classList.toggle('active', c.dataset.type === 'all'));
+            window.marketSortMode = 'latest'; window.marketTypeFilter = 'all'; window.marketRxCat = 'all';
+            try{ const ss=document.getElementById('brand-sort-sel'); if(ss) ss.value='latest'; }catch(_){}
 
             updateCartBadge();
             loadMarketplace();
@@ -14532,9 +14534,18 @@ pdfjsScript,
         // 🚀 정렬/유형 칩 토글
         window.setSortFilter = function(mode, el) {
             window.marketSortMode = mode;
-            document.querySelectorAll('#brand-filter-chips .filter-chip[data-sort]').forEach(c => c.classList.remove('active'));
-            el.classList.add('active'); loadMarketplace();
+            try{ const sel=document.getElementById('brand-sort-sel'); if(sel && sel.value!==mode) sel.value=mode; }catch(_){}
+            if(el && el.classList){ document.querySelectorAll('#brand-filter-chips .filter-chip[data-sort]').forEach(c => c.classList.remove('active')); el.classList.add('active'); }
+            loadMarketplace();
         }
+        // 🦷 보철 카테고리 그룹 — 일반 보철/임플란트(임플란트·프렙·기타), 덴처, 교정
+        window.RX_CAT_GROUPS = [
+            { key:'general', label:'일반 보철/임플란트', cats:['임플란트','프렙','기타'] },
+            { key:'denture', label:'덴처', cats:['덴처'] },
+            { key:'ortho',  label:'교정', cats:['교정'] }
+        ];
+        window.marketRxCat = 'all';
+        window.setMarketRxCat = function(key){ window.marketRxCat = key||'all'; loadMarketplace(); };
         window.setTypeFilter = function(type, el) {
             window.marketTypeFilter = type;
             document.querySelectorAll('#brand-filter-chips .filter-chip[data-type]').forEach(c => c.classList.remove('active'));
@@ -14757,10 +14768,26 @@ pdfjsScript,
                     return;
                 }
 
-                // 유형 필터
-                if(window.marketTypeFilter !== 'all') {
-                    prods = prods.filter(p => getFileType(p.name) === window.marketTypeFilter);
-                }
+                // 🦷 보철 카테고리(품목 수가) — 상점의 공개 품목으로 상품 분류/필터 + 칩 렌더
+                try{
+                    let rxItems=[]; try{ rxItems=(await (await fetch(`${API_URL}/api/store/rx-items/${encodeURIComponent(window.currentMarketFilter)}`)).json()).items||[]; }catch(_){}
+                    const pub=rxItems.filter(it=> it && !(it.pub===false||it.pub===0||it.pub==='0'||it.pub==='false'));   // 공개 품목만(명시적 비공개 제외)
+                    const name2cat={}; pub.forEach(it=>{ if(it.name) name2cat[String(it.name).trim().toLowerCase()]=String(it.category||''); });
+                    const groupOf=(prodName)=>{ const c=name2cat[String(prodName||'').trim().toLowerCase()]; if(!c) return null; const g=(window.RX_CAT_GROUPS||[]).find(G=>G.cats.includes(c)); return g?g.key:null; };
+                    // 공개 품목이 하나라도 있는 그룹만 칩으로 노출
+                    const availGroups=(window.RX_CAT_GROUPS||[]).filter(G=> pub.some(it=> G.cats.includes(String(it.category||''))) );
+                    const chipHost=document.getElementById('brand-cat-chips');
+                    if(chipHost){
+                        if(!availGroups.length){ chipHost.innerHTML=''; }
+                        else {
+                            const CHIP='padding:6px 14px;border:1px solid var(--border-color);border-radius:999px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;flex:none;background:#fff;color:#475569;';
+                            const ON='background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-color:#0b2b4b;';
+                            const mk=(k,l)=>'<span class="_bcat" data-k="'+k+'" onclick="setMarketRxCat(\''+k+'\')" style="'+CHIP+(window.marketRxCat===k?ON:'')+'">'+l+'</span>';
+                            chipHost.innerHTML=mk('all','전체')+availGroups.map(G=>mk(G.key,G.label)).join('');
+                        }
+                    }
+                    if(window.marketRxCat && window.marketRxCat!=='all'){ prods = prods.filter(p=> groupOf(p.name)===window.marketRxCat ); }
+                }catch(_){}
 
                 // 검색어 필터
                 const q = (document.getElementById('market-search').value||'').toLowerCase();
@@ -19673,7 +19700,7 @@ pdfjsScript,
                 box.innerHTML = `
                     <div style="padding:18px 22px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                            <h3 style="margin:0;font-size:18px;font-weight:900;"><span style="color:var(--primary);">보철 품목 · 수가 관리</span> <span style="font-size:13px;color:#94a3b8;font-weight:600;">| ${esc(_rxMgrStoreName)}</span></h3>
+                            <h3 style="margin:0;font-size:18px;font-weight:900;"><span style="color:var(--primary);">품목 · 수가 관리</span> <span style="font-size:13px;color:#94a3b8;font-weight:600;">| ${esc(_rxMgrStoreName)}</span></h3>
                             <span onclick="rxCloseOverlay('rx-mgr-modal')" style="cursor:pointer;font-size:24px;color:#94a3b8;line-height:1;">&times;</span>
                         </div>
                         <div style="display:flex;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:12px 0;">${tabsHtml}</div>
