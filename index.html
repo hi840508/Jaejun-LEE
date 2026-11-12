@@ -1379,7 +1379,7 @@
                         <div id="market-store-crumb" style="display:none; flex:1; min-width:30px; align-items:center; gap:8px; font-size:14px; font-weight:800; color:var(--primary); overflow:hidden; white-space:nowrap;"></div>
                         <div style="flex:1; min-width:8px;" id="market-head-spacer"></div>
                         <div class="yt-search-bar" style="flex:0 1 300px;min-width:150px;margin:0;">
-                            <input type="text" id="market-global-q" placeholder="통합 검색" style="min-width:0;" onkeyup="if(event.key==='Enter') doScreenSearch(this.value,'market')">
+                            <input type="text" id="market-global-q" placeholder="통합 검색" style="min-width:0;" oninput="if(window.currentMarketFilter){var m=document.getElementById('market-search'); if(m)m.value=this.value; if(window.loadMarketplace)loadMarketplace();}" onkeyup="if(event.key==='Enter'&&!window.currentMarketFilter) doScreenSearch(this.value,'market')">
                             <button onclick="doScreenSearch(document.getElementById('market-global-q').value,'market')" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
                             <button onclick="openScreenKeyboard()" aria-label="가상 키보드" title="화면 키보드" style="border-radius:0 20px 20px 0; border-left:none; font-size:17px;">⌨️</button>
                         </div>
@@ -1453,9 +1453,8 @@
                         <span class="filter-chip" data-sort="price_asc" onclick="setSortFilter('price_asc', this)">가격 낮은순</span>
                         <span class="filter-chip" data-sort="price_desc" onclick="setSortFilter('price_desc', this)">가격 높은순</span>
                     </div>
-                    <div class="input-group" style="margin-bottom:10px;">
-                        <input type="text" id="market-search" placeholder="상품명·설명 검색" style="width:100%;" onkeyup="loadMarketplace()">
-                    </div>
+                    <!-- 내부 상품 검색은 상단 통합검색이 대체 — 숨김 입력만 유지(loadMarketplace 호환) -->
+                    <input type="hidden" id="market-search" value="">
                     <div class="clean-grid" id="market-grid"></div>
                 </div>
             </div>
@@ -5429,6 +5428,16 @@
             sb.classList.toggle('mode-account', !on);
         };
         window._sbPatientFilter = function(q){ q=String(q||'').toLowerCase().trim(); document.querySelectorAll('#sb-pt-list ._sbpt').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.indexOf(q)>=0)?'':'none'; }); };
+        // 🧑 좌측 이름 클릭 → 파일검색(없으면 열고)으로 전환 후 해당 인물 필터
+        window._sbOpenPatient = function(key){
+            window.__accountMode=false; window.__sfPatientFilter=key; window.__sfCloudView=false;
+            if(typeof window.__sfRender==='function' && window.__sfOv && document.body.contains(window.__sfOv)){
+                try{ if(window._sfShowPatient) window._sfShowPatient(key); else window.__sfRender(); }catch(_){}
+            } else {
+                try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){}
+                setTimeout(function(){ try{ if(window._sfShowPatient) window._sfShowPatient(key); }catch(_){} }, 420);
+            }
+        };
         // 👤 계정 모드 — 계정 아이콘 클릭: 좌측바를 계정관리+구매/판매/설정으로, 본문은 결제 관리. ✕로 파일검색 복귀.
         window.enterAccountMode = function(){
             window.__accountMode = true;
@@ -5474,6 +5483,10 @@
             if(wire) try{ wire(dd, close); }catch(_){}
             return dd;
         };
+        // 🏪 내 상점 — 파일검색 셸 안에서 상점 카드 뷰 활성화
+        window._sfStoreBtn = function(){ window.__sfStoreView=true; window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null;
+            if(typeof window.__sfRender==='function' && window.__sfOv && document.body.contains(window.__sfOv)){ try{ window.__sfRender(); }catch(_){} }
+            else { try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} } };
         // ☁/📁 툴바 경로 앞 저장소 전환 ▾ — 내 컴퓨터 ↔ 클라우드만 스위칭
         window._sfStorageSwitch = function(anchor){
             const cloud=!!window.__sfCloudView;
@@ -5534,7 +5547,7 @@
         // 폴더 선택(패널 열려있으면 그 안에서 전환, 아니면 패널을 연다)
         window._sbFolderPick = async function(id){
             const R=window.RCFolder;
-            window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null;
+            window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null; window.__sfStoreView=false;
             try{ if(id && R && R.setActiveRoot) await R.setActiveRoot(id); }catch(_){}
             if(typeof window.__sfRender==='function' && window.__sfOv && document.body.contains(window.__sfOv)){
                 try{ if(window._sfGotoPath) await window._sfGotoPath([]); else await window.__sfRender(); }catch(_){}
@@ -5560,7 +5573,7 @@
                     +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+E(p.name||'(이름없음)')+(meta?(' <span style="font-size:10px;color:#94a3b8;font-weight:600;">('+E(meta)+')</span>'):'')+'</div><div style="font-size:10.5px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(p.patientId?('ID '+E(p.patientId)):'')+' · 영상 '+(p.fileCount||0)+'</div></div>'
                     +'</div>'; }).join('');
             list.querySelectorAll('._sbpt').forEach(el=>{ const key=el.getAttribute('data-key');
-                el.addEventListener('click',()=>{ if(window._sfShowPatient) window._sfShowPatient(key); });
+                el.addEventListener('click',()=>{ window._sbOpenPatient(key); });
                 el.addEventListener('dragover',(e)=>{ if(window.__sfDragFileRef&&window.__sfDragFileRef.length){ e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} el.style.background='#eef4f8'; el.style.borderColor='#0b2b4b'; } });
                 el.addEventListener('dragleave',()=>{ el.style.background='#fff'; el.style.borderColor='#e6edf4'; });
                 el.addEventListener('drop',(e)=>{ e.preventDefault(); el.style.background='#fff'; el.style.borderColor='#e6edf4'; if(window._sfAssignDraggedToPatient) window._sfAssignDraggedToPatient(key); });
@@ -5913,8 +5926,10 @@
                 // 📁 탐색기식 툴바 1줄: [뒤로] 경로(좌) ········· 검색(우) · 미리보기/Viewer(우측 끝). 로컬/클라우드는 좌측 사이드바로.
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:8px 14px;min-height:52px;box-sizing:border-box;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f0f1f3;">'
-                    + (path.length&&!_cloudSel?'<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>':'')
-                    + '<button id="_sf-storagesw" title="저장소 전환(내 컴퓨터 ↔ 클라우드) · 폴더 목록" onclick="window._sbFolderDropdown&&window._sbFolderDropdown(this)" style="flex:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:9px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;">'+(_cloudSel?'☁ 클라우드':'📁 내 컴퓨터')+' <span style="color:#94a3b8;">▾</span></button>'
+                    + (path.length&&!_cloudSel&&!window.__sfStoreView?'<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>':'')
+                    + '<button id="_sf-storebtn" title="내 상점(상점 카드)" onclick="window._sfStoreBtn&&window._sfStoreBtn()" style="flex:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border:1px solid '+(window.__sfStoreView?'#0b2b4b':'#cbd5e1')+';background:'+(window.__sfStoreView?'linear-gradient(135deg,#22446b,#0b2b4b)':'#fff')+';color:'+(window.__sfStoreView?'#fff':'#0f2f52')+';border-radius:9px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;">🏪 내 상점</button>'
+                    + '<button title="즐겨찾기 상점" onclick="event.stopPropagation();window._sbShopDropdown&&window._sbShopDropdown(this)" style="flex:none;padding:7px 9px;border:1px solid #cbd5e1;background:#fff;color:#8795a3;border-radius:9px;font-size:11px;font-weight:900;cursor:pointer;">▾</button>'
+                    + '<button id="_sf-storagesw" title="저장소 전환(내 컴퓨터 ↔ 클라우드) · 폴더 목록" onclick="window._sbFolderDropdown&&window._sbFolderDropdown(this)" style="flex:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border:1px solid '+((!window.__sfStoreView&&!_cloudSel)?'#0b2b4b':'#cbd5e1')+';background:'+((!window.__sfStoreView&&!_cloudSel)?'linear-gradient(135deg,#22446b,#0b2b4b)':'#fff')+';color:'+((!window.__sfStoreView&&!_cloudSel)?'#fff':'#0f2f52')+';border-radius:9px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;">'+(_cloudSel?'☁ 클라우드':'📁 내 컴퓨터')+' <span style="color:'+((!window.__sfStoreView&&!_cloudSel)?'#cbd5e1':'#94a3b8')+';">▾</span></button>'
                     + '<div id="_sf-crumbbar" style="flex:1;min-width:30px;display:flex;align-items:center;gap:5px;overflow-x:auto;white-space:nowrap;font-size:13.5px;-webkit-overflow-scrolling:touch;"><span style="flex:none;opacity:.6;display:inline-flex;">'+_SFIC.folder+'</span> '+crumb+'</div>'
                     + '<div class="yt-search-bar" style="flex:0 1 300px;min-width:150px;margin:0;"><input type="text" id="_sf-global-q" style="min-width:0;" value="'+_sfEsc(flt.q||'')+'" placeholder="'+_sfEsc((path.length?path[path.length-1]:(fname||'전체')))+' 검색" oninput="if(window._sfPathSearch)window._sfPathSearch(this.value)" onkeyup="if(event.key===\'Escape\'){this.value=\'\';if(window._sfPathSearch)window._sfPathSearch(\'\');}"><button onclick="if(window._sfPathSearch)window._sfPathSearch(document.getElementById(\'_sf-global-q\').value,true)" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><button onclick="openScreenKeyboard()" aria-label="가상 키보드" style="border-radius:0 20px 20px 0;border-left:none;font-size:17px;">⌨️</button></div>'
                     + '</div>');
@@ -6072,10 +6087,10 @@
                     if(sub && sub.billingEnabled){ if(!sub.active){ if(window.openCloudBackup) window.openCloudBackup(); else if(window.openMirrorPanel) window.openMirrorPanel(); return; } }
                     else { let s=null; try{ s=await window.RCMirror.status(); }catch(_){} if(s&&s.serviceEnabled===false){ showToast('클라우드 서비스가 중지되어 있습니다(관리자 설정).'); return; } if(!s||!s.enabled){ if(window.openMirrorPanel) window.openMirrorPanel(); return; } }
                     try{ await window.RCMirror.enable(true); }catch(_){}
-                    window.__sfCloudView=true; window.__sfPatientFilter=null; window.__sfDeepQuery=null; render(); try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){}
+                    window.__sfCloudView=true; window.__sfPatientFilter=null; window.__sfDeepQuery=null; window.__sfStoreView=false; render(); try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){}
                 };
                 // 🗂 로컬 저장소 선택(+폴더 드롭다운) — 좌측 사이드바 버튼에서 호출
-                window._sfLocalBtnAction = function(anchor){ window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; render(); try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){} if(anchor) _sfOpenLocalStore(anchor); };
+                window._sfLocalBtnAction = function(anchor){ window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null; window.__sfStoreView=false; flt.q=''; render(); try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){} if(anchor) _sfOpenLocalStore(anchor); };
                 // 🧊 Viewer 버튼 — 이 폴더의 열람 가능한 파일을 실시간 뷰어(cbct_suite) 안에서 연다(뷰어 DATA 서랍으로 함께 로드).
                 const viewerBtn=ov.querySelector('#_sf-viewer'); if(viewerBtn) viewerBtn.addEventListener('click',async()=>{
                     // 🧊 뷰어를 '빈 상태'로 연다 — 이 폴더의 열람 가능한 파일은 뷰어의 DATA 서랍에 목록으로만 올리고,
@@ -6304,11 +6319,33 @@
                     if(!window.__pmsScanOnce && window.RCFolder && window.RCFolder.scanPatients && window.RCFolder.supported){ window.__pmsScanOnce=true; (async()=>{ try{ await window.RCFolder.scanPatients(); window.__sbLoaded=false; if(window._sbLoadPatients){ window.__sbLoaded=true; window._sbLoadPatients(); } }catch(_){} })(); }
                 }catch(_){}
                 try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){}
-                // ☁️ 클라우드 / 🔎 경로검색 / 🧑‍⚕️ 환자 필터 / 기본=폴더 목록
-                if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
+                // 🏪 내 상점(상점 카드) / ☁️ 클라우드 / 🔎 경로검색 / 🧑‍⚕️ 이름 필터 / 기본=폴더 목록
+                if(window.__sfStoreView){ window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sfRenderStoreCards(ov); }catch(_){} }
+                else if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
                 else if(window.__sfDeepQuery){ try{ _sbHighlightPatient(); _sfRenderDeepSearch(ov, window.__sfDeepQuery); }catch(_){} }
                 else if(window.__sfPatientFilter){ try{ _sbHighlightPatient(); _sfRenderPatientGrid(ov, window.__sfPatientFilter); }catch(_){} }
                 else { try{ _sbHighlightPatient(); }catch(_){} }
+            }
+            // 🏪 내 상점 — 파일검색 셸 안에서 상점 카드(쇼케이스)를 그리드로 표시. 카드 클릭 시 기존 상점 화면(enterBrandStore)으로.
+            async function _sfRenderStoreCards(ov){
+                const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
+                grid.innerHTML='<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">상점 불러오는 중…</div>';
+                let stores=window.allStoreCache||[];
+                if(!stores.length){ try{ stores=await (await fetch(API_URL+'/api/stores/active')).json()||[]; window.allStoreCache=stores; }catch(_){} }
+                let favs=window.favoriteStoreIds||[];
+                const E=(typeof _sfEsc==='function')?_sfEsc:(s=>String(s==null?'':s));
+                if(!stores.length){ grid.innerHTML='<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;">표시할 상점이 없습니다.</div>'; return; }
+                grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;padding:4px 2px;">'
+                    + stores.map(s=>{ const id=E(s.id); const nm=E(s.name||'상점'); const owner=E(s.owner||''); const isFav=favs.includes(s.id);
+                        const bg=s.background?('#333 url(\''+String(s.background).replace(/'/g,"\\'")+'\') center/cover no-repeat'):'linear-gradient(135deg,#52525b,#27272a)';
+                        const logo=s.logo?('<img src="'+E(s.logo)+'" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #fff;flex:none;">'):('<div style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.3);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;flex:none;">'+nm.substring(0,1)+'</div>');
+                        return '<div class="_sf-storecard" data-id="'+id+'" style="background:#fff;border:1px solid #ebedf0;border-radius:14px;overflow:hidden;cursor:pointer;box-shadow:0 1px 2px rgba(17,24,39,.05);">'
+                            +'<div style="height:110px;background:'+bg+';"></div>'
+                            +'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;">'+logo+'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+nm+'</div><div style="font-size:11px;color:#94a3b8;">'+owner+'</div></div>'
+                            +'<button class="_sf-storefav" data-id="'+id+'" title="즐겨찾기" style="flex:none;border:none;background:none;cursor:pointer;padding:4px 6px;">'+(window.favIcon?window.favIcon(isFav):'★')+'</button></div></div>';
+                    }).join('') + '</div>';
+                grid.querySelectorAll('._sf-storecard').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.closest('._sf-storefav')) return; const id=el.getAttribute('data-id'); window.__sfStoreView=false; try{ if(window.enterBrandStoreById) window.enterBrandStoreById(id); }catch(_){} }));
+                grid.querySelectorAll('._sf-storefav').forEach(el=>el.addEventListener('click',async(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); try{ if(window.msgrToggleStoreFav) await window.msgrToggleStoreFav(id, el); }catch(_){} }));
             }
             // ☁️ 클라우드 전용 목록(모바일/폴더 미지정) — 클라우드 저장소 파일을 바로 조회(다운로드 아님).
             // ☁️ 클라우드 파일 동작 메뉴 — 누른 버튼 바로 옆에 뜨는 팝오버(열기/공유/삭제, 텍스트 라벨).
@@ -9090,7 +9127,7 @@
         function switchTab(id, _fromHistory) {
             // 공유폴더(파일검색) 전체화면이 열려 있으면 확실히 닫고 페이지 전환(간헐적으로 안 닫히던 문제 — id로도 제거).
             try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){}
-            try{ document.querySelectorAll('#rc-folder-page').forEach(function(e){ try{ e.remove(); }catch(_){} }); window.__sfOv=null; window.__sfCloudView=false; window.__sfPatientView=false; }catch(_){}
+            try{ document.querySelectorAll('#rc-folder-page').forEach(function(e){ try{ e.remove(); }catch(_){} }); window.__sfOv=null; window.__sfCloudView=false; window.__sfPatientView=false; window.__sfStoreView=false; }catch(_){}
             // 좌측바는 '계정 모드'에서만 구매/판매/설정으로 전환. (일반 전환은 파일검색 패널 유지)
             try{ if(window.__accountMode) window._sbPatientPanel&&window._sbPatientPanel(false); }catch(_){}
             window.currentMarketFilter = null; // 상점 탭 이동시 필터 초기화
@@ -10083,7 +10120,7 @@
             try{ if(window.renderSidebarCategories) renderSidebarCategories(); if(window.renderMobileChips) renderMobileChips(); }catch(_){}
         };
         // ☁️ 클라우드(파일검색→클라우드 복사) 전역 활성화 플래그 — 관리자가 켜야 파일검색에 '클라우드' 버튼 노출.
-        window.CLOUD_MIRROR_ENABLED = false; window.__sfCloudView = false; window.__sfPatientView = false; window.__sfPatientFilter = null; window.__sbLoaded = false; window.__sfSearchQuery = null; window.__sfDeepQuery = null;
+        window.CLOUD_MIRROR_ENABLED = false; window.__sfCloudView = false; window.__sfPatientView = false; window.__sfStoreView = false; window.__sfPatientFilter = null; window.__sbLoaded = false; window.__sfSearchQuery = null; window.__sfDeepQuery = null;
         window.loadCloudMirrorFlag = async function(){
             try{ const d=await (await fetch(API_URL+'/api/settings/cloud-mirror')).json(); window.CLOUD_MIRROR_ENABLED = !!(d&&d.enabled); }catch(_){ window.CLOUD_MIRROR_ENABLED=false; }
             try{ const b=document.getElementById('sb-cloud'); if(b) b.style.display = window.CLOUD_MIRROR_ENABLED ? '' : 'none'; const ts=document.getElementById('sb-tools-section'); if(ts) ts.style.display = window.CLOUD_MIRROR_ENABLED ? '' : 'none'; }catch(_){}
@@ -14301,25 +14338,24 @@ pdfjsScript,
             window.currentMarketFilter = store.id;
             window.currentMarketFilterStore = store;
             const ms = document.getElementById('market-search'); if(ms) ms.value = '';
-            document.getElementById('market-filter-nav').style.display = 'flex';
-            // 상점명은 헤더 경로(크럼)에 표시하므로 네비의 중복 제목은 숨김 — 즐겨찾기/문의/장바구니만 남김
-            { const _t=document.getElementById('market-filter-title'); if(_t){ _t.innerText=`${store.name}`; _t.style.display='none'; } }
+            // 빈 배너(market-filter-nav)는 숨기고, 버튼들은 헤더/크럼으로 이동
+            { const _nav=document.getElementById('market-filter-nav'); if(_nav) _nav.style.display='none'; }
+            { const _t=document.getElementById('market-filter-title'); if(_t) _t.style.display='none'; }
 
-            // 즐겨찾기 아이콘 버튼 상태 동기화
+            // 즐겨찾기 아이콘 버튼 상태 동기화(크럼으로 이동·컴팩트)
             const favBtn = document.getElementById('market-filter-fav-btn');
             const isFav = (window.favoriteStoreIds || []).includes(store.id);
-            favBtn.innerHTML = window.favIcon(isFav);
-            favBtn.classList.toggle('fav-on', isFav);
-            favBtn.title = isFav ? '즐겨찾기 해제' : '즐겨찾기';
+            if(favBtn){ favBtn.innerHTML = window.favIcon(isFav); favBtn.classList.toggle('fav-on', isFav); favBtn.title = isFav ? '즐겨찾기 해제' : '즐겨찾기';
+                favBtn.style.cssText='width:34px;height:34px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;border:1px solid '+(isFav?'#f5d27a':'#e2c766')+';background:'+(isFav?'#fffbea':'#fff')+';cursor:pointer;'; }
 
             // 🚀 1:1문의 버튼: 본인 상점이 아닐 때만 표시
             const inquireBtn = document.getElementById('market-filter-inquire-btn');
             if(inquireBtn) inquireBtn.style.display = (store.owner !== currentUser.name) ? 'inline-block' : 'none';
 
-            // 🚀 큰 배경 배너는 숨김 — 상점명·아이콘은 파일검색 '경로' 위치(헤더)에 간결히 표시
+            // 🚀 큰 배경 배너는 숨김 — 상점명·아이콘은 헤더 '경로' 위치에 간결히 표시
             const backdrop = document.getElementById('brand-backdrop');
             if(backdrop) backdrop.style.display = 'none';
-            // 📍 헤더 경로 위치에 상점 아이콘+이름(+나가기) 표시
+            // 📍 헤더 경로 위치에 (← 파일검색) + 상점 아이콘+이름 + ⭐즐겨찾기 + 1:1문의
             const crumb = document.getElementById('market-store-crumb');
             const spacer = document.getElementById('market-head-spacer');
             if(crumb){
@@ -14327,20 +14363,25 @@ pdfjsScript,
                 const logoSm = store.logo
                     ? `<img src="${esc(store.logo)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;border:1px solid #e2e8f0;">`
                     : `<div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#52525b,#27272a);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;flex:none;">${esc(store.name.substring(0,1))}</div>`;
-                crumb.innerHTML = `<button onclick="clearMarketFilter()" title="상점 나가기" style="flex:none;width:30px;height:30px;border:1px solid #e2e8f0;background:#fff;border-radius:8px;cursor:pointer;color:#475569;font-size:15px;line-height:1;">←</button>`
+                crumb.innerHTML = `<button onclick="exitStoreToFiles()" title="나가기(파일검색으로)" style="flex:none;width:30px;height:30px;border:1px solid #e2e8f0;background:#fff;border-radius:8px;cursor:pointer;color:#475569;font-size:15px;line-height:1;">←</button>`
                     + logoSm
-                    + `<span style="flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw;">${esc(store.name)}</span>`;
+                    + `<span style="flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40vw;">${esc(store.name)}</span>`;
+                if(favBtn) crumb.appendChild(favBtn);              // ⭐ 상점명 옆으로
+                if(inquireBtn) crumb.appendChild(inquireBtn);       // 1:1문의 옆으로
                 crumb.style.display='flex';
             }
             if(spacer) spacer.style.display='none';
+            // 🛒 장바구니를 헤더 우측(통합검색 옆)으로 이동 + 표시
+            { const cartBtn=document.getElementById('market-filter-cart-btn'); const headrow=document.querySelector('#market-head .sf-headrow');
+              if(cartBtn && headrow){ cartBtn.style.cssText='flex:none;margin-left:6px;padding:8px 14px;border:none;border-radius:20px;background:var(--gradient-btn);color:#fff;font-weight:700;font-size:12px;cursor:pointer;position:relative;white-space:nowrap;'; headrow.appendChild(cartBtn); } }
             // 🧭 상점 내부에서는 카테고리칩(전체/치과기공소…) 숨김 — 정렬칩만 사용
             try{ const _chips=document.getElementById('yt-mobile-chips'); if(_chips) _chips.style.display='none'; }catch(_){}
 
             // 🚀 쇼케이스 숨기고 브랜드 내부 그리드 표시
             document.getElementById('brand-showcase-wrap').style.display = 'none';
             document.getElementById('brand-inner-wrap').style.display = 'block';
-            if(ms) ms.placeholder = `${store.name} 내부 상품 검색`;
-            // 🚀 [v8+] 톱바는 항상 통합 검색 — 상점 입장 시에도 placeholder 유지
+            // 통합검색(상단)이 내부 상품 검색을 대신 — placeholder 안내
+            { const gq=document.getElementById('market-global-q'); if(gq){ gq.value=''; gq.placeholder=`${store.name} 상품 검색`; } }
             const topbarSearch = document.getElementById('topbar-global-search');
             if(topbarSearch) { topbarSearch.value = ''; topbarSearch.placeholder = '상품·상점·회원 통합 검색'; }
 
@@ -14351,18 +14392,21 @@ pdfjsScript,
 
             updateCartBadge();
             loadMarketplace();
-            setTimeout(() => { document.getElementById('market-filter-nav').scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
         }
+        // 상점 내부 ← : 상점 나가고 파일검색(홈)으로
+        window.exitStoreToFiles = function(){ try{ clearMarketFilter(); }catch(_){} try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} };
 
         window.clearMarketFilter = function() {
             window.currentMarketFilter = null;
             window.currentMarketFilterStore = null;
             document.getElementById('market-filter-nav').style.display = 'none';
             document.getElementById('brand-backdrop').style.display = 'none';
-            // 📍 헤더 상점 크럼 숨기고 스페이서·카테고리칩 복원
+            // 📍 헤더 상점 크럼 숨기고 스페이서·카테고리칩 복원 + 이동했던 장바구니 숨김
             try{ const c=document.getElementById('market-store-crumb'); if(c){ c.style.display='none'; c.innerHTML=''; } }catch(_){}
             try{ const sp=document.getElementById('market-head-spacer'); if(sp) sp.style.display=''; }catch(_){}
             try{ const _chips=document.getElementById('yt-mobile-chips'); if(_chips) _chips.style.display='flex'; }catch(_){}
+            try{ const cb=document.getElementById('market-filter-cart-btn'); if(cb) cb.style.display='none'; }catch(_){}
+            try{ const gq=document.getElementById('market-global-q'); if(gq){ gq.value=''; gq.placeholder='통합 검색'; } }catch(_){}
             // 외부 제휴 상점 iframe 닫기(src 해제로 백그라운드 로딩 중단)
             const _ext = document.getElementById('external-store-wrap'); if(_ext) _ext.style.display = 'none';
             const _extf = document.getElementById('external-store-frame'); if(_extf) _extf.src = 'about:blank';
