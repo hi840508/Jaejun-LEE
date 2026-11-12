@@ -1300,7 +1300,7 @@
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     </button>
                     <!-- 👤 프로필 — 클릭하면 계정 화면(그 안에서 로그아웃). 상단 로그아웃 버튼 제거. -->
-                    <div style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 12px; border-radius:30px; background:#f0f0f0; transition:0.2s;" onclick="openProfileModal()" title="계정 · 로그아웃">
+                    <div style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 12px; border-radius:30px; background:#f0f0f0; transition:0.2s;" onclick="enterAccountMode()" title="계정 · 구매/판매/설정">
                         <img id="my-profile-pic" class="profile-pic" style="width:24px; height:24px; border:none;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23cbd5e1'/></svg>">
                         <span style="font-weight: 600; color:var(--text-main); font-size:13px;" id="topbar-uname-wrap"><span id="display-name" style="color: var(--text-main);"></span></span>
                     </div>
@@ -1310,18 +1310,11 @@
             <div class="yt-layout">
                 <!-- 사이드바 (YouTube 스타일) -->
                 <aside class="yt-sidebar" id="yt-sidebar">
-                    <!-- 🔎 검색: 상점검색(위) · 파일검색(아래) — 데스크톱에서 본문 헤더 2줄과 높이·경계선을 맞춤 -->
-                    <div class="yt-sb-section" id="sb-search-section">
-                        <div class="sb-sr-row">
-                            <button class="yt-sb-item" onclick="switchTab('market')" data-tab="market"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span><span>상점검색</span></button>
-                            <button class="sb-sr-caret" title="즐겨찾기 상점" onclick="event.stopPropagation();window._sbShopDropdown&&window._sbShopDropdown(this)">▾</button>
-                        </div>
-                        <div class="sb-sr-row">
-                            <button id="sb-sharedfolder" class="yt-sb-item" data-tab="__sharedfolder" onclick="openSharedFolderPanel()"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M12 11v5"></path><path d="M9.5 13.5 12 11l2.5 2.5"></path></svg></span><span>파일검색</span></button>
-                            <button class="sb-sr-caret" title="폴더·클라우드 저장소" onclick="event.stopPropagation();window._sbFolderDropdown&&window._sbFolderDropdown(this)">▾</button>
-                        </div>
+                    <!-- 👤 계정 모드 헤더 — 계정 아이콘 클릭 시에만 표시. ✕로 나가면 파일검색으로 복귀 -->
+                    <div id="sb-account-head" style="display:none;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid var(--chrome-border);">
+                        <button onclick="openProfileModal()" title="계정 관리" style="flex:1;display:flex;align-items:center;gap:9px;padding:9px 11px;border:none;border-radius:9px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;font-size:13px;cursor:pointer;text-align:left;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg><span>계정 관리</span></button>
+                        <button onclick="exitAccountMode()" title="닫기(파일검색으로)" aria-label="닫기" style="flex:none;width:36px;height:36px;border:1px solid var(--chrome-border);background:#fff;border-radius:9px;cursor:pointer;color:#475569;font-size:16px;line-height:1;">✕</button>
                     </div>
-                    <div class="yt-sb-divider" id="sb-search-divider"></div>
                     <!-- 🧰 도구 — Viewer는 파일검색 툴바로 이동. 클라우드(관리자 활성 시)만 여기 노출. 둘 다 없으면 섹션 숨김. -->
                     <div class="yt-sb-section" id="sb-tools-section" style="display:none;">
                         <div class="yt-sb-title">도구</div>
@@ -2294,24 +2287,36 @@
     </button>
     
     <div class="messenger-drawer" id="messenger-drawer">
-        <div class="drawer-header"><span style="display:inline-flex; align-items:center; gap:8px;"><span style="width:30px; height:30px; border-radius:10px 10px 10px 3px; background:#d6006e; display:inline-flex; align-items:center; justify-content:center; gap:3px;"><span style="width:4px; height:4px; border-radius:50%; background:#fff;"></span><span style="width:4px; height:4px; border-radius:50%; background:#fff;"></span><span style="width:4px; height:4px; border-radius:50%; background:#fff;"></span></span><span style="font-size:14px; font-weight:700; color:var(--text-main);">메신저</span></span><button class="close-btn-x" style="width:26px; height:26px; font-size:14px;" onclick="toggleMessengerDrawer()">&times;</button></div>
+        <!-- 🔎 메신저 통합검색 — 연락처(상점 포함)·대화내용 검색. '메신저 ✕' 헤더는 제거(플로팅 버튼으로 토글) -->
+        <div style="padding:10px 12px; background:#f8fafc; border-bottom:1px solid var(--border-color);">
+            <div class="yt-search-bar" style="width:100%; margin:0;">
+                <input type="text" id="msgr-global-q" placeholder="통합 검색 (연락처·대화내용)" style="min-width:0; border-radius:20px 0 0 20px;" oninput="if(window.msgrGlobalSearch)msgrGlobalSearch(this.value)">
+                <button onclick="if(window.msgrGlobalSearch)msgrGlobalSearch(document.getElementById('msgr-global-q').value)" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+                <button onclick="openScreenKeyboard&&openScreenKeyboard()" aria-label="가상 키보드" style="border-radius:0 20px 20px 0; border-left:none; font-size:16px;">⌨️</button>
+            </div>
+        </div>
         <div class="messenger-tabs">
+            <div class="m-tab" onclick="switchDrawerTab('orders')">주문</div>
             <div class="m-tab active" onclick="switchDrawerTab('friends')">연락처</div>
             <div class="m-tab" onclick="switchDrawerTab('chats')">대화방 <span id="chat-tab-count" style="color:var(--notify); font-weight:bold; margin-left:2px;"></span></div>
         </div>
         
         <div class="messenger-views">
+            <!-- 📦 주문 — 내 주문/진행중 거래 -->
+            <div class="messenger-view" id="view-order-list">
+                <div id="order-list-container" style="flex:1; overflow-y:auto; background:#f8fafc; padding:10px;"></div>
+            </div>
+
             <div class="messenger-view active" id="view-friend-list">
-                <div style="padding:15px; background:#f8fafc; border-bottom:1px solid var(--border-color);">
-                    <div style="position:relative; margin-bottom:10px;">
-                        <input type="text" id="friend-search-input" placeholder="회원 검색 (ID·실명·전화)" style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border-color); outline:none;" oninput="searchUsersForFriend()">
-                        <div id="friend-search-results" style="display:none; position:absolute; left:0; right:0; top:100%; background:#fff; border:1px solid var(--border-color); border-top:none; border-radius:0 0 8px 8px; max-height:240px; overflow-y:auto; z-index:5; box-shadow:0 8px 20px rgba(0,0,0,0.1);"></div>
-                    </div>
-                    <button class="btn btn-outline" style="width:100%; padding:8px; font-size:12px; border-style:dashed;" onclick="copyInviteLink()">🔗 초대 링크 복사 (접속 시 자동 친구 맺기)</button>
+                <!-- 통합검색으로 회원 찾기 결과(친구 추가)가 여기에 표시됨 -->
+                <div id="friend-search-results" style="display:none; background:#fff; border-bottom:1px solid var(--border-color); max-height:240px; overflow-y:auto;"></div>
+                <div style="padding:8px 12px; background:#f8fafc; border-bottom:1px solid var(--border-color);">
+                    <button class="btn btn-outline" style="width:100%; padding:7px; font-size:12px; border-style:dashed;" onclick="copyInviteLink()">🔗 초대 링크 복사 (접속 시 자동 친구 맺기)</button>
                 </div>
+                <input type="hidden" id="friend-search-input">
                 <div id="friend-list-container" style="flex:1; overflow-y:auto;"></div>
             </div>
-            
+
             <div class="messenger-view" id="view-chat-list">
                 <div id="chat-list-container" style="flex:1; overflow-y:auto; background:#f8fafc;"></div>
             </div>
@@ -5413,7 +5418,7 @@
         window.__sbPatients = [];
         window._sbPatientPanel = function(on){
             const sb=document.getElementById('yt-sidebar'); if(!sb) return;
-            const keep={ 'sb-search-section':1,'sb-search-divider':1,'sb-tools-section':1,'sb-patient-panel':1,'yt-sb-favs':1 };
+            const keep={ 'sb-account-head':1,'sb-tools-section':1,'sb-patient-panel':1,'yt-sb-favs':1 };
             Array.from(sb.children).forEach(ch=>{
                 if(ch.id==='sb-patient-panel'){ ch.style.display=on?'flex':'none'; return; }
                 if(keep[ch.id]) return;
@@ -5422,6 +5427,20 @@
             });
         };
         window._sbPatientFilter = function(q){ q=String(q||'').toLowerCase().trim(); document.querySelectorAll('#sb-pt-list ._sbpt').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.indexOf(q)>=0)?'':'none'; }); };
+        // 👤 계정 모드 — 계정 아이콘 클릭: 좌측바를 계정관리+구매/판매/설정으로, 본문은 결제 관리. ✕로 파일검색 복귀.
+        window.enterAccountMode = function(){
+            window.__accountMode = true;
+            try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){}
+            try{ document.querySelectorAll('#rc-folder-page').forEach(function(e){ e.remove(); }); }catch(_){}
+            try{ if(window._sbPatientPanel) window._sbPatientPanel(false); }catch(_){}   // 구매/판매/설정 노출
+            const h=document.getElementById('sb-account-head'); if(h) h.style.display='flex';
+            try{ switchTab('wallet'); }catch(_){}   // 본문: 결제 관리 먼저
+        };
+        window.exitAccountMode = function(){
+            window.__accountMode = false;
+            const h=document.getElementById('sb-account-head'); if(h) h.style.display='none';
+            try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){}   // 파일검색(기본)으로 복귀 — 내부에서 _sbPatientPanel(true)
+        };
         // 🎨 선택된 환자 버튼 강조(다른 색) — 현재 어떤 환자가 선택됐는지 명확히
         window._sbHighlightPatient = function(){ const k=window.__sfPatientFilter||''; document.querySelectorAll('#sb-pt-list ._sbpt').forEach(el=>{ const on=(el.getAttribute('data-key')===k && !!k); el.style.background=on?'#dceafb':'#fff'; el.style.borderColor=on?'#0b2b4b':'#e6edf4'; el.style.boxShadow=on?'inset 0 0 0 1.5px #0b2b4b':''; }); };
         // 🎨 좌측 로컬/클라우드 저장소 — 현재 선택된 쪽을 네이비로 채워 명확히 표시
@@ -5440,6 +5459,17 @@
             setTimeout(()=>document.addEventListener('pointerdown',onDoc,true),0);
             if(wire) try{ wire(dd, close); }catch(_){}
             return dd;
+        };
+        // ☁/📁 툴바 경로 앞 저장소 전환 ▾ — 내 컴퓨터 ↔ 클라우드만 스위칭
+        window._sfStorageSwitch = function(anchor){
+            const cloud=!!window.__sfCloudView;
+            const row='display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700;';
+            const html = '<div class="_ss-local" style="'+row+(!cloud?'background:#eef4f8;color:#0b2b4b;':'color:#334155;')+'"><span style="flex:none;">📁</span><span style="flex:1;">내 컴퓨터</span>'+(!cloud?'<span style="color:#16a34a;font-weight:800;font-size:10px;">● 사용중</span>':'')+'</div>'
+                + '<div class="_ss-cloud" style="'+row+(cloud?'background:#eef4f8;color:#0b2b4b;':'color:#334155;')+'"><span style="flex:none;">☁</span><span style="flex:1;">클라우드 저장소</span>'+(cloud?'<span style="color:#16a34a;font-weight:800;font-size:10px;">● 사용중</span>':'')+'</div>';
+            window._sbDropdown(anchor, html, (dd,close)=>{
+                const l=dd.querySelector('._ss-local'); if(l) l.addEventListener('click',()=>{ close(); try{ if(window._sfLocalBtnAction) window._sfLocalBtnAction(); else { window.__sfCloudView=false; if(window.__sfRender) window.__sfRender(); } }catch(_){} });
+                const c=dd.querySelector('._ss-cloud'); if(c) c.addEventListener('click',()=>{ close(); try{ if(window._sbCloudToggle) window._sbCloudToggle(); else if(window._sfCloudBtnAction) window._sfCloudBtnAction(); }catch(_){} });
+            });
         };
         // ⭐ 상점검색 ▾ — 즐겨찾기 상점 리스트 + 즐겨찾기 추가
         window._sbShopDropdown = function(anchor){
@@ -5841,7 +5871,7 @@
             document.body.appendChild(ov); window.__sfOv=ov;
             // 🧭 좌측/하단 네비에서 '공유폴더' 항목을 현재 위치로 하이라이트(다른 탭 active 해제). switchTab으로 나가면 자동 해제됨.
             try{ if(!_sfPick){ document.querySelectorAll('.yt-sb-item,.yt-bn-item').forEach(function(el){ el.classList.remove('active'); }); var _sb=document.getElementById('sb-sharedfolder'); if(_sb) _sb.classList.add('active'); } }catch(_){}
-            const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; window.__sfPath=null; try{ window._sbPatientPanel&&window._sbPatientPanel(false); }catch(_){} };
+            const close=()=>{ try{ ov.remove(); }catch(_){} if(window.__sfOv===ov) window.__sfOv=null; window.__sfPath=null; try{ if(window.__accountMode) window._sbPatientPanel&&window._sbPatientPanel(false); }catch(_){} };
 
             function ctxMenu(x,y,items){ const old=document.getElementById('_sf-ctx'); if(old)old.remove(); const m=document.createElement('div'); m.id='_sf-ctx'; m.style.cssText='position:fixed;z-index:4500;background:#fff;color:#0f172a;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.22);padding:6px;min-width:170px;'; m.style.left=Math.min(x,window.innerWidth-190)+'px'; m.style.top=Math.min(y,window.innerHeight-42*items.length-10)+'px'; items.forEach(it=>{ const b=document.createElement('div'); b.textContent=it.label; b.style.cssText='padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;'+(it.danger?'color:#dc2626;':''); b.onmouseenter=()=>b.style.background='#f1f5f9'; b.onmouseleave=()=>b.style.background=''; b.onclick=()=>{ m.remove(); it.fn(); }; m.appendChild(b); }); document.body.appendChild(m); const rm=(e)=>{ if(!m.contains(e.target)){ try{m.remove();}catch(_){} document.removeEventListener('mousedown',rm); } }; setTimeout(()=>document.addEventListener('mousedown',rm),0); }
 
@@ -5868,6 +5898,7 @@
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:8px 14px;min-height:52px;box-sizing:border-box;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f0f1f3;">'
                     + (path.length&&!_cloudSel?'<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>':'')
+                    + '<button id="_sf-storagesw" title="저장소 전환(내 컴퓨터 ↔ 클라우드)" onclick="window._sfStorageSwitch&&window._sfStorageSwitch(this)" style="flex:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:9px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;">'+(_cloudSel?'☁ 클라우드':'📁 내 컴퓨터')+' <span style="color:#94a3b8;">▾</span></button>'
                     + '<div id="_sf-crumbbar" style="flex:1;min-width:30px;display:flex;align-items:center;gap:5px;overflow-x:auto;white-space:nowrap;font-size:13.5px;-webkit-overflow-scrolling:touch;"><span style="flex:none;opacity:.6;display:inline-flex;">'+_SFIC.folder+'</span> '+crumb+'</div>'
                     + '<div class="yt-search-bar" style="flex:0 1 300px;min-width:150px;margin:0;"><input type="text" id="_sf-global-q" style="min-width:0;" value="'+_sfEsc(flt.q||'')+'" placeholder="'+_sfEsc((path.length?path[path.length-1]:(fname||'전체')))+' 검색" oninput="if(window._sfPathSearch)window._sfPathSearch(this.value)" onkeyup="if(event.key===\'Escape\'){this.value=\'\';if(window._sfPathSearch)window._sfPathSearch(\'\');}"><button onclick="if(window._sfPathSearch)window._sfPathSearch(document.getElementById(\'_sf-global-q\').value,true)" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><button onclick="openScreenKeyboard()" aria-label="가상 키보드" style="border-radius:0 20px 20px 0;border-left:none;font-size:17px;">⌨️</button></div>'
                     + '<button id="_sf-viewerbtn" title="실시간 뷰어로 열기" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:10px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;">🧊 Viewer</button>'
@@ -7198,8 +7229,9 @@
             try { loadChatList(); } catch(e){ try{ if(window.__earthDiag) __earthDiag('login loadChatList: '+(e.message||e), true); }catch(_){} }
             // 📦 주문 관리 메뉴 노출용으로 상점 목록만 로드
             try { if(typeof loadMyBrandStores==='function') loadMyBrandStores(); } catch(_){}
-            // 🏠 기본 화면 설정(홈/공유폴더) — 사용자가 설정에서 선택. 기본=홈. 'folder'면 로그인 후 공유폴더 자동 열기.
-            try { if(localStorage.getItem('alphak_default_screen')==='folder'){ setTimeout(function(){ try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} }, 450); } } catch(_){}
+            // 🏠 기본 화면 = 파일검색(홈). 좌측바도 파일검색 모드(환자패널)로 — 계정 아이콘 전까지 구매/판매/설정 숨김.
+            try { window._sbPatientPanel && window._sbPatientPanel(true); } catch(_){}
+            try { setTimeout(function(){ try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} }, 300); } catch(_){}
             // 📁 공유폴더 미지정 시 지정 필수 게이트(PC/지원 브라우저) — 지정 전까지 다른 기능 차단
             try { setTimeout(function(){ try{ if(window._requireSharedFolder) window._requireSharedFolder(); }catch(_){} }, 900); } catch(_){}
             // 🚀 [v7] 사이드바 초기 렌더
@@ -9044,7 +9076,8 @@
             // 공유폴더(파일검색) 전체화면이 열려 있으면 확실히 닫고 페이지 전환(간헐적으로 안 닫히던 문제 — id로도 제거).
             try{ if(window.__sfOv){ window.__sfOv.remove(); window.__sfOv=null; } }catch(_){}
             try{ document.querySelectorAll('#rc-folder-page').forEach(function(e){ try{ e.remove(); }catch(_){} }); window.__sfOv=null; window.__sfCloudView=false; window.__sfPatientView=false; }catch(_){}
-            try{ window._sbPatientPanel&&window._sbPatientPanel(false); }catch(_){}
+            // 좌측바는 '계정 모드'에서만 구매/판매/설정으로 전환. (일반 전환은 파일검색 패널 유지)
+            try{ if(window.__accountMode) window._sbPatientPanel&&window._sbPatientPanel(false); }catch(_){}
             window.currentMarketFilter = null; // 상점 탭 이동시 필터 초기화
             window.currentMarketFilterStore = null;
             // 🚀 [v8+] 톱바 검색 placeholder도 기본값 복원 (상점 내부 검색 잔존 버그 수정)
@@ -16598,8 +16631,11 @@ pdfjsScript,
         function switchDrawerTab(tabName) {
             document.querySelectorAll('.m-tab').forEach(t => t.classList.remove('active')); const targetTab = document.querySelector(`.m-tab[onclick="switchDrawerTab('${tabName}')"]`); if(targetTab) targetTab.classList.add('active');
             document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active'));
+            if(tabName === 'orders') { document.getElementById('view-order-list').classList.add('active'); if(window.loadOrderListMsgr) loadOrderListMsgr(); }
             if(tabName === 'friends') document.getElementById('view-friend-list').classList.add('active');
             if(tabName === 'chats') { document.getElementById('view-chat-list').classList.add('active'); loadChatList(); }
+            // 탭 전환 시 통합검색어로 현재 목록 필터 재적용
+            try{ const q=(document.getElementById('msgr-global-q')||{}).value||''; if(q && window.msgrGlobalSearch) setTimeout(()=>msgrGlobalSearch(q), 60); }catch(_){}
         }
         function backToDrawerList() { document.querySelectorAll('.messenger-view').forEach(v => v.classList.remove('active')); document.getElementById('view-chat-list').classList.add('active'); switchDrawerTab('chats'); activeChatFriend = null; currentChatRoomId = null; const _ps=document.getElementById('chat-order-pin-slot'); if(_ps) _ps.innerHTML=''; const _vs=document.getElementById('chat-video-slot'); if(_vs){ _vs.innerHTML=''; _vs.style.display='none'; } const _vst=document.getElementById('video-stage'); if(_vst) _vst.remove(); window.__videoMeetingActive=false; loadFriendList(); loadChatList(); }
         // 🗑 대화방 삭제(퇴장) — 일반(주문 이력 없는) 대화방만. 목록에서 사라지고 상대에게 퇴장 안내.
@@ -16869,8 +16905,67 @@ pdfjsScript,
             try{ await renderFriendRequests(container); }catch(_){}
             if(currentUser.name !== '이재준') { container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('이재준')"><div class="profile-pic" style="background:#d6006e; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px;">🤖</div><div style="flex:1;"><b>고객센터</b><div style="font-size:11px; color:var(--text-sub);">사용법·불편사항 자동응답</div></div></div>`; }
             friends.forEach(f => { const pic = f.profilePic ? `<img class="profile-pic" src="${f.profilePic}">` : `<div class="profile-pic"></div>`; const safe=(f.name||'').replace(/'/g,"\\'"); const on=online.has(f.name); container.innerHTML += `<div class="friend-item" onclick="openMessengerChat('${safe}')">${pic}<div style="flex:1;"><b>${f.name}</b>${dot(on)}<div style="font-size:11px; color:${on?'#16a34a':'var(--text-sub)'};">${on?'온라인':'오프라인'}</div></div></div>`; });
+            // 🏪 상점 — 연락처에 함께 표시(별표 즐겨찾기, 클릭 시 상점 입장). 주문은 기존 상점 화면 프로세스 재사용.
+            try{
+                let stores = window.allStoreCache || [];
+                if(!stores.length){ try{ stores = await (await fetch(`${API_URL}/api/stores/active`)).json()||[]; window.allStoreCache = stores; }catch(_){} }
+                const favs = window.favoriteStoreIds || [];
+                if(stores.length){
+                    container.innerHTML += '<div style="padding:10px 14px 4px;font-size:11px;font-weight:800;color:#94a3b8;letter-spacing:.3px;">상점</div>';
+                    stores.forEach(s=>{
+                        const id=String(s.id||'').replace(/'/g,"\\'");
+                        const nm=String(s.name||'상점').replace(/</g,'&lt;');
+                        const logo = s.logo ? `<img class="profile-pic" src="${s.logo}">` : `<div class="profile-pic" style="background:linear-gradient(135deg,#52525b,#27272a);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">${nm.substring(0,1)}</div>`;
+                        const isFav = favs.includes(s.id);
+                        container.innerHTML += `<div class="friend-item _msgr-store" onclick="msgrEnterStore('${id}')">${logo}<div style="flex:1;min-width:0;"><b>${nm}</b><div style="font-size:11px;color:var(--text-sub);">상점</div></div><button onclick="event.stopPropagation(); msgrToggleStoreFav('${id}', this)" title="즐겨찾기" style="flex:none;border:none;background:none;cursor:pointer;padding:4px 8px;line-height:1;">${window.favIcon?window.favIcon(isFav):'★'}</button></div>`;
+                    });
+                }
+            }catch(_){}
             updateTabBadge();
         }
+        // 🏪 메신저 연락처의 상점 — 입장(기존 상점 화면), 즐겨찾기 토글
+        window.msgrEnterStore = function(id){ try{ const dr=document.getElementById('messenger-drawer'); if(dr&&dr.classList.contains('open')&&window.toggleMessengerDrawer) toggleMessengerDrawer(); }catch(_){} try{ if(window.enterBrandStoreById) window.enterBrandStoreById(id); }catch(_){} };
+        window.msgrToggleStoreFav = async function(id, btn){
+            try{
+                await fetch(`${API_URL}/api/favorite/toggle`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, targetStore: id }) });
+                const favRes = await fetch(`${API_URL}/api/favorites/${currentUser.name}`); window.favoriteStoreIds = await favRes.json() || [];
+                const on = window.favoriteStoreIds.includes(id);
+                if(btn && window.favIcon) btn.innerHTML = window.favIcon(on);
+                try{ window.renderSidebarFavs && window.renderSidebarFavs(); }catch(_){}
+            }catch(e){ showToast('즐겨찾기 변경 실패'); }
+        };
+        // 📦 메신저 '주문' 탭 — 내 주문/진행중 거래
+        window.loadOrderListMsgr = async function(){
+            const box=document.getElementById('order-list-container'); if(!box||!currentUser) return;
+            box.innerHTML='<div style="padding:24px;text-align:center;color:#94a3b8;font-size:13px;">불러오는 중…</div>';
+            let items=[]; try{ items=await (await fetch(`${API_URL}/api/purchases/${encodeURIComponent(currentUser.name)}`)).json()||[]; }catch(_){}
+            const esc=(t)=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+            if(!items.length){ box.innerHTML='<div style="padding:28px 16px;text-align:center;color:#94a3b8;font-size:13px;line-height:1.7;">진행 중인 주문이 없습니다.<br><span style="font-size:12px;">연락처에서 상점을 선택해 주문할 수 있어요.</span></div>'; return; }
+            box.innerHTML = items.slice(0,100).map(o=>{
+                const nm=esc(o.productName||'주문'); const sel=esc(o.seller||''); const amt=Number(o.amount||0);
+                const dt=String(o.date||o.created_at||'').replace('T',' ').substring(0,16);
+                const pend=(o.orderStatus==='pending'||o.orderStatus==='awaiting_payment');
+                const st = o.refunded?'환불됨':(pend?'승인 대기':'진행/완료');
+                const stc = o.refunded?'#991b1b':(pend?'#92400e':'#0f2f52'); const stb=o.refunded?'#fee2e2':(pend?'#fef3c7':'#eef4f8');
+                return `<div class="_ord-item" onclick="msgrOpenOrder('${sel}','${esc(o.id||'')}')" style="background:#fff;border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;">`
+                    +`<div style="display:flex;align-items:center;gap:8px;"><b style="flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${nm}</b><span style="flex:none;font-size:10px;font-weight:800;color:${stc};background:${stb};border-radius:20px;padding:2px 8px;">${st}</span></div>`
+                    +`<div style="font-size:11px;color:#64748b;margin-top:4px;">${sel?('판매자 '+sel+' · '):''}${dt}${amt?(' · '+amt.toLocaleString()+'원'):''}</div></div>`;
+            }).join('');
+        };
+        window.msgrOpenOrder = function(seller, orderId){ try{ if(window.openBuyerOrderRoom && seller) { openBuyerOrderRoom(seller, orderId); return; } }catch(_){} };
+        // 🔎 메신저 통합검색 — 현재 탭 목록(연락처/상점·주문·대화방) 필터 + 연락처 탭이면 회원 추가 검색도
+        window.msgrGlobalSearch = function(q){
+            q=String(q||'').toLowerCase().trim();
+            const active=document.querySelector('.messenger-view.active'); const id=active?active.id:'';
+            if(id==='view-friend-list'){
+                document.querySelectorAll('#friend-list-container .friend-item').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.includes(q))?'':'none'; });
+                try{ const fi=document.getElementById('friend-search-input'); if(fi){ fi.value=q; if(window.searchUsersForFriend) searchUsersForFriend(); } }catch(_){}
+            } else if(id==='view-chat-list'){
+                document.querySelectorAll('#chat-list-container > *').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.includes(q))?'':'none'; });
+            } else if(id==='view-order-list'){
+                document.querySelectorAll('#order-list-container ._ord-item').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.includes(q))?'':'none'; });
+            }
+        };
         // 🤝 받은/보낸 친구 신청 — 친구 목록 맨 위에 표시하고 수락·거절·취소를 처리한다.
         window.renderFriendRequests = async function(container){
             if(!currentUser) return;
