@@ -1386,6 +1386,15 @@
                     </div>
                     <div class="sf-headrow">
                         <div class="yt-mobile-chips" id="yt-mobile-chips" style="display:flex; border-bottom:0; margin:0; padding:0; flex:1;"></div>
+                        <!-- 🦷 상점 진입 시: 이 줄(파일검색 둘째 헤더행 위치)에 보철 카테고리칩(좌) + 정렬 리스트박스(우) -->
+                        <div id="market-store-filterbar" style="display:none; align-items:center; gap:8px; flex:1; min-width:0;">
+                            <div id="brand-cat-chips" style="display:flex; gap:8px; align-items:center; flex:1; min-width:0; overflow-x:auto; -webkit-overflow-scrolling:touch;"></div>
+                            <select id="brand-sort-sel" onchange="setSortFilter(this.value)" title="정렬" style="flex:none; padding:7px 12px; border:1px solid var(--border-color); border-radius:9px; font-size:13px; font-weight:600; color:#374151; background:#fff; cursor:pointer;">
+                                <option value="latest">등록일순</option>
+                                <option value="price_asc">가격 낮은순</option>
+                                <option value="price_desc">가격 높은순</option>
+                            </select>
+                        </div>
                     </div>
                     <!-- (하위호환) 즐겨찾기 가로 아바타행 제거 — 상점검색 ▾ 드롭다운으로 이동. renderMarketFavs가 참조하는 숨김 컨테이너 -->
                     <div id="market-fav-row" style="display:none;"></div>
@@ -1447,15 +1456,7 @@
 
                 <!-- 🚀 브랜드 내부 또는 전체 상품 검색 결과 영역 -->
                 <div id="brand-inner-wrap" style="display:none;">
-                    <!-- 🦷 보철 카테고리 칩(좌, 파일검색 유형칩 자리) + 정렬 리스트박스(우, 파일검색 최신순/이름순 자리) -->
-                    <div id="brand-filter-chips" style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;overflow-x:auto;margin-bottom:10px;">
-                        <div id="brand-cat-chips" style="display:flex;gap:8px;align-items:center;flex:1;min-width:0;flex-wrap:nowrap;overflow-x:auto;"></div>
-                        <select id="brand-sort-sel" onchange="setSortFilter(this.value)" title="정렬" style="flex:none;padding:7px 12px;border:1px solid var(--border-color);border-radius:9px;font-size:13px;font-weight:600;color:#374151;background:#fff;cursor:pointer;">
-                            <option value="latest">등록일순</option>
-                            <option value="price_asc">가격 낮은순</option>
-                            <option value="price_desc">가격 높은순</option>
-                        </select>
-                    </div>
+                    <!-- 카테고리칩·정렬은 상단 헤더 둘째 줄(#market-store-filterbar)로 이동 -->
                     <!-- 내부 상품 검색은 상단 통합검색이 대체 — 숨김 입력만 유지(loadMarketplace 호환) -->
                     <input type="hidden" id="market-search" value="">
                     <div class="clean-grid" id="market-grid"></div>
@@ -11454,8 +11455,8 @@
             const it = (window.__labRxItems||[])[Number(psel && psel.value)];
             const nameEl = document.getElementById('prod-name');
             const priceEl = document.getElementById('prod-price-original');
-            if(it){ if(nameEl) nameEl.value = it.name||''; if(priceEl) priceEl.value = Number(it.price)||0; }
-            else { if(nameEl) nameEl.value=''; if(priceEl) priceEl.value=''; }
+            if(it){ if(nameEl) nameEl.value = it.name||''; if(priceEl) priceEl.value = Number(it.price)||0; try{ window.prodFormState = window.prodFormState||{}; window.prodFormState.rxCategory = it.category||''; }catch(_){} }
+            else { if(nameEl) nameEl.value=''; if(priceEl) priceEl.value=''; try{ if(window.prodFormState) window.prodFormState.rxCategory=''; }catch(_){} }
         };
 
         window.submitNewProduct = async function() {
@@ -11539,7 +11540,8 @@
                     body: JSON.stringify({
                         name, price_stream: 0, price_original: pOri, stream_time: 0, stream_unit: 'd',
                         seller: currentUser.name, storeId, thumbnail: thumb, encryptedPayload, description,
-                        package_data: packageData, is_package: isPackage
+                        package_data: packageData, is_package: isPackage,
+                        rxCategory: (window.prodFormState && window.prodFormState.rxCategory) || ''
                     })
                 });
                 const data = await res.json();
@@ -14460,13 +14462,16 @@ pdfjsScript,
             if(spacer) spacer.style.display='none';
             // 🛒 장바구니를 헤더 우측(통합검색 옆)으로 이동 + 표시
             { const cartBtn=document.getElementById('market-filter-cart-btn'); const headrow=document.querySelector('#market-head .sf-headrow');
-              if(cartBtn && headrow){ cartBtn.style.cssText='flex:none;margin-left:6px;padding:8px 14px;border:none;border-radius:20px;background:var(--gradient-btn);color:#fff;font-weight:700;font-size:12px;cursor:pointer;position:relative;white-space:nowrap;'; headrow.appendChild(cartBtn); } }
-            // 🧭 상점 내부에서는 카테고리칩(전체/치과기공소…) 숨김 — 정렬칩만 사용
+              if(cartBtn && headrow){ cartBtn.style.cssText='flex:none;margin-left:6px;padding:7px 13px;border:none;border-radius:10px;background:var(--gradient-btn);color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;position:relative;white-space:nowrap;'; headrow.appendChild(cartBtn); } }
+            // 🧭 상점 내부: 헤더 둘째 줄을 카테고리칩+정렬 바로 전환(빈 줄 제거, 파일검색 높이와 통일)
             try{ const _chips=document.getElementById('yt-mobile-chips'); if(_chips) _chips.style.display='none'; }catch(_){}
+            try{ const _fb=document.getElementById('market-store-filterbar'); if(_fb) _fb.style.display='flex'; }catch(_){}
 
             // 🚀 쇼케이스 숨기고 브랜드 내부 그리드 표시
             document.getElementById('brand-showcase-wrap').style.display = 'none';
             document.getElementById('brand-inner-wrap').style.display = 'block';
+            // 🖼 상품 영역 뒷배경 = 상점 대표 이미지(투명도 적용)
+            try{ const iw=document.getElementById('brand-inner-wrap'); if(iw){ if(store.background){ const u=String(store.background).replace(/'/g,"\\'").replace(/"/g,'%22'); iw.style.background="linear-gradient(rgba(248,249,251,.86),rgba(248,249,251,.93)), #e9eef5 url('"+u+"') center/cover no-repeat"; iw.style.borderRadius='14px'; iw.style.padding='14px'; } else { iw.style.background=''; iw.style.borderRadius=''; iw.style.padding=''; } } }catch(_){}
             // 통합검색(상단)이 내부 상품 검색을 대신 — placeholder 안내
             { const gq=document.getElementById('market-global-q'); if(gq){ gq.value=''; gq.placeholder=`${store.name} 상품 검색`; } }
             const topbarSearch = document.getElementById('topbar-global-search');
@@ -14491,13 +14496,14 @@ pdfjsScript,
             try{ const c=document.getElementById('market-store-crumb'); if(c){ c.style.display='none'; c.innerHTML=''; } }catch(_){}
             try{ const sp=document.getElementById('market-head-spacer'); if(sp) sp.style.display=''; }catch(_){}
             try{ const _chips=document.getElementById('yt-mobile-chips'); if(_chips) _chips.style.display='flex'; }catch(_){}
+            try{ const _fb=document.getElementById('market-store-filterbar'); if(_fb) _fb.style.display='none'; }catch(_){}
             try{ const cb=document.getElementById('market-filter-cart-btn'); if(cb) cb.style.display='none'; }catch(_){}
             try{ const gq=document.getElementById('market-global-q'); if(gq){ gq.value=''; gq.placeholder='통합 검색'; } }catch(_){}
             // 외부 제휴 상점 iframe 닫기(src 해제로 백그라운드 로딩 중단)
             const _ext = document.getElementById('external-store-wrap'); if(_ext) _ext.style.display = 'none';
             const _extf = document.getElementById('external-store-frame'); if(_extf) _extf.src = 'about:blank';
             document.getElementById('brand-showcase-wrap').style.display = 'block';
-            document.getElementById('brand-inner-wrap').style.display = 'none';
+            { const iw=document.getElementById('brand-inner-wrap'); if(iw){ iw.style.display='none'; iw.style.background=''; iw.style.borderRadius=''; iw.style.padding=''; } }
             const ms = document.getElementById('market-search'); if(ms) { ms.value = ''; ms.placeholder = '상품명·설명 검색'; }
             // 🚀 [v8+] 톱바 검색 placeholder도 기본값 복원
             const topbarSearch = document.getElementById('topbar-global-search');
@@ -14773,7 +14779,8 @@ pdfjsScript,
                     let rxItems=[]; try{ rxItems=(await (await fetch(`${API_URL}/api/store/rx-items/${encodeURIComponent(window.currentMarketFilter)}`)).json()).items||[]; }catch(_){}
                     const pub=rxItems.filter(it=> it && !(it.pub===false||it.pub===0||it.pub==='0'||it.pub==='false'));   // 공개 품목만(명시적 비공개 제외)
                     const name2cat={}; pub.forEach(it=>{ if(it.name) name2cat[String(it.name).trim().toLowerCase()]=String(it.category||''); });
-                    const groupOf=(prodName)=>{ const c=name2cat[String(prodName||'').trim().toLowerCase()]; if(!c) return null; const g=(window.RX_CAT_GROUPS||[]).find(G=>G.cats.includes(c)); return g?g.key:null; };
+                    // 상품 분류: ① 상품의 rx_category 필드 우선, ② 없으면 상품명↔품목명 매칭(구 상품 호환)
+                    const groupOf=(p)=>{ let c=(p&&p.rx_category)?String(p.rx_category):''; if(!c) c=name2cat[String((p&&p.name)||'').trim().toLowerCase()]||''; if(!c) return null; const g=(window.RX_CAT_GROUPS||[]).find(G=>G.cats.includes(c)); return g?g.key:null; };
                     // 공개 품목이 하나라도 있는 그룹만 칩으로 노출
                     const availGroups=(window.RX_CAT_GROUPS||[]).filter(G=> pub.some(it=> G.cats.includes(String(it.category||''))) );
                     const chipHost=document.getElementById('brand-cat-chips');
@@ -14786,7 +14793,7 @@ pdfjsScript,
                             chipHost.innerHTML=mk('all','전체')+availGroups.map(G=>mk(G.key,G.label)).join('');
                         }
                     }
-                    if(window.marketRxCat && window.marketRxCat!=='all'){ prods = prods.filter(p=> groupOf(p.name)===window.marketRxCat ); }
+                    if(window.marketRxCat && window.marketRxCat!=='all'){ prods = prods.filter(p=> groupOf(p)===window.marketRxCat ); }
                 }catch(_){}
 
                 // 검색어 필터

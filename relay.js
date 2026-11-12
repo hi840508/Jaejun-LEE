@@ -911,6 +911,7 @@ function initTables() {
         db.run(`ALTER TABLE stores ADD COLUMN rx_items TEXT`, () => {});
         db.run(`ALTER TABLE stores ADD COLUMN partner_clinics TEXT`, () => {});   // 🏥 기공소 거래 치과 정보(JSON, 홍보용·관리자 열람)
         db.run(`ALTER TABLE products ADD COLUMN rx_form INTEGER DEFAULT 0`, () => {});   // 1=기공소 의뢰서 작성용 기본 상품(가격 미정)
+        db.run(`ALTER TABLE products ADD COLUMN rx_category TEXT`, () => {});   // 🦷 보철 카테고리(임플란트/프렙/기타/덴처/교정) — 상점 내부 카테고리 필터용
         // 🚀 [v6] order_orders 컬럼 추가 (구버전 DB 호환)
         db.run(`ALTER TABLE product_orders ADD COLUMN pdf_filled_data TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN buyer_info TEXT`, () => {});
@@ -4119,8 +4120,8 @@ app.post('/api/products/encrypt-build', (req, res) => {
         // 🔗 링크 상품: 홈페이지 주소는 관리자(세션 토큰)만 등록 가능. 비관리자가 보내면 무시.
         const linkUrl = (req.body.link_url && isAdminName(authUser(req))) ? String(req.body.link_url).trim() : null;
 
-        db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, stream_time, stream_unit, seller, thumbnail, encryptedPayload, compression_ratio, block_hash, ecc_signature, package_data, is_package, link_url) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [pid, req.body.storeId, req.body.name, req.body.description, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, Number(req.body.stream_time)||0, req.body.stream_unit, req.body.seller, req.body.thumbnail, req.body.encryptedPayload, ratio, block_hash, ecc_signature, packageData, isPackage, linkUrl], function(err) {
+        db.run(`INSERT INTO products (id, storeId, type, name, description, price_stream, price_original, stream_time, stream_unit, seller, thumbnail, encryptedPayload, compression_ratio, block_hash, ecc_signature, package_data, is_package, link_url, rx_category) VALUES (?, ?, 'html_enc', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [pid, req.body.storeId, req.body.name, req.body.description, Number(req.body.price_stream)||0, Number(req.body.price_original)||0, Number(req.body.stream_time)||0, req.body.stream_unit, req.body.seller, req.body.thumbnail, req.body.encryptedPayload, ratio, block_hash, ecc_signature, packageData, isPackage, linkUrl, (req.body.rxCategory||null)], function(err) {
                 if(err) return res.status(500).json({error: err.message});
                 res.json({ success: true, id: pid, ratio, block_hash, ecc_signature });
             });
