@@ -5562,11 +5562,22 @@
             return dd;
         };
         // 🏪 내 상점 — 파일검색 셸 안에서 상점 카드 뷰 활성화
-        window._sfStoreBtn = function(){ window.__sfStoreView=true; window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null;
+        window._sfStoreBtn = function(){ window.__accountMode=false; try{ window._sbPatientPanel && window._sbPatientPanel(true); }catch(_){}   // 좌측 환자 사이드바 유지
+            window.__sfStoreView=true; window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null;
             if(typeof window.__sfRender==='function' && window.__sfOv && document.body.contains(window.__sfOv)){ try{ window.__sfRender(); }catch(_){} }
             else { try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} } };
-        // 📁 내 컴퓨터 — 바로 로컬 파일검색(상점·클라우드 해제)
-        window._sfComputerBtn = function(){ window.__sfStoreView=false; window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null;
+        // 📁 내 컴퓨터 — 로컬 파일검색(모바일은 로컬 미지원 → 클라우드로)
+        window._sfComputerBtn = function(){ window.__accountMode=false; try{ window._sbPatientPanel && window._sbPatientPanel(true); }catch(_){}   // 좌측 환자 사이드바 유지
+            const mob=(window._isMobileDevice&&window._isMobileDevice());
+            window.__sfStoreView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null;
+            if(mob){ // 📱 모바일은 클라우드 환경만 지원
+                window.__sfCloudView=true;
+                if(typeof window.__sfRender==='function' && window.__sfOv && document.body.contains(window.__sfOv)){ try{ window.__sfRender(); }catch(_){} }
+                else { try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} }
+                try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){}
+                return;
+            }
+            window.__sfCloudView=false;
             if(typeof window._sfLocalBtnAction==='function' && window.__sfOv && document.body.contains(window.__sfOv)){ try{ window._sfLocalBtnAction(); }catch(_){} }
             else if(typeof window.__sfRender==='function' && window.__sfOv && document.body.contains(window.__sfOv)){ try{ window.__sfRender(); }catch(_){} }
             else { try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} } };
