@@ -6735,18 +6735,18 @@
                     if(window.__sfPickResolve){ // 🔵 _sfPickFiles 콜백 흐름(풀스크린 선택) — 읽어서 콜백 후 닫기
                         showToast('파일 읽는 중… ('+descs.length+'개)'); const files=[]; for(const d of descs){ try{ const rp=d.rpath || ((d.parts?d.parts.join('/')+'/':'')+(d.fn||'')); const f=await window._sfResolveFileToFile({rootId:d.rootId, rpath:rp}); if(f) files.push(f); }catch(_){} } const cb=window.__sfPickResolve; window.__sfPickResolve=null; try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){} if(cb) cb(files);
                     } else { // 📎 폼(의뢰서/주문서) 첨부 모드 — 패널 유지, 선택 파일 첨부 후 선택 해제
-                        const norm=descs.map(d=>({rootId:d.rootId, rpath: d.rpath || ((d.parts?d.parts.join('/')+'/':'')+(d.fn||''))}));
+                        const norm=descs.map(d=>({rootId:d.rootId, rpath: d.rpath || ((d.parts?d.parts.join('/')+'/':'')+(d.fn||'')), cloud:d.cloud, mime:d.mime, size:d.size}));
                         await window._sfAttachDescs(norm);
                         _ptSel.clear(); try{ grid.querySelectorAll('._pt-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._pt-chk'); if(c){ c.style.background='rgba(255,255,255,.92)'; c.textContent=''; } }); }catch(_){} _updBar();
                     }
                 };
-                const _toggle=(el,f,on)=>{ const k=f.rootId+'|'+f.rpath; if(on===undefined) on=!_ptSel.has(k); if(on){ const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); _ptSel.set(k,{rootId:f.rootId,parts,fn}); } else { _ptSel.delete(k); } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; const cb=el.querySelector('._pt-chk'); if(cb){ cb.style.background=on?'#0f2f52':'rgba(255,255,255,.92)'; cb.textContent=on?'✓':''; } _updBar(); };
+                const _toggle=(el,f,on)=>{ const k=f.rootId+'|'+f.rpath; if(on===undefined) on=!_ptSel.has(k); if(on){ const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); _ptSel.set(k,{rootId:f.rootId,parts,fn,rpath:f.rpath,cloud:f.cloud,mime:f.mime,size:f.size}); } else { _ptSel.delete(k); } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; const cb=el.querySelector('._pt-chk'); if(cb){ cb.style.background=on?'#0f2f52':'rgba(255,255,255,.92)'; cb.textContent=on?'✓':''; } _updBar(); };
                 // 📋 환자 파일 카드 = 내 컴퓨터 카드와 동일 UX: 항상 체크박스(좌상단, 다중선택) · 카드클릭=열기(폼열림시 첨부) · 더블클릭=첨부 · 드래그
                 grid.querySelectorAll('._pt-file').forEach(el=>{ const f=_byEl(el);
                     const chk=document.createElement('div'); chk.className='_pt-chk'; chk.style.cssText='position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);'; el.appendChild(chk);
                     chk.addEventListener('click',(e)=>{ e.stopPropagation(); _toggle(el,f); });
-                    el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath}]); return; } _sfOpenPmsFile(f); });
-                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._pt-chk')||e.target.closest('._pt-menu')) return; e.preventDefault(); e.stopPropagation(); _attachNow([{rootId:f.rootId, rpath:f.rpath}]); });
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}]); return; } _sfOpenPmsFile(f); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._pt-chk')||e.target.closest('._pt-menu')) return; e.preventDefault(); e.stopPropagation(); _attachNow([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}]); });
                 });
                 if(_paBtn) _paBtn.onclick=()=>_attachNow([..._ptSel.values()]);
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _ptSel.clear(); grid.querySelectorAll('._pt-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._pt-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _updBar(); }; }
@@ -6758,7 +6758,7 @@
                 });
                 grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el); const items=[{label:'👁 미리보기',fn:()=>_sfOpenPmsFile(f)}];
                     items.push({label:'💾 원본 다운로드',fn:async()=>{ try{ const R2=window.RCFolder; const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); let file=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(f.rootId,parts,fn):null; if(!file&&R2&&R2.getFileAt){ try{ file=await R2.getFileAt(parts,fn); }catch(_){} } if(!file){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(file); const a=document.createElement('a'); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); }catch(err){ showToast('다운로드 실패'); } }});
-                    if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ items.push({label:'📎 의뢰서에 첨부',fn:()=>window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath}])}); }
+                    if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ items.push({label:'📎 의뢰서에 첨부',fn:()=>window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}])}); }
                     if(f.manual){ items.push({label:'↔ 다른 환자로 이전',fn:()=>_sfPatientPicker(async(toKey)=>{ if(!toKey||toKey===key) return; try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:toKey, file:f})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('이전했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('이전 실패: '+((err&&err.message)||err)); } }) });
                         items.push({label:'🔗 연결 해제',danger:true,fn:async()=>{ try{ const r=await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:f.rootId,rpath:f.rpath})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('연결을 해제했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('해제 실패: '+((err&&err.message)||err)); } }}); }
                     const r=el.getBoundingClientRect(); ctxMenu(r.right-170, r.bottom+4, items); }));
@@ -6955,9 +6955,19 @@
             // 📎 파일 설명(rootId/rpath)을 File로 해석 — 로컬(공유폴더) 우선, 실패 시 클라우드 프리사인 다운로드
             window._sfResolveFileToFile = async function(d){
                 const R2=window.RCFolder; const parts=String(d.rpath||'').split('/'); const fn=parts.pop();
+                // ☁️ 클라우드 파일 → 다운로드/재업로드 없이 14일 공유 링크로 전달(접속 때마다 서버가 재서명)
+                if(d.cloud){
+                    try{
+                        const gj=await fetch(API_URL+'/api/guestshare/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ rpath:d.rpath, fileName:fn, mime:d.mime||'', size:Number(d.size)||0, days:14 })}).then(r=>r.json());
+                        if(gj&&gj.ok&&gj.link){ return { __cloudLink:true, name:fn, type:(d.mime||'application/octet-stream'), url:gj.link, size:Number(d.size)||0, expiresAt:gj.expiresAt||0 }; }
+                    }catch(_){}
+                    // 링크 실패 시에만 프리사인 다운로드 폴백
+                    try{ const dj=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:d.rpath})}).then(r=>r.json()); if(dj&&dj.url){ const resp=await fetch(dj.url); if(resp.ok){ const blob=await resp.blob(); return new File([blob], fn, {type: blob.type||'application/octet-stream'}); } } }catch(_){}
+                    return null;
+                }
                 // 1) 로컬(연결된 폴더)
                 try{ let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) return f; }catch(_){}
-                // 2) 클라우드(프리사인 URL 다운로드)
+                // 2) 클라우드 폴백(플래그 누락 대비)
                 try{ const dj=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:d.rpath})}).then(r=>r.json()); if(dj&&dj.url){ const resp=await fetch(dj.url); if(resp.ok){ const blob=await resp.blob(); return new File([blob], fn, {type: blob.type||'application/octet-stream'}); } } }catch(_){}
                 return null;
             };
@@ -6983,7 +6993,7 @@
             // 🧲 전역 드롭: 주문서(의뢰서/주문서)가 열려 있을 때, 파일 카드를 '화면 어디에' 놓아도 첨부되게(드롭 타깃 모호성 제거)
             if(!window.__sfDocDropWired){ window.__sfDocDropWired=true;
                 document.addEventListener('dragover', function(e){ try{ if(window.__sfDragFileRef && window.__sfDragFileRef.length && window.__sfFormAttachActive && window.__sfFormAttachActive()){ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='copy'; } }catch(_){} }, false);
-                document.addEventListener('drop', function(e){ try{ if(window.__sfDragFileRef && window.__sfDragFileRef.length && window.__sfFormAttachActive && window.__sfFormAttachActive()){ e.preventDefault(); const refs=window.__sfDragFileRef.slice(); window.__sfDragFileRef=null; window._sfAttachDescs(refs.map(d=>({rootId:d.rootId, rpath:d.rpath}))); } }catch(_){} }, false);
+                document.addEventListener('drop', function(e){ try{ if(window.__sfDragFileRef && window.__sfDragFileRef.length && window.__sfFormAttachActive && window.__sfFormAttachActive()){ e.preventDefault(); const refs=window.__sfDragFileRef.slice(); window.__sfDragFileRef=null; window._sfAttachDescs(refs.map(d=>({rootId:d.rootId, rpath:d.rpath, cloud:d.cloud, mime:d.mime, size:d.size}))); } }catch(_){} }, false);
             }
             render();
         }
@@ -16229,7 +16239,7 @@ pdfjsScript,
             const files = window.orderFormState.buyerFiles;
             if(files.length === 0) { list.innerHTML = ''; return; }
             list.innerHTML = files.map((f, i) => `<div style="background:#fff; border:1px solid var(--border-color); padding:6px 10px; border-radius:6px; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:12px;">📎 ${f.name.replace(/</g,'&lt;')} <span style="color:var(--text-sub); font-size:10px;">(${(f.size/1024).toFixed(1)}KB)</span></span>
+                <span style="font-size:12px;">${f&&f.__cloudLink?'☁️':'📎'} ${f.name.replace(/</g,'&lt;')} <span style="color:var(--text-sub); font-size:10px;">${f&&f.__cloudLink?'(클라우드 링크·2주)':('('+(f.size/1024).toFixed(1)+'KB)')}</span></span>
                 <button style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:14px;" onclick="removeBuyerFile(${i})">✕</button>
             </div>`).join('');
         }
@@ -16292,6 +16302,7 @@ pdfjsScript,
             const buyerFilesB64 = [];
             for(let f of st.buyerFiles) {
                 try {
+                    if(f && f.__cloudLink){ buyerFilesB64.push({ filename: f.name, url: f.url, type: f.type || 'application/octet-stream', cloudLink:true }); continue; }   // ☁️ 클라우드=14일 공유 링크
                     const b = await fileToBase64(f);
                     buyerFilesB64.push({ filename: f.name, content: b, type: f.type || 'application/octet-stream' });
                 } catch(e){}
@@ -20075,7 +20086,7 @@ pdfjsScript,
                 try{ const files = window._sfPickFiles ? await window._sfPickFiles() : []; if(files && files.length){ window.rxAddFiles(files); showToast('📎 공유폴더에서 '+files.length+'개 첨부됨'); } }catch(_){ }
             };
             window.rxRemoveFile = function(i){ const st=window.rxOrderState; if(!st) return; st.attachFiles.splice(i,1); _renderRxFileList(); };
-            function _renderRxFileList(){ const el=document.getElementById('rx-file-list'); const st=window.rxOrderState; if(!el||!st) return; el.innerHTML = st.attachFiles.map((f,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:5px 10px;margin-bottom:4px;font-size:12px;"><span>📎 ${esc(f.name)} <span style="color:#94a3b8;">(${(f.size/1024).toFixed(1)}KB)</span></span><button type="button" onclick="rxRemoveFile(${i})" style="border:none;background:none;color:var(--danger);cursor:pointer;">✕</button></div>`).join(''); }
+            function _renderRxFileList(){ const el=document.getElementById('rx-file-list'); const st=window.rxOrderState; if(!el||!st) return; el.innerHTML = st.attachFiles.map((f,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:5px 10px;margin-bottom:4px;font-size:12px;"><span>${f&&f.__cloudLink?'☁️':'📎'} ${esc(f.name)} <span style="color:#94a3b8;">${f&&f.__cloudLink?'(클라우드 링크·2주)':('('+(f.size/1024).toFixed(1)+'KB)')}</span></span><button type="button" onclick="rxRemoveFile(${i})" style="border:none;background:none;color:var(--danger);cursor:pointer;">✕</button></div>`).join(''); }
 
             function readOrderInfo(){
                 const g = id => (document.getElementById(id)||{}).value || '';
@@ -20810,7 +20821,10 @@ pdfjsScript,
             // 📦 의뢰서 제출 바디 생성(첨부 업로드 포함) — submitRxOrder + 장바구니 공용
             window._rxBuildOrderBody = async function(st, info){
                 const attachUploaded = [];
-                for(const f of (st.attachFiles||[])){ try{ const url = await window.uploadChatAttachment(f); if(url) attachUploaded.push({ filename:f.name, type:f.type||'application/octet-stream', url, sizeKB:(f.size/1024).toFixed(0) }); }catch(_){} }
+                for(const f of (st.attachFiles||[])){ try{
+                    if(f && f.__cloudLink){ attachUploaded.push({ filename:f.name, type:f.type||'application/octet-stream', url:f.url, sizeKB:((Number(f.size)||0)/1024).toFixed(0), cloudLink:true }); continue; }   // ☁️ 클라우드=14일 공유 링크(업로드 안 함)
+                    const url = await window.uploadChatAttachment(f); if(url) attachUploaded.push({ filename:f.name, type:f.type||'application/octet-stream', url, sizeKB:(f.size/1024).toFixed(0) });
+                }catch(_){} }
                 const orderHtml = buildRxBundleHTML(st, info, attachUploaded);
                 const buyerInfo = { name: info.clinic, phone:'', address:'', userId: currentUser.name, clinic:info.clinic, doctor:info.doctor, patientName:info.patientName, birth:info.birth, gender:info.gender, chartNo:info.chartNo, dueDate:info.dueDate, dueAmPm:info.dueAmPm };
                 const formData = { rxMode: st.mode, orderInfo: info, items: st.items, attachMeta: attachUploaded.map(f=>({ filename:f.filename, type:f.type, url:f.url })) };
@@ -21009,7 +21023,7 @@ pdfjsScript,
                     if(window.RCFolder && window.RCFolder.supported){
                         (async()=>{
                             let ok=0;
-                            for(const f of (st.attachFiles||[])){ try{ await window.RCFolder.writeFileInRoom(_ofn, f.name, f); ok++; }catch(_){} }
+                            for(const f of (st.attachFiles||[])){ try{ if(f&&f.__cloudLink) continue; await window.RCFolder.writeFileInRoom(_ofn, f.name, f); ok++; }catch(_){} }
                             // 🧾 의뢰서 PDF 동봉
                             try{ const pdf=buildRxPdfBlob(st, info); if(pdf){ await window.RCFolder.writeFileInRoom(_ofn, '의뢰서_'+String(info.patientName||'case').replace(/[\\/:*?"<>|]/g,'_')+'.pdf', pdf); } }catch(_){}
                             if(ok) showToast('📁 공유폴더 ['+_ofn+']에 저장: 첨부 '+ok+'개 + 의뢰서 PDF');

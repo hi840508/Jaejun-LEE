@@ -889,6 +889,9 @@ function initTables() {
 
         // 🔗 [비회원 외부 공유] QR+웹링크로 Alpha K 미가입 고객에게 파일 전달 → 랜딩페이지에서 가입안내 + 공유폴더 다운로드
         db.run(`CREATE TABLE IF NOT EXISTS guest_shares (token TEXT PRIMARY KEY, owner TEXT, fileName TEXT, url TEXT, mime TEXT, size INTEGER, createdAt INTEGER, expiresAt INTEGER, downloads INTEGER DEFAULT 0)`);
+        // ☁️ 클라우드 파일을 가리키는 공유(접속 때마다 재프리사인 → 14일 유효). rpath가 있으면 url 대신 mirror_files에서 그때그때 서명.
+        db.run(`ALTER TABLE guest_shares ADD COLUMN rpath TEXT`, () => {});
+        db.run(`ALTER TABLE guest_shares ADD COLUMN mirrorOwner TEXT`, () => {});
 
         // 🚀 [v6] 구매로 자동 생성된 대화방 메타 (브랜드명 + 최신 상품명 + 양측 표시 동기화)
         // type: 'order' (구매 후 자동 생성, 한쪽이 leave 시 양측 종료) | 'normal' (수동 친구 추가)
@@ -3743,11 +3746,12 @@ app.post('/api/guestshare/create', (req, res) => {
     const url = String(req.body.url || ''); const fileName = String(req.body.fileName || 'file');
     const mime = String(req.body.mime || 'application/octet-stream'); const size = Math.max(0, Math.floor(Number(req.body.size) || 0));
     const days = Math.min(90, Math.max(1, Math.floor(Number(req.body.days) || 14)));
-    if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: '공개 URL이 필요합니다.' });
+    const rpath = String(req.body.rpath || '');   // ☁️ 지정 시: 접속 때마다 mirror_files에서 재프리사인(14일 안정 링크)
+    if (!rpath && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: '공개 URL 또는 클라우드 rpath가 필요합니다.' });
     const token = crypto.randomBytes(9).toString('base64url');
     const now = Date.now(); const expiresAt = now + days * 86400000;
-    db.run(`INSERT INTO guest_shares (token, owner, fileName, url, mime, size, createdAt, expiresAt, downloads) VALUES (?,?,?,?,?,?,?,?,0)`,
-        [token, owner, fileName, url, mime, size, now, expiresAt], function (e) {
+    db.run(`INSERT INTO guest_shares (token, owner, fileName, url, mime, size, createdAt, expiresAt, downloads, rpath, mirrorOwner) VALUES (?,?,?,?,?,?,?,?,0,?,?)`,
+        [token, owner, fileName, url, mime, size, now, expiresAt, rpath || null, rpath ? owner : null], function (e) {
             if (e) return res.status(500).json({ error: '저장 실패' });
             res.json({ ok: true, token, link: _shareBaseUrl(req) + '/s/' + token, expiresAt });
         });
@@ -3769,10 +3773,22 @@ app.get('/api/guestshare/:token', (req, res) => {
     });
 });
 app.get('/s/:token/dl', (req, res) => {
-    db.get(`SELECT url, expiresAt FROM guest_shares WHERE token = ?`, [req.params.token], (e, row) => {
+    db.get(`SELECT url, expiresAt, rpath, mirrorOwner FROM guest_shares WHERE token = ?`, [req.params.token], (e, row) => {
         if (e || !row) return res.status(404).send('없는 공유입니다.');
         if (row.expiresAt && Date.now() > row.expiresAt) return res.status(410).send('만료된 공유입니다.');
         db.run(`UPDATE guest_shares SET downloads = downloads + 1 WHERE token = ?`, [req.params.token]);
+        // ☁️ 클라우드 파일 공유 → 접속 때마다 R2 재프리사인(프리사인 7일 상한을 우회해 14일 안정 링크)
+        if (row.rpath && row.mirrorOwner && _r2) {
+            return db.get(`SELECT key FROM mirror_files WHERE userName=? AND rpath=?`, [row.mirrorOwner, row.rpath], (e2, mf) => {
+                if (e2 || !mf) return res.status(404).send('클라우드에서 파일을 찾을 수 없습니다.');
+                try {
+                    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+                    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+                    getSignedUrl(_r2.client, new GetObjectCommand({ Bucket: _r2.bucket, Key: mf.key }), { expiresIn: 3600 })
+                        .then(u => res.redirect(u)).catch(() => res.status(500).send('링크 생성 실패'));
+                } catch (_) { res.status(500).send('링크 생성 실패'); }
+            });
+        }
         res.redirect(row.url);   // R2(Cloudflare) 직접 다운로드 — egress 무료
     });
 });
