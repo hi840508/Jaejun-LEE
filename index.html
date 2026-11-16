@@ -14661,7 +14661,16 @@ pdfjsScript,
                 try { const r = await fetch(`${API_URL}/api/store/${storeId}`); st = await r.json(); } catch(e){}
             }
             if(!st || !st.id) return showToast("상점 정보를 불러올 수 없습니다.");
-            enterBrandStore(st);
+            // 🗨 상점 입장은 항상 메신저 안에서(메인 페이지 상품 화면 미사용)
+            try{
+                const dr=document.getElementById('messenger-drawer');
+                if(dr && !dr.classList.contains('open') && window.toggleMessengerDrawer) toggleMessengerDrawer();
+                document.querySelectorAll('.messenger-view').forEach(v=>v.classList.remove('active'));
+                const vs=document.getElementById('view-store'); if(vs) vs.classList.add('active');
+                document.querySelectorAll('.msgr-rail-btn').forEach(b=>b.classList.toggle('active', b.getAttribute('data-tab')==='store'));
+                if(window.renderStoreProductsInMessenger){ window.renderStoreProductsInMessenger(st); return; }
+            }catch(_){}
+            enterBrandStore(st);   // 폴백(메신저 미가용 시)
         }
 
         function enterBrandStore(store) {
@@ -17058,7 +17067,7 @@ pdfjsScript,
                 function _wireDrawerOutside(drawerId, keepSel, closeFn){
                     const el=document.getElementById(drawerId); if(!el) return;
                     let handler=null;
-                    const add=()=>{ if(handler) return; handler=function(e){ try{ const t=e.target; if(!t) return; if(t.closest && t.closest('#'+drawerId)) return; if(keepSel && t.closest && t.closest(keepSel)) return; if(_isOverModal(t)) return; closeFn(); }catch(_){} }; setTimeout(()=>{ try{ document.addEventListener('click', handler, false); }catch(_){} }, 0); };
+                    const add=()=>{ if(handler) return; handler=function(e){ try{ const t=e.target; if(!t) return; if(t.nodeType===1 && !document.contains(t)) return; /* 클릭 중 재렌더로 분리된 요소(서랍 내부 버튼) → 바깥클릭 아님 */ if(t.closest && t.closest('#'+drawerId)) return; if(keepSel && t.closest && t.closest(keepSel)) return; if(_isOverModal(t)) return; closeFn(); }catch(_){} }; setTimeout(()=>{ try{ document.addEventListener('click', handler, false); }catch(_){} }, 0); };
                     const remove=()=>{ if(handler){ try{ document.removeEventListener('click', handler, false); }catch(_){} handler=null; } };
                     try{ new MutationObserver(()=>{ if(el.classList.contains('open')) add(); else { remove(); if(drawerId==='messenger-drawer'){ try{ if(window.closeScreenKeyboard) window.closeScreenKeyboard(); }catch(_){} } } }).observe(el,{attributes:true,attributeFilter:['class']}); }catch(_){}
                     if(el.classList.contains('open')) add();
