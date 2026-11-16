@@ -6069,12 +6069,12 @@
                     +'</div>');
                 // 작업바: 선택된 항목이 있을 때만 표시(아이콘)
                 const AB='width:34px;height:34px;border:none;border-radius:9px;background:transparent;color:#374151;cursor:pointer;display:flex;align-items:center;justify-content:center;';
-                const _pickMode = !!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive()) || !!window.__sfPatientFilter;
+                const _pickMode = !!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive()) || !!window.__sfPatientFilter || !!window.__sfCloudView;
                 const toolbar='<div id="_sf-selbar" style="display:none;flex:none;background:#eef4f8;padding:7px 14px;align-items:center;gap:4px;border-bottom:1px solid #d7e3ee;">'
                     +'<span id="_sf-cnt" style="font-size:13px;font-weight:700;color:#0f2f52;padding:0 6px;">0개 선택</span>'
                     +'<div style="flex:1;"></div>'
                     +(_pickMode ? '<button id="_sf-pickattach" style="'+'background:linear-gradient(145deg,#ee0068,#c60058);color:#fff;border:0;border-radius:8px;padding:8px 14px;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap;box-shadow:0 4px 12px rgba(197,27,125,.24);">✔ 선택 첨부</button>' : '')
-                    +(window.__sfPatientFilter ? '' : ('<button class="_sf-act" data-act="preview" title="미리보기" style="'+AB+'">'+_SFIC.eye+'</button>'
+                    +((window.__sfPatientFilter||window.__sfCloudView) ? '' : ('<button class="_sf-act" data-act="preview" title="미리보기" style="'+AB+'">'+_SFIC.eye+'</button>'
                     +'<button class="_sf-act" data-act="share" title="공유 / 나에게 보내기" style="'+AB+'">'+_SFIC.share+'</button>'
                     +'<button class="_sf-act" data-act="rename" title="이름변경" style="'+AB+'">'+_SFIC.edit+'</button>'
                     +'<button class="_sf-act" data-act="delete" title="삭제" style="'+AB+'color:#dc2626;">'+_SFIC.trash+'</button>'))
@@ -6703,8 +6703,16 @@
                     const _roots=(window.RCFolder&&window.RCFolder.listRoots)?await window.RCFolder.listRoots():[];
                     if(window.__sfPatientFilter!==key) return;
                     const _rids=new Set((_roots||[]).map(r=>String(r.id)));
-                    // 접근 가능 = 현재 연결된 내 컴퓨터 로컬 폴더 or 클라우드(서버 cloud 플래그). 그 외(유령)는 숨김.
-                    files=files.filter(f=> _rids.has(String(f.rootId)) || f.cloud);
+                    // ☁️ 클라우드 목록(rpath + 파일명) — 서버 cloud 플래그 + 클라이언트 목록 이중확인(경로 형식 차이로 누락 방지). 30초 캐시.
+                    let _crp=null,_cbn=null;
+                    try{ const now=Date.now(); const cc=window.__sfCloudListCache;
+                        if(cc&&(now-cc.t)<30000){ _crp=cc.rp; _cbn=cc.bn; }
+                        else { let items=null; try{ items=(window.RCMirror&&window.RCMirror.list)?await window.RCMirror.list():((await (await fetch(API_URL+'/api/mirror/list')).json()).items||[]); }catch(_){ items=null; }
+                            if(items){ _crp=new Set(items.map(it=>String(it.rpath))); _cbn=new Set(items.map(it=>String(it.rpath).split('/').pop())); window.__sfCloudListCache={t:now,rp:_crp,bn:_cbn}; } }
+                    }catch(_){}
+                    if(window.__sfPatientFilter!==key) return;
+                    // 접근 가능 = 현재 연결된 내 컴퓨터 로컬 폴더 or 클라우드. 그 외(유령)는 숨김. 클라우드로 판정되면 f.cloud=true(링크 첨부 경로).
+                    files=files.filter(f=>{ const base=String(f.rpath||'').split('/').pop(); const isC=!!f.cloud||(_crp&&_crp.has(String(f.rpath)))||(_cbn&&_cbn.has(base)); if(isC) f.cloud=true; return _rids.has(String(f.rootId))||isC; });
                 }catch(_){}
                 try{ window.__sfCurPatientCard=c; }catch(_){}
                 // 🧹 메인 페이지 상단의 환자 헤더(선택됨/수정/삭제/안내) 제거 — 수정·삭제는 좌측 환자버튼의 연필 → 팝업에서
@@ -6798,8 +6806,9 @@
                 const groups=[]; const gmap={};
                 sorted.forEach(it=>{ const k=_key(it.mtime); if(!gmap[k]){ gmap[k]={label:_tsLabel(it.mtime),items:[]}; groups.push(gmap[k]); } gmap[k].items.push(it); });
                 const card=(it)=>{ const nm=_b(it.rpath); const sub=(it.rpath||'').split('/').slice(0,-1).join(' / ');
-                    return '<div class="rc-clview" data-rpath="'+ESC(it.rpath)+'"'+(_isImg(nm)?' data-img="1"':'')+' title="'+ESC(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
+                    return '<div class="rc-clview" draggable="true" data-rpath="'+ESC(it.rpath)+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'"'+(_isImg(nm)?' data-img="1"':'')+' title="'+ESC(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
                         +'<div class="rc-clthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="rc-clic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+_sfFileTile(nm)+'</div>'
+                        +'<div class="rc-cl-chk" style="position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);"></div>'
                         +'<button class="rc-clmenu" data-rpath="'+ESC(it.rpath)+'" title="열기·공유·삭제" style="position:absolute;bottom:5px;right:5px;width:26px;height:26px;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+_SFIC.dots+'</button></div>'
                         +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
                         +(sub?('<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub)+'</div>'):'')
@@ -6808,7 +6817,19 @@
                 const secs=groups.map(g=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(g.label)+' <span style="color:#94a3b8;font-weight:600;">('+g.items.length+')</span></div><div class="_sf-secgrid" style="'+secStyle+'">'+g.items.map(card).join('')+'</div></div>').join('');
                 grid.innerHTML=head+secs;
                 wireHead();
-                grid.querySelectorAll('.rc-clview').forEach(el=>el.addEventListener('click',()=>{ _sfOpenCloudFile(el.getAttribute('data-rpath')); }));
+                // ☁️ 클라우드 카드 = 내 컴퓨터 카드와 동일 UX: 체크박스 다중선택 + 드래그 + 클릭(폼열림시 첨부=14일 링크)
+                const _clSel=new Map();
+                const _clBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); const pa=ov.querySelector('#_sf-pickattach'); if(sb) sb.style.display=_clSel.size?'flex':'none'; if(cn) cn.textContent=_clSel.size+'개 선택'; if(pa) pa.textContent='✔ 선택 첨부 ('+_clSel.size+')'; };
+                grid.querySelectorAll('.rc-clview').forEach(el=>{ const rp=el.getAttribute('data-rpath'); const mime=el.getAttribute('data-mime')||''; const size=Number(el.getAttribute('data-size'))||0;
+                    const _desc=()=>({rootId:'', rpath:rp, cloud:true, mime, size});
+                    el.addEventListener('dragstart',(e)=>{ window.__sfDragFileRef=[{rootId:'', rpath:rp, fname:String(rp).split('/').pop(), mtime:0, modality:'', cloud:true, mime, size}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', String(rp).split('/').pop()); }catch(_){} });
+                    el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; },60); });
+                    const chk=el.querySelector('.rc-cl-chk'); if(chk){ chk.addEventListener('click',(e)=>{ e.stopPropagation(); const on=!_clSel.has(rp); if(on) _clSel.set(rp,_desc()); else _clSel.delete(rp); chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; _clBar(); }); }
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('.rc-clmenu')||e.target.closest('.rc-cl-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_desc()]); return; } _sfOpenCloudFile(rp); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('.rc-cl-chk')||e.target.closest('.rc-clmenu')) return; e.preventDefault(); e.stopPropagation(); window._sfAttachDescs([_desc()]); });
+                });
+                { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_clSel.size){ showToast('첨부할 파일을 선택하세요.'); return; } window._sfAttachDescs([..._clSel.values()]); }; }
+                { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _clSel.clear(); grid.querySelectorAll('.rc-clview').forEach(el=>{ el.style.outline=''; const c=el.querySelector('.rc-cl-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _clBar(); }; }
                 grid.querySelectorAll('.rc-clmenu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _sfCloudActions(el.getAttribute('data-rpath'), el); }));
                 _sfSharedBanner(grid);
                 // 🖼 썸네일: 로컬 폴더가 연결된 기기(앱/오너 PC)는 로컬 원본으로 실제 미리보기 생성(이미지·영상·DICOM 등),
