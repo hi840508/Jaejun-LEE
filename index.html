@@ -20130,6 +20130,41 @@ pdfjsScript,
                 _renderRxItems();
             };
             function _toothLabel(teeth){ return (teeth&&teeth.length) ? teeth.join(', ') : '치식 선택'; }
+            // 🦷 빌트인(인라인) 치식 차트 — 별도 팝업 없이 품목 카드 안에서 선택
+            function _rxToothArrays(){ return {
+                upU:[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28],
+                loU:[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38],
+                upC:[55,54,53,52,51,61,62,63,64,65],
+                loC:[85,84,83,82,81,71,72,73,74,75]
+            }; }
+            function _rxToothBtns(i, arr, teeth){
+                const sel=new Set((teeth||[]).map(Number));
+                return arr.map(n=>{ const on=sel.has(n); return '<button type="button" onclick="rxToothToggle('+i+','+n+')" style="width:25px;height:30px;border:1px solid '+(on?'#0f2f52':'#cbd5e1')+';background:'+(on?'#0f2f52':'#fff')+';color:'+(on?'#fff':'#334155')+';border-radius:5px;font-size:10.5px;font-weight:700;cursor:pointer;flex:none;">'+n+'</button>'; }).join('');
+            }
+            function _rxToothChartHtml(i, it){
+                const t=it.teeth||[]; const A=_rxToothArrays(); const child=!!it._child;
+                const childOn = child ? 'background:#0f2f52;color:#fff;border-color:#0f2f52;' : 'background:#fff;color:#334155;border-color:#cbd5e1;';
+                return '<div id="rx-tooth-wrap-'+i+'" style="border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#f8fafc;">'
+                    +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;">'
+                    +'<span style="font-size:11px;font-weight:800;color:#475569;">치식 선택</span>'
+                    +'<span style="display:flex;gap:4px;flex-wrap:wrap;">'
+                    +'<button type="button" onclick="rxToothPick('+i+',\'up\')" style="font-size:10.5px;padding:3px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">상악</button>'
+                    +'<button type="button" onclick="rxToothPick('+i+',\'lo\')" style="font-size:10.5px;padding:3px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">하악</button>'
+                    +'<button type="button" onclick="rxToothChild('+i+')" style="font-size:10.5px;padding:3px 8px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;'+childOn+'">유치</button>'
+                    +'<button type="button" onclick="rxToothClear('+i+')" style="font-size:10.5px;padding:3px 8px;border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;">초기화</button>'
+                    +'</span></div>'
+                    +'<div style="overflow-x:auto;">'
+                    +'<div style="display:flex;gap:2px;justify-content:center;margin-bottom:3px;">'+_rxToothBtns(i,(child?A.upC:A.upU),t)+'</div>'
+                    +'<div style="display:flex;gap:2px;justify-content:center;">'+_rxToothBtns(i,(child?A.loC:A.loU),t)+'</div>'
+                    +'</div>'
+                    +'<div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:6px;">선택: <b style="color:#0f2f52;">'+((t&&t.length)?t.slice().sort((a,b)=>a-b).join(', '):'-')+'</b></div>'
+                    +'</div>';
+            }
+            function _rxAfterTooth(i){ const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ _renderRxItems(); } else { const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i, st.items[i]); } }
+            window.rxToothToggle = function(i,t){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); const it=st.items[i]; it.teeth=(it.teeth||[]).slice(); const idx=it.teeth.indexOf(t); if(idx>=0) it.teeth.splice(idx,1); else it.teeth.push(t); it.teeth.sort((a,b)=>a-b); if(st.mode==='detail' && it.perTooth){ const keep=new Set(it.teeth.map(Number)); Object.keys(it.perTooth).forEach(k=>{ if(!keep.has(Number(k))) delete it.perTooth[k]; }); } _rxAfterTooth(i); };
+            window.rxToothPick = function(i,which){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); const it=st.items[i]; const A=_rxToothArrays(); const arr=(which==='up')?(it._child?A.upC:A.upU):(it._child?A.loC:A.loU); const s=new Set(it.teeth||[]); arr.forEach(n=>s.add(n)); it.teeth=Array.from(s).sort((a,b)=>a-b); _rxAfterTooth(i); };
+            window.rxToothChild = function(i){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); st.items[i]._child=!st.items[i]._child; _rxAfterTooth(i); };
+            window.rxToothClear = function(i){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); st.items[i].teeth=[]; if(st.mode==='detail' && st.items[i].perTooth) st.items[i].perTooth={}; _rxAfterTooth(i); };
             function _renderRxItems(){
                 const st = window.rxOrderState; const cont = document.getElementById('rx-items-container'); if(!cont||!st) return;
                 cont.innerHTML = st.items.map((it,i)=> st.mode==='simple' ? _simpleItemHtml(it,i) : _detailItemHtml(it,i)).join('');
@@ -20146,9 +20181,9 @@ pdfjsScript,
                         </div>
                         <button type="button" onclick="rxRemoveItem(${i})" style="border:1px solid #fecaca;background:#fff;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">품목 삭제</button>
                     </div>
-                    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-                        <div onclick="rxOpenTooth(${i})" style="width:130px;min-height:90px;border:1px solid #cbd5e1;border-radius:10px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;font-weight:700;color:#475569;cursor:pointer;background:#f8fafc;" id="rx-tooth-box-${i}">${esc(_toothLabel(it.teeth))}</div>
-                        <div style="flex:1;min-width:200px;">
+                    <div style="display:flex;flex-direction:column;gap:10px;">
+                        ${_rxToothChartHtml(i,it)}
+                        <div>
                             <div style="display:flex;gap:6px;align-items:center;">
                                 <input id="rx-name-${i}" value="${esc(it.name)}" placeholder="품목명" style="flex:1;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;">
                                 <button type="button" onclick="rxOpenPhrase(${i})" style="border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">상용구</button>
@@ -20198,9 +20233,9 @@ pdfjsScript,
                     </div>
                     <div style="font-size:11px;font-weight:800;color:#475569;margin-bottom:5px;">주문 유형</div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">${mkBtns}</div>
-                    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-                        <div onclick="rxOpenTooth(${i})" style="width:130px;min-height:90px;border:1px solid #cbd5e1;border-radius:10px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;font-weight:700;color:#475569;cursor:pointer;background:#f8fafc;" id="rx-tooth-box-${i}">${esc(_toothLabel(it.teeth))}</div>
-                        <div style="flex:1;min-width:200px;">
+                    <div style="display:flex;flex-direction:column;gap:10px;">
+                        ${_rxToothChartHtml(i,it)}
+                        <div>
                             <button type="button" onclick="rxOpenItemPicker(${i})" style="width:100%;border:1px solid #6ee7b7;background:#ecfdf5;color:#065f46;border-radius:8px;padding:9px;font-size:13px;font-weight:700;cursor:pointer;">＋ 보철 품목 선택 (수가)</button>
                             <div>${lines}</div>
                         </div>
