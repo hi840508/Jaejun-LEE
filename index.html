@@ -6703,9 +6703,16 @@
                     const _roots=(window.RCFolder&&window.RCFolder.listRoots)?await window.RCFolder.listRoots():[];
                     if(window.__sfPatientFilter!==key) return;
                     const _rids=new Set((_roots||[]).map(r=>String(r.id)));
-                    const _isCloud=f=>!!(f.cloud||f.inCloud||f.isCloud)||String(f.source||'')==='cloud'||String(f.rootId||'')==='cloud'||/클라우드|cloud/i.test(String(f.rootName||''));
+                    // ☁️ 클라우드 파일 목록(rpath 집합) — 30초 캐시
+                    let _cloudSet=null;
+                    try{ const now=Date.now(); const cc=window.__sfCloudListCache;
+                        if(cc && (now-cc.t)<30000){ _cloudSet=cc.set; }
+                        else { let items=[]; try{ items=(window.RCMirror&&window.RCMirror.list)?await window.RCMirror.list():((await (await fetch(API_URL+'/api/mirror/list')).json()).items||[]); }catch(_){ items=null; } if(items){ _cloudSet=new Set(items.map(it=>String(it.rpath))); window.__sfCloudListCache={t:now,set:_cloudSet}; } }
+                    }catch(_){ _cloudSet=null; }
+                    if(window.__sfPatientFilter!==key) return;
+                    const _isCloud=f=> _cloudSet ? _cloudSet.has(String(f.rpath)) : (!!(f.cloud||f.inCloud||f.isCloud)||String(f.source||'')==='cloud'||String(f.rootId||'')==='cloud'||/클라우드|cloud/i.test(String(f.rootName||'')));
                     const _avail=files.filter(f=> _rids.has(String(f.rootId)) || _isCloud(f));
-                    files=_avail;   // 접근 가능한 파일만
+                    files=_avail.map(f=> (_isCloud(f)&&!_rids.has(String(f.rootId)))?Object.assign({},f,{cloud:true}):f);   // 클라우드 전용 파일 표시
                 }catch(_){}
                 try{ window.__sfCurPatientCard=c; }catch(_){}
                 // 🧹 메인 페이지 상단의 환자 헤더(선택됨/수정/삭제/안내) 제거 — 수정·삭제는 좌측 환자버튼의 연필 → 팝업에서
@@ -6734,7 +6741,7 @@
                 const _updBar=()=>{ if(_selbar) _selbar.style.display=_ptSel.size?'flex':'none'; if(_cntEl) _cntEl.textContent=_ptSel.size+'개 선택'; if(_paBtn) _paBtn.textContent='✔ 선택 첨부 ('+_ptSel.size+')'; };
                 const _attachNow=async(descs)=>{ if(!descs||!descs.length){ showToast('첨부할 파일을 선택하세요.'); return; }
                     if(window.__sfPickResolve){ // 🔵 _sfPickFiles 콜백 흐름(풀스크린 선택) — 읽어서 콜백 후 닫기
-                        showToast('파일 읽는 중… ('+descs.length+'개)'); const files=[]; const R2=window.RCFolder; for(const d of descs){ let parts=d.parts, fn=d.fn; if(!parts){ parts=String(d.rpath||'').split('/'); fn=parts.pop(); } try{ let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} } const cb=window.__sfPickResolve; window.__sfPickResolve=null; try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){} if(cb) cb(files);
+                        showToast('파일 읽는 중… ('+descs.length+'개)'); const files=[]; for(const d of descs){ try{ const rp=d.rpath || ((d.parts?d.parts.join('/')+'/':'')+(d.fn||'')); const f=await window._sfResolveFileToFile({rootId:d.rootId, rpath:rp}); if(f) files.push(f); }catch(_){} } const cb=window.__sfPickResolve; window.__sfPickResolve=null; try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){} if(cb) cb(files);
                     } else { // 📎 폼(의뢰서/주문서) 첨부 모드 — 패널 유지, 선택 파일 첨부 후 선택 해제
                         const norm=descs.map(d=>({rootId:d.rootId, rpath: d.rpath || ((d.parts?d.parts.join('/')+'/':'')+(d.fn||''))}));
                         await window._sfAttachDescs(norm);
@@ -6953,13 +6960,22 @@
             window._sfAssignDraggedToPatient = async function(patientKey){ const refs=window.__sfDragFileRef||[]; if(!patientKey||!refs.length) return; let ok=0; for(const f of refs){ try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey, file:f})}); const d=await r.json(); if(r.ok&&d.ok) ok++; }catch(_){} } window.__sfDragFileRef=null; if(ok){ showToast('✅ '+ok+'개 파일을 환자에 연결했습니다.'); try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} } else showToast('연결 실패'); };
             // 📎 주문서(간편/상세/일반)가 열려 있으면 true — 그 때 파일 카드 '클릭'만으로 첨부(드래그 불필요, 확실)
             window.__sfFormAttachActive = function(){ try{ if(document.getElementById('rx-form-modal')) return true; const ofm=document.getElementById('order-form-modal'); if(ofm && ofm.style.display!=='none' && window.orderFormState && window.orderFormState.product) return true; }catch(_){} return false; };
+            // 📎 파일 설명(rootId/rpath)을 File로 해석 — 로컬(공유폴더) 우선, 실패 시 클라우드 프리사인 다운로드
+            window._sfResolveFileToFile = async function(d){
+                const R2=window.RCFolder; const parts=String(d.rpath||'').split('/'); const fn=parts.pop();
+                // 1) 로컬(연결된 폴더)
+                try{ let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) return f; }catch(_){}
+                // 2) 클라우드(프리사인 URL 다운로드)
+                try{ const dj=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:d.rpath})}).then(r=>r.json()); if(dj&&dj.url){ const resp=await fetch(dj.url); if(resp.ok){ const blob=await resp.blob(); return new File([blob], fn, {type: blob.type||'application/octet-stream'}); } } }catch(_){}
+                return null;
+            };
             // 📎 파일 설명(rootId/rpath)들을 File 객체로 읽어 열려있는 주문서에 첨부
             window._sfAttachDescs = async function(descs){
                 if(!descs||!descs.length) return;
                 showToast('파일 읽는 중… ('+descs.length+'개)');
-                const R2=window.RCFolder; const files=[];
-                for(const d of descs){ try{ let parts=String(d.rpath||'').split('/'); const fn=parts.pop(); let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} }
-                if(!files.length){ showToast('파일을 읽지 못했습니다. (이 파일은 로컬 공유폴더에서만 첨부 가능)'); return; }
+                const files=[];
+                for(const d of descs){ try{ const f=await window._sfResolveFileToFile(d); if(f) files.push(f); }catch(_){} }
+                if(!files.length){ showToast('파일을 읽지 못했습니다.'); return; }
                 if(document.getElementById('rx-form-modal') && window.rxOrderState){ window.rxAddFiles(files); showToast('📎 '+files.length+'개 첨부됨'); return; }
                 const ofm=document.getElementById('order-form-modal');
                 if(ofm && ofm.style.display!=='none' && window.orderFormState){ addBuyerFiles(files); showToast('📎 '+files.length+'개 첨부됨'); return; }
@@ -16106,8 +16122,8 @@ pdfjsScript,
                 if(ref && ref.length){
                     window.__sfDragFileRef=null;   // 즉시 소비 → 전역 드롭 핸들러 중복 방지
                     showToast('파일 읽는 중… ('+ref.length+'개)');
-                    const R2=window.RCFolder; const files=[];
-                    for(const d of ref){ try{ const parts=String(d.rpath||'').split('/'); const fn=parts.pop(); let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} }
+                    const files=[];
+                    for(const d of ref){ try{ const f=await window._sfResolveFileToFile(d); if(f) files.push(f); }catch(_){} }
                     if(files.length){ addBuyerFiles(files); showToast('📎 '+files.length+'개 첨부됨'); }
                 }
             });
@@ -20047,8 +20063,8 @@ pdfjsScript,
                     if(ref && ref.length){
                         window.__sfDragFileRef=null;   // 즉시 소비 → 전역 드롭 핸들러 중복 첨부 방지
                         showToast('파일 읽는 중… ('+ref.length+'개)');
-                        const R2=window.RCFolder; const files=[];
-                        for(const d of ref){ try{ const parts=String(d.rpath||'').split('/'); const fn=parts.pop(); let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} }
+                        const files=[];
+                        for(const d of ref){ try{ const f=await window._sfResolveFileToFile(d); if(f) files.push(f); }catch(_){} }
                         if(files.length){ window.rxAddFiles(files); showToast('📎 '+files.length+'개 첨부됨'); } else showToast('파일을 읽지 못했습니다.');
                         return;
                     }
