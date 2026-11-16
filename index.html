@@ -9797,9 +9797,11 @@
             // 📱 모바일: 카카오톡과 동일한 네이티브 키보드가 뜨도록 입력칸에 포커스(자체 키보드 미사용)
             if(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'') || (window.matchMedia && matchMedia('(pointer:coarse)').matches)){
                 try{
+                    const _dr=document.getElementById('messenger-drawer'); const _inDr=_dr&&_dr.classList.contains('open');
                     let el=window._oskTarget || document.activeElement;
                     const isInput = el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
-                    if(!isInput){ const s=document.getElementById('topbar-global-search'); if(s){ el=s; } }
+                    if(_inDr){ const ci=document.getElementById('main-chat-input'); if(ci && (!isInput || !_dr.contains(el))) el=ci; }   // 메신저 열려있으면 메신저 입력창
+                    else if(!isInput){ const s=document.getElementById('topbar-global-search'); if(s){ el=s; } }
                     if(el && el.focus){ el.focus(); try{ el.click(); }catch(_){} }
                 }catch(_){}
                 return;
@@ -9811,6 +9813,8 @@
             // 카톡풍 밝은 톤. 채팅 서랍이 열려있으면 그 폭/위치에 맞춰(채팅영역만 덮음), 아니면 하단 전체.
             const drawer = document.getElementById('messenger-drawer');
             const inDrawer = drawer && drawer.classList.contains('open');
+            // 🗨 메신저가 열려 있으면 화면 키보드는 메신저 입력창을 대상으로(타이핑이 메신저에 실시간 반영 · 메신저 유지)
+            if(inDrawer){ const ci=document.getElementById('main-chat-input'); if(ci && (!window._oskTarget || !drawer.contains(window._oskTarget))){ window._oskTarget=ci; try{ ci.focus(); }catch(_){} } }
             let posCss = 'left:0;right:0;';
             if(inDrawer){ try{ const r=drawer.getBoundingClientRect(); posCss = 'left:'+Math.round(r.left)+'px;width:'+Math.round(r.width)+'px;right:auto;'; }catch(_){} }
             p.style.cssText='position:fixed;'+posCss+'bottom:0;z-index:100050;background:#bcc6d1;box-shadow:0 -4px 18px rgba(0,0,0,.2);padding:6px 5px calc(6px + env(safe-area-inset-bottom,0px));user-select:none;touch-action:manipulation;max-height:52vh;overflow:auto;';
@@ -9907,8 +9911,8 @@
             const mBtn='<button data-k="__mouse" title="마우스(트랙패드) ↔ 키보드 전환" style="flex:none;padding:4px 10px;border:0;border-radius:7px;background:'+(mouse?'#d6006e':'#0f2f52')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">'+(mouse?'⌨️ 키보드':'🖱 마우스')+'</button>';
             let h='<div style="display:flex;align-items:center;gap:6px;padding:1px 4px 5px;">'
                 + '<span style="flex:1;min-width:0;color:#4b5563;font-size:12px;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+(mouse?'🖱 마우스 · 문질러 이동 · 탭=클릭':('⌨️ 화면 키보드 · '+(han?'한글':'영문')))+'</span>'
-                + mBtn + smallX + '</div>'
-                + '<div id="osk-preview" style="background:#fff;color:#111827;font-size:15px;font-weight:600;padding:8px 12px;border-radius:8px;margin:0 3px 6px;min-height:20px;letter-spacing:.3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;box-shadow:inset 0 0 0 1px #e5e7eb;">…▏</div>';
+                + mBtn + smallX + '</div>';
+                // ⌨️ 키보드 내부 미리보기 입력칸 제거 — 뒤 메신저 입력창에 실시간 반영되므로 혼동 방지
             if(mouse){ h+=_oskMousePadHtml(); }
             else {
               rowsEn.forEach(function(r){ h+='<div style="display:flex;">'+ r.map(function(c){ return key(label(c), 'CH:'+c); }).join('') +'</div>'; });
