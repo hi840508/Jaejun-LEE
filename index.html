@@ -9793,6 +9793,8 @@
             try{ const c=document.getElementById('osk-vcursor'); if(c) c.style.display='none'; }catch(_){}
             window._oskMouse=false;   // 다음에 열 때는 키보드 모드로 시작
         }
+        // 외부(메신저 닫힘 등)에서 화면 키보드 닫기
+        window.closeScreenKeyboard = function(){ try{ const p=document.getElementById('osk-panel'); if(p) _oskClose(p); }catch(_){} };
         window.openScreenKeyboard = function(){
             // 📱 모바일: 카카오톡과 동일한 네이티브 키보드가 뜨도록 입력칸에 포커스(자체 키보드 미사용)
             if(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'') || (window.matchMedia && matchMedia('(pointer:coarse)').matches)){
@@ -16941,10 +16943,11 @@ pdfjsScript,
                     let handler=null;
                     const add=()=>{ if(handler) return; handler=function(e){ try{ const t=e.target; if(!t) return; if(t.closest && t.closest('#'+drawerId)) return; if(keepSel && t.closest && t.closest(keepSel)) return; if(_isOverModal(t)) return; closeFn(); }catch(_){} }; setTimeout(()=>{ try{ document.addEventListener('click', handler, false); }catch(_){} }, 0); };
                     const remove=()=>{ if(handler){ try{ document.removeEventListener('click', handler, false); }catch(_){} handler=null; } };
-                    try{ new MutationObserver(()=>{ if(el.classList.contains('open')) add(); else remove(); }).observe(el,{attributes:true,attributeFilter:['class']}); }catch(_){}
+                    try{ new MutationObserver(()=>{ if(el.classList.contains('open')) add(); else { remove(); if(drawerId==='messenger-drawer'){ try{ if(window.closeScreenKeyboard) window.closeScreenKeyboard(); }catch(_){} } } }).observe(el,{attributes:true,attributeFilter:['class']}); }catch(_){}
                     if(el.classList.contains('open')) add();
                 }
-                _wireDrawerOutside('messenger-drawer', '[onclick*="toggleMessengerDrawer"], .yt-menu-btn', function(){ try{ const d=document.getElementById('messenger-drawer'); if(d) d.classList.remove('open'); }catch(_){} });
+                // #osk-panel(화면 키보드)은 서랍 밖이지만 클릭해도 메신저가 닫히지 않게 keepSel에 포함
+                _wireDrawerOutside('messenger-drawer', '[onclick*="toggleMessengerDrawer"], .yt-menu-btn, #osk-panel, #osk-vcursor', function(){ try{ const d=document.getElementById('messenger-drawer'); if(d) d.classList.remove('open'); }catch(_){} });
                 _wireDrawerOutside('yt-sidebar', '.yt-menu-btn, [onclick*="toggleSidebar"]', function(){ try{ const s=document.getElementById('yt-sidebar'); if(s) s.classList.remove('open'); document.body.classList.remove('sidebar-open'); }catch(_){} });
             }catch(_){}
         })();
