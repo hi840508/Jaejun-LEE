@@ -5973,9 +5973,9 @@
             const ov=document.createElement('div'); ov.id='rc-folder-page';
             // 📎 선택 모드(의뢰서/첨부에서 호출)면 모달 위(최상위·전체화면)로 띄운다. 아니면 기본(상단바 아래, 낮은 z-index).
             var _sfPick = !!window.__sfPickResolve;
-            // 📎 픽 모드도 docked로 — 상단바/좌측 사이드바(환자·저장소)/메신저 버튼을 가리지 않게. (RX 모달은 _sfPickFiles가 임시로 숨김)
-            ov.className='sf-docked';   // 🖥 데스크톱 상시 사이드바에 안 가리게 본문 영역으로 밀기
-            ov.style.cssText='position:fixed;top:56px;left:0;right:0;bottom:0;z-index:95;background:#f6f7f9;color:#1f2937;display:flex;flex-direction:column;';
+            if(!_sfPick) ov.className='sf-docked';   // 🖥 데스크톱 상시 사이드바에 안 가리게 본문 영역으로 밀기
+            // 📎 픽 모드(의뢰서 첨부)는 전체화면(모달 위) — 선택 후 파일이 의뢰서로 확실히 반환되게
+            ov.style.cssText='position:fixed;'+(_sfPick?'inset:0;z-index:100500;':'top:56px;left:0;right:0;bottom:0;z-index:95;')+'background:#f6f7f9;color:#1f2937;display:flex;flex-direction:column;';
             document.body.appendChild(ov); window.__sfOv=ov;
             // 🧭 좌측/하단 네비에서 '공유폴더' 항목을 현재 위치로 하이라이트(다른 탭 active 해제). switchTab으로 나가면 자동 해제됨.
             try{ if(!_sfPick){ document.querySelectorAll('.yt-sb-item,.yt-bn-item').forEach(function(el){ el.classList.remove('active'); }); var _sb=document.getElementById('sb-sharedfolder'); if(_sb) _sb.classList.add('active'); } }catch(_){}
@@ -7167,14 +7167,11 @@
         window._sfPickFiles = function(){
             return new Promise(function(resolve){
                 if(!(window.RCFolder && window.RCFolder.supported)){ showToast('이 기기는 공유폴더를 지원하지 않습니다(모바일/사파리). 내 PC에서 선택해 주세요.'); resolve([]); return; }
-                // 📎 의뢰서(RX) 모달을 잠시 숨겨 파일검색(docked)이 보이게 → 선택 후 복원
-                var _rxM = document.getElementById('rx-form-modal'); if(_rxM){ try{ _rxM.dataset.prevDisplay = _rxM.style.display||''; _rxM.style.display='none'; }catch(_){} }
-                var _restoreRx = function(){ try{ var m=document.getElementById('rx-form-modal'); if(m){ m.style.display = (m.dataset.prevDisplay!=null? m.dataset.prevDisplay : 'flex'); } }catch(_){} };
-                window.__sfPickResolve = function(files){ _restoreRx(); resolve(files||[]); };
-                window.__sfPickCancel = function(){ try{ window.__sfPickResolve=null; }catch(_){} _restoreRx(); resolve([]); };
+                window.__sfPickResolve = function(files){ resolve(files||[]); };
+                window.__sfPickCancel = function(){ try{ window.__sfPickResolve=null; }catch(_){} resolve([]); };
                 // 🧑‍⚕️ 선택된 환자가 있으면 그 환자 데이터(파일)를 먼저 보여준다
                 try{ if(window.__selectedPatientKey){ window.__sfPatientFilter=window.__selectedPatientKey; window.__sfCloudView=false; window.__sfStoreView=false; } }catch(_){}
-                try{ openSharedFolderPanel(); }catch(_){ _restoreRx(); resolve([]); }
+                try{ openSharedFolderPanel(); }catch(_){ resolve([]); }
                 showToast(window.__selectedPatientKey?'📁 선택 환자의 파일입니다. 첨부할 파일을 선택한 뒤 [✔ 선택 첨부]를 누르세요.':'📁 첨부할 파일을 선택한 뒤 [✔ 선택 첨부]를 누르세요.');
             });
         };
@@ -19894,10 +19891,18 @@ pdfjsScript,
                     </div>
                     <div style="margin-top:12px;">
                         <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <div onclick="rxPickFromFolder()" style="flex:1; min-width:180px; border:2px dashed #86efac;border-radius:10px;padding:16px;text-align:center;color:#16a34a;font-size:12px;cursor:pointer;background:#f0fdf4;">
-                                📁 공유폴더에서 선택<br><span style="color:#64748b;">받은/저장된 파일에서 바로 첨부</span>
+                            <div id="rx-folderzone" onclick="rxPickFromFolder()"
+                                 ondragover="event.preventDefault(); this.style.background='#dcfce7';"
+                                 ondragleave="this.style.background='#f0fdf4';"
+                                 ondrop="event.preventDefault(); this.style.background='#f0fdf4'; if(window.rxHandleDrop) window.rxHandleDrop(event);"
+                                 style="flex:1; min-width:180px; border:2px dashed #86efac;border-radius:10px;padding:16px;text-align:center;color:#16a34a;font-size:12px;cursor:pointer;background:#f0fdf4;">
+                                📁 공유폴더에서 선택 · 드래그&드롭<br><span style="color:#64748b;">환자·내컴퓨터·클라우드 파일 카드를 끌어다 놓거나 클릭하여 선택</span>
                             </div>
-                            <div id="rx-dropzone" onclick="document.getElementById('rx-file-input').click()" style="flex:1; min-width:180px; border:2px dashed #93c5fd;border-radius:10px;padding:16px;text-align:center;color:#0f2f52;font-size:12px;cursor:pointer;background:#f0f7ff;">
+                            <div id="rx-dropzone" onclick="document.getElementById('rx-file-input').click()"
+                                 ondragover="event.preventDefault(); this.style.background='#dbeafe';"
+                                 ondragleave="this.style.background='#f0f7ff';"
+                                 ondrop="event.preventDefault(); this.style.background='#f0f7ff'; if(window.rxHandleDrop) window.rxHandleDrop(event);"
+                                 style="flex:1; min-width:180px; border:2px dashed #93c5fd;border-radius:10px;padding:16px;text-align:center;color:#0f2f52;font-size:12px;cursor:pointer;background:#f0f7ff;">
                                 💻 내 PC에서 파일 첨부<br><span style="color:#64748b;">원본 의뢰서·쉐이드 이미지·구강 스캔 등 · 클릭하여 선택</span>
                             </div>
                         </div>
@@ -19911,6 +19916,22 @@ pdfjsScript,
             window._rxAmPm = 'am';
             window.rxSetAmPm = function(v){ window._rxAmPm = v; const am=document.getElementById('rx-ampm-am'), pm=document.getElementById('rx-ampm-pm'); if(am&&pm){ const on='padding:9px 16px;border:1px solid #0f2f52;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; const off='padding:9px 16px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; am.style.cssText=v==='am'?on:off; pm.style.cssText=v==='pm'?on:off; } };
             window.rxAddFiles = function(fileList){ const st=window.rxOrderState; if(!st) return; st.attachFiles = st.attachFiles.concat(Array.from(fileList||[])); _renderRxFileList(); };
+            // 📎 드롭존: OS 파일 드롭 + 파일검색(환자·내컴·클라우드) 파일 카드 드래그 → 첨부
+            window.rxHandleDrop = async function(ev){
+                try{
+                    const dt = ev && ev.dataTransfer;
+                    if(dt && dt.files && dt.files.length){ window.rxAddFiles(dt.files); showToast('📎 '+dt.files.length+'개 첨부됨'); return; }
+                    const ref = window.__sfDragFileRef;
+                    if(ref && ref.length){
+                        showToast('파일 읽는 중… ('+ref.length+'개)');
+                        const R2=window.RCFolder; const files=[];
+                        for(const d of ref){ try{ const parts=String(d.rpath||'').split('/'); const fn=parts.pop(); let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} }
+                        if(files.length){ window.rxAddFiles(files); showToast('📎 '+files.length+'개 첨부됨'); } else showToast('파일을 읽지 못했습니다.');
+                        return;
+                    }
+                    showToast('첨부할 파일을 끌어다 놓거나 클릭하여 선택하세요.');
+                }catch(_){}
+            };
             // 📁 공유폴더에서 파일 선택 → 첨부에 추가(별도 [내 PC 첨부] 버튼은 그대로 탐색기 호출)
             window.rxPickFromFolder = async function(){
                 if(!(window.RCFolder && window.RCFolder.supported)){ showToast('이 기기는 공유폴더 선택을 지원하지 않습니다. [내 PC에서 파일 첨부]를 이용해 주세요.'); return; }
