@@ -381,6 +381,9 @@
             #rc-folder-page.sf-docked { left: var(--sidebar-w) !important; }   /* 공유폴더(파일검색) 화면도 사이드바에 안 가리게 */
             /* 📋 의뢰서 우측 패널이 열리면 파일검색을 그 왼쪽까지만 (겹침 방지) */
             body.rx-docked #rc-folder-page { right: 440px !important; }
+            /* 📝 일반 주문서(order-form-modal)도 우측 도킹 패널로 */
+            #order-form-modal { background: transparent !important; justify-content: flex-end !important; align-items: stretch !important; padding: 0 !important; }
+            #order-form-modal .modal-content { position: fixed; top: 56px; right: 0; bottom: 0; width: 440px; max-width: 94vw; max-height: none; margin: 0; border-radius: 0; box-shadow: -8px 0 30px rgba(0,0,0,.18); display: flex; flex-direction: column; }
             /* 🖥 본문도 파일검색처럼 화면 가득 차게 — 1400px 중앙정렬 캡 해제(여백 최소화) */
             .yt-main { max-width: none !important; margin: 0 !important; }
             /* 🏷 상단 로고영역을 사이드바 폭과 동일하게 — 사이드바 우측 경계선이 상단바까지 연장되어 보이게 */
@@ -3341,9 +3344,12 @@
                 + '<button type="button" class="btn-export btn-export-pdf" onclick="exportTable(\''+a+'\',\''+t+'\',\'pdf\',\''+s+'\')" title="PDF로 저장(인쇄)">⬇ PDF</button>'
                 + '</div>';
         };
-        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+        function openModal(id) { document.getElementById(id).style.display = 'flex';
+            // 📝 일반 주문서도 우측 도킹 — 좌측 파일검색 함께 열어 드래그 첨부 가능하게
+            if(id==='order-form-modal'){ try{ document.body.classList.add('rx-docked'); if(window.__selectedPatientKey){ window.__sfPatientFilter=window.__selectedPatientKey; window.__sfCloudView=false; window.__sfStoreView=false; } if(!(window.__sfOv && document.body.contains(window.__sfOv)) && typeof openSharedFolderPanel==='function'){ window.__accountMode=false; openSharedFolderPanel(); } else if(window.__sfRender){ window.__sfRender(); } }catch(_){} }
+        }
         // 🚀 Z-index 클릭 먹통 원천 차단 (display none)
-        function closeModal(id) { const el = document.getElementById(id); if(el) el.style.display = 'none'; }
+        function closeModal(id) { const el = document.getElementById(id); if(el) el.style.display = 'none'; if(id==='order-form-modal'){ try{ document.body.classList.remove('rx-docked'); }catch(_){} } }
         // 📄 이용약관/개인정보취급방침 — 별도 팝업창으로 표시(닫기 버튼 + 창 닫기)
         function openLegalPopup(type) {
             const bodyEl = document.getElementById(type === 'privacy' ? 'privacy-body' : 'terms-body');
@@ -5478,6 +5484,8 @@
         window._sbOpenPatient = function(key){
             window.__accountMode=false;
             try{ window.__selectedPatientKey=key; window.__selectedPatient=(window.__sbPatients||[]).find(p=>p.patientKey===key)||{patientKey:key}; }catch(_){}
+            // 📋 의뢰서(우측 패널)가 열려 있으면 선택 환자로 주문 정보 자동 재입력
+            try{ if(document.getElementById('rx-form-modal') && window.rxAutofillSelectedPatient){ setTimeout(()=>{ try{ window.rxAutofillSelectedPatient(); }catch(_){} }, 60); } }catch(_){}
             // ☁️ 클라우드 우선 — 클라우드 보기 중이면 로컬로 튀지 않고 클라우드 유지
             if(window.__sfCloudView){ try{ window.__sfPatientFilter=null; }catch(_){} return; }
             window.__sfStoreView=false; window.__sfPatientFilter=key;
@@ -5956,6 +5964,8 @@
  "#rc-folder-page #_sf-grid{min-height:0;}",
  "#rc-folder-page img{-webkit-user-drag:none;user-drag:none;}",
  "#rc-folder-page .rc-gf *{pointer-events:none;}",
+ "#rc-folder-page ._pt-file[draggable='true'] ._pt-thumb{pointer-events:none;}",   /* 환자 파일 카드 썸네일이 드래그를 막지 않게(클릭은 카드로 전달) */
+ "#rc-folder-page ._pt-file ._pt-menu,#rc-folder-page ._pt-file ._pt-chk{pointer-events:auto;}",
  "#rc-folder-page .rc-gf .rc-gf-chk,#rc-folder-page .rc-gf .rc-more,#rc-folder-page .rc-gf .rc-clmenu,#rc-folder-page .rc-gf .rc-clup{pointer-events:auto;}",
  "#rc-folder-page ._sf-ic{width:36px;height:36px;border-radius:10px;border:1px solid #ededf0;background:#fff;color:#4b5563;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0;transition:background .12s;}",
  "#rc-folder-page ._sf-ic:hover{background:#f4f5f7;}",
@@ -19894,7 +19904,7 @@ pdfjsScript,
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                         <div><label style="font-size:11px;color:#64748b;">거래처 (자동)</label><div style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#eef2ff;font-size:13px;font-weight:600;color:#3730a3;">✅ ${esc(clinic)}</div></div>
-                        <div><label style="font-size:11px;color:#64748b;">담당 원장님</label><input id="rx-oi-doctor" placeholder="담당 원장님 이름" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>
+                        <div><label style="font-size:11px;color:#64748b;">담당 원장님</label><input id="rx-oi-doctor" list="rx-doctor-list" value="${esc((window._rxDefaultDoctor&&window._rxDefaultDoctor())||'')}" placeholder="담당 원장님 이름" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"><datalist id="rx-doctor-list">${(window._rxDoctorOptions&&window._rxDoctorOptions())||''}</datalist></div>
                         <div><label style="font-size:11px;color:#64748b;">환자명</label><input id="rx-oi-patient" placeholder="환자명" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"></div>
                         <div><label style="font-size:11px;color:#64748b;">생년월일</label><div style="display:flex;gap:4px;"><input id="rx-oi-birth" placeholder="생년월일 입력" style="flex:1;min-width:0;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"><input type="date" id="rx-oi-birth-picker" onchange="rxBirthFromPicker(this.value)" style="width:1px;opacity:0;position:absolute;pointer-events:none;"><button type="button" onclick="rxOpenBirthPicker()" title="달력에서 선택" style="flex:none;padding:0 12px;border:1px solid #cbd5e1;background:#f1f5f9;border-radius:8px;cursor:pointer;font-size:15px;">📅</button></div></div>
                         <div><label style="font-size:11px;color:#64748b;">성별</label><select id="rx-oi-gender" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;"><option value="">알 수 없음</option><option value="남성">남성</option><option value="여성">여성</option></select></div>
@@ -19908,22 +19918,16 @@ pdfjsScript,
                         </div>
                     </div>
                     <div style="margin-top:12px;">
-                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <div id="rx-folderzone" onclick="rxPickFromFolder()"
-                                 ondragover="event.preventDefault(); this.style.background='#dcfce7';"
-                                 ondragleave="this.style.background='#f0fdf4';"
-                                 ondrop="event.preventDefault(); this.style.background='#f0fdf4'; if(window.rxHandleDrop) window.rxHandleDrop(event);"
-                                 style="flex:1; min-width:180px; border:2px dashed #86efac;border-radius:10px;padding:16px;text-align:center;color:#16a34a;font-size:12px;cursor:pointer;background:#f0fdf4;">
-                                📁 공유폴더에서 선택 · 드래그&드롭<br><span style="color:#64748b;">환자·내컴퓨터·클라우드 파일 카드를 끌어다 놓거나 클릭하여 선택</span>
-                            </div>
-                            <div id="rx-dropzone" onclick="document.getElementById('rx-file-input').click()"
-                                 ondragover="event.preventDefault(); this.style.background='#dbeafe';"
-                                 ondragleave="this.style.background='#f0f7ff';"
-                                 ondrop="event.preventDefault(); this.style.background='#f0f7ff'; if(window.rxHandleDrop) window.rxHandleDrop(event);"
-                                 style="flex:1; min-width:180px; border:2px dashed #93c5fd;border-radius:10px;padding:16px;text-align:center;color:#0f2f52;font-size:12px;cursor:pointer;background:#f0f7ff;">
-                                💻 내 PC에서 파일 첨부<br><span style="color:#64748b;">원본 의뢰서·쉐이드 이미지·구강 스캔 등 · 클릭하여 선택</span>
-                            </div>
+                        <!-- 📎 통합 첨부 드롭존 — 드래그&드롭=첨부 / 클릭=내 PC 탐색기 -->
+                        <div id="rx-dropzone" onclick="document.getElementById('rx-file-input').click()"
+                             ondragover="event.preventDefault(); this.style.background='#eef4ff'; this.style.borderColor='#2563eb';"
+                             ondragleave="this.style.background='#f6f9ff'; this.style.borderColor='#93c5fd';"
+                             ondrop="event.preventDefault(); this.style.background='#f6f9ff'; this.style.borderColor='#93c5fd'; if(window.rxHandleDrop) window.rxHandleDrop(event);"
+                             style="border:2px dashed #93c5fd;border-radius:12px;padding:30px 16px;text-align:center;color:#0f2f52;font-size:13.5px;font-weight:700;cursor:pointer;background:#f6f9ff;">
+                            📎 파일 첨부 — 여기로 드래그&드롭 하거나 클릭
+                            <div style="color:#64748b;font-weight:500;font-size:12px;margin-top:8px;line-height:1.6;">왼쪽 파일검색의 <b>환자·내컴퓨터·클라우드 파일 카드</b>를 끌어다 놓으세요.<br>또는 클릭하면 <b>내 PC 탐색기</b>에서 파일을 선택합니다.</div>
                         </div>
+                        <div id="rx-folderzone" style="display:none;"></div>
                         <input type="file" id="rx-file-input" multiple style="display:none;" onchange="rxAddFiles(this.files)">
                         <div id="rx-file-list" style="margin-top:6px;"></div>
                     </div>
@@ -19934,6 +19938,10 @@ pdfjsScript,
             window._rxAmPm = 'am';
             window.rxSetAmPm = function(v){ window._rxAmPm = v; const am=document.getElementById('rx-ampm-am'), pm=document.getElementById('rx-ampm-pm'); if(am&&pm){ const on='padding:9px 16px;border:1px solid #0f2f52;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; const off='padding:9px 16px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; am.style.cssText=v==='am'?on:off; pm.style.cssText=v==='pm'?on:off; } };
             window.rxAddFiles = function(fileList){ const st=window.rxOrderState; if(!st) return; st.attachFiles = st.attachFiles.concat(Array.from(fileList||[])); _renderRxFileList(); };
+            // 👨‍⚕️ 담당 원장님 기본값 = 계정 대표 이름 / 과거 입력 이력(리스트박스)
+            window._rxDefaultDoctor = function(){ const cu=window.currentUser||{}; return cu.biz_ceo || cu.realname || cu.name || ''; };
+            window._rxDoctorOptions = function(){ let h=[]; try{ h=JSON.parse(localStorage.getItem('rx_doctor_history')||'[]'); }catch(_){ h=[]; } const def=window._rxDefaultDoctor(); if(def && h.indexOf(def)<0) h.unshift(def); const e=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); return h.slice(0,20).map(n=>'<option value="'+e(n)+'">').join(''); };
+            window._rxSaveDoctor = function(name){ name=String(name||'').trim(); if(!name) return; try{ let h=JSON.parse(localStorage.getItem('rx_doctor_history')||'[]'); h=h.filter(x=>x!==name); h.unshift(name); localStorage.setItem('rx_doctor_history', JSON.stringify(h.slice(0,20))); }catch(_){} };
             // 📎 드롭존: OS 파일 드롭 + 파일검색(환자·내컴·클라우드) 파일 카드 드래그 → 첨부
             window.rxHandleDrop = async function(ev){
                 try{
@@ -20597,6 +20605,7 @@ pdfjsScript,
                 const st = window.rxOrderState; if(!st||!st.product) return;
                 syncRxItemsFromDOM();
                 const info = readOrderInfo(); info.timestamp = new Date().toLocaleString('ko-KR');
+                try{ if(window._rxSaveDoctor) window._rxSaveDoctor(info.doctor); }catch(_){}
                 if(!info.patientName.trim()) return showToast('환자명을 입력해 주세요.');
                 if(st.mode==='detail'){
                     rxRecalc();
