@@ -6636,7 +6636,7 @@
                 const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
                 grid.innerHTML=head+'<div class="_sf-secgrid" style="'+secStyle+'">'+res.map(card).join('')+'</div>';
                 _wire();
-                grid.querySelectorAll('._sr-file').forEach(el=>el.addEventListener('click',()=>{ const rootId=el.getAttribute('data-rootid'); const rpath=el.getAttribute('data-rpath'); _sfOpenPmsFile({ rootId:rootId, rpath:rpath, fname:String(rpath).split('/').pop() }); }));
+                grid.querySelectorAll('._sr-file').forEach(el=>{ _sfWireFileCardAttach(el); el.addEventListener('click',()=>{ const rootId=el.getAttribute('data-rootid'); const rpath=el.getAttribute('data-rpath'); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:rootId, rpath:rpath}]); return; } _sfOpenPmsFile({ rootId:rootId, rpath:rpath, fname:String(rpath).split('/').pop() }); }); });
                 // 🖼 썸네일 지연 로드
                 (async()=>{ const R2=window.RCFolder; if(!R2||!R2.getFileAtRoot||!R2.getThumb) return; const cards=[].slice.call(grid.querySelectorAll('._sr-file')); let i=0; const CONC=3;
                     async function w(){ while(i<cards.length){ if(window.__sfSearchQuery!==q) return; const el=cards[i++]; const box=el.querySelector('._pt-thumb'); if(!box||box.querySelector('img')) continue; const rootId=el.getAttribute('data-rootid'); const parts=String(el.getAttribute('data-rpath')||'').split('/'); const fn=parts.pop();
@@ -6663,7 +6663,7 @@
                         +'</div>'; };
                 grid.innerHTML=head+'<div class="_sf-secgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;">'+res.map(card).join('')+'</div>';
                 wire();
-                grid.querySelectorAll('._sr-file').forEach(el=>el.addEventListener('click',()=>{ const rp=el.getAttribute('data-rpath'); _sfOpenPmsFile({ rootId:el.getAttribute('data-rootid'), rpath:rp, fname:String(rp).split('/').pop() }); }));
+                grid.querySelectorAll('._sr-file').forEach(el=>{ _sfWireFileCardAttach(el); el.addEventListener('click',()=>{ const rp=el.getAttribute('data-rpath'); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:el.getAttribute('data-rootid'), rpath:rp}]); return; } _sfOpenPmsFile({ rootId:el.getAttribute('data-rootid'), rpath:rp, fname:String(rp).split('/').pop() }); }); });
                 (async()=>{ const R2=window.RCFolder; if(!R2||!R2.getFileAtRoot||!R2.getThumb) return; try{ if(R2.csReady) await R2.csReady(); }catch(_){}
                     const cards=[].slice.call(grid.querySelectorAll('._sr-file')); let i=0; const CONC=3;
                     async function w(){ while(i<cards.length){ if(window.__sfDeepQuery!==q) return; const el=cards[i++]; const box=el.querySelector('._pt-thumb'); if(!box||box.querySelector('img')) continue; const rootId=el.getAttribute('data-rootid'); const parts=String(el.getAttribute('data-rpath')||'').split('/'); const fn=parts.pop();
@@ -6933,6 +6933,13 @@
                 if(ofm && ofm.style.display!=='none' && window.orderFormState){ addBuyerFiles(files); showToast('📎 '+files.length+'개 첨부됨'); return; }
                 showToast('첨부할 주문서가 열려있지 않습니다.');
             };
+            // 파일 카드(검색결과/환자)를 드래그 가능하게 + 드래그 참조 설정 (내컴퓨터 폴더카드와 동일 동작)
+            window._sfWireFileCardAttach = function(el){ try{
+                if(!el || el.__sfWired) return; el.__sfWired = true;
+                el.setAttribute('draggable','true');
+                el.addEventListener('dragstart',(e)=>{ const rootId=el.getAttribute('data-rootid')||''; const rpath=el.getAttribute('data-rpath')||''; window.__sfDragFileRef=[{rootId:rootId, rootName:'', rpath:rpath, fname:String(rpath).split('/').pop(), mtime:0, modality:''}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', String(rpath).split('/').pop()||'file'); }catch(_){} });
+                el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; }, 60); });
+            }catch(_){} };
             render();
         }
         // 📤 공유 대상 선택 — ①나에게 보내기(내 다른 기기, 온라인만 선택) ②친구. 선택 파일 R2 1회 업로드 후 각 대상으로 전송.
@@ -15996,9 +16003,9 @@ pdfjsScript,
 
                 <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin:14px 0 8px;">📂 추가 파일 첨부</div>
                 <div id="order-buyer-dropzone" class="dropzone" style="padding:20px;cursor:pointer;">
-                    <div style="font-size:24px;">📁</div>
-                    <div style="font-size:13px; margin-top:4px;font-weight:700;color:var(--primary,#d6006e);">클릭하면 공유폴더에서 선택</div>
-                    <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">왼쪽 파일 카드를 <b>클릭</b>하면 바로 첨부돼요 (드래그&드롭도 가능)</div>
+                    <div style="font-size:24px;">📎</div>
+                    <div style="font-size:13px; margin-top:4px;font-weight:700;color:var(--primary,#d6006e);">여기로 파일을 드래그 앤 드롭</div>
+                    <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">왼쪽 파일 카드를 끌어다 놓거나, 아래 버튼으로 내 PC에서 선택</div>
                     <button type="button" id="order-buyer-pc" style="margin-top:9px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;">💻 내 PC에서 선택</button>
                 </div>
                 <input type="file" id="order-buyer-files" multiple style="display:none;">
@@ -16045,10 +16052,7 @@ pdfjsScript,
             const obDz = document.getElementById('order-buyer-dropzone');
             const obIn = document.getElementById('order-buyer-files');
             // 클릭 = 공유폴더에서 선택(원본 의뢰서·쉐이드·구강스캔 등). '내 PC' 버튼은 OS 파일 선택기.
-            obDz.addEventListener('click', async (e) => {
-                if(e.target && e.target.id === 'order-buyer-pc'){ obIn.click(); return; }
-                try{ const files = await window._sfPickFiles(); if(files && files.length) addBuyerFiles(files); }catch(_){ obIn.click(); }
-            });
+            obDz.addEventListener('click', (e) => { obIn.click(); });
             obDz.addEventListener('dragover', e => { e.preventDefault(); obDz.classList.add('dragover'); });
             obDz.addEventListener('dragleave', e => { e.preventDefault(); obDz.classList.remove('dragover'); });
             obDz.addEventListener('drop', async e => {
@@ -19956,15 +19960,15 @@ pdfjsScript,
                     </div>
                     <div style="margin-top:12px;">
                         <div style="font-size:13px; font-weight:bold; color:var(--text-main); margin:0 0 6px;">📂 파일 첨부</div>
-                        <!-- 📎 통합 첨부 드롭존 — 간편/상세 의뢰서 공통(일반 주문서와 동일 UI) -->
+                        <!-- 📎 드롭존 — 드래그&드롭 + 내 PC에서 선택(공유폴더 클릭 선택 로직 제거) -->
                         <div id="rx-dropzone" class="dropzone" style="padding:20px;cursor:pointer;"
-                             onclick="if(window.rxDropzoneClick) rxDropzoneClick(event)"
+                             onclick="if(event.target.id!=='rx-pc-btn') document.getElementById('rx-file-input').click();"
                              ondragover="event.preventDefault(); this.classList.add('dragover');"
                              ondragleave="this.classList.remove('dragover');"
                              ondrop="event.preventDefault(); this.classList.remove('dragover'); if(window.rxHandleDrop) window.rxHandleDrop(event);">
-                            <div style="font-size:24px;">📁</div>
-                            <div style="font-size:13px; margin-top:4px;font-weight:700;color:var(--primary,#d6006e);">클릭하면 공유폴더에서 선택</div>
-                            <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">왼쪽 파일 카드를 <b>클릭</b>하면 바로 첨부돼요 (드래그&드롭도 가능)</div>
+                            <div style="font-size:24px;">📎</div>
+                            <div style="font-size:13px; margin-top:4px;font-weight:700;color:var(--primary,#d6006e);">여기로 파일을 드래그 앤 드롭</div>
+                            <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">왼쪽 파일 카드를 끌어다 놓거나, 아래 버튼으로 내 PC에서 선택</div>
                             <button type="button" id="rx-pc-btn" onclick="event.stopPropagation(); document.getElementById('rx-file-input').click();" style="margin-top:9px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;">💻 내 PC에서 선택</button>
                         </div>
                         <div id="rx-folderzone" style="display:none;"></div>
@@ -20178,70 +20182,68 @@ pdfjsScript,
                 if(nota==='palmer'){ return String(fdi%10); }   // 분면은 차트 위치로 구분
                 return String(fdi);
             }
-            // 치아 실루엣 경로(크라운 위/뿌리 아래 기준, viewBox 0 0 36 52)
-            // 치아 실루엣(크라운 위·뿌리 아래, viewBox 0 0 44 66) — 치종별 사실적 윤곽 + 홈(교합면)
-            window._rxToothLayout = window._rxToothLayout || 'row';   // 'row'(일렬) | 'arch'(아치형)
-            const _TOOTH = {
-                incisor:{ crown:'M10,9 Q10,6 13,6 L31,6 Q34,6 34,9 L32,30 Q22,34 12,30 Z', roots:'M14,29 Q12,45 17,58 Q20,63 22,63 Q24,63 27,58 Q32,45 30,29 Z', detail:'<path d="M18,8 L18,27 M26,8 L26,27" stroke="#cfd8e2" stroke-width="0.8" fill="none" opacity=".7"/>' },
-                canine:{ crown:'M22,5 Q24,5 25,9 L31,16 Q33,21 32,30 Q22,34 12,30 Q11,21 13,16 L19,9 Q20,5 22,5 Z', roots:'M14,29 Q11,47 17,61 Q20,66 22,66 Q24,66 27,61 Q33,47 30,29 Z', detail:'<path d="M22,10 L22,28" stroke="#cfd8e2" stroke-width="0.9" fill="none" opacity=".7"/>' },
-                premolar:{ crown:'M11,30 L12,18 Q14,10 18,14 Q22,18 26,14 Q30,10 32,18 L33,30 Q22,33 11,30 Z', roots:'M15,29 Q13,46 18,57 Q21,61 22,61 Q23,61 26,57 Q31,46 29,29 Z', detail:'<path d="M22,15 L22,28" stroke="#b9a98c" stroke-width="1" fill="none" opacity=".55"/>' },
-                molar:{ crown:'M8,30 L9,17 Q11,9 15,13 Q18,8 22,12 Q26,8 29,13 Q33,9 35,17 L36,30 Q22,34 8,30 Z', roots:'M12,29 Q10,44 13,54 Q15,58 17,58 Q18,53 18,29 Z M26,29 Q26,53 27,58 Q29,58 31,54 Q34,44 32,29 Z', detail:'<path d="M22,12 L22,29 M13,18 Q22,22 31,18" stroke="#b9a98c" stroke-width="1" fill="none" opacity=".5"/>' }
+            // 🦷 치아 라인아트 — 4분면(협측 측면도) + 아치형(교합면 상면도), 선택 표기법 라벨
+            window._rxToothLayout = window._rxToothLayout || 'quad';   // 'quad'(4분면) | 'arch'(아치형)
+            // 협측(측면) 치종별 경로: 크라운 위 / 뿌리 아래 (viewBox 0 0 44 104) — 상악은 세로 반전
+            const _TB = {
+                incisor:{ crown:'M11,12 Q11,7 16,6 Q22,4 28,6 Q33,7 33,12 L31,38 Q22,41 13,38 Z', roots:['M13,38 C12,62 15,86 22,99 C29,86 32,62 31,38 Q22,41 13,38 Z'], detail:'M18,11 L18,36 M26,11 L26,36' },
+                canine:{ crown:'M22,4 Q25,4 25,9 L32,18 Q35,24 32,39 Q22,42 12,39 Q9,24 12,18 L19,9 Q19,4 22,4 Z', roots:['M12,39 C9,66 14,90 22,101 C30,90 35,66 32,39 Q22,42 12,39 Z'], detail:'M22,10 L22,37' },
+                premolar:{ crown:'M11,39 L12,21 Q14,11 18,17 Q22,22 26,17 Q30,11 32,21 L33,39 Q22,42 11,39 Z', roots:['M14,39 C12,64 16,86 22,95 C28,86 32,64 30,39 Q22,42 14,39 Z'], detail:'M22,19 L22,37' },
+                molar:{ crown:'M7,39 L8,21 Q10,11 14,17 Q18,10 22,16 Q26,10 30,17 Q34,11 36,21 L37,39 Q22,43 7,39 Z', roots:['M11,39 C8,60 10,80 15,89 C17,80 17,52 18,39 Z','M20,39 C19,64 20,85 22,93 C24,85 25,64 24,39 Z','M26,39 C26,52 27,80 29,89 C34,80 36,60 33,39 Z'], detail:'M22,13 L22,38 M11,23 Q22,28 33,23' }
             };
-            function _rxToothDefs(){ return '<svg aria-hidden="true" width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden;">'
-                +'<defs>'
-                +'<linearGradient id="rxEnamel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#eef2f7"/><stop offset="1" stop-color="#d6dde6"/></linearGradient>'
-                +'<linearGradient id="rxRoot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2e8d3"/><stop offset="1" stop-color="#d7c296"/></linearGradient>'
-                +'<linearGradient id="rxEnamelOn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eaf2ff"/><stop offset=".5" stop-color="#bdd6ff"/><stop offset="1" stop-color="#8db6f4"/></linearGradient>'
-                +'<linearGradient id="rxRootOn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cfe0fb"/><stop offset="1" stop-color="#99b6e9"/></linearGradient>'
-                +'</defs></svg>'; }
-            function _toothSVG(fdi, on){
-                const T=_TOOTH[_toothType(fdi)]||_TOOTH.incisor;
-                const en=on?'url(#rxEnamelOn)':'url(#rxEnamel)', rt=on?'url(#rxRootOn)':'url(#rxRoot)';
-                const st=on?'#1d4ed8':'#a9b4c3', rst=on?'#2f6fe0':'#bda87f';
-                return '<path d="'+T.roots+'" fill="'+rt+'" stroke="'+rst+'" stroke-width="1" stroke-linejoin="round"/>'
-                    +'<path d="'+T.crown+'" fill="'+en+'" stroke="'+st+'" stroke-width="1.3" stroke-linejoin="round"/>'
-                    +(T.detail||'')
-                    +'<ellipse cx="16" cy="14" rx="4.2" ry="6.5" fill="#ffffff" opacity="'+(on?'.3':'.5')+'"/>';
+            // 교합면(상면) 치종별 경로 (viewBox 0 0 40 40)
+            const _TO = {
+                incisor:{ shape:'M9,17 Q20,13 31,17 Q33,20 31,23 Q20,27 9,23 Q7,20 9,17 Z', detail:'M9,20 Q20,21 31,20' },
+                canine:{ shape:'M20,11 Q29,15 28,25 Q20,30 12,25 Q11,15 20,11 Z', detail:'M20,12 L20,29' },
+                premolar:{ shape:'M11,13 Q20,10 29,13 Q32,20 29,27 Q20,30 11,27 Q8,20 11,13 Z', detail:'M11,20 Q20,22 29,20 M20,12 L20,28' },
+                molar:{ shape:'M10,12 Q20,9 30,12 Q33,20 30,28 Q20,31 10,28 Q7,20 10,12 Z', detail:'M20,10 L20,30 M9,20 Q20,22 31,20' }
+            };
+            function _toothBuccalSVG(fdi,on){ const T=_TB[_toothType(fdi)]||_TB.incisor; const f=on?'#dbeafe':'#ffffff', s=on?'#2563eb':'#566178', dl=on?'#8fb3ea':'#b9c2d0'; let o=''; (T.roots||[]).forEach(r=>{ o+='<path d="'+r+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.3" stroke-linejoin="round"/>'; }); o+='<path d="'+T.crown+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.4" stroke-linejoin="round"/>'; if(T.detail) o+='<path d="'+T.detail+'" fill="none" stroke="'+dl+'" stroke-width="0.9" stroke-linecap="round"/>'; return o; }
+            function _toothOcclusalSVG(fdi,on){ const T=_TO[_toothType(fdi)]||_TO.incisor; const f=on?'#dbeafe':'#ffffff', s=on?'#2563eb':'#566178', dl=on?'#8fb3ea':'#aab3c2'; return '<path d="'+T.shape+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.4" stroke-linejoin="round"/>'+(T.detail?'<path d="'+T.detail+'" fill="none" stroke="'+dl+'" stroke-width="0.9" stroke-linecap="round"/>':''); }
+            // ── 4분면(협측) ──
+            function _rxQuadHtml(i, upA, loA, teeth){
+                const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi'; const TW=25;
+                const DIV='<div style="width:2px;background:#cbd5e1;align-self:stretch;margin:0 3px;flex:none;"></div>';
+                const numCell=fdi=>'<div style="width:'+TW+'px;flex:none;text-align:center;font-size:13px;font-weight:800;color:'+(sel.has(fdi)?'#1d4ed8':'#475569')+';line-height:1.4;">'+_toothLabelFor(fdi,nota)+'</div>';
+                const toothCell=(fdi,flip)=>'<div style="position:relative;width:'+TW+'px;height:60px;flex:none;"><div style="width:100%;height:100%;transform:'+(flip?'scaleY(-1)':'none')+';"><svg viewBox="0 0 44 104" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="display:block;overflow:visible;">'+_toothBuccalSVG(fdi,sel.has(fdi))+'</svg></div><button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="position:absolute;inset:0;background:none;border:none;cursor:pointer;padding:0;"></button></div>';
+                const row=(arr,builder,ai)=>{ let h='<div style="display:flex;justify-content:center;align-items:center;">'; arr.forEach((fdi,k)=>{ if(k===8) h+=DIV; h+=builder(fdi); }); return h+'</div>'; };
+                const sideLbl='<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:#94a3b8;padding:0 4px 2px;"><span>우측 Right</span><span>좌측 Left</span></div>';
+                return '<div style="min-width:'+(TW*16+70)+'px;">'
+                    + sideLbl
+                    + row(upA, numCell)
+                    + row(upA, fdi=>toothCell(fdi,true))
+                    + '<div style="height:2px;background:#0f2f52;margin:4px 0;opacity:.3;"></div>'
+                    + row(loA, fdi=>toothCell(fdi,false))
+                    + row(loA, numCell)
+                    + '</div>';
             }
-            // 치아 1개 셀(모양 + 큰 번호 배지 + 투명 클릭버튼). opt: {flip, rot, abs, x, y, w, h}
-            function _toothCell(i, fdi, on, opt){ opt=opt||{};
-                const W=opt.w||26, H=opt.h||40, flip=!!opt.flip;
-                const lab=_toothLabelFor(fdi, window._rxToothNotation||'fdi');
-                const shapeTf = (opt.rot!=null) ? ('rotate('+opt.rot.toFixed(1)+'deg)') : (flip?'scaleY(-1)':'none');
-                const badgeTop = (opt.rot!=null) ? '50%' : (flip?'66%':'22%');
-                const pos = opt.abs ? ('position:absolute;left:'+(opt.x-W/2).toFixed(1)+'px;top:'+(opt.y-H/2).toFixed(1)+'px;') : 'position:relative;display:inline-block;vertical-align:top;';
-                const bBg=on?'#1d4ed8':'rgba(255,255,255,.92)', bC=on?'#fff':'#1f2937', bB=on?'#1d4ed8':'#c2ccda';
-                const fs=lab.length>=2?12:13;
-                return '<div style="'+pos+'width:'+W+'px;height:'+H+'px;">'
-                    +'<div style="width:100%;height:100%;transform:'+shapeTf+';transform-origin:center;"><svg viewBox="0 0 44 66" width="100%" height="100%" style="display:block;overflow:visible;">'+_toothSVG(fdi,on)+'</svg></div>'
-                    +'<div style="position:absolute;left:0;right:0;top:'+badgeTop+';transform:translateY(-50%);text-align:center;pointer-events:none;"><span style="display:inline-block;min-width:'+(lab.length>=2?20:17)+'px;padding:0 4px;border-radius:9px;background:'+bBg+';color:'+bC+';font-size:'+fs+'px;font-weight:800;line-height:1.5;border:1px solid '+bB+';box-shadow:0 1px 2px rgba(0,0,0,.2);">'+lab+'</span></div>'
-                    +'<button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="position:absolute;inset:0;background:none;border:none;cursor:pointer;padding:0;"></button>'
-                    +'</div>';
-            }
-            function _rxToothRow(i, arr, teeth, flip){ const sel=new Set((teeth||[]).map(Number)); return arr.map(fdi=>_toothCell(i,fdi,sel.has(fdi),{flip:flip,w:25,h:40})).join(''); }
-            function _rxToothArchHtml(i, upArr, loArr, teeth){
-                const sel=new Set((teeth||[]).map(Number)); const cells=[]; const cx=180, rx=146, W=28, H=44;
-                const place=(arr,cyBase,ry,upper)=>{ const n=arr.length; arr.forEach((fdi,k)=>{ const a=Math.PI*(1-k/(n-1)); const x=cx+rx*Math.cos(a); let y,vx,vy; if(upper){ y=cyBase-ry*Math.sin(a); vx=-rx*Math.cos(a); vy=ry*Math.sin(a); } else { y=cyBase+ry*Math.sin(a); vx=-rx*Math.cos(a); vy=-ry*Math.sin(a); } const rot=Math.atan2(vx,-vy)*180/Math.PI; cells.push(_toothCell(i,fdi,sel.has(fdi),{abs:true,x:x,y:y,rot:rot,w:W,h:H})); }); };
-                place(upArr, 126, 102, true); place(loArr, 150, 102, false);
-                return '<div style="position:relative;width:360px;height:286px;margin:0 auto;">'
-                    +'<div style="position:absolute;left:0;right:0;top:122px;text-align:center;font-size:10px;font-weight:700;color:#cbd5e1;pointer-events:none;">상악 ▲</div>'
-                    +'<div style="position:absolute;left:0;right:0;top:150px;text-align:center;font-size:10px;font-weight:700;color:#cbd5e1;pointer-events:none;">하악 ▼</div>'
+            // ── 아치형(교합면 상면도 · 타원 배열) ──
+            function _rxArchHtml(i, upA, loA, teeth){
+                const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi';
+                const cx=175, cy=158, rx=116, ry=132, TW=30; const cells=[];
+                const place=(arr,upper)=>{ const n=arr.length; arr.forEach((fdi,k)=>{ const t=n>1?k/(n-1):0.5; const th=Math.PI*(0.95-0.90*t);
+                    const x=cx+rx*Math.cos(th); const y=upper?(cy-ry*Math.sin(th)):(cy+ry*Math.sin(th));
+                    const nx=cx+(rx+24)*Math.cos(th); const ny=upper?(cy-(ry+24)*Math.sin(th)):(cy+(ry+24)*Math.sin(th));
+                    const ox=Math.cos(th), oy=upper?-Math.sin(th):Math.sin(th); const rot=Math.atan2(ox,-oy)*180/Math.PI;
+                    const on=sel.has(fdi);
+                    cells.push('<div style="position:absolute;left:'+(x-TW/2).toFixed(1)+'px;top:'+(y-TW/2).toFixed(1)+'px;width:'+TW+'px;height:'+TW+'px;"><div style="width:100%;height:100%;transform:rotate('+rot.toFixed(1)+'deg);transform-origin:center;"><svg viewBox="0 0 40 40" width="100%" height="100%" style="display:block;overflow:visible;">'+_toothOcclusalSVG(fdi,on)+'</svg></div><button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="position:absolute;inset:0;background:none;border:none;cursor:pointer;"></button></div>');
+                    cells.push('<div style="position:absolute;left:'+(nx-14).toFixed(1)+'px;top:'+(ny-9).toFixed(1)+'px;width:28px;text-align:center;font-size:12px;font-weight:800;color:'+(on?'#1d4ed8':'#475569')+';pointer-events:none;">'+_toothLabelFor(fdi,nota)+'</div>');
+                }); };
+                place(upA,true); place(loA,false);
+                return '<div style="position:relative;width:350px;height:330px;margin:0 auto;">'
+                    +'<div style="position:absolute;left:0;right:0;top:10px;text-align:center;font-size:10px;font-weight:700;color:#cbd5e1;pointer-events:none;">상악</div>'
+                    +'<div style="position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:10px;font-weight:700;color:#cbd5e1;pointer-events:none;">하악</div>'
                     +cells.join('')+'</div>';
             }
             function _rxNotaSel(){ const n=window._rxToothNotation||'fdi'; const o=(v,t)=>'<option value="'+v+'"'+(n===v?' selected':'')+'>'+t+'</option>'; return '<select onchange="rxSetToothNotation(this.value)" title="치식 표기법" style="font-size:10.5px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;">'+o('fdi','FDI')+o('palmer','Palmer')+o('universal','Universal')+'</select>'; }
-            function _rxLayoutSel(){ const L=window._rxToothLayout||'row'; const b=(v,t)=>'<button type="button" onclick="rxSetToothLayout(\''+v+'\')" style="font-size:10.5px;padding:3px 9px;border:1px solid '+(L===v?'#0f2f52':'#cbd5e1')+';background:'+(L===v?'#0f2f52':'#fff')+';color:'+(L===v?'#fff':'#475569')+';cursor:pointer;'+(v==='row'?'border-radius:6px 0 0 6px;':'border-radius:0 6px 6px 0;border-left:none;')+'">'+t+'</button>'; return '<span style="display:inline-flex;">'+b('row','일렬')+b('arch','아치형')+'</span>'; }
+            function _rxLayoutSel(){ const L=window._rxToothLayout||'quad'; const b=(v,t,pos)=>'<button type="button" onclick="rxSetToothLayout(\''+v+'\')" style="font-size:10.5px;padding:3px 9px;border:1px solid '+(L===v?'#0f2f52':'#cbd5e1')+';background:'+(L===v?'#0f2f52':'#fff')+';color:'+(L===v?'#fff':'#475569')+';cursor:pointer;'+(pos==='l'?'border-radius:6px 0 0 6px;':'border-radius:0 6px 6px 0;border-left:none;')+'">'+t+'</button>'; return '<span style="display:inline-flex;">'+b('quad','4분면','l')+b('arch','아치형','r')+'</span>'; }
             function _rxToothChartHtml(i, it){
-                const t=it.teeth||[]; const A=_rxToothArrays(); const child=!!it._child; const nota=window._rxToothNotation||'fdi'; const layout=window._rxToothLayout||'row';
+                const t=it.teeth||[]; const A=_rxToothArrays(); const child=!!it._child; const nota=window._rxToothNotation||'fdi'; const layout=window._rxToothLayout||'quad';
                 const childOn = child ? 'background:#0f2f52;color:#fff;border-color:#0f2f52;' : 'background:#fff;color:#334155;border-color:#cbd5e1;';
                 const selLbl = (t&&t.length) ? t.slice().sort((a,b)=>a-b).map(x=>_toothLabelFor(x,nota)).join(', ') : '-';
                 const upA=(child?A.upC:A.upU), loA=(child?A.loC:A.loU);
-                const teethArea = (layout==='arch')
-                    ? _rxToothArchHtml(i, upA, loA, t)
-                    : ('<div style="display:flex;gap:1px;justify-content:center;align-items:flex-end;">'+_rxToothRow(i,upA,t,true)+'</div>'
-                        +'<div style="height:1px;background:#e2e8f0;margin:3px 0;"></div>'
-                        +'<div style="display:flex;gap:1px;justify-content:center;align-items:flex-start;">'+_rxToothRow(i,loA,t,false)+'</div>');
+                const teethArea = (layout==='arch') ? _rxArchHtml(i, upA, loA, t) : _rxQuadHtml(i, upA, loA, t);
                 return '<div id="rx-tooth-wrap-'+i+'" style="border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#f8fafc;">'
-                    +_rxToothDefs()
                     +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;">'
                     +'<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span style="font-size:11px;font-weight:800;color:#475569;">치식 선택</span>'+_rxNotaSel()+_rxLayoutSel()+'</span>'
                     +'<span style="display:flex;gap:4px;flex-wrap:wrap;">'
