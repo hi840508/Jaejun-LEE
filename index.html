@@ -6069,15 +6069,15 @@
                     +'</div>');
                 // 작업바: 선택된 항목이 있을 때만 표시(아이콘)
                 const AB='width:34px;height:34px;border:none;border-radius:9px;background:transparent;color:#374151;cursor:pointer;display:flex;align-items:center;justify-content:center;';
-                const _pickMode = !!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive());
+                const _pickMode = !!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive()) || !!window.__sfPatientFilter;
                 const toolbar='<div id="_sf-selbar" style="display:none;flex:none;background:#eef4f8;padding:7px 14px;align-items:center;gap:4px;border-bottom:1px solid #d7e3ee;">'
                     +'<span id="_sf-cnt" style="font-size:13px;font-weight:700;color:#0f2f52;padding:0 6px;">0개 선택</span>'
                     +'<div style="flex:1;"></div>'
                     +(_pickMode ? '<button id="_sf-pickattach" style="'+'background:linear-gradient(145deg,#ee0068,#c60058);color:#fff;border:0;border-radius:8px;padding:8px 14px;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap;box-shadow:0 4px 12px rgba(197,27,125,.24);">✔ 선택 첨부</button>' : '')
-                    +'<button class="_sf-act" data-act="preview" title="미리보기" style="'+AB+'">'+_SFIC.eye+'</button>'
+                    +(window.__sfPatientFilter ? '' : ('<button class="_sf-act" data-act="preview" title="미리보기" style="'+AB+'">'+_SFIC.eye+'</button>'
                     +'<button class="_sf-act" data-act="share" title="공유 / 나에게 보내기" style="'+AB+'">'+_SFIC.share+'</button>'
                     +'<button class="_sf-act" data-act="rename" title="이름변경" style="'+AB+'">'+_SFIC.edit+'</button>'
-                    +'<button class="_sf-act" data-act="delete" title="삭제" style="'+AB+'color:#dc2626;">'+_SFIC.trash+'</button>'
+                    +'<button class="_sf-act" data-act="delete" title="삭제" style="'+AB+'color:#dc2626;">'+_SFIC.trash+'</button>'))
                     +'<button id="_sf-selclear" title="선택 해제" style="'+AB+'font-size:18px;">✕</button>'
                     +'</div>';
 
@@ -6708,8 +6708,8 @@
                 const card=(f)=>{ const nm=f.fname||''; const manual=(f.source==='manual'); const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):'';
                     return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" title="'+ESC(nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
                         +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+tile+'</div>'
-                        +(f.modality?('<span style="position:absolute;top:6px;left:7px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;z-index:2;">'+ESC(f.modality)+'</span>'):'')
-                        +'<button class="_pt-menu" title="열기·연결관리" style="position:absolute;top:6px;right:6px;padding:4px 9px;border:none;border-radius:8px;background:rgba(15,47,82,.92);color:#fff;font-size:11px;font-weight:800;cursor:pointer;z-index:3;">⋯</button></div>'
+                        +(f.modality?('<span style="position:absolute;top:6px;left:34px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;z-index:2;">'+ESC(f.modality)+'</span>'):'')
+                        +'<button class="_pt-menu" title="더보기" style="position:absolute;bottom:6px;right:6px;width:26px;height:26px;padding:0;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;font-size:15px;font-weight:800;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+((typeof _SFIC!=='undefined'&&_SFIC.dots)?_SFIC.dots:'⋯')+'</button></div>'
                         +'<div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
                         +'<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(f.rootName||'')+(manual?' · 🔗연결':'')+'</div>'
                         +'</div>'; };
@@ -6732,26 +6732,24 @@
                     }
                 };
                 const _toggle=(el,f,on)=>{ const k=f.rootId+'|'+f.rpath; if(on===undefined) on=!_ptSel.has(k); if(on){ const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); _ptSel.set(k,{rootId:f.rootId,parts,fn}); } else { _ptSel.delete(k); } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; const cb=el.querySelector('._pt-chk'); if(cb){ cb.style.background=on?'#0f2f52':'rgba(255,255,255,.92)'; cb.textContent=on?'✓':''; } _updBar(); };
-                if(_pick){
-                    grid.querySelectorAll('._pt-file').forEach(el=>{ const f=_byEl(el);
-                        const chk=document.createElement('div'); chk.className='_pt-chk'; chk.style.cssText='position:absolute;top:7px;left:7px;width:22px;height:22px;border-radius:6px;border:2px solid #0f2f52;background:rgba(255,255,255,.92);color:#fff;font-weight:900;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:5;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.2);'; el.appendChild(chk);
-                        chk.addEventListener('click',(e)=>{ e.stopPropagation(); _toggle(el,f); });
-                        el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')) return; _toggle(el,f); });
-                        el.addEventListener('dblclick',(e)=>{ e.preventDefault(); e.stopPropagation(); _attachNow([{rootId:f.rootId, rpath:f.rpath}]); });
-                    });
-                    if(_paBtn) _paBtn.onclick=()=>_attachNow([..._ptSel.values()]);
-                    // 선택 안내 바 항상 표시(0개여도 더블클릭 안내)
-                    if(_selbar){ _selbar.style.display='flex'; } _updBar();
-                    if(_cntEl && !_ptSel.size) _cntEl.textContent='더블클릭=즉시 첨부 · 체크=다중선택';
-                } else {
-                    grid.querySelectorAll('._pt-file').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')) return; const f=_byEl(el); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath}]); return; } _sfOpenPmsFile(f); }));
-                }
+                // 📋 환자 파일 카드 = 내 컴퓨터 카드와 동일 UX: 항상 체크박스(좌상단, 다중선택) · 카드클릭=열기(폼열림시 첨부) · 더블클릭=첨부 · 드래그
+                grid.querySelectorAll('._pt-file').forEach(el=>{ const f=_byEl(el);
+                    const chk=document.createElement('div'); chk.className='_pt-chk'; chk.style.cssText='position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);'; el.appendChild(chk);
+                    chk.addEventListener('click',(e)=>{ e.stopPropagation(); _toggle(el,f); });
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath}]); return; } _sfOpenPmsFile(f); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._pt-chk')||e.target.closest('._pt-menu')) return; e.preventDefault(); e.stopPropagation(); _attachNow([{rootId:f.rootId, rpath:f.rpath}]); });
+                });
+                if(_paBtn) _paBtn.onclick=()=>_attachNow([..._ptSel.values()]);
+                { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _ptSel.clear(); grid.querySelectorAll('._pt-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._pt-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _updBar(); }; }
+                _updBar();
                 // 🖱 환자 파일 카드 드래그 → 의뢰서(우측 패널) 첨부 드롭존으로 끌어 놓기
                 grid.querySelectorAll('._pt-file').forEach(el=>{ el.setAttribute('draggable','true');
                     el.addEventListener('dragstart',(e)=>{ const f=_byEl(el); window.__sfDragFileRef=[{rootId:f.rootId, rootName:'', rpath:f.rpath, fname:f.fname, mtime:0, modality:''}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', f.fname||'file'); }catch(_){} });
                     el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; }, 50); });
                 });
-                grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el); const items=[{label:'📂 열기',fn:()=>_sfOpenPmsFile(f)}];
+                grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el); const items=[{label:'👁 미리보기',fn:()=>_sfOpenPmsFile(f)}];
+                    items.push({label:'💾 원본 다운로드',fn:async()=>{ try{ const R2=window.RCFolder; const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); let file=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(f.rootId,parts,fn):null; if(!file&&R2&&R2.getFileAt){ try{ file=await R2.getFileAt(parts,fn); }catch(_){} } if(!file){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(file); const a=document.createElement('a'); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); }catch(err){ showToast('다운로드 실패'); } }});
+                    if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ items.push({label:'📎 의뢰서에 첨부',fn:()=>window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath}])}); }
                     if(f.manual){ items.push({label:'↔ 다른 환자로 이전',fn:()=>_sfPatientPicker(async(toKey)=>{ if(!toKey||toKey===key) return; try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:toKey, file:f})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('이전했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('이전 실패: '+((err&&err.message)||err)); } }) });
                         items.push({label:'🔗 연결 해제',danger:true,fn:async()=>{ try{ const r=await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:f.rootId,rpath:f.rpath})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('연결을 해제했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('해제 실패: '+((err&&err.message)||err)); } }}); }
                     const r=el.getBoundingClientRect(); ctxMenu(r.right-170, r.bottom+4, items); }));
