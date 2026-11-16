@@ -20179,48 +20179,84 @@ pdfjsScript,
                 return String(fdi);
             }
             // 치아 실루엣 경로(크라운 위/뿌리 아래 기준, viewBox 0 0 36 52)
-            const _TOOTH_PATHS = {
-                incisor:'M9,5 C9,2 27,2 27,5 L25,24 C25,29 11,29 11,24 Z M15,25 L14,47 C14,50 22,50 22,47 L21,25 Z',
-                canine:'M18,2 L27,10 L25,24 C25,29 11,29 11,24 L9,10 Z M15,25 L14,48 C14,51 22,51 22,48 L21,25 Z',
-                premolar:'M9,9 Q13,3 18,7 Q23,3 27,9 L26,24 C26,29 10,29 10,24 Z M15,25 L14,47 C14,50 22,50 22,47 L21,25 Z',
-                molar:'M5,9 Q9,3 13,7 Q18,2 23,7 Q27,3 31,9 L30,25 C30,31 6,31 6,25 Z M12,26 L11,46 C11,49 16,49 16,46 L16,26 Z M20,26 L20,46 C20,49 25,49 25,46 L24,26 Z'
+            // 치아 실루엣(크라운 위·뿌리 아래, viewBox 0 0 44 66) — 치종별 사실적 윤곽 + 홈(교합면)
+            window._rxToothLayout = window._rxToothLayout || 'row';   // 'row'(일렬) | 'arch'(아치형)
+            const _TOOTH = {
+                incisor:{ crown:'M10,9 Q10,6 13,6 L31,6 Q34,6 34,9 L32,30 Q22,34 12,30 Z', roots:'M14,29 Q12,45 17,58 Q20,63 22,63 Q24,63 27,58 Q32,45 30,29 Z', detail:'<path d="M18,8 L18,27 M26,8 L26,27" stroke="#cfd8e2" stroke-width="0.8" fill="none" opacity=".7"/>' },
+                canine:{ crown:'M22,5 Q24,5 25,9 L31,16 Q33,21 32,30 Q22,34 12,30 Q11,21 13,16 L19,9 Q20,5 22,5 Z', roots:'M14,29 Q11,47 17,61 Q20,66 22,66 Q24,66 27,61 Q33,47 30,29 Z', detail:'<path d="M22,10 L22,28" stroke="#cfd8e2" stroke-width="0.9" fill="none" opacity=".7"/>' },
+                premolar:{ crown:'M11,30 L12,18 Q14,10 18,14 Q22,18 26,14 Q30,10 32,18 L33,30 Q22,33 11,30 Z', roots:'M15,29 Q13,46 18,57 Q21,61 22,61 Q23,61 26,57 Q31,46 29,29 Z', detail:'<path d="M22,15 L22,28" stroke="#b9a98c" stroke-width="1" fill="none" opacity=".55"/>' },
+                molar:{ crown:'M8,30 L9,17 Q11,9 15,13 Q18,8 22,12 Q26,8 29,13 Q33,9 35,17 L36,30 Q22,34 8,30 Z', roots:'M12,29 Q10,44 13,54 Q15,58 17,58 Q18,53 18,29 Z M26,29 Q26,53 27,58 Q29,58 31,54 Q34,44 32,29 Z', detail:'<path d="M22,12 L22,29 M13,18 Q22,22 31,18" stroke="#b9a98c" stroke-width="1" fill="none" opacity=".5"/>' }
             };
-            function _rxToothBtns(i, arr, teeth, flip){
-                const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi';
-                return arr.map(fdi=>{ const on=sel.has(fdi); const d=_TOOTH_PATHS[_toothType(fdi)]||_TOOTH_PATHS.incisor;
-                    const fill=on?'#0f2f52':'#ffffff', stroke=on?'#0f2f52':'#c2ccda', tc=on?'#ffffff':'#334155';
-                    const lab=_toothLabelFor(fdi,nota); const labelY=flip?40:17; const fs=lab.length>=2?9:11;
-                    const inner='<path d="'+d+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.4" stroke-linejoin="round"/>';
-                    const shape=flip?('<g transform="translate(0,52) scale(1,-1)">'+inner+'</g>'):inner;
-                    return '<button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="flex:none;border:none;background:none;padding:0;margin:0;cursor:pointer;width:23px;line-height:0;">'
-                        +'<svg viewBox="0 0 36 52" width="23" height="34" style="display:block;overflow:visible;">'+shape
-                        +'<text x="18" y="'+labelY+'" text-anchor="middle" dominant-baseline="central" font-size="'+fs+'" font-weight="700" fill="'+tc+'" style="pointer-events:none;">'+lab+'</text>'
-                        +'</svg></button>';
-                }).join('');
+            function _rxToothDefs(){ return '<svg aria-hidden="true" width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden;">'
+                +'<defs>'
+                +'<linearGradient id="rxEnamel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#eef2f7"/><stop offset="1" stop-color="#d6dde6"/></linearGradient>'
+                +'<linearGradient id="rxRoot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2e8d3"/><stop offset="1" stop-color="#d7c296"/></linearGradient>'
+                +'<linearGradient id="rxEnamelOn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eaf2ff"/><stop offset=".5" stop-color="#bdd6ff"/><stop offset="1" stop-color="#8db6f4"/></linearGradient>'
+                +'<linearGradient id="rxRootOn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cfe0fb"/><stop offset="1" stop-color="#99b6e9"/></linearGradient>'
+                +'</defs></svg>'; }
+            function _toothSVG(fdi, on){
+                const T=_TOOTH[_toothType(fdi)]||_TOOTH.incisor;
+                const en=on?'url(#rxEnamelOn)':'url(#rxEnamel)', rt=on?'url(#rxRootOn)':'url(#rxRoot)';
+                const st=on?'#1d4ed8':'#a9b4c3', rst=on?'#2f6fe0':'#bda87f';
+                return '<path d="'+T.roots+'" fill="'+rt+'" stroke="'+rst+'" stroke-width="1" stroke-linejoin="round"/>'
+                    +'<path d="'+T.crown+'" fill="'+en+'" stroke="'+st+'" stroke-width="1.3" stroke-linejoin="round"/>'
+                    +(T.detail||'')
+                    +'<ellipse cx="16" cy="14" rx="4.2" ry="6.5" fill="#ffffff" opacity="'+(on?'.3':'.5')+'"/>';
+            }
+            // 치아 1개 셀(모양 + 큰 번호 배지 + 투명 클릭버튼). opt: {flip, rot, abs, x, y, w, h}
+            function _toothCell(i, fdi, on, opt){ opt=opt||{};
+                const W=opt.w||26, H=opt.h||40, flip=!!opt.flip;
+                const lab=_toothLabelFor(fdi, window._rxToothNotation||'fdi');
+                const shapeTf = (opt.rot!=null) ? ('rotate('+opt.rot.toFixed(1)+'deg)') : (flip?'scaleY(-1)':'none');
+                const badgeTop = (opt.rot!=null) ? '50%' : (flip?'66%':'22%');
+                const pos = opt.abs ? ('position:absolute;left:'+(opt.x-W/2).toFixed(1)+'px;top:'+(opt.y-H/2).toFixed(1)+'px;') : 'position:relative;display:inline-block;vertical-align:top;';
+                const bBg=on?'#1d4ed8':'rgba(255,255,255,.92)', bC=on?'#fff':'#1f2937', bB=on?'#1d4ed8':'#c2ccda';
+                const fs=lab.length>=2?12:13;
+                return '<div style="'+pos+'width:'+W+'px;height:'+H+'px;">'
+                    +'<div style="width:100%;height:100%;transform:'+shapeTf+';transform-origin:center;"><svg viewBox="0 0 44 66" width="100%" height="100%" style="display:block;overflow:visible;">'+_toothSVG(fdi,on)+'</svg></div>'
+                    +'<div style="position:absolute;left:0;right:0;top:'+badgeTop+';transform:translateY(-50%);text-align:center;pointer-events:none;"><span style="display:inline-block;min-width:'+(lab.length>=2?20:17)+'px;padding:0 4px;border-radius:9px;background:'+bBg+';color:'+bC+';font-size:'+fs+'px;font-weight:800;line-height:1.5;border:1px solid '+bB+';box-shadow:0 1px 2px rgba(0,0,0,.2);">'+lab+'</span></div>'
+                    +'<button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="position:absolute;inset:0;background:none;border:none;cursor:pointer;padding:0;"></button>'
+                    +'</div>';
+            }
+            function _rxToothRow(i, arr, teeth, flip){ const sel=new Set((teeth||[]).map(Number)); return arr.map(fdi=>_toothCell(i,fdi,sel.has(fdi),{flip:flip,w:25,h:40})).join(''); }
+            function _rxToothArchHtml(i, upArr, loArr, teeth){
+                const sel=new Set((teeth||[]).map(Number)); const cells=[]; const cx=180, rx=146, W=28, H=44;
+                const place=(arr,cyBase,ry,upper)=>{ const n=arr.length; arr.forEach((fdi,k)=>{ const a=Math.PI*(1-k/(n-1)); const x=cx+rx*Math.cos(a); let y,vx,vy; if(upper){ y=cyBase-ry*Math.sin(a); vx=-rx*Math.cos(a); vy=ry*Math.sin(a); } else { y=cyBase+ry*Math.sin(a); vx=-rx*Math.cos(a); vy=-ry*Math.sin(a); } const rot=Math.atan2(vx,-vy)*180/Math.PI; cells.push(_toothCell(i,fdi,sel.has(fdi),{abs:true,x:x,y:y,rot:rot,w:W,h:H})); }); };
+                place(upArr, 126, 102, true); place(loArr, 150, 102, false);
+                return '<div style="position:relative;width:360px;height:286px;margin:0 auto;">'
+                    +'<div style="position:absolute;left:0;right:0;top:122px;text-align:center;font-size:10px;font-weight:700;color:#cbd5e1;pointer-events:none;">상악 ▲</div>'
+                    +'<div style="position:absolute;left:0;right:0;top:150px;text-align:center;font-size:10px;font-weight:700;color:#cbd5e1;pointer-events:none;">하악 ▼</div>'
+                    +cells.join('')+'</div>';
             }
             function _rxNotaSel(){ const n=window._rxToothNotation||'fdi'; const o=(v,t)=>'<option value="'+v+'"'+(n===v?' selected':'')+'>'+t+'</option>'; return '<select onchange="rxSetToothNotation(this.value)" title="치식 표기법" style="font-size:10.5px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;">'+o('fdi','FDI')+o('palmer','Palmer')+o('universal','Universal')+'</select>'; }
+            function _rxLayoutSel(){ const L=window._rxToothLayout||'row'; const b=(v,t)=>'<button type="button" onclick="rxSetToothLayout(\''+v+'\')" style="font-size:10.5px;padding:3px 9px;border:1px solid '+(L===v?'#0f2f52':'#cbd5e1')+';background:'+(L===v?'#0f2f52':'#fff')+';color:'+(L===v?'#fff':'#475569')+';cursor:pointer;'+(v==='row'?'border-radius:6px 0 0 6px;':'border-radius:0 6px 6px 0;border-left:none;')+'">'+t+'</button>'; return '<span style="display:inline-flex;">'+b('row','일렬')+b('arch','아치형')+'</span>'; }
             function _rxToothChartHtml(i, it){
-                const t=it.teeth||[]; const A=_rxToothArrays(); const child=!!it._child; const nota=window._rxToothNotation||'fdi';
+                const t=it.teeth||[]; const A=_rxToothArrays(); const child=!!it._child; const nota=window._rxToothNotation||'fdi'; const layout=window._rxToothLayout||'row';
                 const childOn = child ? 'background:#0f2f52;color:#fff;border-color:#0f2f52;' : 'background:#fff;color:#334155;border-color:#cbd5e1;';
                 const selLbl = (t&&t.length) ? t.slice().sort((a,b)=>a-b).map(x=>_toothLabelFor(x,nota)).join(', ') : '-';
+                const upA=(child?A.upC:A.upU), loA=(child?A.loC:A.loU);
+                const teethArea = (layout==='arch')
+                    ? _rxToothArchHtml(i, upA, loA, t)
+                    : ('<div style="display:flex;gap:1px;justify-content:center;align-items:flex-end;">'+_rxToothRow(i,upA,t,true)+'</div>'
+                        +'<div style="height:1px;background:#e2e8f0;margin:3px 0;"></div>'
+                        +'<div style="display:flex;gap:1px;justify-content:center;align-items:flex-start;">'+_rxToothRow(i,loA,t,false)+'</div>');
                 return '<div id="rx-tooth-wrap-'+i+'" style="border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#f8fafc;">'
+                    +_rxToothDefs()
                     +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;">'
-                    +'<span style="display:flex;align-items:center;gap:6px;"><span style="font-size:11px;font-weight:800;color:#475569;">치식 선택</span>'+_rxNotaSel()+'</span>'
+                    +'<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span style="font-size:11px;font-weight:800;color:#475569;">치식 선택</span>'+_rxNotaSel()+_rxLayoutSel()+'</span>'
                     +'<span style="display:flex;gap:4px;flex-wrap:wrap;">'
                     +'<button type="button" onclick="rxToothPick('+i+',\'up\')" style="font-size:10.5px;padding:3px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">상악</button>'
                     +'<button type="button" onclick="rxToothPick('+i+',\'lo\')" style="font-size:10.5px;padding:3px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">하악</button>'
                     +'<button type="button" onclick="rxToothChild('+i+')" style="font-size:10.5px;padding:3px 8px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;'+childOn+'">유치</button>'
                     +'<button type="button" onclick="rxToothClear('+i+')" style="font-size:10.5px;padding:3px 8px;border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;">초기화</button>'
                     +'</span></div>'
-                    +'<div style="overflow-x:auto;padding:2px 0;">'
-                    +'<div style="display:flex;gap:1px;justify-content:center;align-items:flex-end;">'+_rxToothBtns(i,(child?A.upC:A.upU),t,true)+'</div>'
-                    +'<div style="height:1px;background:#e2e8f0;margin:3px 0;"></div>'
-                    +'<div style="display:flex;gap:1px;justify-content:center;align-items:flex-start;">'+_rxToothBtns(i,(child?A.loC:A.loU),t,false)+'</div>'
-                    +'</div>'
+                    +'<div style="overflow-x:auto;padding:2px 0;">'+teethArea+'</div>'
                     +'<div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:6px;">선택: <b style="color:#0f2f52;">'+selLbl+'</b></div>'
                     +'</div>';
             }
-            window.rxSetToothNotation = function(v){ window._rxToothNotation=v; const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ try{ syncRxItemsFromDOM(); }catch(_){} _renderRxItems(); } else { st.items.forEach((it,i)=>{ const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i,it); }); } };
+            window.rxSetToothNotation = function(v){ window._rxToothNotation=v; _rxRerenderCharts(); };
+            window.rxSetToothLayout = function(v){ window._rxToothLayout=v; _rxRerenderCharts(); };
+            function _rxRerenderCharts(){ const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ try{ syncRxItemsFromDOM(); }catch(_){} _renderRxItems(); } else { st.items.forEach((it,i)=>{ const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i,it); }); } }
             function _rxAfterTooth(i){ const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ _renderRxItems(); } else { const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i, st.items[i]); } }
             window.rxToothToggle = function(i,t){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); const it=st.items[i]; it.teeth=(it.teeth||[]).slice(); const idx=it.teeth.indexOf(t); if(idx>=0) it.teeth.splice(idx,1); else it.teeth.push(t); it.teeth.sort((a,b)=>a-b); if(st.mode==='detail' && it.perTooth){ const keep=new Set(it.teeth.map(Number)); Object.keys(it.perTooth).forEach(k=>{ if(!keep.has(Number(k))) delete it.perTooth[k]; }); } _rxAfterTooth(i); };
             window.rxToothPick = function(i,which){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); const it=st.items[i]; const A=_rxToothArrays(); const arr=(which==='up')?(it._child?A.upC:A.upU):(it._child?A.loC:A.loU); const s=new Set(it.teeth||[]); arr.forEach(n=>s.add(n)); it.teeth=Array.from(s).sort((a,b)=>a-b); _rxAfterTooth(i); };
