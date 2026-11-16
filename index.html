@@ -379,6 +379,8 @@
             .yt-layout { padding-left: var(--sidebar-w); }
             .yt-menu-btn { display: none; }
             #rc-folder-page.sf-docked { left: var(--sidebar-w) !important; }   /* 공유폴더(파일검색) 화면도 사이드바에 안 가리게 */
+            /* 📋 의뢰서 우측 패널이 열리면 파일검색을 그 왼쪽까지만 (겹침 방지) */
+            body.rx-docked #rc-folder-page { right: 440px !important; }
             /* 🖥 본문도 파일검색처럼 화면 가득 차게 — 1400px 중앙정렬 캡 해제(여백 최소화) */
             .yt-main { max-width: none !important; margin: 0 !important; }
             /* 🏷 상단 로고영역을 사이드바 폭과 동일하게 — 사이드바 우측 경계선이 상단바까지 연장되어 보이게 */
@@ -6706,6 +6708,11 @@
                 } else {
                     grid.querySelectorAll('._pt-file').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')) return; _sfOpenPmsFile(_byEl(el)); }));
                 }
+                // 🖱 환자 파일 카드 드래그 → 의뢰서(우측 패널) 첨부 드롭존으로 끌어 놓기
+                grid.querySelectorAll('._pt-file').forEach(el=>{ el.setAttribute('draggable','true');
+                    el.addEventListener('dragstart',(e)=>{ const f=_byEl(el); window.__sfDragFileRef=[{rootId:f.rootId, rootName:'', rpath:f.rpath, fname:f.fname, mtime:0, modality:''}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', f.fname||'file'); }catch(_){} });
+                    el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; }, 50); });
+                });
                 grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el); const items=[{label:'📂 열기',fn:()=>_sfOpenPmsFile(f)}];
                     if(f.manual){ items.push({label:'↔ 다른 환자로 이전',fn:()=>_sfPatientPicker(async(toKey)=>{ if(!toKey||toKey===key) return; try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:toKey, file:f})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('이전했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('이전 실패: '+((err&&err.message)||err)); } }) });
                         items.push({label:'🔗 연결 해제',danger:true,fn:async()=>{ try{ const r=await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:f.rootId,rpath:f.rpath})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('연결을 해제했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('해제 실패: '+((err&&err.message)||err)); } }}); }
@@ -19522,13 +19529,24 @@ pdfjsScript,
             function overlay(id, innerHtml, maxWidth){
                 const old = document.getElementById(id); if(old) old.remove();
                 const ov = document.createElement('div'); ov.id = id;
-                ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;display:flex;align-items:center;justify-content:center;padding:14px;';
-                ov.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:${maxWidth||720}px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.35);">${innerHtml}</div>`;
+                if(id==='rx-form-modal'){
+                    // 📋 의뢰서 = 우측 도킹 패널(배경 없음 → 좌측 파일검색/사이드바 그대로 사용, 파일 카드 드래그 첨부 가능)
+                    ov.style.cssText = 'position:fixed;top:56px;right:0;bottom:0;width:'+(440)+'px;max-width:94vw;z-index:4002;display:flex;flex-direction:column;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);border-left:1px solid var(--border-color);';
+                    ov.innerHTML = '<div style="flex:1;overflow:auto;">'+innerHtml+'</div>';
+                    // ✕ 버튼으로만 닫힘(바깥 클릭=파일검색 조작). 열릴 때 파일검색을 함께 띄워 드래그 첨부 가능하게.
+                    try{ document.body.classList.add('rx-docked'); }catch(_){}
+                    // 선택 환자가 있으면 그 환자 파일을 먼저 보여줌(드래그 첨부용)
+                    try{ if(window.__selectedPatientKey){ window.__sfPatientFilter=window.__selectedPatientKey; window.__sfCloudView=false; window.__sfStoreView=false; } }catch(_){}
+                    try{ if(!(window.__sfOv && document.body.contains(window.__sfOv)) && typeof openSharedFolderPanel==='function'){ window.__accountMode=false; openSharedFolderPanel(); } else if(window.__sfRender){ window.__sfRender(); } }catch(_){}
+                } else {
+                    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;display:flex;align-items:center;justify-content:center;padding:14px;';
+                    ov.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:${maxWidth||720}px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.35);">${innerHtml}</div>`;
+                    ov.onclick = e => { if(e.target === ov) ov.remove(); };
+                }
                 document.body.appendChild(ov);
-                ov.onclick = e => { if(e.target === ov) ov.remove(); };
                 return ov;
             }
-            const closeOv = id => { const el = document.getElementById(id); if(el) el.remove(); };
+            const closeOv = id => { const el = document.getElementById(id); if(el) el.remove(); if(id==='rx-form-modal'){ try{ document.body.classList.remove('rx-docked'); }catch(_){} } };
             window.rxCloseOverlay = closeOv;
 
             /* ---------- 치식(FDI) 차트 ---------- */
@@ -19934,6 +19952,12 @@ pdfjsScript,
             };
             // 📁 공유폴더에서 파일 선택 → 첨부에 추가(별도 [내 PC 첨부] 버튼은 그대로 탐색기 호출)
             window.rxPickFromFolder = async function(){
+                // 📋 우측 패널 모드: 좌측 파일검색에서 파일 카드를 드래그해 이 영역에 드롭
+                if(document.body.classList.contains('rx-docked')){
+                    try{ if(!(window.__sfOv && document.body.contains(window.__sfOv)) && window.openSharedFolderPanel){ window.__accountMode=false; openSharedFolderPanel(); } }catch(_){}
+                    showToast('← 왼쪽 파일검색에서 파일 카드를 끌어다 이 영역에 놓으세요. (환자·내컴퓨터·클라우드)');
+                    return;
+                }
                 if(!(window.RCFolder && window.RCFolder.supported)){ showToast('이 기기는 공유폴더 선택을 지원하지 않습니다. [내 PC에서 파일 첨부]를 이용해 주세요.'); return; }
                 try{ const files = window._sfPickFiles ? await window._sfPickFiles() : []; if(files && files.length){ window.rxAddFiles(files); showToast('📎 공유폴더에서 '+files.length+'개 첨부됨'); } }catch(_){ }
             };
