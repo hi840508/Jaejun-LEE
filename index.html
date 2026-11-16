@@ -6285,7 +6285,10 @@
                     const chk=el.querySelector('.rc-gf-chk');
                     chk.addEventListener('click',(e)=>{ e.stopPropagation(); _cardOn(el, chk.checked); updCnt(); });
                     const more=el.querySelector('.rc-more'); if(more) more.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); el.dispatchEvent(new MouseEvent('contextmenu',{clientX:e.clientX,clientY:e.clientY,bubbles:true})); });
-                    el.addEventListener('click',(e)=>{ if(e.target===chk || (e.target&&e.target.closest&&(e.target.closest('.rc-more')||e.target.closest('.rc-clmenu')))) return; if(e.ctrlKey||e.metaKey||e.shiftKey){ e.preventDefault(); e.stopPropagation(); _cardOn(el, !_isSelected(el)); updCnt(); return; } window.rcPreviewFolderFile(fnm, mim); });
+                    el.addEventListener('click',(e)=>{ if(e.target===chk || (e.target&&e.target.closest&&(e.target.closest('.rc-more')||e.target.closest('.rc-clmenu')))) return; if(e.ctrlKey||e.metaKey||e.shiftKey){ e.preventDefault(); e.stopPropagation(); _cardOn(el, !_isSelected(el)); updCnt(); return; }
+                        // 📎 주문서가 열려 있으면 클릭만으로 첨부(드래그 불필요)
+                        if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ e.preventDefault(); e.stopPropagation(); if(!here){ showToast('로컬(내 컴퓨터) 파일만 클릭 첨부할 수 있어요.'); return; } (async()=>{ try{ showToast('파일 읽는 중…'); const f=await R.getFileAt(path, fnm); if(!f){ showToast('파일을 읽지 못했습니다.'); return; } if(document.getElementById('rx-form-modal')&&window.rxOrderState){ window.rxAddFiles([f]); } else if(window.orderFormState){ addBuyerFiles([f]); } showToast('📎 첨부됨: '+fnm); }catch(err){ showToast('첨부 실패'); } })(); return; }
+                        window.rcPreviewFolderFile(fnm, mim); });
                     // 🖥 더블클릭 = 실시간 뷰어(cbct_suite)로 열기. 같은 폴더의 다른 영상은 뷰어 안 DATA 서랍에서 추가로 연다.
                     el.addEventListener('dblclick',(e)=>{ if(e.target===chk) return; e.preventDefault(); e.stopPropagation(); window.rcOpenInLiveViewer(path, fnm); });
                     el.addEventListener('dragstart',(e)=>{ if(!here){ e.preventDefault(); return; } try{
@@ -6717,7 +6720,7 @@
                     if(_selbar){ _selbar.style.display='flex'; } _updBar();
                     if(_cntEl && !_ptSel.size) _cntEl.textContent='더블클릭=즉시 첨부 · 체크=다중선택';
                 } else {
-                    grid.querySelectorAll('._pt-file').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')) return; _sfOpenPmsFile(_byEl(el)); }));
+                    grid.querySelectorAll('._pt-file').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')) return; const f=_byEl(el); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath}]); return; } _sfOpenPmsFile(f); }));
                 }
                 // 🖱 환자 파일 카드 드래그 → 의뢰서(우측 패널) 첨부 드롭존으로 끌어 놓기
                 grid.querySelectorAll('._pt-file').forEach(el=>{ el.setAttribute('draggable','true');
@@ -6916,6 +6919,20 @@
                 if(immediate) run(); else window.__sfDeepTimer=setTimeout(run, 320);
             };
             window._sfAssignDraggedToPatient = async function(patientKey){ const refs=window.__sfDragFileRef||[]; if(!patientKey||!refs.length) return; let ok=0; for(const f of refs){ try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey, file:f})}); const d=await r.json(); if(r.ok&&d.ok) ok++; }catch(_){} } window.__sfDragFileRef=null; if(ok){ showToast('✅ '+ok+'개 파일을 환자에 연결했습니다.'); try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} } else showToast('연결 실패'); };
+            // 📎 주문서(간편/상세/일반)가 열려 있으면 true — 그 때 파일 카드 '클릭'만으로 첨부(드래그 불필요, 확실)
+            window.__sfFormAttachActive = function(){ try{ if(document.getElementById('rx-form-modal')) return true; const ofm=document.getElementById('order-form-modal'); if(ofm && ofm.style.display!=='none' && window.orderFormState && window.orderFormState.product) return true; }catch(_){} return false; };
+            // 📎 파일 설명(rootId/rpath)들을 File 객체로 읽어 열려있는 주문서에 첨부
+            window._sfAttachDescs = async function(descs){
+                if(!descs||!descs.length) return;
+                showToast('파일 읽는 중… ('+descs.length+'개)');
+                const R2=window.RCFolder; const files=[];
+                for(const d of descs){ try{ let parts=String(d.rpath||'').split('/'); const fn=parts.pop(); let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} }
+                if(!files.length){ showToast('파일을 읽지 못했습니다. (이 파일은 로컬 공유폴더에서만 첨부 가능)'); return; }
+                if(document.getElementById('rx-form-modal') && window.rxOrderState){ window.rxAddFiles(files); showToast('📎 '+files.length+'개 첨부됨'); return; }
+                const ofm=document.getElementById('order-form-modal');
+                if(ofm && ofm.style.display!=='none' && window.orderFormState){ addBuyerFiles(files); showToast('📎 '+files.length+'개 첨부됨'); return; }
+                showToast('첨부할 주문서가 열려있지 않습니다.');
+            };
             render();
         }
         // 📤 공유 대상 선택 — ①나에게 보내기(내 다른 기기, 온라인만 선택) ②친구. 선택 파일 R2 1회 업로드 후 각 대상으로 전송.
@@ -15981,7 +15998,7 @@ pdfjsScript,
                 <div id="order-buyer-dropzone" class="dropzone" style="padding:20px;cursor:pointer;">
                     <div style="font-size:24px;">📁</div>
                     <div style="font-size:13px; margin-top:4px;font-weight:700;color:var(--primary,#d6006e);">클릭하면 공유폴더에서 선택</div>
-                    <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">여기로 드래그 앤 드롭도 가능</div>
+                    <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">왼쪽 파일 카드를 <b>클릭</b>하면 바로 첨부돼요 (드래그&드롭도 가능)</div>
                     <button type="button" id="order-buyer-pc" style="margin-top:9px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;">💻 내 PC에서 선택</button>
                 </div>
                 <input type="file" id="order-buyer-files" multiple style="display:none;">
@@ -19557,15 +19574,17 @@ pdfjsScript,
             function overlay(id, innerHtml, maxWidth){
                 const old = document.getElementById(id); if(old) old.remove();
                 const ov = document.createElement('div'); ov.id = id;
-                if(id==='rx-form-modal'){
-                    // 📋 의뢰서 = 우측 도킹 패널(배경 없음 → 좌측 파일검색/사이드바 그대로 사용, 파일 카드 드래그 첨부 가능)
+                if(id==='rx-form-modal' || id==='rx-choice-modal'){
+                    // 📋 의뢰서(선택·작성) = 우측 도킹 패널(배경 없음 → 좌측 파일검색/사이드바 그대로 사용, 파일 카드 클릭/드래그 첨부 가능)
                     ov.style.cssText = 'position:fixed;top:56px;right:0;bottom:0;width:'+(440)+'px;max-width:94vw;z-index:4002;display:flex;flex-direction:column;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);border-left:1px solid var(--border-color);';
                     ov.innerHTML = '<div style="flex:1;overflow:auto;">'+innerHtml+'</div>';
-                    // ✕ 버튼으로만 닫힘(바깥 클릭=파일검색 조작). 열릴 때 파일검색을 함께 띄워 드래그 첨부 가능하게.
+                    // ✕ 버튼으로만 닫힘(바깥 클릭=파일검색 조작). 열릴 때 파일검색을 함께 띄워 클릭/드래그 첨부 가능하게.
                     try{ document.body.classList.add('rx-docked'); }catch(_){}
-                    // 선택 환자가 있으면 그 환자 파일을 먼저 보여줌(드래그 첨부용)
-                    try{ if(window.__selectedPatientKey){ window.__sfPatientFilter=window.__selectedPatientKey; window.__sfCloudView=false; window.__sfStoreView=false; } }catch(_){}
-                    try{ if(!(window.__sfOv && document.body.contains(window.__sfOv)) && typeof openSharedFolderPanel==='function'){ window.__accountMode=false; openSharedFolderPanel(); } else if(window.__sfRender){ window.__sfRender(); } }catch(_){}
+                    if(id==='rx-form-modal'){
+                        // 선택 환자가 있으면 그 환자 파일을 먼저 보여줌(첨부용)
+                        try{ if(window.__selectedPatientKey){ window.__sfPatientFilter=window.__selectedPatientKey; window.__sfCloudView=false; window.__sfStoreView=false; } }catch(_){}
+                        try{ if(!(window.__sfOv && document.body.contains(window.__sfOv)) && typeof openSharedFolderPanel==='function'){ window.__accountMode=false; openSharedFolderPanel(); } else if(window.__sfRender){ window.__sfRender(); } }catch(_){}
+                    }
                 } else {
                     ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;display:flex;align-items:center;justify-content:center;padding:14px;';
                     ov.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:${maxWidth||720}px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.35);">${innerHtml}</div>`;
@@ -19574,7 +19593,7 @@ pdfjsScript,
                 document.body.appendChild(ov);
                 return ov;
             }
-            const closeOv = id => { const el = document.getElementById(id); if(el) el.remove(); if(id==='rx-form-modal'){ try{ document.body.classList.remove('rx-docked'); }catch(_){} } };
+            const closeOv = id => { const el = document.getElementById(id); if(el) el.remove(); if(id==='rx-form-modal'||id==='rx-choice-modal'){ try{ document.body.classList.remove('rx-docked'); }catch(_){} } };
             window.rxCloseOverlay = closeOv;
 
             /* ---------- 치식(FDI) 차트 ---------- */
@@ -19945,7 +19964,7 @@ pdfjsScript,
                              ondrop="event.preventDefault(); this.classList.remove('dragover'); if(window.rxHandleDrop) window.rxHandleDrop(event);">
                             <div style="font-size:24px;">📁</div>
                             <div style="font-size:13px; margin-top:4px;font-weight:700;color:var(--primary,#d6006e);">클릭하면 공유폴더에서 선택</div>
-                            <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">왼쪽 파일검색의 파일 카드를 드래그 앤 드롭도 가능</div>
+                            <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">왼쪽 파일 카드를 <b>클릭</b>하면 바로 첨부돼요 (드래그&드롭도 가능)</div>
                             <button type="button" id="rx-pc-btn" onclick="event.stopPropagation(); document.getElementById('rx-file-input').click();" style="margin-top:9px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;">💻 내 PC에서 선택</button>
                         </div>
                         <div id="rx-folderzone" style="display:none;"></div>
