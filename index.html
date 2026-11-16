@@ -6069,7 +6069,7 @@
                     +'</div>');
                 // 작업바: 선택된 항목이 있을 때만 표시(아이콘)
                 const AB='width:34px;height:34px;border:none;border-radius:9px;background:transparent;color:#374151;cursor:pointer;display:flex;align-items:center;justify-content:center;';
-                const _pickMode = !!window.__sfPickResolve;
+                const _pickMode = !!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive());
                 const toolbar='<div id="_sf-selbar" style="display:none;flex:none;background:#eef4f8;padding:7px 14px;align-items:center;gap:4px;border-bottom:1px solid #d7e3ee;">'
                     +'<span id="_sf-cnt" style="font-size:13px;font-weight:700;color:#0f2f52;padding:0 6px;">0개 선택</span>'
                     +'<div style="flex:1;"></div>'
@@ -6265,9 +6265,11 @@
                     const names=[...selected]; const files=[];
                     showToast('파일 읽는 중… ('+names.length+'개)');
                     for(const nm of names){ try{ const f=await R.getFileAt(path, nm); if(f) files.push(f); }catch(_){} }
-                    const cb=window.__sfPickResolve; window.__sfPickResolve=null;
-                    try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){}
-                    if(cb) cb(files);
+                    if(window.__sfPickResolve){ const cb=window.__sfPickResolve; window.__sfPickResolve=null; try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){} if(cb) cb(files); }
+                    else { // 📎 폼 첨부 모드 — 패널 유지, 선택 파일 첨부
+                        if(files.length){ if(document.getElementById('rx-form-modal')&&window.rxOrderState){ window.rxAddFiles(files); } else if(window.orderFormState){ addBuyerFiles(files); } showToast('📎 '+files.length+'개 첨부됨'); }
+                        try{ selected.clear(); ov.querySelectorAll('.rc-gf').forEach(el=>{ el.style.outline=''; const c=el.querySelector('.rc-gf-chk'); if(c) c.checked=false; }); updCnt(); }catch(_){}
+                    }
                 }; }
                 // 폴더 카드 — 단일 클릭으로 열기 + 파일 카드를 끌어다 놓으면 그 폴더로 이동(탐색기처럼)
                 ov.querySelectorAll('.rc-gfd').forEach(el=>{ const nm=el.getAttribute('data-name');
@@ -6717,10 +6719,18 @@
                 _wireHead();
                 const _byEl=el=>{ const row=el.closest('._pt-file'); return { rootId:row.getAttribute('data-rootid'), rpath:row.getAttribute('data-rpath'), fname:(row.getAttribute('data-rpath')||'').split('/').pop(), manual:row.getAttribute('data-manual')==='1' }; };
                 // 📎 첨부 선택 모드(의뢰서 첨부 등): 환자 파일 체크박스 다중선택 + 더블클릭=즉시 첨부
-                const _pick=!!window.__sfPickResolve; const _ptSel=new Map();
+                const _pick=!!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive()); const _ptSel=new Map();
                 const _selbar=ov.querySelector('#_sf-selbar'); const _cntEl=ov.querySelector('#_sf-cnt'); const _paBtn=ov.querySelector('#_sf-pickattach');
                 const _updBar=()=>{ if(_selbar) _selbar.style.display=_ptSel.size?'flex':'none'; if(_cntEl) _cntEl.textContent=_ptSel.size+'개 선택'; if(_paBtn) _paBtn.textContent='✔ 선택 첨부 ('+_ptSel.size+')'; };
-                const _attachNow=async(descs)=>{ if(!descs||!descs.length){ showToast('첨부할 파일을 선택하세요.'); return; } showToast('파일 읽는 중… ('+descs.length+'개)'); const files=[]; const R2=window.RCFolder; for(const d of descs){ let parts=d.parts, fn=d.fn; if(!parts){ parts=String(d.rpath||'').split('/'); fn=parts.pop(); } try{ let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} } const cb=window.__sfPickResolve; window.__sfPickResolve=null; try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){} if(cb) cb(files); };
+                const _attachNow=async(descs)=>{ if(!descs||!descs.length){ showToast('첨부할 파일을 선택하세요.'); return; }
+                    if(window.__sfPickResolve){ // 🔵 _sfPickFiles 콜백 흐름(풀스크린 선택) — 읽어서 콜백 후 닫기
+                        showToast('파일 읽는 중… ('+descs.length+'개)'); const files=[]; const R2=window.RCFolder; for(const d of descs){ let parts=d.parts, fn=d.fn; if(!parts){ parts=String(d.rpath||'').split('/'); fn=parts.pop(); } try{ let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} } const cb=window.__sfPickResolve; window.__sfPickResolve=null; try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){} if(cb) cb(files);
+                    } else { // 📎 폼(의뢰서/주문서) 첨부 모드 — 패널 유지, 선택 파일 첨부 후 선택 해제
+                        const norm=descs.map(d=>({rootId:d.rootId, rpath: d.rpath || ((d.parts?d.parts.join('/')+'/':'')+(d.fn||''))}));
+                        await window._sfAttachDescs(norm);
+                        _ptSel.clear(); try{ grid.querySelectorAll('._pt-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._pt-chk'); if(c){ c.style.background='rgba(255,255,255,.92)'; c.textContent=''; } }); }catch(_){} _updBar();
+                    }
+                };
                 const _toggle=(el,f,on)=>{ const k=f.rootId+'|'+f.rpath; if(on===undefined) on=!_ptSel.has(k); if(on){ const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); _ptSel.set(k,{rootId:f.rootId,parts,fn}); } else { _ptSel.delete(k); } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; const cb=el.querySelector('._pt-chk'); if(cb){ cb.style.background=on?'#0f2f52':'rgba(255,255,255,.92)'; cb.textContent=on?'✓':''; } _updBar(); };
                 if(_pick){
                     grid.querySelectorAll('._pt-file').forEach(el=>{ const f=_byEl(el);
@@ -6954,6 +6964,11 @@
                 el.addEventListener('dragstart',(e)=>{ const rootId=el.getAttribute('data-rootid')||''; const rpath=el.getAttribute('data-rpath')||''; window.__sfDragFileRef=[{rootId:rootId, rootName:'', rpath:rpath, fname:String(rpath).split('/').pop(), mtime:0, modality:''}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', String(rpath).split('/').pop()||'file'); }catch(_){} });
                 el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; }, 60); });
             }catch(_){} };
+            // 🧲 전역 드롭: 주문서(의뢰서/주문서)가 열려 있을 때, 파일 카드를 '화면 어디에' 놓아도 첨부되게(드롭 타깃 모호성 제거)
+            if(!window.__sfDocDropWired){ window.__sfDocDropWired=true;
+                document.addEventListener('dragover', function(e){ try{ if(window.__sfDragFileRef && window.__sfDragFileRef.length && window.__sfFormAttachActive && window.__sfFormAttachActive()){ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='copy'; } }catch(_){} }, false);
+                document.addEventListener('drop', function(e){ try{ if(window.__sfDragFileRef && window.__sfDragFileRef.length && window.__sfFormAttachActive && window.__sfFormAttachActive()){ e.preventDefault(); const refs=window.__sfDragFileRef.slice(); window.__sfDragFileRef=null; window._sfAttachDescs(refs.map(d=>({rootId:d.rootId, rpath:d.rpath}))); } }catch(_){} }, false);
+            }
             render();
         }
         // 📤 공유 대상 선택 — ①나에게 보내기(내 다른 기기, 온라인만 선택) ②친구. 선택 파일 R2 1회 업로드 후 각 대상으로 전송.
@@ -16075,11 +16090,11 @@ pdfjsScript,
                 // 📎 파일검색(환자·내컴퓨터·클라우드) 카드 드래그 → 첨부 (간편의뢰서와 동일 동작)
                 const ref = window.__sfDragFileRef;
                 if(ref && ref.length){
+                    window.__sfDragFileRef=null;   // 즉시 소비 → 전역 드롭 핸들러 중복 방지
                     showToast('파일 읽는 중… ('+ref.length+'개)');
                     const R2=window.RCFolder; const files=[];
                     for(const d of ref){ try{ const parts=String(d.rpath||'').split('/'); const fn=parts.pop(); let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} }
                     if(files.length){ addBuyerFiles(files); showToast('📎 '+files.length+'개 첨부됨'); }
-                    try{ window.__sfDragFileRef=null; }catch(_){}
                 }
             });
             obIn.addEventListener('change', e => addBuyerFiles(e.target.files));
@@ -20015,6 +20030,7 @@ pdfjsScript,
                     if(dt && dt.files && dt.files.length){ window.rxAddFiles(dt.files); showToast('📎 '+dt.files.length+'개 첨부됨'); return; }
                     const ref = window.__sfDragFileRef;
                     if(ref && ref.length){
+                        window.__sfDragFileRef=null;   // 즉시 소비 → 전역 드롭 핸들러 중복 첨부 방지
                         showToast('파일 읽는 중… ('+ref.length+'개)');
                         const R2=window.RCFolder; const files=[];
                         for(const d of ref){ try{ const parts=String(d.rpath||'').split('/'); const fn=parts.pop(); let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} }
