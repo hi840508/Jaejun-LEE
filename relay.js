@@ -3665,10 +3665,15 @@ app.get('/api/pms/patients', (req, res) => {
 app.get('/api/pms/patients/:key/files', (req, res) => {
     const owner = requireUser(req, res); if (!owner) return;
     const key = String(req.params.key || '');
-    db.all(`SELECT rootId, rootName, rpath, fname, modality, studyDate, mtime, source FROM pms_files WHERE owner=? AND patientKey=? ORDER BY (studyDate IS NULL), studyDate DESC, mtime DESC`, [owner, key], (e, rows) => {
+    // ☁️ mirror_files(클라우드)와 LEFT JOIN → 각 파일의 cloud 여부/크기/타입을 함께 반환(클라우드 전용 파일도 표시·첨부 가능)
+    db.all(`SELECT pf.rootId AS rootId, pf.rootName AS rootName, pf.rpath AS rpath, pf.fname AS fname, pf.modality AS modality, pf.studyDate AS studyDate, pf.mtime AS mtime, pf.source AS source,
+                   (mf.rpath IS NOT NULL) AS cloud, mf.size AS cloudSize, mf.mime AS cloudMime
+            FROM pms_files pf LEFT JOIN mirror_files mf ON mf.userName=pf.owner AND mf.rpath=pf.rpath
+            WHERE pf.owner=? AND pf.patientKey=? ORDER BY (pf.studyDate IS NULL), pf.studyDate DESC, pf.mtime DESC`, [owner, key], (e, rows) => {
         if (e) return res.status(500).json({ error: e.message });
+        const files = (rows || []).map(r => ({ rootId: r.rootId, rootName: r.rootName, rpath: r.rpath, fname: r.fname, modality: r.modality, studyDate: r.studyDate, mtime: r.mtime, source: r.source, cloud: !!r.cloud, size: r.cloudSize || 0, mime: r.cloudMime || '' }));
         db.get(`SELECT patientKey, patientId, name, dob, sex, modalities, fileCount, lastStudy FROM pms_patients WHERE owner=? AND patientKey=?`, [owner, key], (e2, card) => {
-            res.json({ card: card || null, files: rows || [] });
+            res.json({ card: card || null, files });
         });
     });
 });

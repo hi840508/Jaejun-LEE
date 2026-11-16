@@ -6703,16 +6703,8 @@
                     const _roots=(window.RCFolder&&window.RCFolder.listRoots)?await window.RCFolder.listRoots():[];
                     if(window.__sfPatientFilter!==key) return;
                     const _rids=new Set((_roots||[]).map(r=>String(r.id)));
-                    // ☁️ 클라우드 파일 목록(rpath 집합) — 30초 캐시
-                    let _cloudSet=null;
-                    try{ const now=Date.now(); const cc=window.__sfCloudListCache;
-                        if(cc && (now-cc.t)<30000){ _cloudSet=cc.set; }
-                        else { let items=[]; try{ items=(window.RCMirror&&window.RCMirror.list)?await window.RCMirror.list():((await (await fetch(API_URL+'/api/mirror/list')).json()).items||[]); }catch(_){ items=null; } if(items){ _cloudSet=new Set(items.map(it=>String(it.rpath))); window.__sfCloudListCache={t:now,set:_cloudSet}; } }
-                    }catch(_){ _cloudSet=null; }
-                    if(window.__sfPatientFilter!==key) return;
-                    const _isCloud=f=> _cloudSet ? _cloudSet.has(String(f.rpath)) : (!!(f.cloud||f.inCloud||f.isCloud)||String(f.source||'')==='cloud'||String(f.rootId||'')==='cloud'||/클라우드|cloud/i.test(String(f.rootName||'')));
-                    const _avail=files.filter(f=> _rids.has(String(f.rootId)) || _isCloud(f));
-                    files=_avail.map(f=> (_isCloud(f)&&!_rids.has(String(f.rootId)))?Object.assign({},f,{cloud:true}):f);   // 클라우드 전용 파일 표시
+                    // 접근 가능 = 현재 연결된 내 컴퓨터 로컬 폴더 or 클라우드(서버 cloud 플래그). 그 외(유령)는 숨김.
+                    files=files.filter(f=> _rids.has(String(f.rootId)) || f.cloud);
                 }catch(_){}
                 try{ window.__sfCurPatientCard=c; }catch(_){}
                 // 🧹 메인 페이지 상단의 환자 헤더(선택됨/수정/삭제/안내) 제거 — 수정·삭제는 좌측 환자버튼의 연필 → 팝업에서
@@ -6723,7 +6715,7 @@
                 const gmap={}; const order=[];
                 files.forEach(f=>{ const k=_ptDobFmt(f.studyDate)||'날짜 미상'; if(!gmap[k]){ gmap[k]=[]; order.push(k); } gmap[k].push(f); });
                 const card=(f)=>{ const nm=f.fname||''; const manual=(f.source==='manual'); const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):'';
-                    return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" title="'+ESC(nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
+                    return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" data-cloud="'+(f.cloud?'1':'')+'" data-mime="'+ESC(f.mime||'')+'" data-size="'+(Number(f.size)||0)+'" title="'+ESC(nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
                         +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+tile+'</div>'
                         +(f.modality?('<span style="position:absolute;top:6px;left:34px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;z-index:2;">'+ESC(f.modality)+'</span>'):'')
                         +'<button class="_pt-menu" title="더보기" style="position:absolute;bottom:6px;right:6px;width:26px;height:26px;padding:0;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;font-size:15px;font-weight:800;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+((typeof _SFIC!=='undefined'&&_SFIC.dots)?_SFIC.dots:'⋯')+'</button></div>'
@@ -6734,7 +6726,7 @@
                 const secs=order.map(k=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(k)+' <span style="color:#94a3b8;font-weight:600;">('+gmap[k].length+')</span></div><div class="_sf-secgrid" style="'+secStyle+'">'+gmap[k].map(card).join('')+'</div></div>').join('');
                 grid.innerHTML=head+secs;
                 _wireHead();
-                const _byEl=el=>{ const row=el.closest('._pt-file'); return { rootId:row.getAttribute('data-rootid'), rpath:row.getAttribute('data-rpath'), fname:(row.getAttribute('data-rpath')||'').split('/').pop(), manual:row.getAttribute('data-manual')==='1' }; };
+                const _byEl=el=>{ const row=el.closest('._pt-file'); return { rootId:row.getAttribute('data-rootid'), rpath:row.getAttribute('data-rpath'), fname:(row.getAttribute('data-rpath')||'').split('/').pop(), manual:row.getAttribute('data-manual')==='1', cloud:row.getAttribute('data-cloud')==='1', mime:row.getAttribute('data-mime')||'', size:Number(row.getAttribute('data-size'))||0 }; };
                 // 📎 첨부 선택 모드(의뢰서 첨부 등): 환자 파일 체크박스 다중선택 + 더블클릭=즉시 첨부
                 const _pick=!!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive()); const _ptSel=new Map();
                 const _selbar=ov.querySelector('#_sf-selbar'); const _cntEl=ov.querySelector('#_sf-cnt'); const _paBtn=ov.querySelector('#_sf-pickattach');
@@ -6761,7 +6753,7 @@
                 _updBar();
                 // 🖱 환자 파일 카드 드래그 → 의뢰서(우측 패널) 첨부 드롭존으로 끌어 놓기
                 grid.querySelectorAll('._pt-file').forEach(el=>{ el.setAttribute('draggable','true');
-                    el.addEventListener('dragstart',(e)=>{ const f=_byEl(el); window.__sfDragFileRef=[{rootId:f.rootId, rootName:'', rpath:f.rpath, fname:f.fname, mtime:0, modality:''}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', f.fname||'file'); }catch(_){} });
+                    el.addEventListener('dragstart',(e)=>{ const f=_byEl(el); window.__sfDragFileRef=[{rootId:f.rootId, rootName:'', rpath:f.rpath, fname:f.fname, mtime:0, modality:'', cloud:f.cloud, mime:f.mime, size:f.size}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', f.fname||'file'); }catch(_){} });
                     el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; }, 50); });
                 });
                 grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el); const items=[{label:'👁 미리보기',fn:()=>_sfOpenPmsFile(f)}];
