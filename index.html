@@ -19781,6 +19781,22 @@ pdfjsScript,
             function overlay(id, innerHtml, maxWidth){
                 const old = document.getElementById(id); if(old) old.remove();
                 const ov = document.createElement('div'); ov.id = id;
+                // 🗨 메신저 상점 플로우에서 열렸으면 의뢰서를 메신저 안에 렌더(도킹 패널 대신)
+                if((id==='rx-form-modal' || id==='rx-choice-modal')){
+                    let _inMsgr=false; try{ const dr=document.getElementById('messenger-drawer'); const vs=document.getElementById('view-store'); _inMsgr=!!(dr&&dr.classList.contains('open')&&vs&&vs.classList.contains('active')&&(window.__msgrStoreMode==='products'||window.__msgrStoreMode==='rx'||window.__msgrStoreMode==='cart')); }catch(_){}
+                    if(_inMsgr){
+                        const cont=document.getElementById('msgr-store-container');
+                        if(cont){
+                            window.__msgrStoreMode='rx';
+                            try{ const c=document.getElementById('msgr-store-cat'); if(c) c.style.display='none'; }catch(_){}
+                            cont.innerHTML='<div id="'+id+'">'+innerHtml+'</div>'; try{ cont.scrollTop=0; }catch(_){}
+                            try{ if(window._msgrSyncHeader) _msgrSyncHeader(); }catch(_){}
+                            // 데스크톱: 좌측 파일검색을 함께 띄워 드래그 첨부 가능(모바일은 내 PC 첨부 사용)
+                            if(id==='rx-form-modal'){ try{ if(window.__selectedPatientKey){ window.__sfPatientFilter=window.__selectedPatientKey; window.__sfCloudView=false; window.__sfStoreView=false; } }catch(_){} try{ if(!(window.__sfOv && document.body.contains(window.__sfOv)) && typeof openSharedFolderPanel==='function'){ window.__accountMode=false; openSharedFolderPanel(); } else if(window.__sfRender){ window.__sfRender(); } }catch(_){} }
+                            return document.getElementById(id);
+                        }
+                    }
+                }
                 if(id==='rx-form-modal' || id==='rx-choice-modal'){
                     // 📋 의뢰서(선택·작성) = 우측 도킹 패널(배경 없음 → 좌측 파일검색/사이드바 그대로 사용, 파일 카드 클릭/드래그 첨부 가능)
                     ov.style.cssText = 'position:fixed;top:56px;right:0;bottom:0;width:'+(440)+'px;max-width:94vw;z-index:4002;display:flex;flex-direction:column;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);border-left:1px solid var(--border-color);';
@@ -19800,7 +19816,14 @@ pdfjsScript,
                 document.body.appendChild(ov);
                 return ov;
             }
-            const closeOv = id => { const el = document.getElementById(id); if(el) el.remove(); if(id==='rx-form-modal'||id==='rx-choice-modal'){ try{ document.body.classList.remove('rx-docked'); }catch(_){} } };
+            const closeOv = id => {
+                const el = document.getElementById(id);
+                if(el && el.closest && el.closest('#msgr-store-container')){   // 메신저 안 의뢰서 닫기 → 상품목록으로
+                    try{ if(window.__msgrCurrentStore && window.renderStoreProductsInMessenger){ window.renderStoreProductsInMessenger(window.__msgrCurrentStore); } else { window.__msgrStoreMode='list'; const c=document.getElementById('msgr-store-cat'); if(c) c.style.display='flex'; if(window.renderStoreCardsInMessenger) window.renderStoreCardsInMessenger(); } }catch(_){}
+                    return;
+                }
+                if(el) el.remove(); if(id==='rx-form-modal'||id==='rx-choice-modal'){ try{ document.body.classList.remove('rx-docked'); }catch(_){} }
+            };
             window.rxCloseOverlay = closeOv;
 
             /* ---------- 치식(FDI) 차트 ---------- */
@@ -21031,7 +21054,7 @@ pdfjsScript,
             // 🛒 메신저 상점탭 '뒤로' — 장바구니 보기면 상점목록으로, 상점목록이면 메신저 닫기(메인페이지 노출)
             window.msgrStoreBack = function(){
                 const m=window.__msgrStoreMode;
-                if(m==='cart'){ if(window.__msgrCurrentStore){ try{ window.renderStoreProductsInMessenger(window.__msgrCurrentStore); }catch(_){} } else { window.__msgrStoreMode='list'; try{ const c=document.getElementById('msgr-store-cat'); if(c) c.style.display='flex'; }catch(_){} try{ renderStoreCardsInMessenger(); }catch(_){} } }
+                if(m==='cart'||m==='rx'){ if(window.__msgrCurrentStore){ try{ window.renderStoreProductsInMessenger(window.__msgrCurrentStore); }catch(_){} } else { window.__msgrStoreMode='list'; try{ const c=document.getElementById('msgr-store-cat'); if(c) c.style.display='flex'; }catch(_){} try{ renderStoreCardsInMessenger(); }catch(_){} } }
                 else if(m==='products'){ window.__msgrStoreMode='list'; try{ const c=document.getElementById('msgr-store-cat'); if(c) c.style.display='flex'; }catch(_){} try{ renderStoreCardsInMessenger(); }catch(_){} }
                 else { try{ if(window.toggleMessengerDrawer) toggleMessengerDrawer(); }catch(_){} }   // 상점목록 → 메인 페이지 보이게(모바일)
             };
