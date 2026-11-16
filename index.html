@@ -382,8 +382,8 @@
             /* 📋 의뢰서 우측 패널이 열리면 파일검색을 그 왼쪽까지만 (겹침 방지) */
             body.rx-docked #rc-folder-page { right: 440px !important; }
             /* 📝 일반 주문서(order-form-modal)도 우측 도킹 패널로 */
-            #order-form-modal { background: transparent !important; justify-content: flex-end !important; align-items: stretch !important; padding: 0 !important; }
-            #order-form-modal .modal-content { position: fixed; top: 56px; right: 0; bottom: 0; width: 440px; max-width: 94vw; max-height: none; margin: 0; border-radius: 0; box-shadow: -8px 0 30px rgba(0,0,0,.18); display: flex; flex-direction: column; }
+            #order-form-modal { background: transparent !important; justify-content: flex-end !important; align-items: stretch !important; padding: 0 !important; pointer-events: none !important; }
+            #order-form-modal .modal-content { position: fixed; top: 56px; right: 0; bottom: 0; width: 440px; max-width: 94vw; max-height: none; margin: 0; border-radius: 0; box-shadow: -8px 0 30px rgba(0,0,0,.18); display: flex; flex-direction: column; pointer-events: auto !important; }
             /* 🖥 본문도 파일검색처럼 화면 가득 차게 — 1400px 중앙정렬 캡 해제(여백 최소화) */
             .yt-main { max-width: none !important; margin: 0 !important; }
             /* 🏷 상단 로고영역을 사이드바 폭과 동일하게 — 사이드바 우측 경계선이 상단바까지 연장되어 보이게 */
@@ -15977,7 +15977,7 @@ pdfjsScript,
                 <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin-bottom:8px;">📝 요청 사항 / 메모</div>
                 <textarea id="order-buyer-memo" placeholder="배송 옵션, 사이즈, 색상, 기타 요청 등" rows="3" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-family:inherit; font-size:13px;"></textarea>
 
-                <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin:14px 0 8px;">📂 추가 파일 첨부 <span style="font-weight:500;color:var(--text-sub);font-size:12px;">(원본 의뢰서·쉐이드 이미지·구강 스캔 등)</span></div>
+                <div style="font-size:14px; font-weight:bold; color:var(--text-main); margin:14px 0 8px;">📂 추가 파일 첨부</div>
                 <div id="order-buyer-dropzone" class="dropzone" style="padding:20px;cursor:pointer;">
                     <div style="font-size:24px;">📁</div>
                     <div style="font-size:13px; margin-top:4px;font-weight:700;color:var(--primary,#d6006e);">클릭하면 공유폴더에서 선택</div>
@@ -16070,17 +16070,21 @@ pdfjsScript,
                     <span style="font-size:16px; font-weight:700;">주문서 양식 작성 \u2014 답변은 자동으로 텍스트 파일로 첨부됩니다</span>
                     <button class="close-btn-x" onclick="closeModal('pdf-fill-modal')">&times;</button>
                 </div>
-                <div class="pdf-fill-grid" style="display:grid; grid-template-columns:minmax(460px, 52%) 1fr; gap:0; flex:1; min-height:0;">
-                    <div style="background:#1e293b; padding:12px; display:flex; flex-direction:column; gap:10px; border-right:1px solid #475569;">
-                        <div style="color:#fff; font-size:12px; font-weight:bold; opacity:0.7;">📄 PDF 양식 (참고용)</div>
+                <div style="display:flex; flex-direction:column; flex:1; min-height:0; background:#fff;">
+                    <!-- 📄 PDF 양식 — 가로 전체 -->
+                    <div style="flex:3; min-height:0; background:#1e293b; padding:10px 14px; display:flex; flex-direction:column; gap:8px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <div style="color:#fff; font-size:12px; font-weight:bold; opacity:0.8;">📄 PDF 양식 (참고용)</div>
+                            <a href="${pdf.content}" download="${(pdf.filename||'order-form.pdf').replace(/"/g,'&quot;')}" style="background:rgba(255,255,255,0.15); color:#fff; padding:6px 12px; border-radius:6px; text-decoration:none; font-size:11px;">📥 PDF 다운로드해서 보기</a>
+                        </div>
                         <iframe id="pdf-fill-iframe" style="width:100%; flex:1; border:none; background:#fff; border-radius:6px;"></iframe>
-                        <a href="${pdf.content}" download="${(pdf.filename||'order-form.pdf').replace(/"/g,'&quot;')}" style="background:rgba(255,255,255,0.15); color:#fff; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:11px; text-align:center;">📥 PDF 다운로드해서 보기</a>
                     </div>
-                    <div style="padding:20px 24px; overflow-y:auto; background:#fff; display:flex; flex-direction:column;">
-                        <div style="font-size:15px; font-weight:bold; color:var(--text-main); margin-bottom:6px;">✍️ PDF의 각 항목 답변 작성</div>
-                        <div style="font-size:12px; color:var(--text-sub); margin-bottom:12px;">왼쪽 PDF 양식을 참고하여 항목별로 답변을 입력하세요. 저장 시 <b style="color:var(--primary);">PDF_Answers.txt</b> 파일로 자동 첨부되어 판매자에게 전달됩니다.</div>
-                        <textarea id="pdf-fill-textarea" style="flex:1; min-height:0; padding:18px; border:1px solid var(--border-color); border-radius:8px; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:14px; line-height:1.8; resize:none; outline:none; background:#fafbfc;" placeholder="예시:&#10;&#10;1. 환자명: 홍길동&#10;2. 보철 종류: 풀크라운&#10;3. 색상: A2&#10;4. 사이즈: 14호&#10;5. 마진 라인: 어깨 0.8mm&#10;6. 인상재: 실리콘&#10;7. 특이사항: 좌측 어금니 보강&#10;..."></textarea>
-                        <div style="margin-top:14px; display:flex; gap:8px;">
+                    <!-- ✍️ 답변 작성 — 아랫줄 가로 전체 -->
+                    <div style="flex:2; min-height:0; padding:14px 20px; background:#fff; display:flex; flex-direction:column; border-top:2px solid var(--border-color);">
+                        <div style="font-size:15px; font-weight:bold; color:var(--text-main); margin-bottom:4px;">✍️ PDF의 각 항목 답변 작성</div>
+                        <div style="font-size:12px; color:var(--text-sub); margin-bottom:8px;">위 PDF 양식을 참고하여 항목별로 답변을 입력하세요. 저장 시 <b style="color:var(--primary);">PDF_Answers.txt</b> 파일로 자동 첨부되어 판매자에게 전달됩니다.</div>
+                        <textarea id="pdf-fill-textarea" style="flex:1; min-height:70px; width:100%; padding:14px; border:1px solid var(--border-color); border-radius:8px; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:14px; line-height:1.8; resize:none; outline:none; background:#fafbfc; box-sizing:border-box;" placeholder="예시:&#10;1. 환자명: 홍길동   2. 보철 종류: 풀크라운   3. 색상: A2&#10;4. 마진 라인: 어깨 0.8mm   5. 특이사항: 좌측 어금니 보강 ..."></textarea>
+                        <div style="margin-top:10px; display:flex; gap:8px;">
                             <button class="btn btn-outline" style="flex:1; padding:12px;" onclick="closeModal('pdf-fill-modal')">취소</button>
                             <button class="btn" style="flex:3; padding:12px; font-size:14px; background:linear-gradient(135deg,#4a4a4e,#232326); font-weight:bold;" onclick="savePdfFillAnswers()">저장 + 답변을 PDF_Answers.txt 파일로 자동 첨부</button>
                         </div>
@@ -19932,14 +19936,17 @@ pdfjsScript,
                         </div>
                     </div>
                     <div style="margin-top:12px;">
-                        <!-- 📎 통합 첨부 드롭존 — 드래그&드롭=첨부 / 클릭=내 PC 탐색기 -->
-                        <div id="rx-dropzone" onclick="document.getElementById('rx-file-input').click()"
-                             ondragover="event.preventDefault(); this.style.background='#eef4ff'; this.style.borderColor='#2563eb';"
-                             ondragleave="this.style.background='#f6f9ff'; this.style.borderColor='#93c5fd';"
-                             ondrop="event.preventDefault(); this.style.background='#f6f9ff'; this.style.borderColor='#93c5fd'; if(window.rxHandleDrop) window.rxHandleDrop(event);"
-                             style="border:2px dashed #93c5fd;border-radius:12px;padding:30px 16px;text-align:center;color:#0f2f52;font-size:13.5px;font-weight:700;cursor:pointer;background:#f6f9ff;">
-                            📎 파일 첨부 — 여기로 드래그&드롭 하거나 클릭
-                            <div style="color:#64748b;font-weight:500;font-size:12px;margin-top:8px;line-height:1.6;">왼쪽 파일검색의 <b>환자·내컴퓨터·클라우드 파일 카드</b>를 끌어다 놓으세요.<br>또는 클릭하면 <b>내 PC 탐색기</b>에서 파일을 선택합니다.</div>
+                        <div style="font-size:13px; font-weight:bold; color:var(--text-main); margin:0 0 6px;">📂 파일 첨부</div>
+                        <!-- 📎 통합 첨부 드롭존 — 간편/상세 의뢰서 공통(일반 주문서와 동일 UI) -->
+                        <div id="rx-dropzone" class="dropzone" style="padding:20px;cursor:pointer;"
+                             onclick="if(window.rxDropzoneClick) rxDropzoneClick(event)"
+                             ondragover="event.preventDefault(); this.classList.add('dragover');"
+                             ondragleave="this.classList.remove('dragover');"
+                             ondrop="event.preventDefault(); this.classList.remove('dragover'); if(window.rxHandleDrop) window.rxHandleDrop(event);">
+                            <div style="font-size:24px;">📁</div>
+                            <div style="font-size:13px; margin-top:4px;font-weight:700;color:var(--primary,#d6006e);">클릭하면 공유폴더에서 선택</div>
+                            <div style="font-size:11px; margin-top:3px;color:var(--text-sub);">왼쪽 파일검색의 파일 카드를 드래그 앤 드롭도 가능</div>
+                            <button type="button" id="rx-pc-btn" onclick="event.stopPropagation(); document.getElementById('rx-file-input').click();" style="margin-top:9px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;">💻 내 PC에서 선택</button>
                         </div>
                         <div id="rx-folderzone" style="display:none;"></div>
                         <input type="file" id="rx-file-input" multiple style="display:none;" onchange="rxAddFiles(this.files)">
@@ -19958,6 +19965,12 @@ pdfjsScript,
             window._rxSaveDoctor = function(name){ name=String(name||'').trim(); if(!name) return; try{ let h=JSON.parse(localStorage.getItem('rx_doctor_history')||'[]'); h=h.filter(x=>x!==name); h.unshift(name); localStorage.setItem('rx_doctor_history', JSON.stringify(h.slice(0,20))); }catch(_){} };
             // 👨‍⚕️ 렌더 직후 담당 원장님 입력칸이 비어 있으면 계정 대표 이름으로 채움 (currentUser 직접 접근 — 확실)
             window._rxSetDefaultDoctor = function(){ try{ const el=document.getElementById('rx-oi-doctor'); if(!el) return; if((el.value||'').trim()) return; const cu=currentUser||{}; const def=cu.biz_ceo||cu.realname||cu.name||''; if(def) el.value=def; }catch(_){} };
+            // 📁 드롭존 클릭 = 공유폴더(파일검색)에서 선택 · '내 PC' 버튼은 OS 탐색기
+            window.rxDropzoneClick = async function(ev){
+                if(ev && ev.target && (ev.target.id==='rx-pc-btn' || (ev.target.closest && ev.target.closest('#rx-pc-btn')))) return;
+                try{ const files = await window._sfPickFiles(); if(files && files.length){ window.rxAddFiles(files); showToast('📎 '+files.length+'개 첨부됨'); } }
+                catch(_){ try{ document.getElementById('rx-file-input').click(); }catch(e){} }
+            };
             // 📎 드롭존: OS 파일 드롭 + 파일검색(환자·내컴·클라우드) 파일 카드 드래그 → 첨부
             window.rxHandleDrop = async function(ev){
                 try{
@@ -20130,36 +20143,65 @@ pdfjsScript,
                 _renderRxItems();
             };
             function _toothLabel(teeth){ return (teeth&&teeth.length) ? teeth.join(', ') : '치식 선택'; }
-            // 🦷 빌트인(인라인) 치식 차트 — 별도 팝업 없이 품목 카드 안에서 선택
+            // 🦷 빌트인(인라인) 치식 차트 — 별도 팝업 없이 품목 카드 안에서 치아 모양으로 선택
             function _rxToothArrays(){ return {
                 upU:[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28],
                 loU:[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38],
                 upC:[55,54,53,52,51,61,62,63,64,65],
                 loC:[85,84,83,82,81,71,72,73,74,75]
             }; }
-            function _rxToothBtns(i, arr, teeth){
-                const sel=new Set((teeth||[]).map(Number));
-                return arr.map(n=>{ const on=sel.has(n); return '<button type="button" onclick="rxToothToggle('+i+','+n+')" style="width:25px;height:30px;border:1px solid '+(on?'#0f2f52':'#cbd5e1')+';background:'+(on?'#0f2f52':'#fff')+';color:'+(on?'#fff':'#334155')+';border-radius:5px;font-size:10.5px;font-weight:700;cursor:pointer;flex:none;">'+n+'</button>'; }).join('');
+            // 치식 표기법(FDI/Palmer/Universal) — 내부 값은 항상 FDI, 라벨만 변환
+            window._rxToothNotation = window._rxToothNotation || 'fdi';
+            const _UNIV_MAP = {18:1,17:2,16:3,15:4,14:5,13:6,12:7,11:8,21:9,22:10,23:11,24:12,25:13,26:14,27:15,28:16,38:17,37:18,36:19,35:20,34:21,33:22,32:23,31:24,41:25,42:26,43:27,44:28,45:29,46:30,47:31,48:32};
+            function _toothType(fdi){ const d=fdi%10; const q=Math.floor(fdi/10); const primary=(q>=5); if(primary){ if(d<=2) return 'incisor'; if(d===3) return 'canine'; return 'molar'; } if(d<=2) return 'incisor'; if(d===3) return 'canine'; if(d<=5) return 'premolar'; return 'molar'; }
+            function _toothLabelFor(fdi, nota){
+                if(nota==='universal'){ return _UNIV_MAP[fdi]!=null ? String(_UNIV_MAP[fdi]) : String(fdi); }
+                if(nota==='palmer'){ return String(fdi%10); }   // 분면은 차트 위치로 구분
+                return String(fdi);
             }
+            // 치아 실루엣 경로(크라운 위/뿌리 아래 기준, viewBox 0 0 36 52)
+            const _TOOTH_PATHS = {
+                incisor:'M9,5 C9,2 27,2 27,5 L25,24 C25,29 11,29 11,24 Z M15,25 L14,47 C14,50 22,50 22,47 L21,25 Z',
+                canine:'M18,2 L27,10 L25,24 C25,29 11,29 11,24 L9,10 Z M15,25 L14,48 C14,51 22,51 22,48 L21,25 Z',
+                premolar:'M9,9 Q13,3 18,7 Q23,3 27,9 L26,24 C26,29 10,29 10,24 Z M15,25 L14,47 C14,50 22,50 22,47 L21,25 Z',
+                molar:'M5,9 Q9,3 13,7 Q18,2 23,7 Q27,3 31,9 L30,25 C30,31 6,31 6,25 Z M12,26 L11,46 C11,49 16,49 16,46 L16,26 Z M20,26 L20,46 C20,49 25,49 25,46 L24,26 Z'
+            };
+            function _rxToothBtns(i, arr, teeth, flip){
+                const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi';
+                return arr.map(fdi=>{ const on=sel.has(fdi); const d=_TOOTH_PATHS[_toothType(fdi)]||_TOOTH_PATHS.incisor;
+                    const fill=on?'#0f2f52':'#ffffff', stroke=on?'#0f2f52':'#c2ccda', tc=on?'#ffffff':'#334155';
+                    const lab=_toothLabelFor(fdi,nota); const labelY=flip?40:17; const fs=lab.length>=2?9:11;
+                    const inner='<path d="'+d+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.4" stroke-linejoin="round"/>';
+                    const shape=flip?('<g transform="translate(0,52) scale(1,-1)">'+inner+'</g>'):inner;
+                    return '<button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="flex:none;border:none;background:none;padding:0;margin:0;cursor:pointer;width:23px;line-height:0;">'
+                        +'<svg viewBox="0 0 36 52" width="23" height="34" style="display:block;overflow:visible;">'+shape
+                        +'<text x="18" y="'+labelY+'" text-anchor="middle" dominant-baseline="central" font-size="'+fs+'" font-weight="700" fill="'+tc+'" style="pointer-events:none;">'+lab+'</text>'
+                        +'</svg></button>';
+                }).join('');
+            }
+            function _rxNotaSel(){ const n=window._rxToothNotation||'fdi'; const o=(v,t)=>'<option value="'+v+'"'+(n===v?' selected':'')+'>'+t+'</option>'; return '<select onchange="rxSetToothNotation(this.value)" title="치식 표기법" style="font-size:10.5px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;">'+o('fdi','FDI')+o('palmer','Palmer')+o('universal','Universal')+'</select>'; }
             function _rxToothChartHtml(i, it){
-                const t=it.teeth||[]; const A=_rxToothArrays(); const child=!!it._child;
+                const t=it.teeth||[]; const A=_rxToothArrays(); const child=!!it._child; const nota=window._rxToothNotation||'fdi';
                 const childOn = child ? 'background:#0f2f52;color:#fff;border-color:#0f2f52;' : 'background:#fff;color:#334155;border-color:#cbd5e1;';
+                const selLbl = (t&&t.length) ? t.slice().sort((a,b)=>a-b).map(x=>_toothLabelFor(x,nota)).join(', ') : '-';
                 return '<div id="rx-tooth-wrap-'+i+'" style="border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#f8fafc;">'
                     +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;">'
-                    +'<span style="font-size:11px;font-weight:800;color:#475569;">치식 선택</span>'
+                    +'<span style="display:flex;align-items:center;gap:6px;"><span style="font-size:11px;font-weight:800;color:#475569;">치식 선택</span>'+_rxNotaSel()+'</span>'
                     +'<span style="display:flex;gap:4px;flex-wrap:wrap;">'
                     +'<button type="button" onclick="rxToothPick('+i+',\'up\')" style="font-size:10.5px;padding:3px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">상악</button>'
                     +'<button type="button" onclick="rxToothPick('+i+',\'lo\')" style="font-size:10.5px;padding:3px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">하악</button>'
                     +'<button type="button" onclick="rxToothChild('+i+')" style="font-size:10.5px;padding:3px 8px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;'+childOn+'">유치</button>'
                     +'<button type="button" onclick="rxToothClear('+i+')" style="font-size:10.5px;padding:3px 8px;border:1px solid #fca5a5;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;">초기화</button>'
                     +'</span></div>'
-                    +'<div style="overflow-x:auto;">'
-                    +'<div style="display:flex;gap:2px;justify-content:center;margin-bottom:3px;">'+_rxToothBtns(i,(child?A.upC:A.upU),t)+'</div>'
-                    +'<div style="display:flex;gap:2px;justify-content:center;">'+_rxToothBtns(i,(child?A.loC:A.loU),t)+'</div>'
+                    +'<div style="overflow-x:auto;padding:2px 0;">'
+                    +'<div style="display:flex;gap:1px;justify-content:center;align-items:flex-end;">'+_rxToothBtns(i,(child?A.upC:A.upU),t,true)+'</div>'
+                    +'<div style="height:1px;background:#e2e8f0;margin:3px 0;"></div>'
+                    +'<div style="display:flex;gap:1px;justify-content:center;align-items:flex-start;">'+_rxToothBtns(i,(child?A.loC:A.loU),t,false)+'</div>'
                     +'</div>'
-                    +'<div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:6px;">선택: <b style="color:#0f2f52;">'+((t&&t.length)?t.slice().sort((a,b)=>a-b).join(', '):'-')+'</b></div>'
+                    +'<div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:6px;">선택: <b style="color:#0f2f52;">'+selLbl+'</b></div>'
                     +'</div>';
             }
+            window.rxSetToothNotation = function(v){ window._rxToothNotation=v; const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ try{ syncRxItemsFromDOM(); }catch(_){} _renderRxItems(); } else { st.items.forEach((it,i)=>{ const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i,it); }); } };
             function _rxAfterTooth(i){ const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ _renderRxItems(); } else { const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i, st.items[i]); } }
             window.rxToothToggle = function(i,t){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); const it=st.items[i]; it.teeth=(it.teeth||[]).slice(); const idx=it.teeth.indexOf(t); if(idx>=0) it.teeth.splice(idx,1); else it.teeth.push(t); it.teeth.sort((a,b)=>a-b); if(st.mode==='detail' && it.perTooth){ const keep=new Set(it.teeth.map(Number)); Object.keys(it.perTooth).forEach(k=>{ if(!keep.has(Number(k))) delete it.perTooth[k]; }); } _rxAfterTooth(i); };
             window.rxToothPick = function(i,which){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); const it=st.items[i]; const A=_rxToothArrays(); const arr=(which==='up')?(it._child?A.upC:A.upU):(it._child?A.loC:A.loU); const s=new Set(it.teeth||[]); arr.forEach(n=>s.add(n)); it.teeth=Array.from(s).sort((a,b)=>a-b); _rxAfterTooth(i); };
