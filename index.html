@@ -5639,20 +5639,22 @@
                 window._sbDropdown(anchor, html, (dd,close)=>{ const l=dd.querySelector('._sb-tolocal'); if(l) l.addEventListener('click',()=>{ close(); try{ window._sfComputerBtn&&window._sfComputerBtn(); }catch(_){} }); });
                 return;
             }
-            // 로컬 상태 → 등록 폴더 목록(경로 선택 불필요, 클릭=그 폴더로) + 클라우드 + 하단 추가
-            let roots=[]; try{ roots=(R&&R.listRoots)?await R.listRoots():[]; }catch(_){}
-            let folderHtml = notSup
-                ? '<div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px;line-height:1.6;">이 기기는 폴더 지정을 지원하지 않습니다.<br>(모바일/Safari)</div>'
-                : (roots.length ? roots.map(r=>'<div class="_sb-root" data-id="'+esc(r.id)+'" style="'+row+(r.active?'background:#eef4f8;color:#0b2b4b;':'color:#334155;')+'">'
-                    +'<span style="flex:none;opacity:.8;display:inline-flex;">'+fico+'</span>'
-                    +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.name)+(r.active?' <span style="font-size:10px;color:#16a34a;font-weight:800;">● 사용중</span>':'')+'</span>'
-                    +'<button class="_sb-rootx" data-id="'+esc(r.id)+'" title="목록에서 제거" style="flex:none;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:24px;height:24px;font-weight:900;cursor:pointer;line-height:1;">×</button></div>').join('')
-                    : '<div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px;">등록된 폴더가 없습니다.</div>');
+            // 로컬 상태 → 📁 내 컴퓨터(사용중) 헤더 + 그 아래 실제 하위 폴더(탐색, 들여쓰기 트리) + 클라우드 + 폴더 경로 추가
+            let subfolders=[]; try{ if(R&&R.listAt){ const cc=await R.listAt([]); subfolders=(((cc&&cc.folders)||[]).map(f=>(typeof f==='string')?f:(f.name||f.leaf||f.rel||''))).filter(Boolean); } }catch(_){}
+            let folderHtml;
+            if(notSup){ folderHtml='<div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px;line-height:1.6;">이 기기는 폴더 지정을 지원하지 않습니다.<br>(모바일/Safari)</div>'; }
+            else {
+                const header='<div class="_sb-localroot" style="'+row+'background:#eef4f8;color:#0b2b4b;"><span style="flex:none;">📁</span><span style="flex:1;">내 컴퓨터</span><span style="font-size:10px;color:#16a34a;font-weight:800;">● 사용중</span></div>';
+                const tree = subfolders.length
+                    ? subfolders.map(nm=>'<div class="_sb-subf" data-name="'+esc(nm)+'" style="'+row+'padding-left:34px;color:#334155;" title="'+esc(nm)+'"><span style="flex:none;opacity:.7;display:inline-flex;">'+fico+'</span><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(nm)+'</span></div>').join('')
+                    : '<div style="padding:9px 12px 9px 34px;color:#94a3b8;font-size:12px;">하위 폴더가 없습니다. (＋ 폴더 경로 추가로 폴더를 연결하세요)</div>';
+                folderHtml = header + tree;
+            }
             const cloudBtn='<div style="border-top:1px solid #f1f5f9;margin:4px 0;padding-top:4px;"><button id="_sb-cloud-btn" style="'+row+'width:100%;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;"><span style="flex:none;">☁</span><span style="flex:1;text-align:left;">클라우드 저장소</span></button></div>';
             const addBtn = notSup ? '' : '<button id="_sb-root-add" style="'+row+'width:100%;border:none;background:#f0fdf4;color:#166534;justify-content:center;font-weight:800;">＋ 폴더 경로 추가</button>';
             window._sbDropdown(anchor, folderHtml+cloudBtn+addBtn, (dd,close)=>{
-                dd.querySelectorAll('._sb-root').forEach(el=>el.addEventListener('click',async(e)=>{ if(e.target.closest('._sb-rootx')) return; const id=el.getAttribute('data-id'); close(); try{ await window._sbFolderPick(id); }catch(_){} }));
-                dd.querySelectorAll('._sb-rootx').forEach(el=>el.addEventListener('click',async(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); const ok=await (window._sfConfirm?window._sfConfirm('이 폴더를 목록에서 제거할까요?\n(폴더의 실제 파일은 삭제되지 않습니다)','제거'):Promise.resolve(confirm('이 폴더를 목록에서 제거할까요?'))); if(!ok) return; close(); try{ if(R&&R.removeRoot) await R.removeRoot(id); }catch(_){} try{ if(window.__sfOv&&document.body.contains(window.__sfOv)&&window._sfGotoPath) await window._sfGotoPath([]); }catch(_){} }));
+                const lr=dd.querySelector('._sb-localroot'); if(lr) lr.addEventListener('click',()=>{ close(); try{ if(window._sfGotoPath) window._sfGotoPath([]); else if(window._sfLocalBtnAction) window._sfLocalBtnAction(); }catch(_){} });
+                dd.querySelectorAll('._sb-subf').forEach(el=>el.addEventListener('click',()=>{ const nm=el.getAttribute('data-name'); close(); try{ if(window._sfGotoPath) window._sfGotoPath([nm]); }catch(_){} }));
                 const cb=dd.querySelector('#_sb-cloud-btn'); if(cb) cb.addEventListener('click',()=>{ close(); try{ window._sbCloudToggle&&window._sbCloudToggle(); }catch(_){} });
                 const ab=dd.querySelector('#_sb-root-add'); if(ab) ab.addEventListener('click',async()=>{ close(); try{ if(R&&R.pick){ const ok=await R.pick(); if(ok){ await window._sbFolderPick(null); } } }catch(_){} });
             });
@@ -7041,6 +7043,10 @@
             if(!window.__sfDocDropWired){ window.__sfDocDropWired=true;
                 document.addEventListener('dragover', function(e){ try{ if(window.__sfDragFileRef && window.__sfDragFileRef.length && window.__sfFormAttachActive && window.__sfFormAttachActive()){ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='copy'; } }catch(_){} }, false);
                 document.addEventListener('drop', function(e){ try{ if(window.__sfDragFileRef && window.__sfDragFileRef.length && window.__sfFormAttachActive && window.__sfFormAttachActive()){ e.preventDefault(); const refs=window.__sfDragFileRef.slice(); window.__sfDragFileRef=null; window._sfAttachDescs(refs.map(d=>({rootId:d.rootId, rpath:d.rpath, cloud:d.cloud, mime:d.mime, size:d.size}))); } }catch(_){} }, false);
+                // 🧹 드래그 종료 시 잔류 표시(점선 오버레이·드롭존 하이라이트) 정리 — 공유 후에도 점선이 안 사라지던 버그 수정
+                const _sfDragCleanup=function(){ try{ const o=document.getElementById('chat-drag-overlay'); if(o) o.classList.remove('active'); }catch(_){} try{ document.querySelectorAll('.dropzone.dragover').forEach(d=>d.classList.remove('dragover')); }catch(_){} try{ document.querySelectorAll('._pt-file,.rc-clview').forEach(el=>{}); }catch(_){} };
+                document.addEventListener('dragend', _sfDragCleanup, false);
+                document.addEventListener('drop', _sfDragCleanup, false);
             }
             render();
         }
