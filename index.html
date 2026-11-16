@@ -668,7 +668,7 @@
         .floating-badge { position: absolute; top: -2px; right: -2px; background: var(--notify); color: white; font-size: 11px; font-weight: bold; padding: 3px 7px; border-radius: 20px; border: 2px solid #fff; display: none; }
         
         /* 메신저 드로어 — 상단 바(56px) 아래부터(메인 통합검색창은 덮음). 자체 통합검색을 상단에 가짐 */
-        .messenger-drawer { position: fixed; top: 56px; right: -420px; width: 100%; max-width: 380px; height: calc(100vh - 56px); height: calc(100dvh - 56px); background: #ffffff; box-shadow: -5px 0 25px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 4001; display: flex; flex-direction: column; border-left: 1px solid var(--border-color); border-top: 1px solid var(--border-color); }
+        .messenger-drawer { position: fixed; top: 56px; right: -560px; width: 100%; max-width: 520px; height: calc(100vh - 56px); height: calc(100dvh - 56px); background: #ffffff; box-shadow: -5px 0 25px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 4001; display: flex; flex-direction: column; border-left: 1px solid var(--border-color); border-top: 1px solid var(--border-color); }
         .messenger-drawer.open { right: 0; }
         .drawer-header { padding: 15px 20px; background: #f8fafc; color: var(--text-main); font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
         
@@ -20440,12 +20440,15 @@ pdfjsScript,
                 molar:{ crown:'M7,39 L8,21 Q10,11 14,17 Q18,10 22,16 Q26,10 30,17 Q34,11 36,21 L37,39 Q22,43 7,39 Z', roots:['M11,39 C8,60 10,80 15,89 C17,80 17,52 18,39 Z','M20,39 C19,64 20,85 22,93 C24,85 25,64 24,39 Z','M26,39 C26,52 27,80 29,89 C34,80 36,60 33,39 Z'], detail:'M22,13 L22,38 M11,23 Q22,28 33,23' }
             };
             // 교합면(상면) 치종별 경로 (viewBox 0 0 40 40)
+            // 교합면(위에서 본) 실사형 윤곽 — 치종별. 셀 크기로 실제 치아 비율(근원심 폭)을 반영.
             const _TO = {
-                incisor:{ shape:'M9,17 Q20,13 31,17 Q33,20 31,23 Q20,27 9,23 Q7,20 9,17 Z', detail:'M9,20 Q20,21 31,20' },
-                canine:{ shape:'M20,11 Q29,15 28,25 Q20,30 12,25 Q11,15 20,11 Z', detail:'M20,12 L20,29' },
-                premolar:{ shape:'M11,13 Q20,10 29,13 Q32,20 29,27 Q20,30 11,27 Q8,20 11,13 Z', detail:'M11,20 Q20,22 29,20 M20,12 L20,28' },
-                molar:{ shape:'M10,12 Q20,9 30,12 Q33,20 30,28 Q20,31 10,28 Q7,20 10,12 Z', detail:'M20,10 L20,30 M9,20 Q20,22 31,20' }
+                incisor:{ shape:'M13,9 Q20,6 27,9 Q30,20 27,31 Q20,34 13,31 Q10,20 13,9 Z', detail:'M13,15 Q20,13 27,15' },
+                canine:{ shape:'M20,6 Q30,11 29,22 Q26,33 20,36 Q14,33 11,22 Q10,11 20,6 Z', detail:'M20,9 Q22,21 20,34' },
+                premolar:{ shape:'M11,10 Q20,7 29,10 Q33,20 29,30 Q20,33 11,30 Q7,20 11,10 Z', detail:'M20,9 L20,31 M13,20 Q20,23 27,20' },
+                molar:{ shape:'M10,9 Q20,6 30,9 Q34,20 30,31 Q20,34 10,31 Q6,20 10,9 Z', detail:'M20,8 L20,32 M8,20 Q20,23 32,20 M13,13 Q20,16 27,13 M13,27 Q20,24 27,27' }
             };
+            // 치종별 근원심 폭 계수(실제 치아 비율 근사): 1중절, 2측절, 3견치, 4·5소구치, 6·7·8대구치
+            function _toothWidthFactor(fdi){ const d=fdi%10; return ({1:0.98,2:0.74,3:0.82,4:0.82,5:0.84,6:1.18,7:1.1,8:1.0}[d])||1; }
             function _toothBuccalSVG(fdi,on){ const T=_TB[_toothType(fdi)]||_TB.incisor; const f=on?'#dbeafe':'#ffffff', s=on?'#2563eb':'#566178', dl=on?'#8fb3ea':'#b9c2d0'; let o=''; (T.roots||[]).forEach(r=>{ o+='<path d="'+r+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.3" stroke-linejoin="round"/>'; }); o+='<path d="'+T.crown+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.4" stroke-linejoin="round"/>'; if(T.detail) o+='<path d="'+T.detail+'" fill="none" stroke="'+dl+'" stroke-width="0.9" stroke-linecap="round"/>'; return o; }
             function _toothOcclusalSVG(fdi,on){ const T=_TO[_toothType(fdi)]||_TO.incisor; const f=on?'#dbeafe':'#ffffff', s=on?'#2563eb':'#566178', dl=on?'#8fb3ea':'#aab3c2'; return '<path d="'+T.shape+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.4" stroke-linejoin="round"/>'+(T.detail?'<path d="'+T.detail+'" fill="none" stroke="'+dl+'" stroke-width="0.9" stroke-linecap="round"/>':''); }
             // ── 4분면(협측) ──
@@ -20456,32 +20459,41 @@ pdfjsScript,
                 const toothCell=(fdi,flip)=>'<div style="position:relative;width:'+TW+'px;height:60px;flex:none;"><div style="width:100%;height:100%;transform:'+(flip?'scaleY(-1)':'none')+';"><svg viewBox="0 0 44 104" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="display:block;overflow:visible;">'+_toothBuccalSVG(fdi,sel.has(fdi))+'</svg></div><button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="position:absolute;inset:0;background:none;border:none;cursor:pointer;padding:0;"></button></div>';
                 const row=(arr,builder,ai)=>{ let h='<div style="display:flex;justify-content:center;align-items:center;">'; arr.forEach((fdi,k)=>{ if(k===8) h+=DIV; h+=builder(fdi); }); return h+'</div>'; };
                 const sideLbl='<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:#94a3b8;padding:0 4px 2px;"><span>우측 Right</span><span>좌측 Left</span></div>';
-                return '<div style="min-width:'+(TW*16+70)+'px;">'
+                const W2=TW*16+70;
+                return '<div style="width:100%;overflow:hidden;"><div style="width:'+W2+'px;margin:0 auto;transform-origin:top center;" data-archw="'+W2+'">'
                     + sideLbl
                     + row(upA, numCell)
                     + row(upA, fdi=>toothCell(fdi,true))
                     + '<div style="height:2px;background:#0f2f52;margin:4px 0;opacity:.3;"></div>'
                     + row(loA, fdi=>toothCell(fdi,false))
                     + row(loA, numCell)
-                    + '</div>';
+                    + '</div></div>';
             }
-            // ── 아치형(교합면 상면도 · 타원 배열) ──
+            // ── 아치형(교합면 상면도 · 실제 악궁형 타원, 치아 비율 반영) ──
             function _rxArchHtml(i, upA, loA, teeth){
                 const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi';
-                const cx=175, cy=158, rx=116, ry=132, TW=30; const cells=[];
-                const place=(arr,upper)=>{ const n=arr.length; arr.forEach((fdi,k)=>{ const t=n>1?k/(n-1):0.5; const th=Math.PI*(0.95-0.90*t);
-                    const x=cx+rx*Math.cos(th); const y=upper?(cy-ry*Math.sin(th)):(cy+ry*Math.sin(th));
-                    const nx=cx+(rx+24)*Math.cos(th); const ny=upper?(cy-(ry+24)*Math.sin(th)):(cy+(ry+24)*Math.sin(th));
-                    const ox=Math.cos(th), oy=upper?-Math.sin(th):Math.sin(th); const rot=Math.atan2(ox,-oy)*180/Math.PI;
-                    const on=sel.has(fdi);
-                    cells.push('<div style="position:absolute;left:'+(x-TW/2).toFixed(1)+'px;top:'+(y-TW/2).toFixed(1)+'px;width:'+TW+'px;height:'+TW+'px;"><div style="width:100%;height:100%;transform:rotate('+rot.toFixed(1)+'deg);transform-origin:center;"><svg viewBox="0 0 40 40" width="100%" height="100%" style="display:block;overflow:visible;">'+_toothOcclusalSVG(fdi,on)+'</svg></div><button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="position:absolute;inset:0;background:none;border:none;cursor:pointer;"></button></div>');
-                    cells.push('<div style="position:absolute;left:'+(nx-14).toFixed(1)+'px;top:'+(ny-9).toFixed(1)+'px;width:28px;text-align:center;font-size:12px;font-weight:800;color:'+(on?'#1d4ed8':'#475569')+';pointer-events:none;">'+_toothLabelFor(fdi,nota)+'</div>');
-                }); };
+                const W=460, H=520, cx=230, rxE=172, cyU=198, cyL=300, ryU=176, ryL=196, base=27; const cells=[];
+                const place=(arr,upper)=>{
+                    const ws=arr.map(_toothWidthFactor); const tot=ws.reduce((a,b)=>a+b,0);
+                    let acc=0;
+                    arr.forEach((fdi,k)=>{ const mid=acc+ws[k]/2; acc+=ws[k];
+                        const t=mid/tot; const th=Math.PI*(1-t);   // π(좌)..0(우)
+                        const cyc=upper?cyU:cyL; const ry=upper?ryU:ryL;
+                        const x=cx+rxE*Math.cos(th); const y=upper?(cyc-ry*Math.sin(th)):(cyc+ry*Math.sin(th));
+                        const ox=rxE*Math.cos(th), oy=upper?(-ry*Math.sin(th)):(ry*Math.sin(th));
+                        const rot=Math.atan2(ox,-oy)*180/Math.PI;
+                        const sz=base*_toothWidthFactor(fdi); const on=sel.has(fdi);
+                        const nr=1.14; const nx=cx+rxE*nr*Math.cos(th); const ny=upper?(cyc-ry*nr*Math.sin(th)):(cyc+ry*nr*Math.sin(th));
+                        cells.push('<div style="position:absolute;left:'+(x-sz/2).toFixed(1)+'px;top:'+(y-sz/2).toFixed(1)+'px;width:'+sz.toFixed(1)+'px;height:'+sz.toFixed(1)+'px;"><div style="width:100%;height:100%;transform:rotate('+rot.toFixed(1)+'deg);transform-origin:center;"><svg viewBox="0 0 40 40" width="100%" height="100%" style="display:block;overflow:visible;">'+_toothOcclusalSVG(fdi,on)+'</svg></div><button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="position:absolute;inset:0;background:none;border:none;cursor:pointer;"></button></div>');
+                        cells.push('<div style="position:absolute;left:'+(nx-13).toFixed(1)+'px;top:'+(ny-8).toFixed(1)+'px;width:26px;text-align:center;font-size:11px;font-weight:800;color:'+(on?'#1d4ed8':'#64748b')+';pointer-events:none;">'+_toothLabelFor(fdi,nota)+'</div>');
+                    });
+                };
                 place(upA,true); place(loA,false);
-                return '<div style="position:relative;width:350px;height:330px;margin:0 auto;">'
-                    +'<div style="position:absolute;left:0;right:0;top:10px;text-align:center;font-size:10px;font-weight:700;color:#cbd5e1;pointer-events:none;">상악</div>'
-                    +'<div style="position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:10px;font-weight:700;color:#cbd5e1;pointer-events:none;">하악</div>'
-                    +cells.join('')+'</div>';
+                // 가로가 좁으면(모바일) 축소해서 한 화면에 — 컨테이너 폭에 맞춰 scale
+                return '<div id="rx-arch-wrap-'+i+'" style="width:100%;overflow:hidden;"><div style="position:relative;width:'+W+'px;height:'+H+'px;margin:0 auto;transform-origin:top center;" data-archw="'+W+'" data-archh="'+H+'">'
+                    +'<div style="position:absolute;left:0;right:0;top:'+(cyU-ryU-18)+'px;text-align:center;font-size:11px;font-weight:800;color:#cbd5e1;pointer-events:none;">상악 (위턱)</div>'
+                    +'<div style="position:absolute;left:0;right:0;top:'+(cyL+ryL+6)+'px;text-align:center;font-size:11px;font-weight:800;color:#cbd5e1;pointer-events:none;">하악 (아래턱)</div>'
+                    +cells.join('')+'</div></div>';
             }
             function _rxNotaSel(){ const n=window._rxToothNotation||'fdi'; const o=(v,t)=>'<option value="'+v+'"'+(n===v?' selected':'')+'>'+t+'</option>'; return '<select onchange="rxSetToothNotation(this.value)" title="치식 표기법" style="font-size:10.5px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;">'+o('fdi','FDI')+o('palmer','Palmer')+o('universal','Universal')+'</select>'; }
             function _rxLayoutSel(){ const L=window._rxToothLayout||'quad'; const b=(v,t,pos)=>'<button type="button" onclick="rxSetToothLayout(\''+v+'\')" style="font-size:10.5px;padding:3px 9px;border:1px solid '+(L===v?'#0f2f52':'#cbd5e1')+';background:'+(L===v?'#0f2f52':'#fff')+';color:'+(L===v?'#fff':'#475569')+';cursor:pointer;'+(pos==='l'?'border-radius:6px 0 0 6px;':'border-radius:0 6px 6px 0;border-left:none;')+'">'+t+'</button>'; return '<span style="display:inline-flex;">'+b('quad','4분면','l')+b('arch','아치형','r')+'</span>'; }
@@ -20506,8 +20518,10 @@ pdfjsScript,
             }
             window.rxSetToothNotation = function(v){ window._rxToothNotation=v; _rxRerenderCharts(); };
             window.rxSetToothLayout = function(v){ window._rxToothLayout=v; _rxRerenderCharts(); };
-            function _rxRerenderCharts(){ const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ try{ syncRxItemsFromDOM(); }catch(_){} _renderRxItems(); } else { st.items.forEach((it,i)=>{ const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i,it); }); } }
-            function _rxAfterTooth(i){ const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ _renderRxItems(); } else { const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i, st.items[i]); } }
+            // 아치형 그림을 컨테이너 폭에 맞게 축소(모바일 등 좁은 폭에서 한 화면에)
+            window._rxFitArch=function(){ try{ document.querySelectorAll('[data-archw]').forEach(function(el){ var W=Number(el.getAttribute('data-archw'))||460; var par=el.parentElement; if(!par) return; el.style.transform='none'; var natH=el.offsetHeight||Number(el.getAttribute('data-archh'))||400; var pw=par.clientWidth||W; var s=Math.min(1, pw/W); el.style.transform=(s<1?('scale('+s.toFixed(3)+')'):'none'); par.style.height=(natH*s)+'px'; }); }catch(_){} };
+            function _rxRerenderCharts(){ const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ try{ syncRxItemsFromDOM(); }catch(_){} _renderRxItems(); } else { st.items.forEach((it,i)=>{ const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i,it); }); } setTimeout(window._rxFitArch,30); }
+            function _rxAfterTooth(i){ const st=window.rxOrderState; if(!st) return; if(st.mode==='detail'){ _renderRxItems(); } else { const w=document.getElementById('rx-tooth-wrap-'+i); if(w) w.outerHTML=_rxToothChartHtml(i, st.items[i]); } setTimeout(window._rxFitArch,30); }
             window.rxToothToggle = function(i,t){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); const it=st.items[i]; it.teeth=(it.teeth||[]).slice(); const idx=it.teeth.indexOf(t); if(idx>=0) it.teeth.splice(idx,1); else it.teeth.push(t); it.teeth.sort((a,b)=>a-b); if(st.mode==='detail' && it.perTooth){ const keep=new Set(it.teeth.map(Number)); Object.keys(it.perTooth).forEach(k=>{ if(!keep.has(Number(k))) delete it.perTooth[k]; }); } _rxAfterTooth(i); };
             window.rxToothPick = function(i,which){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); const it=st.items[i]; const A=_rxToothArrays(); const arr=(which==='up')?(it._child?A.upC:A.upU):(it._child?A.loC:A.loU); const s=new Set(it.teeth||[]); arr.forEach(n=>s.add(n)); it.teeth=Array.from(s).sort((a,b)=>a-b); _rxAfterTooth(i); };
             window.rxToothChild = function(i){ const st=window.rxOrderState; if(!st||!st.items[i]) return; if(st.mode==='detail') syncRxItemsFromDOM(); st.items[i]._child=!st.items[i]._child; _rxAfterTooth(i); };
@@ -20516,6 +20530,7 @@ pdfjsScript,
                 const st = window.rxOrderState; const cont = document.getElementById('rx-items-container'); if(!cont||!st) return;
                 cont.innerHTML = st.items.map((it,i)=> st.mode==='simple' ? _simpleItemHtml(it,i) : _detailItemHtml(it,i)).join('');
                 if(st.mode==='detail') rxRecalc();
+                setTimeout(window._rxFitArch,30);
             }
             function _simpleItemHtml(it,i){
                 return `<div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:10px;background:#fff;">
