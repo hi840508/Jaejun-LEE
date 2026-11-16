@@ -1434,7 +1434,7 @@
                     <span id="market-filter-title" style="font-weight:bold; font-size:14px; color:var(--primary);"></span>
                     <button class="fav-icon-btn" id="market-filter-fav-btn" onclick="toggleFavoriteCurrentBrand()" title="즐겨찾기" aria-label="즐겨찾기"><span class="fav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span></button>
                     <button class="btn btn-outline" id="market-filter-inquire-btn" style="padding:6px 10px; font-size:11px; border-radius:20px; display:none;" onclick="inquireCurrentBrandOwner()">1:1 문의</button>
-                    <button class="btn" id="market-filter-cart-btn" style="padding:6px 12px; font-size:11px; border-radius:20px; margin-left:auto; background:var(--gradient-btn); color:#fff; position:relative;" onclick="openCart()">장바구니 <span id="cart-count-badge" style="display:none; background:#ef4444; color:#fff; font-size:10px; padding:2px 6px; border-radius:30px; margin-left:4px;">0</span></button>
+                    <button class="btn" id="market-filter-cart-btn" style="padding:6px 12px; font-size:11px; border-radius:20px; margin-left:auto; background:var(--gradient-btn); color:#fff; position:relative;" onclick="openStoreOrderCart()">장바구니 <span id="cart-count-badge" style="display:none; background:#ef4444; color:#fff; font-size:10px; padding:2px 6px; border-radius:30px; margin-left:4px;">0</span></button>
                 </div>
 
                 <!-- 🚀 [v7+] 디지털 거래소 메인 — 컨텐츠 우선 (상품·브랜드 쇼케이스) -->
@@ -2687,7 +2687,8 @@
             <div id="order-form-body" style="flex:1; overflow-y:auto; padding-right:6px;"></div>
             <div style="border-top:2px solid var(--border-color); padding-top:12px; margin-top:10px; display:flex; gap:8px;">
                 <button class="btn btn-outline" style="flex:1; padding:12px;" onclick="closeModal('order-form-modal')">취소</button>
-                <button class="btn" style="flex:2; padding:12px; font-size:14px; font-weight:bold; background:var(--gradient-btn);" onclick="submitOrderForApproval()">📤 주문서 보내기 (판매자 승인 시 결제됩니다)</button>
+                <button class="btn btn-outline" style="flex:1; padding:12px; font-weight:bold; border-color:#f59e0b; color:#b45309;" onclick="orderFormAddToCart()">🛒 장바구니</button>
+                <button class="btn" style="flex:2; padding:12px; font-size:15px; font-weight:bold; background:var(--gradient-btn);" onclick="submitOrderForApproval()">주문</button>
             </div>
         </div>
     </div>
@@ -14552,7 +14553,7 @@ pdfjsScript,
             window.marketSortMode = 'latest'; window.marketTypeFilter = 'all'; window.marketRxCat = 'all';
             try{ const ss=document.getElementById('brand-sort-sel'); if(ss) ss.value='latest'; }catch(_){}
 
-            updateCartBadge();
+            try{ if(window.updateOrderCartBadge) updateOrderCartBadge(); else updateCartBadge(); }catch(_){ try{ updateCartBadge(); }catch(e){} }
             loadMarketplace();
         }
         // 상점 내부 ← : 상점 나가고 '내 상점'(상점 카드) 화면으로 복귀
@@ -15903,7 +15904,8 @@ pdfjsScript,
             const _fdiUpper=[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28];
             const _fdiLower=[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
             const _toothBtns=(arr)=>arr.map(n=>'<button type="button" class="rxd-tooth" data-t="'+n+'" style="width:30px;height:36px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;font-size:11px;font-weight:700;color:#334155;cursor:pointer;flex:none;">'+n+'</button>').join('');
-            const rxDetailBox = !_isLabForm ? '' : `
+            // 📌 일반 주문서에서 '상세 의뢰서' 섹션 제거 (요청) — 항상 비움. 아래 템플릿은 사용 안 함(데드코드 유지).
+            const rxDetailBox = (true) ? '' : `
                 <div style="font-size:15px; font-weight:900; color:var(--primary); margin-bottom:10px;">🦷 상세 의뢰서 <span style="font-weight:500;color:var(--text-sub);font-size:12px;">(치식·보철 선택 + 치식별 세부정보)</span></div>
                 <div style="background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:14px;">
                     <div style="font-size:11px;font-weight:800;color:#475569;margin-bottom:6px;">주문 유형</div>
@@ -15989,7 +15991,7 @@ pdfjsScript,
             // 🦷 상세 의뢰서 — 치식 차트 선택 + 치식별 세부정보(픽스처/쉐이드/헥사/보험) 동적 생성 + 주문유형 라디오
             (function _rxdInit(){
                 const chart=document.getElementById('rxd-chart')||document; const teethHidden=document.getElementById('rxd-teeth');
-                if(!teethHidden) return;
+                if(!teethHidden){ window.__rxdPerTooth={}; window.__rxdOrderType=''; return; }  // 상세 의뢰서 섹션 제거됨 → 잔존 상태 초기화
                 const selected=new Set(); const perTooth={};   // perTooth[t]={shade,fixture,hexa,ins}
                 const SHADES=['A1','A2','A3','A3.5','A4','B1','B2','B3','B4','C1','C2','C3','C4','D2','D3','D4','BL1','BL2','BL3','BL4'];
                 const paintTooth=(b)=>{ const on=selected.has(+b.dataset.t); b.style.background=on?'#0f2f52':'#fff'; b.style.color=on?'#fff':'#334155'; b.style.borderColor=on?'#0f2f52':'#cbd5e1'; };
@@ -16032,7 +16034,19 @@ pdfjsScript,
             });
             obDz.addEventListener('dragover', e => { e.preventDefault(); obDz.classList.add('dragover'); });
             obDz.addEventListener('dragleave', e => { e.preventDefault(); obDz.classList.remove('dragover'); });
-            obDz.addEventListener('drop', e => { e.preventDefault(); obDz.classList.remove('dragover'); if(e.dataTransfer.files) addBuyerFiles(e.dataTransfer.files); });
+            obDz.addEventListener('drop', async e => {
+                e.preventDefault(); obDz.classList.remove('dragover');
+                if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length){ addBuyerFiles(e.dataTransfer.files); return; }
+                // 📎 파일검색(환자·내컴퓨터·클라우드) 카드 드래그 → 첨부 (간편의뢰서와 동일 동작)
+                const ref = window.__sfDragFileRef;
+                if(ref && ref.length){
+                    showToast('파일 읽는 중… ('+ref.length+'개)');
+                    const R2=window.RCFolder; const files=[];
+                    for(const d of ref){ try{ const parts=String(d.rpath||'').split('/'); const fn=parts.pop(); let f=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R2&&R2.getFileAt){ try{ f=await R2.getFileAt(parts,fn); }catch(_){} } if(f) files.push(f); }catch(_){} }
+                    if(files.length){ addBuyerFiles(files); showToast('📎 '+files.length+'개 첨부됨'); }
+                    try{ window.__sfDragFileRef=null; }catch(_){}
+                }
+            });
             obIn.addEventListener('change', e => addBuyerFiles(e.target.files));
 
             openModal('order-form-modal');
@@ -16056,7 +16070,7 @@ pdfjsScript,
                     <span style="font-size:16px; font-weight:700;">주문서 양식 작성 \u2014 답변은 자동으로 텍스트 파일로 첨부됩니다</span>
                     <button class="close-btn-x" onclick="closeModal('pdf-fill-modal')">&times;</button>
                 </div>
-                <div class="pdf-fill-grid" style="display:grid; grid-template-columns:320px 1fr; gap:0; flex:1; min-height:0;">
+                <div class="pdf-fill-grid" style="display:grid; grid-template-columns:minmax(460px, 52%) 1fr; gap:0; flex:1; min-height:0;">
                     <div style="background:#1e293b; padding:12px; display:flex; flex-direction:column; gap:10px; border-right:1px solid #475569;">
                         <div style="color:#fff; font-size:12px; font-weight:bold; opacity:0.7;">📄 PDF 양식 (참고용)</div>
                         <iframe id="pdf-fill-iframe" style="width:100%; flex:1; border:none; background:#fff; border-radius:6px;"></iframe>
@@ -19939,9 +19953,11 @@ pdfjsScript,
             window.rxSetAmPm = function(v){ window._rxAmPm = v; const am=document.getElementById('rx-ampm-am'), pm=document.getElementById('rx-ampm-pm'); if(am&&pm){ const on='padding:9px 16px;border:1px solid #0f2f52;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; const off='padding:9px 16px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'; am.style.cssText=v==='am'?on:off; pm.style.cssText=v==='pm'?on:off; } };
             window.rxAddFiles = function(fileList){ const st=window.rxOrderState; if(!st) return; st.attachFiles = st.attachFiles.concat(Array.from(fileList||[])); _renderRxFileList(); };
             // 👨‍⚕️ 담당 원장님 기본값 = 계정 대표 이름 / 과거 입력 이력(리스트박스)
-            window._rxDefaultDoctor = function(){ const cu=window.currentUser||{}; return cu.biz_ceo || cu.realname || cu.name || ''; };
+            window._rxDefaultDoctor = function(){ const cu=(typeof currentUser!=='undefined'&&currentUser)||{}; return cu.biz_ceo || cu.realname || cu.name || ''; };
             window._rxDoctorOptions = function(){ let h=[]; try{ h=JSON.parse(localStorage.getItem('rx_doctor_history')||'[]'); }catch(_){ h=[]; } const def=window._rxDefaultDoctor(); if(def && h.indexOf(def)<0) h.unshift(def); const e=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); return h.slice(0,20).map(n=>'<option value="'+e(n)+'">').join(''); };
             window._rxSaveDoctor = function(name){ name=String(name||'').trim(); if(!name) return; try{ let h=JSON.parse(localStorage.getItem('rx_doctor_history')||'[]'); h=h.filter(x=>x!==name); h.unshift(name); localStorage.setItem('rx_doctor_history', JSON.stringify(h.slice(0,20))); }catch(_){} };
+            // 👨‍⚕️ 렌더 직후 담당 원장님 입력칸이 비어 있으면 계정 대표 이름으로 채움 (currentUser 직접 접근 — 확실)
+            window._rxSetDefaultDoctor = function(){ try{ const el=document.getElementById('rx-oi-doctor'); if(!el) return; if((el.value||'').trim()) return; const cu=currentUser||{}; const def=cu.biz_ceo||cu.realname||cu.name||''; if(def) el.value=def; }catch(_){} };
             // 📎 드롭존: OS 파일 드롭 + 파일검색(환자·내컴·클라우드) 파일 카드 드래그 → 첨부
             window.rxHandleDrop = async function(ev){
                 try{
@@ -20036,13 +20052,15 @@ pdfjsScript,
                         <div id="rx-items-container"></div>
                         <button type="button" onclick="rxAddItem()" style="width:100%;border:1px dashed #93c5fd;background:#f0f7ff;color:#0f2f52;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;margin-top:6px;">+ 품목 추가 (최대 4개)</button>
                         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;">
-                            <button class="btn btn-outline" type="button" style="padding:12px 20px;" onclick="rxCloseOverlay('rx-form-modal')">취소</button>
-                            <button class="btn" type="button" style="padding:12px 28px;background:var(--gradient-btn);font-weight:bold;" onclick="submitRxOrder()">의뢰서 등록</button>
+                            <button class="btn btn-outline" type="button" style="padding:12px 18px;" onclick="rxCloseOverlay('rx-form-modal')">취소</button>
+                            <button class="btn btn-outline" type="button" style="padding:12px 18px;font-weight:bold;border-color:#f59e0b;color:#b45309;" onclick="rxAddToCart()">🛒 장바구니</button>
+                            <button class="btn" type="button" style="padding:12px 28px;background:var(--gradient-btn);font-weight:bold;" onclick="submitRxOrder()">주문</button>
                         </div>
                     </div>`, 780);
                 rxSetAmPm('am');
                 _renderRxItems();
                 try{ rxAutofillSelectedPatient(); }catch(_){}
+                try{ window._rxSetDefaultDoctor(); }catch(_){}
             };
 
             /* ---------- 상세 의뢰서 ---------- */
@@ -20072,14 +20090,16 @@ pdfjsScript,
                         <div style="position:sticky;bottom:0;background:#fff;border-top:2px solid #e2e8f0;padding:14px 0 4px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                             <div style="font-size:16px;font-weight:800;color:#065f46;">합계 금액 <span id="rx-total" style="color:var(--primary);">0원</span></div>
                             <div style="display:flex;gap:8px;">
-                                <button class="btn btn-outline" type="button" style="padding:12px 20px;" onclick="rxCloseOverlay('rx-form-modal')">취소</button>
-                                <button class="btn" type="button" style="padding:12px 28px;background:linear-gradient(135deg,#059669,#047857);font-weight:bold;color:#fff;" onclick="submitRxOrder()">의뢰서 등록</button>
+                                <button class="btn btn-outline" type="button" style="padding:12px 18px;" onclick="rxCloseOverlay('rx-form-modal')">취소</button>
+                                <button class="btn btn-outline" type="button" style="padding:12px 18px;font-weight:bold;border-color:#f59e0b;color:#b45309;" onclick="rxAddToCart()">🛒 장바구니</button>
+                                <button class="btn" type="button" style="padding:12px 28px;background:linear-gradient(135deg,#059669,#047857);font-weight:bold;color:#fff;" onclick="submitRxOrder()">주문</button>
                             </div>
                         </div>
                     </div>`, 820);
                 rxSetAmPm('am');
                 _renderRxItems();
                 try{ rxAutofillSelectedPatient(); }catch(_){}
+                try{ window._rxSetDefaultDoctor(); }catch(_){}
             };
 
             function syncRxItemsFromDOM(){
@@ -20600,6 +20620,143 @@ pdfjsScript,
                 } catch(e){ showToast(label+' 요청 실패: ' + (e.message||e)); }
             };
 
+            // 📦 의뢰서 제출 바디 생성(첨부 업로드 포함) — submitRxOrder + 장바구니 공용
+            window._rxBuildOrderBody = async function(st, info){
+                const attachUploaded = [];
+                for(const f of (st.attachFiles||[])){ try{ const url = await window.uploadChatAttachment(f); if(url) attachUploaded.push({ filename:f.name, type:f.type||'application/octet-stream', url, sizeKB:(f.size/1024).toFixed(0) }); }catch(_){} }
+                const orderHtml = buildRxBundleHTML(st, info, attachUploaded);
+                const buyerInfo = { name: info.clinic, phone:'', address:'', userId: currentUser.name, clinic:info.clinic, doctor:info.doctor, patientName:info.patientName, birth:info.birth, gender:info.gender, chartNo:info.chartNo, dueDate:info.dueDate, dueAmPm:info.dueAmPm };
+                const formData = { rxMode: st.mode, orderInfo: info, items: st.items, attachMeta: attachUploaded.map(f=>({ filename:f.filename, type:f.type, url:f.url })) };
+                const body = { productId: st.product.id, buyer: currentUser.name, seller: st.seller, bundle_html: orderHtml, memo: (st.items.map(it=>it.memo).filter(Boolean).join(' / ')||''), form_data: formData, buyer_info: buyerInfo, amount: st.amount||0, status: 'pending', payMethod: 'balance' };
+                return { body, attachUploaded };
+            };
+
+            /* ============ 🛒 주문서 장바구니 (의뢰서 임시보관 → 한번에 주문) ============ */
+            window.rxFormCart = window.rxFormCart || [];
+            function _rxCartSellerKey(s){ return String(s||'').trim(); }
+            // 현재 입장 중인 상점 판매자명
+            window._rxCurrentSeller = function(){ try{ const s=window.currentMarketFilterStore; if(s&&(s.owner||s.seller||s.name)) return s.owner||s.seller||s.name; }catch(_){} try{ if(window.rxOrderState&&window.rxOrderState.seller) return window.rxOrderState.seller; }catch(_){} try{ if(window.orderFormState&&window.orderFormState.seller) return window.orderFormState.seller; }catch(_){} return ''; };
+            // 간편/상세 의뢰서 → 장바구니 담기 (제출 바디 미리 생성 = 한번에 주문 가능)
+            window.rxAddToCart = async function(){
+                const st = window.rxOrderState; if(!st||!st.product) return;
+                try{ syncRxItemsFromDOM(); }catch(_){}
+                const info = readOrderInfo(); info.timestamp = new Date().toLocaleString('ko-KR');
+                try{ if(window._rxSaveDoctor) window._rxSaveDoctor(info.doctor); }catch(_){}
+                if(!info.patientName.trim()) return showToast('환자명을 입력해 주세요.');
+                if(st.mode==='detail'){ try{ rxRecalc(); }catch(_){} if(!st.items.some(it=>(it.selected||[]).length)) return showToast('보철 품목을 1개 이상 선택해 주세요.'); }
+                else { st.amount=0; if(!st.items.some(it=>(it.name||'').trim()||(it.teeth||[]).length)) return showToast('품목명 또는 치식을 입력해 주세요.'); }
+                showToast('장바구니에 담는 중…(첨부 업로드)');
+                let built; try{ built = await window._rxBuildOrderBody(st, info); }catch(e){ return showToast('장바구니 담기 실패: '+(e.message||e)); }
+                const entry = {
+                    id: 'rxc_'+Date.now()+'_'+Math.floor(Math.random()*9999),
+                    kind:'rx', seller: st.seller, sellerName: st.seller,
+                    title: (st.mode==='simple'?'간편 의뢰서':'상세 의뢰서')+' · '+info.patientName,
+                    patient: info.patientName, amount: st.amount||0, mode: st.mode,
+                    body: built.body,
+                    // 편집 복원용 상태 스냅샷(파일은 메모리 참조 유지)
+                    state: { product:st.product, seller:st.seller, amount:st.amount||0, storeId:st.storeId, storeName:st.storeName, mode:st.mode, rxItems:st.rxItems, items:JSON.parse(JSON.stringify(st.items||[])), attachFiles:(st.attachFiles||[]).slice(), preselectName:st.preselectName||'', patientKey:st.patientKey||'' },
+                    info: info
+                };
+                window.rxFormCart.push(entry);
+                try{ updateOrderCartBadge(); }catch(_){}
+                try{ if(window.rxCloseOverlay) rxCloseOverlay('rx-form-modal'); }catch(_){}
+                showToast('🛒 장바구니에 담았습니다 ('+window.rxFormCart.filter(e=>_rxCartSellerKey(e.seller)===_rxCartSellerKey(st.seller)).length+'건) · 상단 장바구니에서 한번에 주문하세요');
+            };
+            // 일반 주문서 → 장바구니 담기 (편집=재오픈 방식)
+            window.orderFormAddToCart = function(){
+                const st = window.orderFormState; if(!st||!st.product) return;
+                const g=id=>{ const e=document.getElementById(id); return e?String(e.value||'').trim():''; };
+                const patient = g('order-buyer-patient')||'(환자명 미입력)';
+                const snap = { product:st.product, amount:st.amount, seller:st.seller, purchaseType:st.purchaseType, buyerFiles:(st.buyerFiles||[]).slice(), buyerMemo:g('order-buyer-memo'), pdfFilledData:st.pdfFilledData||'', buyerInfo:{ name:g('order-buyer-name'), phone:g('order-buyer-phone'), address:g('order-buyer-address'), patient:g('order-buyer-patient'), chart:g('order-buyer-chart') } };
+                const entry = { id:'ofc_'+Date.now()+'_'+Math.floor(Math.random()*9999), kind:'general', seller:st.seller, sellerName:st.seller, title:(st.product.name||'주문서')+' · '+patient, patient, amount:st.amount||0, snap };
+                window.rxFormCart.push(entry);
+                try{ updateOrderCartBadge(); }catch(_){}
+                try{ closeModal('order-form-modal'); }catch(_){}
+                showToast('🛒 장바구니에 담았습니다 · 상단 장바구니에서 확인하세요');
+            };
+            // 상단 장바구니 배지
+            window.updateOrderCartBadge = function(){
+                try{
+                    const seller=_rxCartSellerKey(window._rxCurrentSeller());
+                    const n=window.rxFormCart.filter(e=>!seller||_rxCartSellerKey(e.seller)===seller).length;
+                    const b=document.getElementById('cart-count-badge');
+                    if(b){ if(n>0){ b.textContent=n; b.style.display='inline-block'; } else b.style.display='none'; }
+                }catch(_){}
+            };
+            // 상점 내부 우측상단 장바구니 → 해당 상점 주문서(의뢰서) 목록
+            window.openStoreOrderCart = function(){
+                const seller=_rxCartSellerKey(window._rxCurrentSeller());
+                const list=window.rxFormCart.filter(e=>!seller||_rxCartSellerKey(e.seller)===seller);
+                const esc2=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+                let rows;
+                if(!list.length){ rows='<div style="text-align:center;padding:46px 20px;color:var(--text-sub);">🛒 담긴 주문서가 없습니다.<br><span style="font-size:12px;">의뢰서 작성 화면에서 <b>🛒 장바구니</b>로 담아 보세요.</span></div>'; }
+                else {
+                    rows = list.map(e=>`<label style="display:flex;align-items:center;gap:10px;border:1px solid var(--border-color);border-radius:10px;padding:11px 12px;margin-bottom:8px;background:#fff;cursor:pointer;">
+                        <input type="checkbox" class="rxcart-chk" data-id="${e.id}" checked style="width:17px;height:17px;flex:none;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13.5px;font-weight:800;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc2(e.title)}</div>
+                            <div style="font-size:11.5px;color:var(--text-sub);margin-top:2px;">${e.kind==='rx'?'의뢰서':'주문서'} · ${Number(e.amount)>0?(Number(e.amount).toLocaleString()+'원'):'금액 미정'}</div>
+                        </div>
+                        <button type="button" onclick="event.preventDefault();event.stopPropagation();rxCartEdit('${e.id}')" style="flex:none;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:7px;padding:6px 10px;font-size:11.5px;font-weight:700;cursor:pointer;">편집</button>
+                        <button type="button" onclick="event.preventDefault();event.stopPropagation();rxCartRemove('${e.id}')" style="flex:none;border:1px solid #fecaca;background:#fff;color:var(--danger);border-radius:7px;padding:6px 10px;font-size:11.5px;font-weight:700;cursor:pointer;">제거</button>
+                    </label>`).join('');
+                }
+                const html = `<div class="modal-content" style="max-width:560px;max-height:86vh;display:flex;flex-direction:column;">
+                    <div class="modal-header"><span>🛒 장바구니${seller?(' · '+esc2(seller)):''}</span><button class="close-btn-x" onclick="closeModal('store-order-cart-modal')">&times;</button></div>
+                    <div style="font-size:12px;color:var(--text-sub);margin-bottom:8px;">담긴 주문서를 확인·편집하고, 체크한 항목을 한번에 주문할 수 있습니다.</div>
+                    <div style="flex:1;overflow:auto;">${rows}</div>
+                    <div style="border-top:2px solid var(--border-color);padding-top:12px;margin-top:10px;display:flex;gap:8px;">
+                        <button class="btn btn-outline" style="flex:1;padding:12px;" onclick="closeModal('store-order-cart-modal')">닫기</button>
+                        <button class="btn" style="flex:2;padding:12px;font-weight:bold;background:var(--gradient-btn);" onclick="rxCartCheckoutSelected()" ${list.length?'':'disabled'}>✅ 선택 항목 한번에 주문</button>
+                    </div>
+                </div>`;
+                let m=document.getElementById('store-order-cart-modal');
+                if(!m){ m=document.createElement('div'); m.id='store-order-cart-modal'; m.className='modal-overlay'; document.body.appendChild(m); }
+                m.innerHTML=html; openModal('store-order-cart-modal');
+            };
+            window.rxCartRemove = function(id){ window.rxFormCart = window.rxFormCart.filter(e=>e.id!==id); try{ updateOrderCartBadge(); }catch(_){} window.openStoreOrderCart(); };
+            window.rxCartEdit = function(id){
+                const e=window.rxFormCart.find(x=>x.id===id); if(!e) return;
+                try{ closeModal('store-order-cart-modal'); }catch(_){}
+                if(e.kind==='rx'){
+                    window.rxOrderState = { product:e.state.product, seller:e.state.seller, amount:e.state.amount, storeId:e.state.storeId, storeName:e.state.storeName, mode:e.state.mode, rxItems:e.state.rxItems, attachFiles:(e.state.attachFiles||[]).slice(), items:JSON.parse(JSON.stringify(e.state.items||[])), preselectName:e.state.preselectName, patientKey:e.state.patientKey };
+                    window.rxFormCart = window.rxFormCart.filter(x=>x.id!==id); try{ updateOrderCartBadge(); }catch(_){}
+                    if(e.mode==='detail') window.openDetailRxForm(); else window.openSimpleRxForm();
+                    setTimeout(()=>{ try{ const info=e.info||{}; const set=(id,v)=>{ const x=document.getElementById(id); if(x&&v!=null) x.value=v; }; set('rx-oi-doctor',info.doctor); set('rx-oi-patient',info.patientName); set('rx-oi-birth',info.birth); set('rx-oi-chart',info.chartNo); set('rx-oi-due',info.dueDate); const gsel=document.getElementById('rx-oi-gender'); if(gsel&&info.gender) gsel.value=info.gender; if(window.rxSetAmPm) rxSetAmPm(info.dueAmPm==='오후'?'pm':'am'); try{ _renderRxFileList(); }catch(_){} }catch(_){} },120);
+                    showToast('✏️ 편집 모드 · 수정 후 다시 주문하거나 장바구니에 담으세요');
+                } else {
+                    const s=e.snap; window.rxFormCart = window.rxFormCart.filter(x=>x.id!==id); try{ updateOrderCartBadge(); }catch(_){}
+                    try{ openOrderFormModal(s.product, s.amount, s.seller, s.purchaseType); }catch(_){}
+                    setTimeout(()=>{ try{ const st=window.orderFormState; if(st){ st.buyerFiles=(s.buyerFiles||[]).slice(); st.pdfFilledData=s.pdfFilledData||''; try{ renderBuyerFilesList(); }catch(_){} } const set=(id,v)=>{ const x=document.getElementById(id); if(x&&v!=null) x.value=v; }; const bi=s.buyerInfo||{}; set('order-buyer-name',bi.name); set('order-buyer-phone',bi.phone); set('order-buyer-address',bi.address); set('order-buyer-patient',bi.patient); set('order-buyer-chart',bi.chart); set('order-buyer-memo',s.buyerMemo); }catch(_){} },150);
+                    showToast('✏️ 편집 모드 · 수정 후 다시 주문하거나 장바구니에 담으세요');
+                }
+            };
+            // 선택 항목 한번에 주문
+            window.rxCartCheckoutSelected = async function(){
+                const chks=Array.from(document.querySelectorAll('.rxcart-chk')).filter(c=>c.checked);
+                const ids=chks.map(c=>c.dataset.id);
+                if(!ids.length) return showToast('주문할 항목을 선택하세요.');
+                const sel=ids.map(id=>window.rxFormCart.find(e=>e.id===id)).filter(Boolean);
+                const generals=sel.filter(e=>e.kind==='general');
+                if(generals.length){ return showToast('일반 주문서('+generals.length+'건)는 [편집]으로 열어 개별 주문해 주세요. 의뢰서만 한번에 주문됩니다.'); }
+                if(!confirm('🛒 선택한 의뢰서 '+sel.length+'건을 한번에 주문합니다.\n(각 기공소가 승인하면 결제가 진행됩니다)\n\n계속하시겠습니까?')) return;
+                showToast('주문 전송 중… ('+sel.length+'건)');
+                let ok=0, fail=0;
+                for(const e of sel){
+                    try{
+                        try{ await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: e.seller }) }); }catch(_){}
+                        const r=await fetch(`${API_URL}/api/product/submit-order`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(e.body) });
+                        const d=await r.json().catch(()=>({}));
+                        if(r.ok && d.orderId){ ok++; window.rxFormCart = window.rxFormCart.filter(x=>x.id!==e.id); }
+                        else fail++;
+                    }catch(_){ fail++; }
+                }
+                try{ updateOrderCartBadge(); }catch(_){}
+                try{ closeModal('store-order-cart-modal'); }catch(_){}
+                showToast('✅ 주문 완료 '+ok+'건'+(fail?(' · 실패 '+fail+'건'):'')+' · 기공소 승인 후 결제됩니다');
+                try{ if(window.loadMyPurchases) loadMyPurchases(); }catch(_){}
+            };
+
             /* ---------- 제출 (submitOrderForApproval 흐름 재현) ---------- */
             window.submitRxOrder = async function(){
                 const st = window.rxOrderState; if(!st||!st.product) return;
@@ -20640,21 +20797,16 @@ pdfjsScript,
                 const pay = { method:'balance' };
                 showToast('의뢰서 전송 중...');
 
-                // 📎 첨부 파일 업로드(채팅과 동일 경로) → URL 확보. 의뢰서 썸네일 · 대화방 FILE_ATTACH · 공유폴더 전달에 공용.
-                const attachUploaded = [];
-                for(const f of (st.attachFiles||[])){ try{ const url = await window.uploadChatAttachment(f); if(url) attachUploaded.push({ filename:f.name, type:f.type||'application/octet-stream', url, sizeKB:(f.size/1024).toFixed(0) }); }catch(_){} }
-
-                const orderHtml = buildRxBundleHTML(st, info, attachUploaded);
+                // 📦 제출 바디(첨부 업로드 포함) 생성 — 장바구니(한번에 주문)와 공용
                 const modeLabel = st.mode==='simple' ? '의뢰서(간편)' : '의뢰서(상세)';
                 const productName = `${modeLabel} · ${info.patientName}`;
-                const buyerInfo = { name: info.clinic, phone:'', address:'', userId: currentUser.name, clinic:info.clinic, doctor:info.doctor, patientName:info.patientName, birth:info.birth, gender:info.gender, chartNo:info.chartNo, dueDate:info.dueDate, dueAmPm:info.dueAmPm };
-                const formData = { rxMode: st.mode, orderInfo: info, items: st.items, attachMeta: attachUploaded.map(f=>({ filename:f.filename, type:f.type, url:f.url })) };
+                const { body: _rxBody, attachUploaded } = await window._rxBuildOrderBody(st, info);
 
                 try { await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: st.seller }) }); } catch(_){}
 
                 const submitRes = await fetch(`${API_URL}/api/product/submit-order`, {
                     method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({ productId: st.product.id, buyer: currentUser.name, seller: st.seller, bundle_html: orderHtml, memo: (st.items.map(it=>it.memo).filter(Boolean).join(' / ')||''), form_data: formData, buyer_info: buyerInfo, amount: st.amount||0, status: 'pending', payMethod: pay.method, cardPw: pay.cardPw, pgMoid: pay.pgMoid })
+                    body: JSON.stringify(_rxBody)
                 });
                 const submitData = await submitRes.json().catch(()=>({}));
                 if(!submitRes.ok || !submitData.orderId) return showToast(submitData.error || '의뢰서 전송 실패');
