@@ -6784,6 +6784,8 @@
                 const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
                 grid.innerHTML='<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">클라우드 저장소 불러오는 중…</div>';
                 let items=[]; try{ items=await window.RCMirror.list(); }catch(_){}
+                // ☁️🤝 받은 공유(2주 열람권) — 내 클라우드 저장소에 함께 표시
+                try{ const shared=(window.RCMirror&&window.RCMirror.sharedWithMe)?await window.RCMirror.sharedWithMe():[]; (shared||[]).forEach(s=>{ items.push({ rpath:String(s.name||'file'), mtime:Number(s.createdAt)||Date.now(), mime:s.mime||'', size:Number(s.size)||0, __shared:true, shareId:s.id, from:s.owner, daysLeft:s.daysLeft }); }); }catch(_){}
                 const _b=rp=>{ const a=String(rp||'').split('/'); return a[a.length-1]||rp; };
                 const ESC=(typeof _sfEsc==='function')?_sfEsc:(s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
                 const zoom=(flt.zoom||150);
@@ -6806,9 +6808,10 @@
                 const groups=[]; const gmap={};
                 sorted.forEach(it=>{ const k=_key(it.mtime); if(!gmap[k]){ gmap[k]={label:_tsLabel(it.mtime),items:[]}; groups.push(gmap[k]); } gmap[k].items.push(it); });
                 const card=(it)=>{ const nm=_b(it.rpath); const sub=(it.rpath||'').split('/').slice(0,-1).join(' / ');
-                    return '<div class="rc-clview" draggable="true" data-rpath="'+ESC(it.rpath)+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'"'+(_isImg(nm)?' data-img="1"':'')+' title="'+ESC(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
+                    const _shAttr=it.__shared?(' data-shared="1" data-shareid="'+ESC(it.shareId)+'" data-from="'+ESC(it.from||'')+'"'):'';
+                    return '<div class="rc-clview"'+(it.__shared?'':' draggable="true"')+' data-rpath="'+ESC(it.rpath)+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'"'+_shAttr+(_isImg(nm)?' data-img="1"':'')+' title="'+ESC(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
                         +'<div class="rc-clthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="rc-clic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+_sfFileTile(nm)+'</div>'
-                        +'<div class="rc-cl-chk" style="position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);"></div>'
+                        +(it.__shared?('<span style="position:absolute;top:6px;left:6px;z-index:6;background:#0d9488;color:#fff;font-size:9px;font-weight:800;padding:2px 6px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.2);">📥 공유받음'+(it.daysLeft!=null?(' · '+it.daysLeft+'일'):'')+'</span>'):'<div class="rc-cl-chk" style="position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);"></div>')
                         +'<button class="rc-clmenu" data-rpath="'+ESC(it.rpath)+'" title="열기·공유·삭제" style="position:absolute;bottom:5px;right:5px;width:26px;height:26px;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+_SFIC.dots+'</button></div>'
                         +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
                         +(sub?('<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub)+'</div>'):'')
@@ -6820,7 +6823,10 @@
                 // ☁️ 클라우드 카드 = 내 컴퓨터 카드와 동일 UX: 체크박스 다중선택 + 드래그 + 클릭(폼열림시 첨부=14일 링크)
                 const _clSel=new Map();
                 const _clBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); const pa=ov.querySelector('#_sf-pickattach'); if(sb) sb.style.display=_clSel.size?'flex':'none'; if(cn) cn.textContent=_clSel.size+'개 선택'; if(pa) pa.textContent='✔ 선택 첨부 ('+_clSel.size+')'; };
+                const _openShared=async(sid)=>{ try{ const dj=await fetch(API_URL+'/api/mirror/shared-download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:Number(sid)})}).then(r=>r.json()); if(dj&&dj.url){ window.open(dj.url,'_blank','noopener'); } else showToast((dj&&dj.error)||'열람 권한이 없거나 만료되었습니다.'); }catch(_){ showToast('열람 실패'); } };
                 grid.querySelectorAll('.rc-clview').forEach(el=>{ const rp=el.getAttribute('data-rpath'); const mime=el.getAttribute('data-mime')||''; const size=Number(el.getAttribute('data-size'))||0;
+                    // 📥 받은 공유 파일(열람 전용, 2주) — 드래그/첨부 없이 클릭=열람
+                    if(el.getAttribute('data-shared')==='1'){ const sid=el.getAttribute('data-shareid'); el.addEventListener('click',(e)=>{ _openShared(sid); }); return; }
                     const _desc=()=>({rootId:'', rpath:rp, cloud:true, mime, size});
                     el.addEventListener('dragstart',(e)=>{ window.__sfDragFileRef=[{rootId:'', rpath:rp, fname:String(rp).split('/').pop(), mtime:0, modality:'', cloud:true, mime, size}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', String(rp).split('/').pop()); }catch(_){} });
                     el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; },60); });
@@ -6830,7 +6836,8 @@
                 });
                 { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_clSel.size){ showToast('첨부할 파일을 선택하세요.'); return; } window._sfAttachDescs([..._clSel.values()]); }; }
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _clSel.clear(); grid.querySelectorAll('.rc-clview').forEach(el=>{ el.style.outline=''; const c=el.querySelector('.rc-cl-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _clBar(); }; }
-                grid.querySelectorAll('.rc-clmenu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _sfCloudActions(el.getAttribute('data-rpath'), el); }));
+                grid.querySelectorAll('.rc-clview[data-shared="1"] .rc-clmenu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _openShared(el.closest('.rc-clview').getAttribute('data-shareid')); }));
+                grid.querySelectorAll('.rc-clview:not([data-shared="1"]) .rc-clmenu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _sfCloudActions(el.getAttribute('data-rpath'), el); }));
                 _sfSharedBanner(grid);
                 // 🖼 썸네일: 로컬 폴더가 연결된 기기(앱/오너 PC)는 로컬 원본으로 실제 미리보기 생성(이미지·영상·DICOM 등),
                 //         로컬에 없는 파일(타기기 업로드분)·미연결 기기는 이미지에 한해 프리사인 URL로 로드.
@@ -6976,8 +6983,10 @@
             // 📎 파일 설명(rootId/rpath)을 File로 해석 — 로컬(공유폴더) 우선, 실패 시 클라우드 프리사인 다운로드
             window._sfResolveFileToFile = async function(d){
                 const R2=window.RCFolder; const parts=String(d.rpath||'').split('/'); const fn=parts.pop();
-                // ☁️ 클라우드 파일 → 다운로드/재업로드 없이 14일 공유 링크로 전달(접속 때마다 서버가 재서명)
+                // ☁️ 클라우드 파일 → 다운로드/재업로드 없이 2주 공유: (1) 받는 계정 클라우드 저장소에 표시(share-to) (2) 주문용 2주 링크
                 if(d.cloud){
+                    const seller=(window.rxOrderState&&window.rxOrderState.seller)||(window.orderFormState&&window.orderFormState.seller)||(window._rxCurrentSeller&&window._rxCurrentSeller())||'';
+                    if(seller){ try{ await fetch(API_URL+'/api/mirror/share-to',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ rpath:d.rpath, to:seller })}); }catch(_){} }   // 받는 계정 클라우드 저장소에 2주 열람권 부여
                     try{
                         const gj=await fetch(API_URL+'/api/guestshare/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ rpath:d.rpath, fileName:fn, mime:d.mime||'', size:Number(d.size)||0, days:14 })}).then(r=>r.json());
                         if(gj&&gj.ok&&gj.link){ return { __cloudLink:true, name:fn, type:(d.mime||'application/octet-stream'), url:gj.link, size:Number(d.size)||0, expiresAt:gj.expiresAt||0 }; }
