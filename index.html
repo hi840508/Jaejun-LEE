@@ -1344,7 +1344,7 @@
                     <div class="yt-sb-section sb-file-grp" id="sb-patient-panel" style="flex:1;min-height:0;flex-direction:column;padding:8px;">
                         <!-- 📁 내 컴퓨터(저장소 전환) 버튼 — 좌측 사이드바 상단 -->
                         <div style="display:flex;align-items:stretch;margin-bottom:8px;">
-                            <button onclick="window._sfComputerBtn&&window._sfComputerBtn()" title="내 컴퓨터(파일검색)" style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #cbd5e1;border-right:none;border-radius:10px 0 0 10px;background:#fff;color:#0f2f52;font-weight:800;font-size:13.5px;cursor:pointer;"><span style="flex:none;">📁</span><span style="flex:1;text-align:left;">내 컴퓨터</span></button>
+                            <button onclick="window._sfComputerBtn&&window._sfComputerBtn()" title="드라이브(파일검색)" style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #cbd5e1;border-right:none;border-radius:10px 0 0 10px;background:#fff;color:#0f2f52;font-weight:800;font-size:13.5px;cursor:pointer;"><span style="flex:none;">🗄️</span><span style="flex:1;text-align:left;">드라이브</span></button>
                             <button onclick="event.stopPropagation();window._sbFolderDropdown&&window._sbFolderDropdown(this)" title="연결 폴더·클라우드" style="flex:none;padding:10px 12px;border:1px solid #cbd5e1;border-radius:0 10px 10px 0;background:#fff;color:#0f2f52;font-weight:800;cursor:pointer;">▾</button>
                         </div>
                         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
@@ -5663,9 +5663,15 @@
                     : '<div style="padding:9px 12px 9px 30px;color:#94a3b8;font-size:12px;">연결된 폴더가 없습니다. (아래 ＋ 폴더 경로 추가)</div>';
                 folderHtml = header + tree;
             }
-            const cloudBtn='<div style="border-top:1px solid #f1f5f9;margin:4px 0;padding-top:4px;"><button id="_sb-cloud-btn" style="'+row+'width:100%;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;"><span style="flex:none;">☁</span><span style="flex:1;text-align:left;">클라우드 저장소</span></button></div>';
-            const addBtn = notSup ? '' : '<button id="_sb-root-add" style="'+row+'width:100%;border:none;background:#f0fdf4;color:#166534;justify-content:center;font-weight:800;">＋ 폴더 경로 추가</button>';
-            window._sbDropdown(anchor, folderHtml+cloudBtn+addBtn, (dd,close)=>{
+            // ☁️ 클라우드 용량 조회(사용/총)
+            let _cst=null; try{ _cst=(window.RCMirror&&window.RCMirror.status)?await window.RCMirror.status():null; }catch(_){}
+            const _fmtB=b=>{ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(b>=10737418240?0:1)+'GB'; if(b>=1048576) return Math.round(b/1048576)+'MB'; if(b>=1024) return Math.round(b/1024)+'KB'; return b+'B'; };
+            const _capTxt = _cst ? (_fmtB(_cst.used||0)+' / '+_fmtB((_cst.quota!=null?_cst.quota:(_cst.freeBytes||0)))) : '';
+            const cloudBtn='<div style="border-top:1px solid #f1f5f9;margin:4px 0;padding-top:4px;"><button id="_sb-cloud-btn" style="'+row+'width:100%;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;"><span style="flex:none;">☁</span><span style="flex:1;text-align:left;">클라우드</span>'+(_capTxt?('<span style="flex:none;font-size:11px;color:#64748b;font-weight:700;">'+_capTxt+'</span>'):'')+'</button></div>';
+            const buyBtn='<button id="_sb-cloud-buy" style="'+row+'width:100%;border:none;background:#eef2ff;color:#3730a3;justify-content:center;font-weight:800;margin-top:4px;">＋ 추가 저장용량 구매</button>';
+            const addBtn = notSup ? '' : '<button id="_sb-root-add" style="'+row+'width:100%;border:none;background:#f0fdf4;color:#166534;justify-content:center;font-weight:800;margin-top:4px;">＋ 폴더 경로 추가</button>';
+            window._sbDropdown(anchor, folderHtml+addBtn+cloudBtn+buyBtn, (dd,close)=>{
+                const buy=dd.querySelector('#_sb-cloud-buy'); if(buy) buy.addEventListener('click',()=>{ close(); try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} });
                 const lr=dd.querySelector('._sb-localroot'); if(lr) lr.addEventListener('click',()=>{ close(); try{ if(window._sfGotoPath) window._sfGotoPath([]); else if(window._sfLocalBtnAction) window._sfLocalBtnAction(); }catch(_){} });
                 dd.querySelectorAll('._sb-root').forEach(el=>el.addEventListener('click',async(e)=>{ if(e.target.closest('._sb-rootx')) return; const id=el.getAttribute('data-id'); close(); try{ await window._sbFolderPick(id); }catch(_){} }));
                 dd.querySelectorAll('._sb-rootx').forEach(el=>el.addEventListener('click',async(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); const ok=await (window._sfConfirm?window._sfConfirm('이 폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다)','해제'):Promise.resolve(confirm('이 폴더 연결을 해제할까요?'))); if(!ok) return; close(); try{ if(R&&R.removeRoot) await R.removeRoot(id); }catch(_){} try{ if(window.__sfOv&&document.body.contains(window.__sfOv)&&window._sfGotoPath) await window._sfGotoPath([]); }catch(_){} }));
