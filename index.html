@@ -2341,6 +2341,10 @@
                 <span class="msgr-rail-badge" id="chat-tab-count"></span>
                 <span class="msgr-rail-lbl">메세지</span>
             </button>
+            <button class="msgr-rail-btn" onclick="if(window.openStoreFromMessenger)openStoreFromMessenger()" title="내 상점">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"></path><path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9"></path><path d="M9 20v-6h6v6"></path></svg>
+                <span class="msgr-rail-lbl">상점</span>
+            </button>
         </div>
         <div class="msgr-main" style="flex:1; display:flex; flex-direction:column; min-width:0;">
         <!-- 🔎 메신저 통합검색 — 파트너(상점 포함)·대화내용 검색 -->
@@ -5569,6 +5573,8 @@
             window.__sfStoreView=true; window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null;
             if(typeof window.__sfRender==='function' && window.__sfOv && document.body.contains(window.__sfOv)){ try{ window.__sfRender(); }catch(_){} }
             else { try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} } };
+        // 🏪 메신저 레일의 '상점' 버튼 → 내 상점(상점 카드) 화면 열기(메인 영역). 메신저 드로어는 유지.
+        window.openStoreFromMessenger = function(){ try{ if(window._sfStoreBtn) window._sfStoreBtn(); }catch(_){} };
         // 📁 내 컴퓨터 — 로컬 파일검색(모바일은 로컬 미지원 → 클라우드로)
         window._sfComputerBtn = function(){ window.__accountMode=false; try{ window._sbPatientPanel && window._sbPatientPanel(true); }catch(_){}   // 좌측 환자 사이드바 유지
             const mob=(window._isMobileDevice&&window._isMobileDevice());
@@ -6044,7 +6050,7 @@
                         var comp='<div style="flex:none;display:inline-flex;align-items:stretch;">'
                             +'<button onclick="window._sfComputerBtn&&window._sfComputerBtn()" title="내 컴퓨터(파일검색)" style="'+base+(_local?on:off)+'border-radius:9px 0 0 9px;border-right-width:0;">'+(_cloudSel?'☁ 클라우드':'📁 내 컴퓨터')+'</button>'
                             +'<button onclick="event.stopPropagation();window._sbFolderDropdown&&window._sbFolderDropdown(this)" title="폴더 목록·클라우드" style="'+base+(_local?on:off)+'border-radius:0 9px 9px 0;padding:7px 8px;">▾</button></div>';
-                        return store+comp;
+                        return comp;   // 🛒 내 상점 버튼은 메신저 레일(상점)로 이동 — 메인 툴바에서 제거
                       })()
                     + '<div id="_sf-crumbbar" style="flex:1;min-width:30px;display:flex;align-items:center;gap:5px;overflow-x:auto;white-space:nowrap;font-size:13.5px;-webkit-overflow-scrolling:touch;"><span style="flex:none;opacity:.6;display:inline-flex;">'+_SFIC.folder+'</span> '+crumb+'</div>'
                     + '<div class="yt-search-bar" style="flex:0 1 300px;min-width:150px;margin:0;"><input type="text" id="_sf-global-q" style="min-width:0;" value="'+_sfEsc(flt.q||'')+'" placeholder="'+_sfEsc((path.length?path[path.length-1]:(fname||'전체')))+' 검색" oninput="if(window._sfPathSearch)window._sfPathSearch(this.value)" onkeyup="if(event.key===\'Escape\'){this.value=\'\';if(window._sfPathSearch)window._sfPathSearch(\'\');}"><button onclick="if(window._sfPathSearch)window._sfPathSearch(document.getElementById(\'_sf-global-q\').value,true)" aria-label="검색" style="border-radius:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><button onclick="openScreenKeyboard()" aria-label="가상 키보드" style="border-radius:0 20px 20px 0;border-left:none;font-size:17px;">⌨️</button></div>'
@@ -6229,10 +6235,15 @@
                 const updCnt=()=>{ const n=selected.size+selectedFolders.size; const c=ov.querySelector('#_sf-cnt'); if(c) c.textContent=n+'개 선택'+(selectedFolders.size?(' (폴더 '+selectedFolders.size+')'):''); if(selbar) selbar.style.display=n>0?'flex':'none'; };
                 const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _clearSel(); };
                 // ===== 🖱 선택 공용 헬퍼(파일 .rc-gf + 폴더 .rc-gfd) — 탐색기식 멀티선택/삭제 =====
-                const _allCards=()=>ov.querySelectorAll('.rc-gf, .rc-gfd');
+                const _allCards=()=>ov.querySelectorAll('.rc-gf, .rc-gfd, .rc-clview:not([data-shared="1"]), ._pt-file');
                 const _folderRelKey=(el)=>((el.getAttribute('data-rel')||el.getAttribute('data-name')||'').split('/').filter(Boolean)).join('/');
                 function _cardOn(el, on){
                     if(!el) return;
+                    // ☁️🧑‍⚕️ 클라우드/환자 카드는 자체 체크박스(._rc-cl-chk/._pt-chk)로 선택 토글 — 러버밴드 범위선택 연동
+                    if(el.classList.contains('rc-clview')||el.classList.contains('_pt-file')){
+                        const c=el.querySelector('.rc-cl-chk,._pt-chk'); if(c){ const cur=(c.textContent==='✓'); if(cur!==!!on){ try{ c.click(); }catch(_){} } }
+                        return;
+                    }
                     if(el.classList.contains('rc-gfd')){
                         const rel=(el.getAttribute('data-rel')||el.getAttribute('data-name')||'').split('/').filter(Boolean); const key=rel.join('/'); if(!key) return;
                         if(on) selectedFolders.set(key,{parent:path.concat(rel.slice(0,-1)),leaf:rel[rel.length-1]}); else selectedFolders.delete(key);
@@ -6244,7 +6255,7 @@
                     }
                     el.style.outline = on ? '3px solid #0f2f52' : ''; el.style.outlineOffset = on ? '-3px' : '';
                 }
-                const _isSelected=(el)=> el.classList.contains('rc-gfd') ? selectedFolders.has(_folderRelKey(el)) : selected.has(el.getAttribute('data-fname'));
+                const _isSelected=(el)=> (el.classList.contains('rc-clview')||el.classList.contains('_pt-file')) ? (function(){ const c=el.querySelector('.rc-cl-chk,._pt-chk'); return !!(c&&c.textContent==='✓'); })() : (el.classList.contains('rc-gfd') ? selectedFolders.has(_folderRelKey(el)) : selected.has(el.getAttribute('data-fname')));
                 function _clearSel(){ selected.clear(); selectedFolders.clear(); _allCards().forEach(el=>{ el.style.outline=''; const c=el.querySelector('.rc-gf-chk,.rc-gfd-chk'); if(c) c.checked=false; }); updCnt(); }
                 function _selectAllVisible(){ _allCards().forEach(el=>{ if(el.style.display!=='none') _cardOn(el, true); }); updCnt(); }
                 async function _doDeleteSelection(){
@@ -7243,6 +7254,26 @@
             ov.querySelector('#_bm-bundle').onclick=()=>done('bundle'); ov.querySelector('#_bm-indiv').onclick=()=>done('individual'); ov.querySelector('#_bm-cancel').onclick=()=>done(null); ov.addEventListener('click',(e)=>{ if(e.target===ov) done(null); });
         }); };
         // 📤 공유폴더 → 대화방 전송. 규칙: 파일 1개=그대로, 여러 개=묶음/개별 선택.
+        // ☁️🧑‍⚕️ 파일검색 카드(클라우드/환자/내컴퓨터)를 채팅방에 드롭 → 전송. 클라우드=받는 상대에 2주 열람권+링크, 로컬=원본 첨부.
+        window._sfDropToChat = async function(refs){
+            refs=(refs||[]).filter(Boolean); if(!refs.length) return;
+            if(!currentChatRoomId || !activeChatFriend){ showToast('먼저 대화방을 여세요(친구 선택).'); return; }
+            const pic=(document.getElementById('my-profile-pic')||{}).src||''; const partner=activeChatFriend;
+            let ok=0;
+            for(const d of refs){
+                try{
+                    if(d.cloud){
+                        if(partner){ try{ await fetch(API_URL+'/api/mirror/share-to',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ rpath:d.rpath, to:partner })}); }catch(_){} }   // 받는 상대 클라우드 저장소에 2주 열람권
+                        const fn=String(d.rpath||'').split('/').pop();
+                        const gj=await fetch(API_URL+'/api/guestshare/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ rpath:d.rpath, fileName:fn, mime:d.mime||'', size:Number(d.size)||0, days:14 })}).then(r=>r.json());
+                        if(gj&&gj.ok&&gj.link){ const sizeKB=((Number(d.size)||0)/1024).toFixed(0); const msg=await window._buildAttachMsg(fn, sizeKB, d.mime||'application/octet-stream', gj.link); if(socket&&socket.connected){ socket.emit('send_message',{ roomId:currentChatRoomId, sender:currentUser.name, senderPic:pic, message:msg }); } appendMainMessage(currentUser.name, msg, pic); ok++; }
+                    } else {
+                        const f=await window._sfResolveFileToFile(d); if(f && window.handleChatFileAttach){ await window.handleChatFileAttach([f]); ok++; }
+                    }
+                }catch(_){}
+            }
+            if(ok) showToast('📎 '+ok+'개 전송'); else showToast('전송 실패');
+        };
         window._rcSendFilesToRoom = async function(names){
             names=(names||[]).filter(Boolean);
             if(!names.length) return;
@@ -12099,21 +12130,22 @@
             };
 
             const isRcDrag = (e) => { try{ const t=e.dataTransfer&&e.dataTransfer.types; if(!t) return false; for(let i=0;i<t.length;i++){ if(t[i]==='application/x-rc-file') return true; } }catch(_){} return false; };
+            const isSfDrag = () => !!(window.__sfDragFileRef && window.__sfDragFileRef.length);   // ☁️🧑‍⚕️ 클라우드/환자 파일 카드 드래그
             room.addEventListener('dragenter', e => {
-                if(!isFileDrag(e) && !isRcDrag(e)) return;
+                if(!isFileDrag(e) && !isRcDrag(e) && !isSfDrag()) return;
                 e.preventDefault(); e.stopPropagation();
                 dragCounter++;
                 overlay.classList.add('active');
             });
             room.addEventListener('dragleave', e => {
-                if(!isFileDrag(e) && !isRcDrag(e)) return;
+                if(!isFileDrag(e) && !isRcDrag(e) && !isSfDrag()) return;
                 e.preventDefault(); e.stopPropagation();
                 dragCounter--;
                 if(dragCounter <= 0) { overlay.classList.remove('active'); dragCounter = 0; }
             });
             // dragover는 반드시 preventDefault 해야 drop 이벤트가 발생
             room.addEventListener('dragover', e => {
-                if(!isFileDrag(e) && !isRcDrag(e)) return;
+                if(!isFileDrag(e) && !isRcDrag(e) && !isSfDrag()) return;
                 e.preventDefault(); e.stopPropagation();
                 if(e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
             });
@@ -12121,10 +12153,12 @@
                 if(!e.dataTransfer) return;
                 let rc=''; try{ rc=e.dataTransfer.getData('application/x-rc-file')||''; }catch(_){}
                 const hasFiles = e.dataTransfer.files && e.dataTransfer.files.length > 0;
-                if(!hasFiles && !rc){ return; }   // 내부 카드도 파일도 아니면 통과(다른 핸들러가 처리)
+                const sf = (window.__sfDragFileRef && window.__sfDragFileRef.length) ? window.__sfDragFileRef.slice() : null;   // ☁️🧑‍⚕️ 클라우드/환자 카드
+                if(!hasFiles && !rc && !sf){ return; }   // 내부 카드도 파일도 아니면 통과(다른 핸들러가 처리)
                 e.preventDefault(); e.stopPropagation();
                 dragCounter = 0; overlay.classList.remove('active');
                 if(hasFiles && typeof window.handleChatFileAttach === 'function') window.handleChatFileAttach(e.dataTransfer.files);
+                else if(sf){ window.__sfDragFileRef=null; if(window._sfDropToChat) window._sfDropToChat(sf); }
                 else { const list=(window.__rcDragFiles&&window.__rcDragFiles.length)?window.__rcDragFiles.slice():(rc?[rc]:[]); if(list.length && window._rcSendFilesToRoom) window._rcSendFilesToRoom(list); }
             });
 
