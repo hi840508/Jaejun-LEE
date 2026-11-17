@@ -20,6 +20,7 @@
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <!-- 🖋 Pretendard: 현대적 한글 웹폰트 -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -20961,65 +20962,46 @@ pdfjsScript,
             }
 
             // 🦷 의뢰서 PDF 생성 (jsPDF + autotable, 한글 폰트 임베드). Blob(application/pdf) 반환. 실패 시 throw.
-            function buildRxPdfBlob(st, info){
+            // 📄 의뢰서 PDF = 화면 의뢰서(buildRxBundleHTML, 치식 그림 포함)를 그대로 이미지로 렌더 → PDF.
+            //    (예전 jsPDF+autotable는 한글 폰트 임베드 실패 시 '빈 PDF'가 나와 교체. 양식도 화면과 완전 통일.)
+            async function buildRxPdfBlob(st, info){
                 if(!window.jspdf || !window.jspdf.jsPDF) throw new Error('PDF 라이브러리 로딩 실패');
+                if(!window.html2canvas) throw new Error('PDF 렌더 라이브러리 로딩 실패');
                 const { jsPDF } = window.jspdf;
-                const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
-                const F = ensureKrFont(doc) ? 'NotoKR' : 'helvetica';
-                doc.setFont(F, 'normal');
-                const P = 15; let y = 20;
-                const wc = (n)=> (Number(n)||0).toLocaleString('ko-KR');
-                doc.setFontSize(17); doc.text((st.mode==='simple'?'간편':'상세') + ' 기공 의뢰서', P, y); y += 7;
-                doc.setFontSize(9); doc.setTextColor(110);
-                doc.text('기공소: ' + (st.storeName||'-') + '    작성: ' + (info.timestamp||'-'), P, y);
-                doc.setTextColor(0); y += 5;
-
-                const infoRows = [
-                    ['거래처', info.clinic||'-', '담당 원장님', info.doctor||'-'],
-                    ['환자명', info.patientName||'-', '생년월일', info.birth||'-'],
-                    ['성별', info.gender||'-', '차트번호', info.chartNo||'-'],
-                    ['완성일', ((info.dueDate||'-')+' '+(info.dueAmPm||'')).trim(), '', '']
-                ];
-                doc.autoTable({
-                    startY:y, body:infoRows, theme:'grid',
-                    styles:{ font:F, fontStyle:'normal', fontSize:9, cellPadding:2, textColor:[30,41,59] },
-                    columnStyles:{ 0:{fillColor:[241,245,249], cellWidth:26}, 2:{fillColor:[241,245,249], cellWidth:26} },
-                    didParseCell:function(dd){ dd.cell.styles.font = F; }
-                });
-                y = doc.lastAutoTable.finalY + 6;
-
-                let head, body;
-                if(st.mode==='simple'){
-                    head = [['#','제작구분','치식','품목명','메모']];
-                    body = st.items.map((it,i)=>[String(i+1), it.makeType||'', (it.teeth||[]).join(', ')||'-', it.name||'-', it.memo||'']);
-                } else {
-                    head = [['#','치식','품목(수가×치아수)','메모','금액']];
-                    body = st.items.map((it,i)=>{
-                        const tc = Math.max((it.teeth||[]).length,1);
-                        const sub = (it.selected||[]).map(s=>{
-                            const pc = Number(s.ponticCount)||0;
-                            const pt = (Number(s.pontic)>0&&pc>0)?(' + 가공치 '+wc(s.pontic)+'×'+pc):'';
-                            return s.name+' ('+wc(s.price)+'×'+tc+pt+')';
-                        }).join('\n') || '-';
-                        const line = (it.selected||[]).reduce((a,s)=>a+(Number(s.price)||0)*tc+(Number(s.pontic)||0)*(Number(s.ponticCount)||0),0);
-                        return [String(i+1), (it.teeth||[]).join(', ')||'-', sub, it.memo||'', wc(line)+'원'];
-                    });
+                const html = buildRxBundleHTML(st, info, []);   // 화면 의뢰서와 동일 문서
+                // 오프스크린 iframe에 격리 렌더(전역 스타일 오염 방지·한글 정상)
+                const iframe = document.createElement('iframe');
+                iframe.setAttribute('aria-hidden','true');
+                iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:820px;height:300px;border:0;background:#fff;';
+                document.body.appendChild(iframe);
+                try{
+                    const idoc = iframe.contentDocument || iframe.contentWindow.document;
+                    idoc.open(); idoc.write(html); idoc.close();
+                    try{ if(idoc.fonts && idoc.fonts.ready) await idoc.fonts.ready; }catch(_){}
+                    await new Promise(r=>setTimeout(r, 180));   // 레이아웃·이미지(SVG) 안정화
+                    const target = idoc.body;
+                    const fullH = Math.max(target.scrollHeight, target.offsetHeight, 400);
+                    iframe.style.height = fullH + 'px';
+                    const canvas = await window.html2canvas(target, { scale:2, backgroundColor:'#ffffff', useCORS:true, windowWidth:820, width:820, height:fullH, scrollX:0, scrollY:0 });
+                    const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+                    const pw = doc.internal.pageSize.getWidth();     // 210mm
+                    const ph = doc.internal.pageSize.getHeight();    // 297mm
+                    const imgW = pw;
+                    const imgH = canvas.height * imgW / canvas.width;
+                    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+                    let heightLeft = imgH, position = 0;
+                    doc.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
+                    heightLeft -= ph;
+                    while(heightLeft > 0){
+                        position -= ph;
+                        doc.addPage();
+                        doc.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
+                        heightLeft -= ph;
+                    }
+                    return doc.output('blob');
+                } finally {
+                    try{ document.body.removeChild(iframe); }catch(_){}
                 }
-                doc.autoTable({
-                    startY:y, head, body, theme:'striped',
-                    styles:{ font:F, fontStyle:'normal', fontSize:8.5, cellPadding:2, valign:'middle' },
-                    headStyles:{ font:F, fontStyle:'normal', fillColor:[37,99,235], textColor:[255,255,255], fontSize:9 },
-                    bodyStyles:{ font:F },
-                    columnStyles: st.mode==='detail' ? { 4:{halign:'right'} } : {},
-                    didParseCell:function(dd){ dd.cell.styles.font = F; }
-                });
-                y = doc.lastAutoTable.finalY + 7;
-
-                doc.setFontSize(12);
-                if(st.mode==='detail'){ doc.setTextColor(220,38,38); doc.text('합계 금액: ' + wc(st.amount) + '원', P, y); }
-                else { doc.setTextColor(180,83,9); doc.text('금액 미정 (기공소 확정 예정)', P, y); }
-                doc.setTextColor(0);
-                return doc.output('blob');
             }
 
             // 🦷 의뢰서 주문 상태 배지 — status → 직관적 라벨/색상
@@ -21425,7 +21407,7 @@ pdfjsScript,
                             let ok=0;
                             for(const f of (st.attachFiles||[])){ try{ if(f&&f.__cloudLink) continue; await window.RCFolder.writeFileInRoom(_ofn, f.name, f); ok++; }catch(_){} }
                             // 🧾 의뢰서 PDF 동봉
-                            try{ const pdf=buildRxPdfBlob(st, info); if(pdf){ await window.RCFolder.writeFileInRoom(_ofn, '의뢰서_'+String(info.patientName||'case').replace(/[\\/:*?"<>|]/g,'_')+'.pdf', pdf); } }catch(_){}
+                            try{ const pdf=await buildRxPdfBlob(st, info); if(pdf){ await window.RCFolder.writeFileInRoom(_ofn, '의뢰서_'+String(info.patientName||'case').replace(/[\\/:*?"<>|]/g,'_')+'.pdf', pdf); } }catch(_){}
                             if(ok) showToast('📁 공유폴더 ['+_ofn+']에 저장: 첨부 '+ok+'개 + 의뢰서 PDF');
                         })();
                     }
