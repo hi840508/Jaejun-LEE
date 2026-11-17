@@ -11864,7 +11864,7 @@
                 m.innerHTML =
                     '<div style="width:100%;max-width:840px;height:100%;display:flex;flex-direction:column;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45);">'
                     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex:none;">'
-                    +   '<b style="font-size:15px;color:#1e293b;">🦷 의뢰서 미리보기</b>'
+                    +   '<b style="font-size:15px;color:#1e293b;">의뢰서 미리보기</b>'
                     +   '<div style="display:flex;gap:8px;">'
                     +     '<button onclick="var f=document.getElementById(\'rxpv-frame\');try{f.contentWindow.focus();f.contentWindow.print();}catch(e){window.print();}" style="padding:8px 16px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border:0;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">🖨 인쇄 / PDF 저장</button>'
                     +     '<button onclick="try{var _b=document.querySelector(\'.floating-messenger-btn\');if(_b)_b.style.zIndex=\'\';}catch(_){}; var el=document.getElementById(\'rx-preview-modal\');if(el){try{if(el.__rxBlobUrl)URL.revokeObjectURL(el.__rxBlobUrl);}catch(_){}el.remove();}" style="padding:8px 14px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;cursor:pointer;">닫기</button>'
@@ -11945,7 +11945,7 @@
                 +    '<div style="margin-top:12px;text-align:right;"><span style="color:#0f2f52;font-weight:800;">품목 가격</span> <b style="font-size:18px;color:#0f172a;">'+(price?price.toLocaleString():((st==='pending')?'미정':'0'))+'</b><span style="color:#64748b;"> 원</span></div>'
                 +  '</div>'
                 +  '<div style="width:280px;max-width:100%;background:#f8fbff;border:1px solid #e0eaf5;border-radius:10px;padding:12px 14px;"><div style="font-weight:800;color:#0f172a;margin-bottom:4px;">품목 상세 정보</div>'+detailRows+'</div>'
-                +  (_rxMiniSvg?'<div style="flex:1 1 100%;background:#fff;border:1px solid #e0eaf5;border-radius:10px;padding:10px 14px;"><div style="font-weight:800;color:#0f172a;margin-bottom:6px;font-size:13px;">🦷 선택 치식 <span style="font-weight:500;color:#94a3b8;font-size:11px;">(FDI · 색칠된 치아가 선택됨)</span></div>'+_rxMiniSvg+'</div>':'')
+                +  (_rxMiniSvg?'<div style="flex:1 1 100%;background:#fff;border:1px solid #e0eaf5;border-radius:10px;padding:10px 14px;"><div style="font-weight:800;color:#0f172a;margin-bottom:6px;font-size:13px;">선택 치식 <span style="font-weight:500;color:#94a3b8;font-size:11px;">(FDI · 색칠된 치아가 선택됨)</span></div>'+_rxMiniSvg+'</div>':'')
                 +'</div>'
                 // 버튼
                 +'<div style="display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px;">'
@@ -20931,10 +20931,16 @@ pdfjsScript,
                 const amtHtml = st.mode==='detail'
                     ? `<div class="amt">합계 금액: ${won(st.amount)}</div>`
                     : `<div class="amt" style="color:#b45309;">금액 미정 (기공소 확정 예정)</div>`;
+                // 🦷 선택 치식 그림(문서에 인라인 임베드) — 숫자만으론 구분 어려움 보완
+                let _teethAll=[]; try{ st.items.forEach(it=>(it.teeth||[]).forEach(t=>_teethAll.push(Number(t)))); }catch(_){}
+                _teethAll=[...new Set(_teethAll)].filter(n=>n>0).sort((a,b)=>a-b);
+                const chartHtml = (_teethAll.length && window._rxMiniChartSVG)
+                    ? `<h2>선택 치식 <span style="font-weight:400;color:#94a3b8;font-size:12px;">(FDI · 색칠된 치아가 선택됨)</span></h2><div style="border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-top:8px;">${window._rxMiniChartSVG(_teethAll, _teethAll.some(n=>n>=51&&n<=85))}</div>`
+                    : '';
                 return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
                     <title>기공 의뢰서 - ${esc(info.patientName||'')}</title>
                     <style>html,body{background:#fff;}body{font-family:'Malgun Gothic',sans-serif;color:#1f2937;padding:24px;max-width:820px;margin:0 auto;}@media print{.noprint{display:none;}}h1{font-size:22px;color:#0f2f52;border-bottom:3px solid #0f2f52;padding-bottom:8px;}h2{font-size:15px;margin-top:22px;color:#334155;}table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}th,td{border:1px solid #e2e8f0;padding:7px 9px;text-align:left;vertical-align:top;}th{background:#eff6ff;color:#0f2f52;}.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:13px;margin-top:8px;}.grid div{padding:4px 0;border-bottom:1px dashed #e2e8f0;}.amt{margin-top:18px;font-size:18px;font-weight:800;text-align:right;color:#0f2f52;}.sec{margin-top:12px;font-size:12px;color:#64748b;}</style></head><body>
-                    <h1>🦷 기공 의뢰서</h1>
+                    <h1>기공 의뢰서</h1>
                     <div class="sec">기공소: ${esc(st.storeName||'')} · 작성: ${esc(info.timestamp||'')}</div>
                     <h2>주문 정보</h2>
                     <div class="grid">
@@ -20948,6 +20954,7 @@ pdfjsScript,
                     </div>
                     <h2>기공물 정보</h2>
                     <table><thead>${head}</thead><tbody>${rows}</tbody></table>
+                    ${chartHtml}
                     ${amtHtml}
                     ${filesHtml}
                 </body></html>`;
