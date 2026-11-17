@@ -20492,85 +20492,145 @@ pdfjsScript,
             }
             // 🦷 치아 라인아트 — 4분면(협측 측면도) + 아치형(교합면 상면도), 선택 표기법 라벨
             window._rxToothLayout = window._rxToothLayout || 'quad';   // 'quad'(4분면) | 'arch'(아치형)
-            // 협측(측면) 치종별 경로: 크라운 위 / 뿌리 아래 (viewBox 0 0 40 100) — 상악은 세로 반전
-            const _TB = {
-                incisor:{ crown:'M10,6 Q10,5 11,5 L29,5 Q30,5 30,6 Q33,25 27,44 Q20,47 13,44 Q7,25 10,6 Z', roots:['M13,44 Q12,73 20,98 Q28,73 27,44 Q20,47 13,44 Z'], detail:'M13,12 L27,12' },
-                canine:{ crown:'M20,4 Q22,4 22,8 Q31,17 29,31 L28,44 Q20,47 12,44 L11,31 Q9,17 18,8 Q18,4 20,4 Z', roots:['M12,44 Q9,75 20,99 Q31,75 28,44 Q20,47 12,44 Z'], detail:'M20,9 L20,43' },
-                premolar:{ crown:'M9,17 Q11,8 15,14 Q20,18 25,14 Q29,8 31,17 L29,44 Q20,47 11,44 Z', roots:['M13,44 Q12,72 20,94 Q28,72 27,44 Q20,47 13,44 Z'], detail:'M20,16 L20,43' },
-                molar:{ crown:'M6,17 Q8,9 12,14 Q16,9 20,14 Q24,9 28,14 Q32,9 34,17 L32,45 Q20,48 8,45 Z', roots:['M11,45 Q9,70 14,88 Q17,72 17,45 Q14,47 11,45 Z','M29,45 Q31,70 26,88 Q23,72 23,45 Q26,47 29,45 Z','M18,45 L18,89 Q20,91 22,89 L22,45 Z'], detail:'M13,16 Q20,20 27,16' }
+            // ===== 실사형 치아 경로(치종·치식별) — GPT Dental_Chart 레퍼런스에서 이식 =====
+            // 협면(측면) viewBox -30 0 60 134 : crown 아래(큰 y)·root 위, {r:뿌리,c:크라운,g:홈}
+            const BUCCAL = {
+                up:{
+                    1:{r:'M-15 93 C-13 82 -11 78 -10 68 C-8 53 -8 33 -5 18 C-4 12 -2 8 1 8 C6 8 9 18 10 25 C13 43 12 70 16 93 Q1 82 -15 93 Z',c:'M-15 93 Q1 82 16 93 C19 101 18 115 17 124 Q17 129 12 130 L-12 130 Q-17 130 -18 125 C-20 114 -19 101 -15 93 Z',g:'M-12 124 Q-1 126 11 124'},
+                    2:{r:'M-12 97 C-10 82 -8 67 -8 49 C-8 34 -7 19 -3 14 C0 11 3 15 5 21 C11 36 8 77 13 97 Q0 87 -12 97 Z',c:'M-12 97 Q0 87 13 97 C16 102 16 114 15 123 Q13 130 3 130 L-7 130 Q-14 130 -15 123 C-17 113 -16 104 -12 97 Z',g:'M-9 124 Q-2 127 7 125'},
+                    3:{r:'M-14 95 C-11 78 -11 65 -10 48 C-9 28 -7 15 -3 7 Q0 0 4 6 C9 17 10 39 11 54 C12 71 12 84 15 95 Q1 83 -14 95 Z',c:'M-14 95 Q1 83 15 95 C18 102 19 110 16 117 C13 122 6 124 1 130 Q-1 133 -4 129 L-14 120 Q-20 114 -17 105 Z',g:'M-9 115 Q-6 119 -2 122 M2 121 Q6 117 11 115'},
+                    4:{r:'M-15 94 C-12 81 -13 67 -13 53 C-14 42 -12 31 -9 23 Q-7 18 -5 24 C-2 34 -3 53 0 59 C3 54 3 37 7 27 Q10 21 12 28 C16 43 10 68 16 94 Q1 83 -15 94 Z',c:'M-15 94 Q1 83 16 94 C19 99 20 106 17 112 C15 118 7 121 2 127 Q0 130 -4 127 L-15 120 C-21 115 -21 102 -15 94 Z',g:'M1 61 Q1 74 4 83 M-9 115 Q-4 118 0 123'},
+                    5:{r:'M-15 97 C-13 86 -13 73 -13 59 C-13 40 -11 29 -5 20 Q-1 14 3 20 C9 27 10 47 11 60 C12 75 12 89 16 97 Q1 85 -15 97 Z',c:'M-15 97 Q1 85 16 97 C21 102 21 111 17 118 C12 123 8 123 2 128 Q-1 130 -4 127 L-16 120 C-21 116 -21 105 -15 97 Z',g:'M-8 116 Q-3 118 0 122 M1 122 Q5 119 10 117'},
+                    6:{r:'M-21 95 C-17 83 -18 71 -19 60 C-20 49 -20 37 -16 31 Q-13 28 -11 34 C-8 43 -7 58 -4 66 Q-2 71 0 67 C3 58 3 43 6 31 Q8 25 11 30 C15 36 11 54 14 59 C17 51 18 44 20 39 Q23 35 24 41 C25 54 19 78 22 95 Q1 82 -21 95 Z',c:'M-21 95 Q1 82 22 95 C26 103 25 113 21 121 C17 127 9 131 2 126 Q-2 122 -5 126 C-10 131 -18 127 -22 122 C-26 115 -26 104 -21 95 Z',g:'M-2 73 Q0 81 3 86 M-13 116 Q-7 116 -3 121 Q2 116 9 118'},
+                    7:{r:'M-20 96 C-17 86 -18 77 -20 64 C-21 54 -21 41 -18 37 Q-16 34 -13 40 C-9 49 -10 62 -6 65 Q-3 61 -3 51 C-2 42 0 35 3 35 C7 35 6 50 10 60 C14 51 15 42 18 41 Q22 40 22 48 C22 57 17 77 20 96 Q1 84 -20 96 Z',c:'M-20 96 Q1 84 20 96 C24 104 23 116 18 123 C14 128 6 130 1 125 Q-2 122 -5 126 C-11 131 -18 127 -21 122 C-25 114 -25 103 -20 96 Z',g:'M-6 69 Q-3 81 0 86 M-11 117 Q-6 117 -3 121 Q2 117 8 118'},
+                    8:{r:'M-17 99 C-16 91 -18 78 -20 65 C-21 56 -21 47 -18 43 Q-16 41 -13 46 C-10 53 -9 65 -5 69 C-1 66 1 54 5 48 Q8 43 11 47 C17 57 14 80 18 99 Q1 88 -17 99 Z',c:'M-17 99 Q1 88 18 99 C23 106 23 115 18 123 Q11 132 3 127 Q0 125 -3 128 C-9 131 -15 128 -18 124 C-23 116 -23 107 -17 99 Z',g:'M-6 73 Q-4 81 -2 89 M-9 119 Q-3 119 1 124 Q5 120 9 120'}
+                },
+                lo:{
+                    1:{r:'M-9 101 C-8 91 -8 73 -7 61 C-6 44 -5 23 -1 17 Q2 12 4 20 C7 34 5 53 6 67 C6 78 7 91 9 101 Q0 94 -9 101 Z',c:'M-9 101 Q0 94 9 101 C12 105 12 116 11 125 Q11 130 7 130 L-7 130 Q-11 130 -11 126 C-12 115 -12 107 -9 101 Z',g:'M-6 125 L6 125'},
+                    2:{r:'M-10 99 C-8 86 -9 73 -8 55 C-7 40 -6 26 -3 19 Q0 12 4 19 C9 29 8 46 9 60 C9 77 8 91 11 99 Q0 92 -10 99 Z',c:'M-10 99 Q0 92 11 99 C14 105 14 116 13 125 Q12 130 7 130 L-7 130 Q-12 130 -13 125 C-14 115 -14 105 -10 99 Z',g:'M-7 125 Q0 126 7 125'},
+                    3:{r:'M-13 98 C-12 80 -12 62 -10 44 C-9 28 -8 16 -4 8 Q0 2 4 10 C10 23 10 45 10 57 C11 76 11 89 14 98 Q0 88 -13 98 Z',c:'M-13 98 Q0 88 14 98 C18 104 18 112 15 118 C12 123 6 124 1 130 Q-1 133 -4 129 L-12 123 C-17 118 -19 110 -13 98 Z',g:'M-8 118 Q-5 120 -2 124 M1 124 Q6 121 9 119'},
+                    4:{r:'M-13 99 C-11 88 -11 73 -11 62 C-11 44 -9 28 -6 22 Q-2 14 2 19 C8 26 9 46 10 60 C11 74 10 86 14 99 Q0 90 -13 99 Z',c:'M-13 99 Q0 90 14 99 C19 105 19 114 14 119 C11 122 5 124 2 128 Q-1 132 -4 129 C-8 125 -12 125 -15 121 C-20 115 -20 105 -13 99 Z',g:'M-8 118 Q-5 119 0 123 Q4 120 8 119'},
+                    5:{r:'M-14 98 C-12 86 -12 74 -11 61 C-10 41 -9 33 -5 24 Q-2 17 2 21 C9 29 9 48 10 60 C11 76 12 89 16 98 Q1 88 -14 98 Z',c:'M-14 98 Q1 88 16 98 C22 104 21 113 16 120 Q12 126 5 125 C3 125 1 131 -3 129 L-15 122 C-21 118 -21 106 -14 98 Z',g:'M-9 120 Q-5 120 -1 125 Q2 121 8 121'},
+                    6:{r:'M-21 98 C-19 87 -20 74 -21 62 C-22 48 -23 39 -20 32 Q-18 29 -14 34 C-8 43 -7 56 -3 63 Q0 69 3 63 C7 55 8 41 14 32 Q17 28 19 33 C23 43 18 56 20 68 C20 79 20 89 22 98 Q0 86 -21 98 Z',c:'M-21 98 Q0 86 22 98 C27 104 26 114 21 121 C18 126 12 128 7 125 Q3 128 -2 128 Q-6 128 -10 125 C-15 129 -21 125 -24 120 C-28 112 -27 102 -21 98 Z',g:'M0 70 Q0 78 2 88 M-16 116 Q-11 116 -9 121 Q-2 116 4 121 Q10 116 15 118'},
+                    7:{r:'M-20 99 C-18 86 -17 77 -19 65 C-21 56 -22 44 -18 39 Q-16 37 -13 41 C-7 50 -7 60 -2 68 Q0 71 2 68 C6 60 7 47 12 42 Q16 37 19 43 C23 54 18 63 19 75 L22 99 Q1 87 -20 99 Z',c:'M-20 99 Q1 87 22 99 C26 105 24 115 20 121 C16 127 10 129 3 125 Q-1 122 -5 126 C-11 131 -19 127 -23 120 C-27 114 -26 105 -20 99 Z',g:'M0 73 Q1 79 3 89 M-13 118 Q-7 117 -2 122 Q4 118 10 119'},
+                    8:{r:'M-17 100 C-16 89 -18 77 -20 67 C-22 58 -21 49 -17 44 Q-15 42 -12 47 C-8 54 -7 62 -3 68 Q-1 71 1 68 C5 61 4 53 9 48 Q13 44 16 54 C19 64 17 76 19 88 L20 100 Q1 90 -17 100 Z',c:'M-17 100 Q1 90 20 100 C24 105 23 114 18 121 C15 126 9 128 4 126 Q0 124 -4 127 C-9 130 -16 127 -20 122 C-24 116 -23 105 -17 100 Z',g:'M-2 74 Q0 82 3 91 M-10 119 Q-5 118 0 123 Q5 119 10 120'}
+                }
             };
-            // 교합면(상면·위에서 본) 치종별 윤곽 (viewBox 0 0 40 40) — 협측이 +y(아래)를 향함
-            const _TO = {
-                incisor:{ shape:'M14,9 Q20,7 26,9 Q27,20 26,30 Q20,32 14,30 Q13,20 14,9 Z', detail:'M14,13 Q20,11 26,13' },
-                canine:{ shape:'M13,11 Q20,8 27,11 Q30,19 25,31 Q20,34 15,31 Q10,19 13,11 Z', detail:'M20,12 L20,31' },
-                premolar:{ shape:'M11,11 Q20,8 29,11 Q31,20 29,29 Q20,32 11,29 Q9,20 11,11 Z', detail:'M11,20 Q20,22 29,20' },
-                molar:{ shape:'M10,11 Q10,9 12,9 L28,9 Q30,9 30,11 L31,29 Q31,31 29,31 L11,31 Q9,31 9,29 Z', detail:'M20,9 L20,31 M9,20 L31,20' }
+            // 교합면(위에서 본) viewBox -23 -23 46 46 : {c:크라운,e:법랑,g:교합홈}
+            const OCC = {
+                up:{
+                    1:{c:'M-17 -10 Q-12 -15 -2 -15 Q11 -16 16 -11 C19 -8 16 2 12 9 Q6 17 0 18 Q-6 18 -11 11 C-15 5 -20 -6 -17 -10 Z',e:'M-13 -7 Q-1 -11 13 -8 Q10 1 7 5 Q1 12 -2 11 Q-8 8 -13 -7 Z',g:'M-13 -7 Q-1 -9 13 -8 M-9 -4 Q-8 4 -3 8 Q0 11 3 7 Q8 3 10 -4'},
+                    2:{c:'M-14 -8 Q-12 -14 -3 -14 Q8 -15 13 -9 C17 -5 13 3 10 9 Q5 16 -1 16 Q-7 16 -10 10 C-14 3 -17 -4 -14 -8 Z',e:'M-11 -5 Q-2 -10 10 -6 Q8 2 5 6 Q1 11 -3 8 Q-8 5 -11 -5 Z',g:'M-10 -5 Q-1 -8 10 -6 M-7 -2 Q-6 5 -2 7 Q1 10 4 5 Q6 2 7 -2'},
+                    3:{c:'M-16 -5 C-15 -10 -8 -12 -3 -17 Q0 -20 4 -16 L13 -8 C18 -4 17 4 13 9 Q7 16 1 19 Q-6 19 -12 12 C-16 7 -18 1 -16 -5 Z',e:'M-12 0 Q-5 -8 -2 -12 Q3 -8 11 -1 Q9 6 2 13 Q-6 11 -12 0 Z',g:'M-11 0 Q-5 -4 -2 -12 Q0 -4 2 1 Q7 1 11 -2 M2 1 Q0 6 2 12'},
+                    4:{c:'M-15 -10 Q-12 -17 -3 -19 Q6 -20 12 -13 C18 -9 18 -4 15 0 C18 6 15 14 8 18 Q-1 23 -9 18 C-15 15 -17 9 -14 3 Q-19 -2 -15 -10 Z',e:'M-11 -8 Q-7 -14 -1 -13 Q7 -14 12 -6 Q9 1 11 7 Q7 15 0 15 Q-8 16 -11 8 Q-7 1 -11 -8 Z',g:'M-11 2 Q-3 -2 2 0 Q7 3 12 -1 M-3 0 Q-5 -5 -5 -8 M3 1 Q6 4 5 9'},
+                    5:{c:'M-15 -8 Q-12 -16 -4 -17 Q5 -20 12 -12 C17 -8 17 -2 14 1 C17 7 14 14 7 17 Q-1 22 -9 18 C-15 15 -17 7 -14 3 Q-18 -2 -15 -8 Z',e:'M-11 -7 Q-7 -13 0 -13 Q7 -14 12 -6 Q9 0 11 6 Q7 14 0 15 Q-7 16 -11 9 Q-8 3 -11 -7 Z',g:'M-11 3 Q-6 0 -2 2 Q2 3 6 0 Q9 -2 11 1 M-2 2 Q-6 -3 -5 -6 M5 1 Q7 4 5 8'},
+                    6:{c:'M-19 -9 C-17 -16 -11 -20 -4 -18 Q0 -17 3 -19 C12 -22 20 -15 20 -7 Q18 -2 20 3 C22 9 16 18 9 19 Q4 20 1 17 Q-3 21 -10 19 C-18 17 -22 11 -20 4 Q-17 0 -19 -4 Z',e:'M-15 -7 Q-11 -15 -5 -13 Q-1 -11 4 -14 Q12 -16 15 -8 Q12 -2 15 4 Q17 9 9 14 Q5 16 0 12 Q-5 17 -11 13 Q-18 10 -15 3 Q-12 -1 -15 -7 Z',g:'M-14 1 Q-9 2 -6 -2 Q-3 -4 -1 -1 Q2 2 5 1 Q10 -1 15 1 M-6 -2 Q-6 -8 -9 -10 M-1 -1 Q-2 5 1 7 Q3 10 1 13 M5 1 Q8 6 11 7 M5 1 Q6 -4 9 -6'},
+                    7:{c:'M-19 -8 Q-17 -16 -8 -18 Q-4 -19 0 -16 Q6 -21 13 -16 C19 -13 21 -6 18 0 C21 6 17 14 12 17 Q6 20 2 16 Q-3 20 -11 17 C-19 14 -22 7 -19 2 Q-16 -1 -19 -8 Z',e:'M-14 -7 Q-10 -14 -4 -13 Q-1 -9 3 -13 Q10 -15 14 -8 Q12 -3 14 2 Q16 9 10 12 Q5 16 1 11 Q-6 16 -12 10 Q-16 7 -14 3 Q-11 -2 -14 -7 Z',g:'M-13 1 Q-8 3 -4 0 Q-1 -3 2 1 Q5 3 9 0 Q12 -2 15 -1 M-4 0 Q-4 -5 -7 -8 M2 1 Q0 7 2 11 M8 1 Q10 3 11 6'},
+                    8:{c:'M-17 -8 Q-15 -16 -7 -16 Q-2 -19 2 -16 C10 -18 16 -14 18 -7 Q19 -4 17 1 Q21 6 16 13 C12 18 4 18 0 15 Q-5 19 -12 14 C-17 12 -21 5 -18 0 Q-16 -4 -17 -8 Z',e:'M-13 -7 Q-9 -12 -3 -11 Q1 -12 7 -12 Q13 -12 14 -5 Q11 0 14 5 Q12 12 6 12 Q2 15 -2 10 Q-7 14 -12 9 Q-16 5 -13 1 Z',g:'M-13 0 Q-8 1 -5 -2 Q-2 -3 1 0 Q6 3 12 0 M-5 -2 L-6 -7 M1 0 Q-1 5 0 10 M6 1 L8 5'}
+                },
+                lo:{
+                    1:{c:'M-12 -8 Q-9 -13 -1 -12 Q8 -13 12 -8 C14 -4 11 2 8 7 Q3 13 -1 13 Q-5 13 -9 7 C-12 2 -14 -4 -12 -8 Z',e:'M-9 -6 Q-1 -9 9 -6 Q6 2 2 7 Q0 9 -2 7 Q-6 4 -9 -6 Z',g:'M-9 -6 Q0 -8 9 -6 M-5 -3 Q-4 3 0 6 Q4 3 5 -3'},
+                    2:{c:'M-13 -8 Q-10 -13 -2 -13 Q8 -14 13 -8 C15 -4 12 3 9 8 Q4 15 -1 15 Q-6 15 -10 8 C-14 1 -16 -5 -13 -8 Z',e:'M-10 -6 Q0 -10 10 -6 Q7 2 2 8 Q-1 11 -4 7 Q-7 4 -10 -6 Z',g:'M-10 -6 Q0 -9 10 -6 M-6 -3 Q-4 3 0 7 Q4 4 6 -3'},
+                    3:{c:'M-15 -5 Q-12 -12 -5 -13 Q-1 -19 3 -15 C8 -11 13 -9 15 -3 C18 4 13 11 8 14 Q2 19 -3 17 Q-9 16 -13 10 Q-18 4 -15 -5 Z',e:'M-11 0 Q-6 -7 -2 -11 Q3 -9 11 -1 Q10 6 3 12 Q-6 11 -11 0 Z',g:'M-11 -1 Q-5 -4 -2 -11 Q0 -5 2 1 Q6 2 11 -1 M2 1 Q0 7 2 11'},
+                    4:{c:'M-15 -8 Q-12 -15 -4 -17 Q4 -21 12 -13 C17 -9 18 -4 15 1 Q17 8 12 13 C7 19 -5 19 -11 15 Q-17 11 -15 4 Q-18 -1 -15 -8 Z',e:'M-11 -7 Q-7 -13 -2 -13 Q5 -14 11 -8 Q13 -3 9 2 Q12 8 7 12 Q-4 17 -10 10 Q-8 4 -11 -7 Z',g:'M-11 5 Q-5 3 -1 5 Q4 6 11 3 M-1 5 Q-3 0 -5 -3 M4 5 L6 9'},
+                    5:{c:'M-16 -8 Q-14 -15 -5 -17 Q2 -19 6 -16 C15 -17 19 -9 16 -2 Q15 1 17 5 C18 13 9 18 2 17 C-4 22 -12 18 -15 13 Q-19 8 -16 3 Q-19 -2 -16 -8 Z',e:'M-12 -7 Q-8 -13 -3 -12 Q1 -14 5 -12 Q12 -13 13 -6 Q10 -1 13 5 Q13 11 6 12 Q0 15 -4 13 Q-12 15 -12 8 Q-9 3 -12 -7 Z',g:'M-12 2 Q-6 1 -2 3 Q2 5 6 0 Q9 -2 13 -1 M-2 3 L-5 -4 M3 3 Q3 7 6 10'},
+                    6:{c:'M-19 -11 Q-15 -17 -8 -17 Q-4 -19 1 -16 Q6 -20 12 -16 C20 -15 23 -6 21 0 Q24 7 18 13 C12 19 8 19 3 16 Q-3 21 -10 17 C-18 17 -23 9 -20 3 Q-17 -2 -20 -6 Z',e:'M-15 -8 Q-11 -14 -5 -12 Q-1 -10 2 -13 Q8 -15 13 -10 Q18 -9 16 -2 Q19 4 14 10 Q9 15 3 11 Q-3 16 -9 13 Q-17 11 -15 4 Q-12 -1 -15 -8 Z',g:'M-15 1 Q-9 1 -5 -1 Q-2 -3 2 0 Q7 3 11 0 L16 -2 M-5 -1 Q-7 -5 -7 -10 M-5 -1 Q-4 6 -6 10 M2 0 Q4 -3 6 -7 M8 2 Q8 6 11 9'},
+                    7:{c:'M-19 -9 Q-16 -17 -8 -17 Q-4 -18 0 -15 Q6 -20 14 -15 C20 -12 21 -5 18 0 Q23 7 18 13 Q12 20 3 16 Q-3 20 -11 17 C-18 16 -22 9 -19 3 Q-17 -1 -19 -5 Z',e:'M-15 -7 Q-11 -13 -5 -13 Q-1 -9 2 -12 Q8 -15 14 -8 Q12 -3 15 2 Q17 9 10 12 Q6 15 1 11 Q-4 16 -11 12 Q-17 9 -15 2 Q-12 -1 -15 -7 Z',g:'M-14 1 Q-9 3 -6 1 Q0 -3 4 0 Q9 2 15 -1 M0 -1 Q1 -6 -1 -10 M0 -1 Q-1 4 2 11'},
+                    8:{c:'M-17 -8 Q-15 -15 -8 -16 Q-4 -18 1 -15 Q7 -18 14 -12 C19 -8 20 -2 17 3 Q20 9 14 14 Q7 19 1 15 Q-5 18 -11 14 C-18 12 -21 5 -17 0 Q-16 -3 -17 -8 Z',e:'M-13 -7 Q-10 -12 -4 -12 Q0 -9 5 -12 Q12 -12 14 -6 Q12 -2 13 3 Q15 7 11 11 Q7 14 2 10 Q-3 15 -9 11 Q-16 8 -13 2 Z',g:'M-13 1 Q-8 2 -5 -1 Q-1 -3 2 0 Q7 3 13 1 M-5 -1 L-7 -6 M2 0 Q0 4 2 9 M5 1 L7 -4'}
+                }
             };
-            // 치종별 근원심 폭 계수(실제 치아 비율 근사): 1중절, 2측절, 3견치, 4·5소구치, 6·7·8대구치
-            function _toothWidthFactor(fdi){ const d=fdi%10; return ({1:0.98,2:0.74,3:0.82,4:0.82,5:0.84,6:1.18,7:1.1,8:1.0}[d])||1; }
-            function _toothBuccalSVG(fdi,on){ const T=_TB[_toothType(fdi)]||_TB.incisor; const f=on?'#dbeafe':'#ffffff', s=on?'#2563eb':'#51607a', dl=on?'#8fb3ea':'#b9c2d0'; let o=''; (T.roots||[]).forEach(r=>{ o+='<path d="'+r+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.6" stroke-linejoin="round"/>'; }); o+='<path d="'+T.crown+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.7" stroke-linejoin="round"/>'; if(T.detail) o+='<path d="'+T.detail+'" fill="none" stroke="'+dl+'" stroke-width="1" stroke-linecap="round"/>'; return o; }
-            function _toothOcclusalSVG(fdi,on){ const T=_TO[_toothType(fdi)]||_TO.incisor; const f=on?'#dbeafe':'#ffffff', s=on?'#2563eb':'#51607a', dl=on?'#8fb3ea':'#aab3c2'; return '<path d="'+T.shape+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.5" stroke-linejoin="round"/>'+(T.detail?'<path d="'+T.detail+'" fill="none" stroke="'+dl+'" stroke-width="1" stroke-linecap="round"/>':''); }
-            // ── 4분면(협측 측면도) — 단일 SVG(viewBox+width:100%) → 폭에 자동 맞춤(우측 잘림 없음)·고해상(벡터) ──
+            // 아치 배치 좌표(552x602 기준 %) · 치종별 회전각
+            const ARCH_ROT = {1:8,2:22,3:38,4:53,5:64,6:70,7:73,8:75};
+            const ARCH_POS = {
+                18:[17.391,44.518],17:[19.565,37.542],16:[21.920,30.565],15:[24.819,24.086],14:[28.442,18.106],13:[33.333,12.957],12:[39.493,9.302],11:[46.196,7.973],
+                21:[53.804,7.973],22:[60.507,9.302],23:[66.667,12.957],24:[71.558,18.106],25:[75.181,24.086],26:[78.080,30.565],27:[80.435,37.542],28:[82.609,44.518],
+                48:[17.391,55.482],47:[19.565,62.458],46:[21.920,69.435],45:[24.819,75.914],44:[28.442,81.894],43:[33.333,87.043],42:[39.493,90.698],41:[46.196,92.027],
+                31:[53.804,92.027],32:[60.507,90.698],33:[66.667,87.043],34:[71.558,81.894],35:[75.181,75.914],36:[78.080,69.435],37:[80.435,62.458],38:[82.609,55.482]
+            };
+            const _QUAD_T = {1:'scale(-1 1)',2:'scale(1 1)',3:'translate(0 134) scale(1 -1)',4:'translate(0 134) scale(-1 -1)'};
+            const _PRIMARY_ARCH = {55:15,54:14,53:13,52:12,51:11,61:21,62:22,63:23,64:24,65:25,85:45,84:44,83:43,82:42,81:41,71:31,72:32,73:33,74:34,75:35};
+            // FDI(영구·유치) → {quad, jaw, pos(치종 1~8)}
+            function _refMap(fdi){
+                const q=Math.floor(fdi/10), d=fdi%10;
+                const quad=(q<=4)?q:({5:1,6:2,7:3,8:4}[q]);
+                const jaw=(quad===1||quad===2)?'up':'lo';
+                const pos=(q<=4)? d : ({1:1,2:2,3:3,4:4,5:6}[d]);
+                return {quad, jaw, pos};
+            }
+            function _toothPalette(on){
+                return on
+                    ? {out:'#006d62', root:'#c9ebe4', crown:'#ade1d6', enamel:'#d4efe9', groove:'#318778'}
+                    : {out:'#3d6165', root:'#f3f9f8', crown:'#ffffff', enamel:'#eaf4f2', groove:'#708d90'};
+            }
+            // 협면 치아 1개(viewBox -30 0 60 134 로컬좌표; 분면 변환 포함)
+            function _toothBuccalSVG(fdi,on){
+                const m=_refMap(fdi); const T=(BUCCAL[m.jaw]||BUCCAL.up)[m.pos]||BUCCAL.up[1]; const p=_toothPalette(on);
+                return '<g transform="'+_QUAD_T[m.quad]+'">'
+                    +'<path d="'+T.r+'" fill="'+p.root+'" stroke="'+p.out+'" stroke-width="1.65" stroke-linejoin="round" stroke-linecap="round"/>'
+                    +'<path d="'+T.c+'" fill="'+p.crown+'" stroke="'+p.out+'" stroke-width="1.65" stroke-linejoin="round" stroke-linecap="round"/>'
+                    +(T.g?'<path d="'+T.g+'" fill="none" stroke="'+p.groove+'" stroke-width="1.08" stroke-linecap="round" stroke-linejoin="round"/>':'')
+                    +'</g>';
+            }
+            // 교합면 치아 1개(viewBox -23 -23 46 46 로컬좌표; 회전은 호출부에서)
+            function _toothOcclusalSVG(fdi,on){
+                const m=_refMap(fdi); const T=(OCC[m.jaw]||OCC.up)[m.pos]||OCC.up[1]; const p=_toothPalette(on);
+                return '<path d="'+T.c+'" fill="'+p.crown+'" stroke="'+p.out+'" stroke-width="1.65" stroke-linejoin="round" stroke-linecap="round"/>'
+                    +'<path d="'+T.e+'" fill="'+p.enamel+'" stroke="none"/>'
+                    +(T.g?'<path d="'+T.g+'" fill="none" stroke="'+p.groove+'" stroke-width="1.26" stroke-linecap="round" stroke-linejoin="round"/>':'');
+            }
+            // ── 4분면(협측 측면도) — 단일 SVG(viewBox+width:100%)·실사형 치아·우측 잘림 없음 ──
             function _rxQuadHtml(i, upA, loA, teeth){
                 const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi';
-                const TW=30, TH=64, pad=4, midGap=10;
-                const VW=pad*2+TW*16+midGap, VH=188;
-                const upTeethY=16, upNumY=92, loNumY=112, loTeethY=120, midY=102;
-                const cellLeft=k=> pad + k*TW + (k>=8?midGap:0);
-                const cxk=k=> cellLeft(k)+TW/2;
-                const sx=TW/40;
-                const col=fdi=>sel.has(fdi)?'#1d4ed8':'#334155';
+                const PAD=10, CW=34, MID=16, sc=0.716, TH=134*sc;
+                const VW=PAD*2+CW*16+MID;
+                const upTop=20, upBot=upTop+TH, upNumY=upBot+16, midY=upNumY+6, loNumY=midY+18, loTop=loNumY+6, VH=loTop+TH+10;
+                const cellL=k=> PAD + k*CW + (k>=8?MID:0);
+                const cx=k=> cellL(k)+CW/2;
+                const col=f=>sel.has(f)?'#006d62':'#2a4a4d';
                 let vis='', rects='';
-                vis+='<text x="'+(pad)+'" y="12" font-size="10" font-weight="700" fill="#94a3b8">우측 R</text>';
-                vis+='<text x="'+(VW-pad)+'" y="12" text-anchor="end" font-size="10" font-weight="700" fill="#94a3b8">좌측 L</text>';
-                // 상악: 치아(뿌리 위로 뒤집기) + 번호(치아 아래, 정중선 쪽)
-                upA.forEach((fdi,k)=>{ const X=cellLeft(k), on=sel.has(fdi);
-                    vis+='<g transform="translate('+X.toFixed(1)+','+(upTeethY+TH)+') scale('+sx.toFixed(4)+','+(-(TH/100)).toFixed(4)+')">'+_toothBuccalSVG(fdi,on)+'</g>';
-                    vis+='<text x="'+cxk(k).toFixed(1)+'" y="'+upNumY+'" text-anchor="middle" font-size="14" font-weight="800" fill="'+col(fdi)+'">'+_toothLabelFor(fdi,nota)+'</text>';
-                    rects+='<rect x="'+X.toFixed(1)+'" y="'+upTeethY+'" width="'+TW+'" height="'+(upNumY-upTeethY)+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
+                vis+='<text x="'+PAD+'" y="13" font-size="11" font-weight="700" fill="#8aa3a5">R 우측</text>';
+                vis+='<text x="'+(VW-PAD)+'" y="13" text-anchor="end" font-size="11" font-weight="700" fill="#8aa3a5">좌측 L</text>';
+                // 상악: 치아(크라운 아래=정중선 쪽) + 번호(치아 아래)
+                upA.forEach((f,k)=>{ const X=cx(k), on=sel.has(f);
+                    vis+='<g transform="translate('+X.toFixed(1)+','+upTop+') scale('+sc+')">'+_toothBuccalSVG(f,on)+'</g>';
+                    vis+='<text x="'+X.toFixed(1)+'" y="'+upNumY+'" text-anchor="middle" font-size="12.5" font-weight="800" fill="'+col(f)+'">'+_toothLabelFor(f,nota)+'</text>';
+                    rects+='<rect x="'+(X-CW/2).toFixed(1)+'" y="'+upTop+'" width="'+CW+'" height="'+(upNumY-upTop)+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+f+')"/>';
                 });
-                // 하악: 번호(치아 위, 정중선 쪽) + 치아(정상)
-                loA.forEach((fdi,k)=>{ const X=cellLeft(k), on=sel.has(fdi);
-                    vis+='<text x="'+cxk(k).toFixed(1)+'" y="'+loNumY+'" text-anchor="middle" font-size="14" font-weight="800" fill="'+col(fdi)+'">'+_toothLabelFor(fdi,nota)+'</text>';
-                    vis+='<g transform="translate('+X.toFixed(1)+','+loTeethY+') scale('+sx.toFixed(4)+','+(TH/100).toFixed(4)+')">'+_toothBuccalSVG(fdi,on)+'</g>';
-                    rects+='<rect x="'+X.toFixed(1)+'" y="'+(loNumY-15)+'" width="'+TW+'" height="'+(loTeethY+TH-(loNumY-15))+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
+                // 하악: 번호(치아 위) + 치아(크라운 위=정중선 쪽)
+                loA.forEach((f,k)=>{ const X=cx(k), on=sel.has(f);
+                    vis+='<text x="'+X.toFixed(1)+'" y="'+loNumY+'" text-anchor="middle" font-size="12.5" font-weight="800" fill="'+col(f)+'">'+_toothLabelFor(f,nota)+'</text>';
+                    vis+='<g transform="translate('+X.toFixed(1)+','+loTop+') scale('+sc+')">'+_toothBuccalSVG(f,on)+'</g>';
+                    rects+='<rect x="'+(X-CW/2).toFixed(1)+'" y="'+(loNumY-14)+'" width="'+CW+'" height="'+(loTop+TH-(loNumY-14))+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+f+')"/>';
                 });
-                const midX=pad+8*TW+midGap/2;
-                vis+='<line x1="'+midX+'" y1="'+upTeethY+'" x2="'+midX+'" y2="'+(loTeethY+TH)+'" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="3 3"/>';
-                vis+='<line x1="'+pad+'" y1="'+midY+'" x2="'+(VW-pad)+'" y2="'+midY+'" stroke="#0f2f52" stroke-width="1" opacity="0.16"/>';
+                const mx=PAD+8*CW+MID/2;
+                vis+='<line x1="'+mx+'" y1="'+upTop+'" x2="'+mx+'" y2="'+(loTop+TH)+'" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="3 4"/>';
+                vis+='<line x1="'+PAD+'" y1="'+midY+'" x2="'+(VW-PAD)+'" y2="'+midY+'" stroke="#9cb3b5" stroke-width="1" stroke-dasharray="3 5"/>';
                 return '<svg viewBox="0 0 '+VW+' '+VH+'" width="100%" style="display:block;max-width:'+VW+'px;margin:0 auto;height:auto;overflow:visible;">'+vis+rects+'</svg>';
             }
-            // ── 아치형(교합면 상면도) — 상악 ∩ + 하악 ∪ 두 개의 말굽(레퍼런스 형태). 치아는 호 길이에 맞춰 크게·맞닿게 ──
+            // ── 아치형(교합면 상면도) — 실제 악궁 좌표(레퍼런스 552x602)·실사형 교합면 ──
             function _rxArchHtml(i, upA, loA, teeth){
                 const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi';
-                // 실제 악궁형 타원(앞뒤로 긴 egg형: ry>rx). 상악 ∩ 윗반 + 하악 ∪ 아랫반.
-                const VW=400, VH=470;
-                const arcs=[
-                    {arr:upA, cx:200, cy:216, rx:150, ry:182, upper:true,  lbl:'상악', lblY:26},
-                    {arr:loA, cx:200, cy:254, rx:150, ry:182, upper:false, lbl:'하악', lblY:452}
-                ];
+                const VW=552, VH=602, CX=276, CY=301;
+                const all=(upA||[]).concat(loA||[]);
                 let vis='', rects='';
-                arcs.forEach(A=>{
-                    const ws=A.arr.map(_toothWidthFactor); const tot=ws.reduce((a,b)=>a+b,0); let acc=0;
-                    A.arr.forEach((fdi,k)=>{ const frac=ws[k]/tot; const t=(acc+ws[k]/2)/tot; acc+=ws[k];
-                        const th=Math.PI*(1-t);   // π(좌 대구치) → 0(우 대구치), π/2=앞니(중앙)
-                        const x=A.cx + A.rx*Math.cos(th);
-                        const y=A.upper?(A.cy - A.ry*Math.sin(th)):(A.cy + A.ry*Math.sin(th));
-                        // 타원 법선 방향으로 치아를 세움(교합면 협측이 바깥을 향함)
-                        const nxv=Math.cos(th)/A.rx, nyv=(A.upper?-1:1)*Math.sin(th)/A.ry;
-                        const rot=Math.atan2(nxv,-nyv)*180/Math.PI;
-                        // 호 길이에 맞춰 크기 산정 → 이웃 치아와 자연스럽게 맞닿음
-                        const sz=(A.ry*Math.PI*frac)*1.5, on=sel.has(fdi);
-                        vis+='<g transform="translate('+x.toFixed(1)+','+y.toFixed(1)+') rotate('+rot.toFixed(1)+') scale('+(sz/40).toFixed(4)+')"><g transform="translate(-20,-20)">'+_toothOcclusalSVG(fdi,on)+'</g></g>';
-                        const nRr=sz*0.5+13;
-                        const nx=A.cx + (A.rx+nRr)*Math.cos(th);
-                        const ny=A.upper?(A.cy-(A.ry+nRr)*Math.sin(th)):(A.cy+(A.ry+nRr)*Math.sin(th));
-                        vis+='<text x="'+nx.toFixed(1)+'" y="'+(ny+4.5).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="800" fill="'+(on?'#1d4ed8':'#64748b')+'">'+_toothLabelFor(fdi,nota)+'</text>';
-                        rects+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(sz*0.46).toFixed(1)+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
-                    });
-                    vis+='<text x="'+A.cx+'" y="'+A.lblY+'" text-anchor="middle" font-size="12" font-weight="800" fill="#cbd5e1">'+A.lbl+'</text>';
+                vis+='<path d="M276 24V145 M276 199V281 M276 321V403 M276 457V578 M84 301H468" fill="none" stroke="#d8e7e6" stroke-width="1.3" stroke-dasharray="3 5"/>';
+                vis+='<text x="276" y="176" text-anchor="middle" font-size="15" font-weight="700" fill="#536b6e">상악</text>';
+                vis+='<text x="276" y="438" text-anchor="middle" font-size="15" font-weight="700" fill="#536b6e">하악</text>';
+                all.forEach(f=>{
+                    const posKey = ARCH_POS[f] ? f : _PRIMARY_ARCH[f];
+                    const P = ARCH_POS[posKey]; if(!P) return;
+                    const m=_refMap(f); const rot=ARCH_ROT[posKey%10]||0;
+                    const x=P[0]*VW/100, y=P[1]*VH/100, on=sel.has(f);
+                    const sign=(m.quad===1||m.quad===4)?-1:1;       // 우측(1·4분면)은 좌우반전
+                    const outer=(m.jaw==='lo')?'scale(1 -1) ':'';    // 하악은 상하반전
+                    const tf=outer+'rotate('+(sign<0?-rot:rot)+') scale('+sign+' 1)';
+                    vis+='<g transform="translate('+x.toFixed(1)+','+y.toFixed(1)+')"><g transform="'+tf+'">'+_toothOcclusalSVG(f,on)+'</g></g>';
+                    let dx=x-CX, dy=y-CY; const L=Math.hypot(dx,dy)||1; dx/=L; dy/=L;
+                    const nx=x+dx*30, ny=y+dy*30;
+                    vis+='<text x="'+nx.toFixed(1)+'" y="'+(ny+4.5).toFixed(1)+'" text-anchor="middle" font-size="14" font-weight="800" fill="'+(on?'#006d62':'#2a4a4d')+'">'+_toothLabelFor(f,nota)+'</text>';
+                    rects+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="19" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+f+')"/>';
                 });
-                return '<svg viewBox="0 0 '+VW+' '+VH+'" width="100%" style="display:block;max-width:'+VW+'px;margin:0 auto;height:auto;overflow:visible;">'+vis+rects+'</svg>';
+                return '<svg viewBox="0 0 '+VW+' '+VH+'" width="100%" style="display:block;max-width:420px;margin:0 auto;height:auto;overflow:visible;">'+vis+rects+'</svg>';
             }
             function _rxNotaSel(){ const n=window._rxToothNotation||'fdi'; const o=(v,t)=>'<option value="'+v+'"'+(n===v?' selected':'')+'>'+t+'</option>'; return '<select onchange="rxSetToothNotation(this.value)" title="치식 표기법" style="font-size:10.5px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;">'+o('fdi','FDI')+o('palmer','Palmer')+o('universal','Universal')+'</select>'; }
             function _rxLayoutSel(){ const L=window._rxToothLayout||'quad'; const b=(v,t,pos)=>'<button type="button" onclick="rxSetToothLayout(\''+v+'\')" style="font-size:10.5px;padding:3px 9px;border:1px solid '+(L===v?'#0f2f52':'#cbd5e1')+';background:'+(L===v?'#0f2f52':'#fff')+';color:'+(L===v?'#fff':'#475569')+';cursor:pointer;'+(pos==='l'?'border-radius:6px 0 0 6px;':'border-radius:0 6px 6px 0;border-left:none;')+'">'+t+'</button>'; return '<span style="display:inline-flex;">'+b('quad','4분면','l')+b('arch','아치형','r')+'</span>'; }
