@@ -21421,9 +21421,18 @@ pdfjsScript,
                         (async()=>{
                             let ok=0;
                             for(const f of (st.attachFiles||[])){ try{ if(f&&f.__cloudLink) continue; await window.RCFolder.writeFileInRoom(_ofn, f.name, f); ok++; }catch(_){} }
-                            // 🧾 의뢰서 PDF 동봉
-                            try{ const pdf=await buildRxPdfBlob(st, info); if(pdf){ await window.RCFolder.writeFileInRoom(_ofn, '의뢰서_'+String(info.patientName||'case').replace(/[\\/:*?"<>|]/g,'_')+'.pdf', pdf); } }catch(_){}
-                            if(ok) showToast('📁 공유폴더 ['+_ofn+']에 저장: 첨부 '+ok+'개 + 의뢰서 PDF');
+                            // 🧾 의뢰서 동봉 — PDF(이미지 렌더) 시도, 실패하면 HTML로 폴백(브라우저에서 항상 열림·인쇄 가능)
+                            let _docExt='PDF';
+                            try{
+                                const _pn=String(info.patientName||'case').replace(/[\\/:*?"<>|]/g,'_');
+                                const _pc=String(info.chartNo||'').replace(/[\\/:*?"<>|]/g,'_');
+                                const _base='의뢰서_'+_pn+(_pc?('_'+_pc):'');
+                                let _pdf=null;
+                                try{ _pdf=await buildRxPdfBlob(st, info); }catch(_pe){ try{ console.warn('의뢰서 PDF 생성 실패→HTML 폴백:', _pe); }catch(__){} }
+                                if(_pdf && _pdf.size>1200){ await window.RCFolder.writeFileInRoom(_ofn, _base+'.pdf', _pdf); }
+                                else { const _html=buildRxBundleHTML(st, info, []); const _hb=new Blob(['﻿'+_html], {type:'text/html;charset=utf-8'}); await window.RCFolder.writeFileInRoom(_ofn, _base+'.html', _hb); _docExt='HTML'; }
+                            }catch(_){ _docExt=''; }
+                            if(ok||_docExt) showToast('📁 공유폴더 ['+_ofn+']에 저장: 첨부 '+ok+'개'+(_docExt?(' + 의뢰서 '+_docExt):''));
                         })();
                     }
                 } catch(_){}
