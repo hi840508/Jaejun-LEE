@@ -6087,12 +6087,14 @@
                 const _rootLbl = _cloudSel ? '☁ 클라우드 저장소' : '📁 내 컴퓨터';
                 const crumb = (path.length
                         ? ('<span class="_sf-crumb" data-i="-1" style="cursor:pointer;color:#0f2f52;font-weight:700;">'+_rootLbl+'</span>'+path.map((seg,i)=>' <span style="color:#c4c9d0;font-weight:500;">›</span> <span class="_sf-crumb" data-i="'+i+'" style="cursor:pointer;'+(i===path.length-1?'font-weight:800;color:#0f172a;':'color:#334155;')+'">'+_sfEsc(seg)+'</span>').join(''))
-                        : ('<span style="font-weight:800;color:#0f2f52;">'+_rootLbl+'</span>'));
+                        : (window.__sfPatientFilter
+                            ? ('<span class="_sf-crumb" data-i="-1" style="cursor:pointer;color:#0f2f52;font-weight:700;">'+_rootLbl+'</span> <span style="color:#c4c9d0;font-weight:500;">›</span> <span style="font-weight:800;color:#0f172a;">🧑‍⚕️ '+_sfEsc((window.__selectedPatient&&window.__selectedPatient.name)||'환자')+'</span>')
+                            : ('<span style="font-weight:800;color:#0f2f52;">'+_rootLbl+'</span>')));
                 const head='';
                 // 📁 탐색기식 툴바 1줄: [뒤로] 경로(좌) ········· 검색(우) · 미리보기/Viewer(우측 끝). 로컬/클라우드는 좌측 사이드바로.
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:8px 14px;min-height:52px;box-sizing:border-box;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f0f1f3;">'
-                    + (path.length&&!_cloudSel&&!window.__sfStoreView?'<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>':'')
+                    + ((path.length||window.__sfPatientFilter||window.__sfDeepQuery)&&!_cloudSel&&!window.__sfStoreView?'<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>':'')
                     + (function(){ var _store=!!window.__sfStoreView, _local=(!window.__sfStoreView&&!_cloudSel);
                         var on='border-color:#0b2b4b;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;', off='border-color:#cbd5e1;background:#fff;color:#0f2f52;';
                         var base='flex:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;border-style:solid;border-width:1px;';
@@ -6233,8 +6235,8 @@
                 // ☁️ 클라우드 버튼 = 로컬↔클라우드 보관함 뷰 전환 토글
                 const mir=ov.querySelector('#_sf-mirror'); if(mir) mir.onclick=()=>{ window.__sfCloudView = !window.__sfCloudView; render(); };
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
-                ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); path = i<0?[]:path.slice(0,i+1); render(); }));
-                const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else { close(); } };
+                ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); if(i<0 && (window.__sfPatientFilter||window.__sfDeepQuery)){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} } path = i<0?[]:path.slice(0,i+1); render(); }));
+                const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else if(window.__sfPatientFilter||window.__sfDeepQuery){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); } else { close(); } };
                     bk.addEventListener('dragover',(e)=>{ if(window.__rcDragFile && path.length){ e.preventDefault(); e.dataTransfer.dropEffect='move'; bk.style.outline='2px solid #0f2f52'; } });
                     bk.addEventListener('dragleave',()=>{ bk.style.outline=''; });
                     bk.addEventListener('drop',async(e)=>{ bk.style.outline=''; const fn=window.__rcDragFile; if(!fn||!path.length) return; e.preventDefault(); if(await R.moveUp(path, fn)){ showToast('상위 폴더로 이동됨'); render(); } else showToast('이동 실패'); });
