@@ -6362,9 +6362,10 @@
                     el.addEventListener('click',(e)=>{ if(e.target===chk || (e.target&&e.target.closest&&(e.target.closest('.rc-more')||e.target.closest('.rc-clmenu')))) return; if(e.ctrlKey||e.metaKey||e.shiftKey){ e.preventDefault(); e.stopPropagation(); _cardOn(el, !_isSelected(el)); updCnt(); return; }
                         // 📎 주문서가 열려 있으면 클릭만으로 첨부(드래그 불필요)
                         if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ e.preventDefault(); e.stopPropagation(); if(!here){ showToast('로컬(내 컴퓨터) 파일만 클릭 첨부할 수 있어요.'); return; } (async()=>{ try{ showToast('파일 읽는 중…'); const f=await R.getFileAt(path, fnm); if(!f){ showToast('파일을 읽지 못했습니다.'); return; } if(document.getElementById('rx-form-modal')&&window.rxOrderState){ window.rxAddFiles([f]); } else if(window.orderFormState){ addBuyerFiles([f]); } showToast('📎 첨부됨: '+fnm); }catch(err){ showToast('첨부 실패'); } })(); return; }
-                        window.rcPreviewFolderFile(fnm, mim); });
-                    // 🖥 더블클릭 = 실시간 뷰어(cbct_suite)로 열기. 같은 폴더의 다른 영상은 뷰어 안 DATA 서랍에서 추가로 연다.
-                    el.addEventListener('dblclick',(e)=>{ if(e.target===chk) return; e.preventDefault(); e.stopPropagation(); window.rcOpenInLiveViewer(path, fnm); });
+                        // 👆 단일클릭 = 선택(미리보기 안 함). 미리보기는 더블클릭.
+                        _cardOn(el, !_isSelected(el)); updCnt(); });
+                    // 🖱 더블클릭 = 미리보기(인페이지). 실시간 뷰어(cbct_suite)는 ⋯ 메뉴/상단 Viewer 버튼으로.
+                    el.addEventListener('dblclick',(e)=>{ if(e.target===chk) return; e.preventDefault(); e.stopPropagation(); window.rcPreviewFolderFile(fnm, mim); });
                     el.addEventListener('dragstart',(e)=>{ if(!here){ e.preventDefault(); return; } try{
                         // 선택된 파일을 끌면 '선택 전체'를 함께 전달(대화방 드롭 시 묶음/개별 선택). 아니면 이 파일 하나.
                         const multi = selected.has(fnm) && selected.size>1;
@@ -6384,6 +6385,7 @@
                         const sel=(selected.has(fnm)&&selected.size>1)?Array.from(selected):[fnm]; const multi=sel.length>1;
                         if(here){
                             items.push({label:'👁 미리보기',fn:()=>window.rcPreviewFolderFile(fnm,mim)});
+                            items.push({label:'🖥 실시간 뷰어로 열기',fn:()=>{ try{ window.rcOpenInLiveViewer(path, fnm); }catch(_){ showToast('뷰어 열기 실패'); } }});
                             items.push({label:(multi?('💾 원본 다운로드 ('+sel.length+'개)'):'💾 원본 다운로드'),fn:async()=>{ let ok=0; for(const nm of sel){ try{ const f=await R.getFileAt(path, nm); if(!f) continue; const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=nm; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} }, 60000); ok++; }catch(_){} } showToast(multi?('원본 다운로드 '+ok+'개'):'원본 다운로드'); }});
                             items.push({label:(multi?('📤 공유 / 나에게 보내기 ('+sel.length+'개)'):'📤 공유 / 나에게 보내기'),fn:()=>openShareRecipientPicker(sel)});
                             items.push({label:'🔗 외부 공유(비회원 · QR/링크)',fn:()=>window.guestShareLocalFile(path, fnm, mim, 0)});
@@ -6545,6 +6547,24 @@
             }
             // ☁️ 클라우드 전용 목록(모바일/폴더 미지정) — 클라우드 저장소 파일을 바로 조회(다운로드 아님).
             // ☁️ 클라우드 파일 동작 메뉴 — 누른 버튼 바로 옆에 뜨는 팝오버(열기/공유/삭제, 텍스트 라벨).
+            // 💾 다운로드 공통 — URL을 blob으로 받아 실제 파일로 저장(실패 시 새 탭 폴백)
+            async function _blobDownload(url, nm){
+                try{ const resp=await fetch(url); if(!resp.ok) throw 0; const b=await resp.blob(); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=nm||'file'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); showToast('💾 다운로드됨: '+(nm||'')); }
+                catch(_){ try{ window.open(url,'_blank','noopener'); showToast('새 탭에서 열렸습니다. 길게 눌러/우클릭해 저장하세요.'); }catch(__){ showToast('다운로드 실패'); } }
+            }
+            // 💾 내 클라우드 파일 다운로드 — ①로컬 연결 기기면 원본 blob ②아니면 프리사인 URL
+            async function _sfDownloadCloud(rpath, nm){
+                nm=nm||String(rpath).split('/').pop();
+                try{ const R=window.RCFolder; if(R && R.getFileAt){ const parts=String(rpath).split('/'); const fn=parts.pop(); let f=null; try{ f=await R.getFileAt(parts, fn); }catch(_){} if(f){ const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); showToast('💾 다운로드됨: '+fn); return; } } }catch(_){}
+                try{ const d=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath})}).then(r=>r.json()); if(d&&d.url){ await _blobDownload(d.url, nm); return; } showToast((d&&d.error)||'다운로드 URL을 받지 못했습니다.'); }
+                catch(_){ showToast('다운로드 실패'); }
+            }
+            // 💾 공유받은 파일 다운로드 — ①공유폴더 연결 시 내 폴더에 저장 ②아니면 프리사인 URL
+            async function _sfDownloadShared(sid, nm){
+                try{ if(window.RCFolder && window.RCFolder.chosen && window.RCFolder.chosen() && window.RCMirror && window.RCMirror.sharedSaveToFolder){ showToast('내 공유폴더에 저장 중…'); await window.RCMirror.sharedSaveToFolder(Number(sid), nm); showToast('✅ 공유폴더에 저장했습니다.'); return; } }catch(_){}
+                try{ const dj=await fetch(API_URL+'/api/mirror/shared-download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:Number(sid)})}).then(r=>r.json()); if(dj&&dj.url){ await _blobDownload(dj.url, nm); return; } showToast((dj&&dj.error)||'다운로드 권한이 없거나 만료되었습니다.'); }
+                catch(_){ showToast('다운로드 실패'); }
+            }
             window._sfCloudActions = function(rpath, anchor){
                 if(!rpath) return;
                 const nm=String(rpath).split('/').pop();
@@ -6552,9 +6572,10 @@
                 const back=document.createElement('div'); back.style.cssText='position:fixed;inset:0;z-index:100062;background:transparent;';
                 const menu=document.createElement('div'); menu.style.cssText='position:fixed;z-index:100063;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 36px rgba(15,23,42,.22);overflow:hidden;min-width:190px;';
                 const B='display:block;width:100%;text-align:left;padding:12px 15px;border:none;border-bottom:1px solid #f1f5f9;background:#fff;font-size:14px;font-weight:700;color:#0f172a;cursor:pointer;white-space:nowrap;';
-                menu.innerHTML='<button id="_ca-open" style="'+B+'">열기 (미리보기)</button>'
-                    +'<button id="_ca-share" style="'+B+'">다른 계정에 공유</button>'
-                    +'<button id="_ca-del" style="'+B+'color:#dc2626;border-bottom:none;">클라우드에서 삭제</button>';
+                menu.innerHTML='<button id="_ca-open" style="'+B+'">👁 열기 (미리보기)</button>'
+                    +'<button id="_ca-dl" style="'+B+'">💾 원본 다운로드</button>'
+                    +'<button id="_ca-share" style="'+B+'">📤 다른 계정에 공유</button>'
+                    +'<button id="_ca-del" style="'+B+'color:#dc2626;border-bottom:none;">🗑 클라우드에서 삭제</button>';
                 back.appendChild(menu); document.body.appendChild(back);
                 // 위치: 앵커(버튼) 기준 아래/왼쪽 정렬, 화면 밖으로 안 나가게 보정
                 try{
@@ -6575,6 +6596,7 @@
                 // 메뉴를 연 클릭이 즉시 닫지 않도록 다음 틱에 전역 리스너 등록
                 setTimeout(()=>{ if(closed) return; document.addEventListener('pointerdown',onDown,true); document.addEventListener('mousedown',onDown,true); document.addEventListener('contextmenu',onCtx,true); document.addEventListener('keydown',onKey,true); },0);
                 menu.querySelector('#_ca-open').onclick=()=>{ close(); if(typeof _sfOpenCloudFile==='function') _sfOpenCloudFile(rpath); };
+                menu.querySelector('#_ca-dl').onclick=()=>{ close(); _sfDownloadCloud(rpath, nm); };
                 menu.querySelector('#_ca-share').onclick=()=>{ close(); if(typeof _sfShareCloudFile==='function') _sfShareCloudFile(rpath); };
                 menu.querySelector('#_ca-del').onclick=async()=>{
                     close();
@@ -6883,18 +6905,21 @@
                 const _clBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); const pa=ov.querySelector('#_sf-pickattach'); if(sb) sb.style.display=_clSel.size?'flex':'none'; if(cn) cn.textContent=_clSel.size+'개 선택'; if(pa) pa.textContent='✔ 선택 첨부 ('+_clSel.size+')'; };
                 const _openShared=async(sid)=>{ try{ const dj=await fetch(API_URL+'/api/mirror/shared-download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:Number(sid)})}).then(r=>r.json()); if(dj&&dj.url){ window.open(dj.url,'_blank','noopener'); } else showToast((dj&&dj.error)||'열람 권한이 없거나 만료되었습니다.'); }catch(_){ showToast('열람 실패'); } };
                 grid.querySelectorAll('.rc-clview').forEach(el=>{ const rp=el.getAttribute('data-rpath'); const mime=el.getAttribute('data-mime')||''; const size=Number(el.getAttribute('data-size'))||0;
-                    // 📥 받은 공유 파일(열람 전용, 2주) — 드래그/첨부 없이 클릭=열람
-                    if(el.getAttribute('data-shared')==='1'){ const sid=el.getAttribute('data-shareid'); el.addEventListener('click',(e)=>{ _openShared(sid); }); return; }
+                    // 📥 받은 공유 파일(열람 전용, 2주) — 단일클릭은 미리보기 안 함, 더블클릭=열람, ⋯=열기/다운로드 메뉴
+                    if(el.getAttribute('data-shared')==='1'){ const sid=el.getAttribute('data-shareid'); el.addEventListener('dblclick',(e)=>{ if(e.target.closest('.rc-clmenu')) return; e.preventDefault(); e.stopPropagation(); _openShared(sid); }); return; }
                     const _desc=()=>({rootId:'', rpath:rp, cloud:true, mime, size});
                     el.addEventListener('dragstart',(e)=>{ window.__sfDragFileRef=[{rootId:'', rpath:rp, fname:String(rp).split('/').pop(), mtime:0, modality:'', cloud:true, mime, size}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', String(rp).split('/').pop()); }catch(_){} });
                     el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; },60); });
-                    const chk=el.querySelector('.rc-cl-chk'); if(chk){ chk.addEventListener('click',(e)=>{ e.stopPropagation(); const on=!_clSel.has(rp); if(on) _clSel.set(rp,_desc()); else _clSel.delete(rp); chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; _clBar(); }); }
-                    el.addEventListener('click',(e)=>{ if(e.target.closest('.rc-clmenu')||e.target.closest('.rc-cl-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_desc()]); return; } _sfOpenCloudFile(rp); });
-                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('.rc-cl-chk')||e.target.closest('.rc-clmenu')) return; e.preventDefault(); e.stopPropagation(); window._sfAttachDescs([_desc()]); });
+                    const chk=el.querySelector('.rc-cl-chk');
+                    const _toggleSel=()=>{ const on=!_clSel.has(rp); if(on) _clSel.set(rp,_desc()); else _clSel.delete(rp); if(chk){ chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; _clBar(); };
+                    if(chk){ chk.addEventListener('click',(e)=>{ e.stopPropagation(); _toggleSel(); }); }
+                    // 👆 단일클릭 = 선택(미리보기 안 함) · 🖱 더블클릭 = 미리보기 · 폼 열림 시엔 클릭=첨부
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('.rc-clmenu')||e.target.closest('.rc-cl-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_desc()]); return; } _toggleSel(); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('.rc-cl-chk')||e.target.closest('.rc-clmenu')) return; e.preventDefault(); e.stopPropagation(); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_desc()]); return; } _sfOpenCloudFile(rp); });
                 });
                 { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_clSel.size){ showToast('첨부할 파일을 선택하세요.'); return; } window._sfAttachDescs([..._clSel.values()]); }; }
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _clSel.clear(); grid.querySelectorAll('.rc-clview').forEach(el=>{ el.style.outline=''; const c=el.querySelector('.rc-cl-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _clBar(); }; }
-                grid.querySelectorAll('.rc-clview[data-shared="1"] .rc-clmenu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _openShared(el.closest('.rc-clview').getAttribute('data-shareid')); }));
+                grid.querySelectorAll('.rc-clview[data-shared="1"] .rc-clmenu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); const card=el.closest('.rc-clview'); const sid=card.getAttribute('data-shareid'); const snm=String(card.getAttribute('data-rpath')||'file').split('/').pop(); const r=el.getBoundingClientRect(); ctxMenu(r.right-150, r.bottom+4, [ {label:'👁 미리보기 / 열기',fn:()=>_openShared(sid)}, {label:'💾 다운로드',fn:()=>_sfDownloadShared(sid, snm)} ]); }));
                 grid.querySelectorAll('.rc-clview:not([data-shared="1"]) .rc-clmenu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _sfCloudActions(el.getAttribute('data-rpath'), el); }));
                 _sfSharedBanner(grid);
                 // 🖼 썸네일: 로컬 폴더가 연결된 기기(앱/오너 PC)는 로컬 원본으로 실제 미리보기 생성(이미지·영상·DICOM 등),
