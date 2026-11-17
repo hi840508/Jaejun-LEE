@@ -20962,45 +20962,60 @@ pdfjsScript,
             }
 
             // 🦷 의뢰서 PDF 생성 (jsPDF + autotable, 한글 폰트 임베드). Blob(application/pdf) 반환. 실패 시 throw.
-            // 📄 의뢰서 PDF = 화면 의뢰서(buildRxBundleHTML, 치식 그림 포함)를 그대로 이미지로 렌더 → PDF.
-            //    (예전 jsPDF+autotable는 한글 폰트 임베드 실패 시 '빈 PDF'가 나와 교체. 양식도 화면과 완전 통일.)
+            // 📄 의뢰서 PDF = 화면 의뢰서(buildRxBundleHTML, 치식 그림 포함)를 이미지로 렌더 → PDF.
+            //    (예전 jsPDF 벡터는 한글폰트가 OTF라 임베드 실패→빈 PDF. 이미지 방식이라 한글 정상·양식 통일.)
+            //    본문 문서에 '스코프된 래퍼'로 렌더(iframe 미사용: 실제환경 빈 캔버스 방지) + 페이지별 캔버스 슬라이싱(무효 PDF 방지).
             async function buildRxPdfBlob(st, info){
                 if(!window.jspdf || !window.jspdf.jsPDF) throw new Error('PDF 라이브러리 로딩 실패');
+                for(let i=0;i<30 && !window.html2canvas;i++){ await new Promise(r=>setTimeout(r,100)); }   // CDN 로딩 대기(최대 3초)
                 if(!window.html2canvas) throw new Error('PDF 렌더 라이브러리 로딩 실패');
                 const { jsPDF } = window.jspdf;
-                const html = buildRxBundleHTML(st, info, []);   // 화면 의뢰서와 동일 문서
-                // 오프스크린 iframe에 격리 렌더(전역 스타일 오염 방지·한글 정상)
-                const iframe = document.createElement('iframe');
-                iframe.setAttribute('aria-hidden','true');
-                iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:820px;height:300px;border:0;background:#fff;';
-                document.body.appendChild(iframe);
+                const html = buildRxBundleHTML(st, info, []);
+                const bodyInner = (html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)||[])[1] || html;
+                const S = '#__rxpdfwrap';
+                const wrap = document.createElement('div');
+                wrap.id = '__rxpdfwrap';
+                wrap.setAttribute('aria-hidden','true');
+                wrap.style.cssText = 'position:fixed;left:-99999px;top:0;width:820px;background:#fff;z-index:-1;';
+                wrap.innerHTML = '<style>'
+                    + S+'{font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif;color:#1f2937;padding:24px;box-sizing:border-box;background:#fff;}'
+                    + S+' h1{font-size:22px;color:#0f2f52;border-bottom:3px solid #0f2f52;padding-bottom:8px;margin:0;}'
+                    + S+' h2{font-size:15px;margin-top:22px;color:#334155;}'
+                    + S+' table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}'
+                    + S+' th,'+S+' td{border:1px solid #e2e8f0;padding:7px 9px;text-align:left;vertical-align:top;}'
+                    + S+' th{background:#eff6ff;color:#0f2f52;}'
+                    + S+' .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:13px;margin-top:8px;}'
+                    + S+' .grid div{padding:4px 0;border-bottom:1px dashed #e2e8f0;}'
+                    + S+' .amt{margin-top:18px;font-size:18px;font-weight:800;text-align:right;color:#0f2f52;}'
+                    + S+' .sec{margin-top:12px;font-size:12px;color:#64748b;}'
+                    + '</style>' + bodyInner;
+                document.body.appendChild(wrap);
                 try{
-                    const idoc = iframe.contentDocument || iframe.contentWindow.document;
-                    idoc.open(); idoc.write(html); idoc.close();
-                    try{ if(idoc.fonts && idoc.fonts.ready) await idoc.fonts.ready; }catch(_){}
-                    await new Promise(r=>setTimeout(r, 180));   // 레이아웃·이미지(SVG) 안정화
-                    const target = idoc.body;
-                    const fullH = Math.max(target.scrollHeight, target.offsetHeight, 400);
-                    iframe.style.height = fullH + 'px';
-                    const canvas = await window.html2canvas(target, { scale:2, backgroundColor:'#ffffff', useCORS:true, windowWidth:820, width:820, height:fullH, scrollX:0, scrollY:0 });
+                    try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; }catch(_){}
+                    await new Promise(r=>setTimeout(r, 150));   // 레이아웃·SVG 안정화
+                    const W = 820, H = Math.max(wrap.scrollHeight, wrap.offsetHeight, 300);
+                    const canvas = await window.html2canvas(wrap, { scale:2, backgroundColor:'#ffffff', useCORS:true, width:W, height:H, windowWidth:W, scrollX:0, scrollY:0 });
+                    if(!canvas || !(canvas.width>0) || !(canvas.height>0)) throw new Error('의뢰서 렌더 실패(빈 캔버스)');
                     const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
                     const pw = doc.internal.pageSize.getWidth();     // 210mm
                     const ph = doc.internal.pageSize.getHeight();    // 297mm
-                    const imgW = pw;
-                    const imgH = canvas.height * imgW / canvas.width;
-                    const imgData = canvas.toDataURL('image/jpeg', 0.92);
-                    let heightLeft = imgH, position = 0;
-                    doc.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
-                    heightLeft -= ph;
-                    while(heightLeft > 0){
-                        position -= ph;
-                        doc.addPage();
-                        doc.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
-                        heightLeft -= ph;
+                    const pagePx = Math.max(1, Math.floor(canvas.width * ph / pw));   // A4 1장에 해당하는 캔버스 세로 px
+                    let y = 0, first = true;
+                    while(y < canvas.height){
+                        const sliceH = Math.min(pagePx, canvas.height - y);
+                        const pc = document.createElement('canvas'); pc.width = canvas.width; pc.height = sliceH;
+                        const ctx = pc.getContext('2d'); ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,pc.width,sliceH);
+                        ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+                        const data = pc.toDataURL('image/jpeg', 0.92);
+                        if(!data || data.length < 200) throw new Error('의뢰서 이미지 생성 실패');
+                        const mmH = sliceH * pw / canvas.width;
+                        if(!first) doc.addPage();
+                        doc.addImage(data, 'JPEG', 0, 0, pw, mmH, undefined, 'FAST');
+                        y += sliceH; first = false;
                     }
                     return doc.output('blob');
                 } finally {
-                    try{ document.body.removeChild(iframe); }catch(_){}
+                    try{ document.body.removeChild(wrap); }catch(_){}
                 }
             }
 
