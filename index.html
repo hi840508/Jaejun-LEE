@@ -17500,13 +17500,17 @@ pdfjsScript,
                 };
                 return B[o.status]||{t:'진행 중',c:'#0f2f52',b:'#eef4f8'};
             };
+            const _uc=(typeof unreadCounts!=='undefined'?unreadCounts:{});
             box.innerHTML = hdr + items.slice(0,100).map(o=>{
                 const nm=esc(o.productName); const cp=esc(o.counterparty); const amt=o.amount;
                 const dt=String(o.date||'').replace('T',' ').substring(0,16);
                 const L=badgeFor(o);
                 const who=(o.role==='seller')?('주문처 '+cp):('판매자 '+cp);
-                return `<div class="_ord-item" onclick="msgrOpenOrder('${cp}','${esc(String(o.id))}')" style="background:#fff;border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;">`
-                    +`<div style="display:flex;align-items:center;gap:8px;"><b style="flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${nm}</b><span style="flex:none;font-size:10px;font-weight:800;color:${L.c};background:${L.b};border-radius:20px;padding:2px 8px;">${L.t}</span></div>`
+                const un=Number(_uc['room_ord_'+o.id]||0);
+                const dot=un>0?'<span title="확인하지 않은 주문 메시지" style="flex:none;width:9px;height:9px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px #fee2e2;"></span>':'';
+                const bd=un>0?'border:1.5px solid #fca5a5;background:#fff7f7;':'border:1px solid var(--border-color);background:#fff;';
+                return `<div class="_ord-item" onclick="msgrOpenOrder('${cp}','${esc(String(o.id))}')" style="${bd}border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;">`
+                    +`<div style="display:flex;align-items:center;gap:8px;">${dot}<b style="flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${nm}</b><span style="flex:none;font-size:10px;font-weight:800;color:${L.c};background:${L.b};border-radius:20px;padding:2px 8px;">${L.t}</span></div>`
                     +`<div style="font-size:11px;color:#64748b;margin-top:4px;">${o.role==='seller'?'🏪 판매 · ':''}${cp?(who+' · '):''}${dt}${amt?(' · '+amt.toLocaleString()+'원'):''}</div></div>`;
             }).join('');
         };
@@ -18951,9 +18955,24 @@ pdfjsScript,
             }catch(_){}
         };
         function handleReceiveMessage(data) {
-            // 시스템 메시지는 알림 없이 처리
+            // 시스템 메시지 처리 — 주문 상태(__system__·room_ord_*) 알림은 떠야 함(PC 푸시 미도달 대비 인앱 알림)
             if(data.sender === '__system__') {
-                if(data.roomId === currentChatRoomId) appendMainMessage(data.sender, data.message, data.senderPic);
+                const _isOrd = String(data.roomId||'').startsWith('room_ord_');
+                if(data.roomId === currentChatRoomId){
+                    appendMainMessage(data.sender, data.message, data.senderPic);
+                    try{ if(data.id) localStorage.setItem('rc_read_'+data.roomId, String(data.id)); }catch(_){}
+                } else if(_isOrd) {
+                    // 🔔 보고 있지 않은 주문 대화방의 상태 변경(결제완료 등) → 미확인 알림(뱃지·토스트·사운드·네이티브 알림)
+                    try{ unreadCounts[data.roomId] = (unreadCounts[data.roomId]||0) + 1; updateTabBadge(); }catch(_){}
+                    const _clean = String(data.message||'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').replace(/^\[[^\]]+\]\s*/,'').trim().slice(0,60);
+                    try{ showToast('🛒 ' + (_clean||'새 주문 알림')); }catch(_){}
+                    try{ playNotifySound(); }catch(_){}
+                    try{
+                        if(window.rayApp && window.rayApp.notify){ window.rayApp.notify({ title:'🛒 주문 알림', body:_clean, roomId:data.roomId }); }
+                        else if('Notification' in window && Notification.permission==='granted'){ const n=new Notification('🛒 주문 알림', { body:_clean, tag:'earth-order-'+data.roomId }); n.onclick=()=>{ try{ window.focus(); if(window.openEarthRoom) openEarthRoom(data.roomId); n.close(); }catch(_){} }; setTimeout(()=>{ try{ n.close(); }catch(_){} }, 8000); }
+                    }catch(_){}
+                    try{ if(window.loadOrderListMsgr) loadOrderListMsgr(); }catch(_){}
+                }
                 loadChatList(); return;
             }
             // 🖥/📹 요청 메시지 → 어느 방을 보고 있든 인앱 알림 배너(푸시 미도달 대비)
@@ -20483,10 +20502,10 @@ pdfjsScript,
             // 교합면(상면) 치종별 경로 (viewBox 0 0 40 40)
             // 교합면(위에서 본) 실사형 윤곽 — 치종별. 셀 크기로 실제 치아 비율(근원심 폭)을 반영.
             const _TO = {
-                incisor:{ shape:'M13,9 Q20,6 27,9 Q30,20 27,31 Q20,34 13,31 Q10,20 13,9 Z', detail:'M13,15 Q20,13 27,15' },
-                canine:{ shape:'M20,6 Q30,11 29,22 Q26,33 20,36 Q14,33 11,22 Q10,11 20,6 Z', detail:'M20,9 Q22,21 20,34' },
-                premolar:{ shape:'M11,10 Q20,7 29,10 Q33,20 29,30 Q20,33 11,30 Q7,20 11,10 Z', detail:'M20,9 L20,31 M13,20 Q20,23 27,20' },
-                molar:{ shape:'M10,9 Q20,6 30,9 Q34,20 30,31 Q20,34 10,31 Q6,20 10,9 Z', detail:'M20,8 L20,32 M8,20 Q20,23 32,20 M13,13 Q20,16 27,13 M13,27 Q20,24 27,27' }
+                incisor:{ shape:'M12,5 Q20,3 28,5 Q30,20 28,35 Q20,37 12,35 Q10,20 12,5 Z', detail:'M12,11 Q20,9 28,11' },
+                canine:{ shape:'M20,3 Q30,9 29,21 Q27,34 20,37 Q13,34 11,21 Q10,9 20,3 Z', detail:'M20,7 L20,34' },
+                premolar:{ shape:'M8,7 Q20,4 32,7 Q35,20 32,33 Q20,36 8,33 Q5,20 8,7 Z', detail:'M20,7 L20,33 M9,20 Q20,24 31,20' },
+                molar:{ shape:'M6,6 Q20,3 34,6 Q37,20 34,34 Q20,37 6,34 Q3,20 6,6 Z', detail:'M20,5 L20,35 M4,20 Q20,24 36,20 M12,11 Q20,14 28,11 M12,29 Q20,26 28,29' }
             };
             // 치종별 근원심 폭 계수(실제 치아 비율 근사): 1중절, 2측절, 3견치, 4·5소구치, 6·7·8대구치
             function _toothWidthFactor(fdi){ const d=fdi%10; return ({1:0.98,2:0.74,3:0.82,4:0.82,5:0.84,6:1.18,7:1.1,8:1.0}[d])||1; }
@@ -20508,12 +20527,12 @@ pdfjsScript,
                 // 상악: 치아(뿌리 위로 뒤집기) + 번호(치아 아래, 정중선 쪽)
                 upA.forEach((fdi,k)=>{ const X=cellLeft(k), on=sel.has(fdi);
                     vis+='<g transform="translate('+X.toFixed(1)+','+(upTeethY+TH)+') scale('+sx.toFixed(4)+','+(-(TH/104)).toFixed(4)+')">'+_toothBuccalSVG(fdi,on)+'</g>';
-                    vis+='<text x="'+cxk(k).toFixed(1)+'" y="'+upNumY+'" text-anchor="middle" font-size="12" font-weight="800" fill="'+col(fdi)+'">'+_toothLabelFor(fdi,nota)+'</text>';
+                    vis+='<text x="'+cxk(k).toFixed(1)+'" y="'+upNumY+'" text-anchor="middle" font-size="13" font-weight="800" fill="'+col(fdi)+'">'+_toothLabelFor(fdi,nota)+'</text>';
                     rects+='<rect x="'+X.toFixed(1)+'" y="'+upTeethY+'" width="'+TW+'" height="'+(upNumY-upTeethY)+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
                 });
                 // 하악: 번호(치아 위, 정중선 쪽) + 치아(정상)
                 loA.forEach((fdi,k)=>{ const X=cellLeft(k), on=sel.has(fdi);
-                    vis+='<text x="'+cxk(k).toFixed(1)+'" y="'+loNumY+'" text-anchor="middle" font-size="12" font-weight="800" fill="'+col(fdi)+'">'+_toothLabelFor(fdi,nota)+'</text>';
+                    vis+='<text x="'+cxk(k).toFixed(1)+'" y="'+loNumY+'" text-anchor="middle" font-size="13" font-weight="800" fill="'+col(fdi)+'">'+_toothLabelFor(fdi,nota)+'</text>';
                     vis+='<g transform="translate('+X.toFixed(1)+','+loTeethY+') scale('+sx.toFixed(4)+','+(TH/104).toFixed(4)+')">'+_toothBuccalSVG(fdi,on)+'</g>';
                     rects+='<rect x="'+X.toFixed(1)+'" y="'+(loNumY-14)+'" width="'+TW+'" height="'+(loTeethY+TH-(loNumY-14))+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
                 });
@@ -20522,30 +20541,32 @@ pdfjsScript,
                 vis+='<line x1="'+pad+'" y1="'+midY+'" x2="'+(VW-pad)+'" y2="'+midY+'" stroke="#0f2f52" stroke-width="1" opacity="0.16"/>';
                 return '<svg viewBox="0 0 '+VW+' '+VH+'" width="100%" style="display:block;max-width:'+VW+'px;margin:0 auto;height:auto;overflow:visible;">'+vis+rects+'</svg>';
             }
-            // ── 아치형(교합면 상면도) — 상악 ∩ + 하악 ∪ 두 개의 말굽(레퍼런스 형태). 단일 SVG로 잘림 없음 ──
+            // ── 아치형(교합면 상면도) — 상악 ∩ + 하악 ∪ 두 개의 말굽(레퍼런스 형태). 치아는 호 길이에 맞춰 크게·맞닿게 ──
             function _rxArchHtml(i, upA, loA, teeth){
                 const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi';
-                const VW=384, VH=440, base=31;
+                const VW=440, VH=470;
                 const arcs=[
-                    {arr:upA, cx:192, cy:196, rx:150, ry:152, upper:true,  nlab:32, lbl:'상악', lblY:30},
-                    {arr:loA, cx:192, cy:250, rx:150, ry:152, upper:false, nlab:36, lbl:'하악', lblY:418}
+                    {arr:upA, cx:220, cy:212, rx:165, ry:165, upper:true,  lbl:'상악', lblY:30},
+                    {arr:loA, cx:220, cy:258, rx:165, ry:165, upper:false, lbl:'하악', lblY:452}
                 ];
                 let vis='', rects='';
                 arcs.forEach(A=>{
                     const ws=A.arr.map(_toothWidthFactor); const tot=ws.reduce((a,b)=>a+b,0); let acc=0;
-                    A.arr.forEach((fdi,k)=>{ const t=(acc+ws[k]/2)/tot; acc+=ws[k];
+                    A.arr.forEach((fdi,k)=>{ const frac=ws[k]/tot; const t=(acc+ws[k]/2)/tot; acc+=ws[k];
                         const th=Math.PI*(1-t);   // π(좌 대구치) → 0(우 대구치), π/2=앞니(중앙)
                         const x=A.cx + A.rx*Math.cos(th);
                         const y=A.upper?(A.cy - A.ry*Math.sin(th)):(A.cy + A.ry*Math.sin(th));
                         const rot=A.upper?(90 - th*180/Math.PI):(th*180/Math.PI - 90);
-                        const sz=base*_toothWidthFactor(fdi), on=sel.has(fdi);
+                        // 호 길이에 맞춰 크기 산정 → 이웃 치아와 자연스럽게 맞닿음(살짝 겹침)
+                        const sz=(A.ry*Math.PI*frac)*1.18, on=sel.has(fdi);
                         vis+='<g transform="translate('+x.toFixed(1)+','+y.toFixed(1)+') rotate('+rot.toFixed(1)+') scale('+(sz/40).toFixed(4)+')"><g transform="translate(-20,-20)">'+_toothOcclusalSVG(fdi,on)+'</g></g>';
-                        const nx=A.cx + (A.rx+A.nlab)*Math.cos(th);
-                        const ny=A.upper?(A.cy-(A.ry+A.nlab)*Math.sin(th)):(A.cy+(A.ry+A.nlab)*Math.sin(th));
-                        vis+='<text x="'+nx.toFixed(1)+'" y="'+(ny+3.5).toFixed(1)+'" text-anchor="middle" font-size="11" font-weight="800" fill="'+(on?'#1d4ed8':'#94a3b8')+'">'+_toothLabelFor(fdi,nota)+'</text>';
-                        rects+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(sz*0.46).toFixed(1)+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
+                        const nR=A.rx + sz*0.52 + 11;
+                        const nx=A.cx + nR*Math.cos(th);
+                        const ny=A.upper?(A.cy-nR*Math.sin(th)):(A.cy+nR*Math.sin(th));
+                        vis+='<text x="'+nx.toFixed(1)+'" y="'+(ny+4.5).toFixed(1)+'" text-anchor="middle" font-size="13.5" font-weight="800" fill="'+(on?'#1d4ed8':'#64748b')+'">'+_toothLabelFor(fdi,nota)+'</text>';
+                        rects+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(sz*0.5).toFixed(1)+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
                     });
-                    vis+='<text x="'+A.cx+'" y="'+A.lblY+'" text-anchor="middle" font-size="11" font-weight="800" fill="#cbd5e1">'+A.lbl+'</text>';
+                    vis+='<text x="'+A.cx+'" y="'+A.lblY+'" text-anchor="middle" font-size="12" font-weight="800" fill="#cbd5e1">'+A.lbl+'</text>';
                 });
                 return '<svg viewBox="0 0 '+VW+' '+VH+'" width="100%" style="display:block;max-width:'+VW+'px;margin:0 auto;height:auto;overflow:visible;">'+vis+rects+'</svg>';
             }
