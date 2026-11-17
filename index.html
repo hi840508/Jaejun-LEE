@@ -4184,6 +4184,10 @@
             async function getFileAtRoot(rootId, pathArr, name){ try{ const rs=await _loadRoots(); const root=rs.find(r=>String(r.id)===String(rootId)); let h=root&&root.handle; if(!h) return null; try{ if((await h.queryPermission({mode:'read'}))!=='granted') await h.requestPermission({mode:'read'}); }catch(_){} for(const p of (pathArr||[])){ h=await h.getDirectoryHandle(_safe(p)); } const fh=await h.getFileHandle(_safe(name),{create:false}); return await fh.getFile(); }catch(_){ return null; } }
             // 특정 루트의 폴더 내 파일명 목록(환자 DICOM 시리즈 로드용)
             async function listFilesAtRoot(rootId, pathArr){ try{ const rs=await _loadRoots(); const root=rs.find(r=>String(r.id)===String(rootId)); let h=root&&root.handle; if(!h) return []; for(const p of (pathArr||[])){ h=await h.getDirectoryHandle(_safe(p)); } const out=[]; for await (const [nm,ent] of h.entries()){ if(ent.kind!=='directory') out.push(nm); } return out; }catch(_){ return []; } }
+            // 🔗 루트별 연결상태 — 각 등록 폴더의 읽기 권한만 확인(프롬프트 없음). '사용중' 개념 없이 연결됨/연결불가만.
+            async function rootsStatus(){ const rs=await _loadRoots(); const out=[]; for(const r of rs){ let connected=false; try{ connected=(await r.handle.queryPermission({mode:'read'}))==='granted'; }catch(_){ connected=false; } out.push({ id:r.id, name:r.name, connected }); } return out; }
+            // 📁 특정 루트 재귀 순회 — 권한 granted인 루트만(프롬프트 없음). {rootId,rootName,pathArr,fname,size,mime,mtime,rpath} 목록. max 상한.
+            async function walkRoot(rootId, opts){ opts=opts||{}; const max=opts.max||3000; const rs=await _loadRoots(); const root=rs.find(r=>String(r.id)===String(rootId)); const rh=root&&root.handle; if(!rh) return []; try{ if((await rh.queryPermission({mode:'read'}))!=='granted') return []; }catch(_){ return []; } const out=[]; async function rec(h, pathArr){ if(out.length>=max) return; let ents=[]; try{ for await (const [nm,ent] of h.entries()){ ents.push([nm,ent]); } }catch(_){ return; } for(const [nm,ent] of ents){ if(out.length>=max) return; if(ent.kind==='directory'){ try{ await rec(ent, pathArr.concat(nm)); }catch(_){} } else { try{ const f=await ent.getFile(); out.push({ rootId:root.id, rootName:root.name, pathArr, fname:nm, size:f.size, mime:f.type||'', mtime:f.lastModified||0, rpath:pathArr.concat(nm).join('/') }); }catch(_){} } } } try{ await rec(rh, []); }catch(_){} return out; }
             async function writeFileAt(pathArr, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _dirAt(pathArr); const safe=_safe(name); const fh=await h.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return safe; }
             // 대화방 이름 폴더(없으면 생성)에 저장 — 자동 수신용
             async function writeFileInRoom(roomName, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _loadHandle(); const parts=String(roomName||'received').split('/').map(_safe).filter(Boolean); if(!parts.length) parts.push('received'); let dir=h; for(const p of parts){ dir=await dir.getDirectoryHandle(p,{create:true}); } const safe=_safe(name); const fh=await dir.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return parts.join('/')+'/'+safe; }
@@ -4455,7 +4459,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, searchInPath, scanPatients, getFileAtRoot, listFilesAtRoot };
+            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, searchInPath, scanPatients, getFileAtRoot, listFilesAtRoot, rootsStatus, walkRoot };
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
@@ -5668,16 +5672,17 @@
                 window._sbDropdown(anchor, html, (dd,close)=>{ const l=dd.querySelector('._sb-tolocal'); if(l) l.addEventListener('click',()=>{ close(); try{ window._sfComputerBtn&&window._sfComputerBtn(); }catch(_){} }); });
                 return;
             }
-            // 로컬 상태 → 📁 내 컴퓨터(사용중) 헤더 + 연결한 실제 폴더(등록 루트)들을 한칸 들여써 트리처럼 나열 + 클라우드 + 폴더 경로 추가
-            let roots=[]; try{ roots=(R&&R.listRoots)?await R.listRoots():[]; }catch(_){}
+            // 로컬 상태 → 📁 내 컴퓨터(전체 취합) 헤더 + 등록 폴더들을 연결상태(연결됨/연결불가)와 함께 나열. '사용중' 개념 없음.
+            let roots=[]; try{ roots=(R&&R.rootsStatus)?await R.rootsStatus():((R&&R.listRoots)?await R.listRoots():[]); }catch(_){}
             let folderHtml;
             if(notSup){ folderHtml='<div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px;line-height:1.6;">이 기기는 폴더 지정을 지원하지 않습니다.<br>(모바일/Safari)</div>'; }
             else {
-                const header='<div class="_sb-localroot" style="'+row+'background:#eef4f8;color:#0b2b4b;"><span style="flex:none;">📁</span><span style="flex:1;">내 컴퓨터</span><span style="font-size:10px;color:#16a34a;font-weight:800;">● 사용중</span></div>';
+                const header='<div class="_sb-localroot" style="'+row+'background:#eef4f8;color:#0b2b4b;"><span style="flex:none;">📁</span><span style="flex:1;">내 컴퓨터</span><span style="font-size:10px;color:#64748b;font-weight:700;">전체 취합</span></div>';
                 const tree = roots.length
-                    ? roots.map(r=>'<div class="_sb-root" data-id="'+esc(r.id)+'" style="'+row+'padding-left:30px;'+(r.active?'background:#f0f7ff;color:#0b2b4b;':'color:#334155;')+'" title="'+esc(r.name)+'">'
+                    ? roots.map(r=>'<div class="_sb-root" data-id="'+esc(r.id)+'" data-conn="'+(r.connected?'1':'0')+'" style="'+row+'padding-left:30px;color:#334155;" title="'+esc(r.name)+(r.connected?' · 연결됨':' · 연결 불가(클릭 시 재연결)')+'">'
                         +'<span style="flex:none;opacity:.7;display:inline-flex;">'+fico+'</span>'
-                        +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.name)+(r.active?' <span style="font-size:10px;color:#16a34a;font-weight:800;">●</span>':'')+'</span>'
+                        +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.name)+'</span>'
+                        +'<span style="flex:none;font-size:10px;font-weight:800;color:'+(r.connected?'#16a34a':'#dc2626')+';margin-right:4px;">'+(r.connected?'● 연결됨':'● 연결불가')+'</span>'
                         +'<button class="_sb-rootx" data-id="'+esc(r.id)+'" title="연결 해제" style="flex:none;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:22px;height:22px;font-weight:900;cursor:pointer;line-height:1;">×</button></div>').join('')
                     : '<div style="padding:9px 12px 9px 30px;color:#94a3b8;font-size:12px;">연결된 폴더가 없습니다. (아래 ＋ 폴더 경로 추가)</div>';
                 folderHtml = header + tree;
@@ -5692,7 +5697,7 @@
             window._sbDropdown(anchor, folderHtml+addBtn+cloudBtn+buyBtn, (dd,close)=>{
                 const buy=dd.querySelector('#_sb-cloud-buy'); if(buy) buy.addEventListener('click',()=>{ close(); try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} });
                 const lr=dd.querySelector('._sb-localroot'); if(lr) lr.addEventListener('click',()=>{ close(); try{ if(window._sfGotoPath) window._sfGotoPath([]); else if(window._sfLocalBtnAction) window._sfLocalBtnAction(); }catch(_){} });
-                dd.querySelectorAll('._sb-root').forEach(el=>el.addEventListener('click',async(e)=>{ if(e.target.closest('._sb-rootx')) return; const id=el.getAttribute('data-id'); close(); try{ await window._sbFolderPick(id); }catch(_){} }));
+                dd.querySelectorAll('._sb-root').forEach(el=>el.addEventListener('click',async(e)=>{ if(e.target.closest('._sb-rootx')) return; const id=el.getAttribute('data-id'); const conn=el.getAttribute('data-conn')==='1'; close(); try{ if(!conn){ if(R&&R.setActiveRoot) await R.setActiveRoot(id); const ok=(R&&R.ensureAccess)?await R.ensureAccess():false; showToast(ok?'✅ 연결됨':'연결 권한이 거부되었습니다. 폴더를 다시 선택하세요.'); } if(window.__sfOv&&document.body.contains(window.__sfOv)&&window._sfGotoPath){ await window._sfGotoPath([]); } else { await window._sbFolderPick(id); } }catch(_){} }));
                 dd.querySelectorAll('._sb-rootx').forEach(el=>el.addEventListener('click',async(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); const ok=await (window._sfConfirm?window._sfConfirm('이 폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다)','해제'):Promise.resolve(confirm('이 폴더 연결을 해제할까요?'))); if(!ok) return; close(); try{ if(R&&R.removeRoot) await R.removeRoot(id); }catch(_){} try{ if(window.__sfOv&&document.body.contains(window.__sfOv)&&window._sfGotoPath) await window._sfGotoPath([]); }catch(_){} }));
                 const cb=dd.querySelector('#_sb-cloud-btn'); if(cb) cb.addEventListener('click',()=>{ close(); try{ window._sbCloudToggle&&window._sbCloudToggle(); }catch(_){} });
                 const ab=dd.querySelector('#_sb-root-add'); if(ab) ab.addEventListener('click',async()=>{ close(); try{ if(R&&R.pick){ const ok=await R.pick(); if(ok){ await window._sbFolderPick(null); } } }catch(_){} });
@@ -6065,6 +6070,7 @@
 
             async function render(){
                 window.__sfPath=path;
+                window.__sfMergedActive=false;   // 🖥 매 렌더마다 병합뷰 플래그 리셋(썸네일 로더 중단용)
                 // 🔎 탐색기식: 폴더가 바뀌면 검색/경로검색 자동 초기화(한 번 검색 후 안 풀리던 문제 해결)
                 try{ const _pk=path.join('/'); if(window.__sfPrevPathKey!==_pk){ flt.q=''; window.__sfDeepQuery=null; window.__sfPrevPathKey=_pk; } }catch(_){}
                 const selected=new Set();
@@ -6244,9 +6250,9 @@
                     const dd=document.createElement('div'); dd.id='_sf-ls-dd';
                     dd.style.cssText='position:fixed;z-index:100080;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 14px 40px rgba(15,23,42,.22);min-width:240px;max-width:min(92vw,340px);max-height:70vh;overflow:auto;padding:6px;';
                     const rowCss='display:flex;align-items:center;gap:8px;padding:10px 11px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700;';
-                    const items=(roots||[]).map(r=>'<div class="_ls-row" data-id="'+r.id+'" style="'+rowCss+(r.active?'background:#eef4f8;color:#0b2b4b;':'color:#334155;')+'">'
+                    const items=(roots||[]).map(r=>'<div class="_ls-row" data-id="'+r.id+'" style="'+rowCss+'color:#334155;">'
                         +'<span style="flex:none;opacity:.8;">'+_SFIC.folder+'</span>'
-                        +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+_sfEsc(r.name)+(r.active?' <span style="font-size:10px;color:#16a34a;font-weight:800;">● 사용중</span>':'')+'</span>'
+                        +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+_sfEsc(r.name)+'</span>'
                         +'<button class="_ls-x" data-id="'+r.id+'" title="목록에서 제거" style="flex:none;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:26px;height:26px;font-weight:900;cursor:pointer;">×</button></div>').join('');
                     dd.innerHTML=(roots.length?items:'<div style="padding:16px;text-align:center;color:#94a3b8;font-size:12px;">추가된 공유폴더가 없습니다.</div>')
                         +'<div style="border-top:1px solid #f1f5f9;margin-top:4px;padding-top:4px;"><button id="_ls-add" style="'+rowCss+'width:100%;border:none;background:#f0fdf4;color:#166534;justify-content:center;">'+_SFIC.plus+' 공유폴더 추가</button></div>';
@@ -6516,6 +6522,8 @@
                 else if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
                 else if(window.__sfDeepQuery){ try{ _sbHighlightPatient(); _sfRenderDeepSearch(ov, window.__sfDeepQuery); }catch(_){} }
                 else if(window.__sfPatientFilter){ try{ _sbHighlightPatient(); _sfRenderPatientGrid(ov, window.__sfPatientFilter); }catch(_){} }
+                // 🖥 기본(내 컴퓨터) = 등록된 모든 폴더 취합 뷰(루트 단계에서만). 지원 기기·루트 경로에서만.
+                else if(!notSupported && !path.length){ try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderMergedLocal(ov); }catch(_){} }
                 else { try{ _sbHighlightPatient(); }catch(_){} }
             }
             // 🏪 내 상점 — 파일검색 셸 안에서 상점 카드(쇼케이스)를 그리드로 표시. 카드 클릭 시 기존 상점 화면(enterBrandStore)으로.
@@ -6935,6 +6943,94 @@
                         if(lm && R){ try{ const f=await R.getFileAt(lm.pathArr, lm.fname); if(f){ const t=await R.getThumb(f, lm.mime||'', lm.fname); if(t){ if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'); set=true; } } }catch(_){} }
                         if(!set && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(nm)){ try{ const d=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:rp})}).then(r=>r.json());
                             if(d&&d.url){ const im=new Image(); im.onload=()=>{ if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+d.url+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'); }; im.src=d.url; } }catch(_){} }
+                    } }
+                    const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws);
+                })();
+            }
+            // 🖥 내 컴퓨터(병합) — 등록된 '모든' 폴더의 파일을 한 그리드에 취합(폴더 구분 없음). '사용중' 개념 없음.
+            //   상단에 폴더별 연결됨/연결불가 상태만 표시. 단일클릭=선택, 더블클릭=미리보기, ⋯=미리보기/다운로드/첨부.
+            window.__sfMergedActive=false;
+            async function _sfRenderMergedLocal(ov){
+                const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
+                window.__sfMergedActive=true;
+                const ESC=(typeof _sfEsc==='function')?_sfEsc:(s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
+                const R=window.RCFolder; const zoom=(flt.zoom||150);
+                let roots=[]; try{ roots=(R&&R.rootsStatus)?await R.rootsStatus():[]; }catch(_){}
+                // 상단 연결상태 요약 바(폴더별 연결됨/연결불가 + 재연결)
+                const bar='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 2px 12px;">'
+                    +'<div style="font-weight:800;font-size:15px;color:#0f2f52;">📁 내 컴퓨터 <span style="color:#94a3b8;font-weight:600;font-size:12px;">· 등록 폴더 전체 취합</span></div>'
+                    +(roots.length?roots.map(r=>'<span class="_ml-pill" data-rootid="'+ESC(r.id)+'" title="'+ESC(r.name)+'" style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid '+(r.connected?'#bbf7d0':'#fecaca')+';background:'+(r.connected?'#f0fdf4':'#fef2f2')+';color:'+(r.connected?'#15803d':'#b91c1c')+';">'+(r.connected?'🟢':'🔴')+' '+ESC(r.name)+(r.connected?'':' <b class="_ml-recon" style="cursor:pointer;text-decoration:underline;margin-left:2px;">재연결</b>')+'</span>').join(''):'<span style="color:#94a3b8;font-size:13px;">등록된 폴더가 없습니다. 좌측 폴더 추가(＋)로 폴더를 등록하세요.</span>')
+                    +'</div>';
+                grid.innerHTML=bar+'<div style="padding:34px;text-align:center;color:#64748b;font-size:14px;">모든 폴더에서 파일을 불러오는 중…</div>';
+                const wireBar=()=>{ grid.querySelectorAll('._ml-pill').forEach(el=>{ const rid=el.getAttribute('data-rootid'); const rc=el.querySelector('._ml-recon'); if(rc) rc.addEventListener('click',async(e)=>{ e.stopPropagation(); try{ if(R.setActiveRoot) await R.setActiveRoot(rid); const ok=R.ensureAccess?await R.ensureAccess():false; if(ok){ showToast('✅ 연결됨'); _sfRenderMergedLocal(ov); } else showToast('연결 권한이 거부되었습니다. 폴더를 다시 선택해 주세요.'); }catch(_){ showToast('재연결 실패'); } }); }); };
+                wireBar();
+                // 연결된 루트만 순회 병합
+                const connRoots=roots.filter(r=>r.connected);
+                let all=[];
+                for(const r of connRoots){ try{ const fs=(R&&R.walkRoot)?await R.walkRoot(r.id,{max:3000}):[]; all=all.concat(fs); }catch(_){} }
+                // 필터(유형/검색/기간) 적용
+                const q=(flt.q||'').trim().toLowerCase();
+                const tf=flt.type||'all';
+                const fromT=flt.from?new Date(flt.from+'T00:00:00').getTime():0;
+                const toT=flt.to?new Date(flt.to+'T23:59:59').getTime():0;
+                let perT=0; if(flt.period==='today'){ const d=new Date(); d.setHours(0,0,0,0); perT=d.getTime(); } else if(flt.period==='7'){ perT=Date.now()-7*864e5; } else if(flt.period==='30'){ perT=Date.now()-30*864e5; }
+                all=all.filter(f=>{
+                    if(q && String(f.fname||'').toLowerCase().indexOf(q)<0) return false;
+                    if(tf!=='all'){ try{ if(_sfType(f.mime,f.fname)!==tf) return false; }catch(_){} }
+                    const mt=Number(f.mtime)||0;
+                    if(fromT && mt<fromT) return false;
+                    if(toT && mt>toT) return false;
+                    if(perT && mt<perT) return false;
+                    return true;
+                });
+                if(!all.length){ grid.innerHTML=bar+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+(connRoots.length?'조건에 맞는 파일이 없습니다.':'연결된 폴더가 없습니다. 위 폴더의 <b>[재연결]</b>을 누르거나 폴더를 추가하세요.')+'</div>'; wireBar(); return; }
+                all.sort((a,b)=> flt.sort==='name' ? String(a.fname).localeCompare(String(b.fname)) : flt.sort==='old' ? (Number(a.mtime)||0)-(Number(b.mtime)||0) : (Number(b.mtime)||0)-(Number(a.mtime)||0));
+                // 날짜별 그룹(최신순 기본)
+                const _tsLabel=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '날짜 미상'; const n=new Date(); const sd=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); const y=new Date(n); y.setDate(n.getDate()-1); if(sd(d,n)) return '오늘'; if(sd(d,y)) return '어제'; return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0'); };
+                const _key=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '0000-00-00'; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+                const useDate=(flt.sort!=='name');
+                const card=(it)=>{ const nm=it.fname; const pth=(it.pathArr||[]).join('/'); const sub=(it.rootName||'')+(pth?(' / '+pth):'');
+                    return '<div class="rc-mlview" draggable="true" data-rootid="'+ESC(it.rootId)+'" data-path="'+ESC(pth)+'" data-fname="'+ESC(nm)+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'" title="'+ESC(sub+'/'+nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
+                        +'<div class="rc-mlthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="rc-mlic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+_sfFileTile(nm)+'</div>'
+                        +'<div class="rc-ml-chk" style="position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);"></div>'
+                        +'<button class="rc-mlmenu" title="미리보기·다운로드" style="position:absolute;bottom:5px;right:5px;width:26px;height:26px;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+_SFIC.dots+'</button></div>'
+                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
+                        +'<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub)+'</div>'
+                        +'</div>'; };
+                const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
+                let body='';
+                if(useDate){ const groups=[]; const gmap={}; all.forEach(it=>{ const k=_key(it.mtime); if(!gmap[k]){ gmap[k]={label:_tsLabel(it.mtime),items:[]}; groups.push(gmap[k]); } gmap[k].items.push(it); });
+                    body=groups.map(g=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(g.label)+' <span style="color:#94a3b8;font-weight:600;">('+g.items.length+')</span></div><div class="_sf-secgrid" style="'+secStyle+'">'+g.items.map(card).join('')+'</div></div>').join('');
+                } else { body='<div class="_sf-secgrid" style="'+secStyle+'">'+all.map(card).join('')+'</div>'; }
+                grid.innerHTML=bar+'<div style="font-size:12px;color:#64748b;margin:0 2px 8px;">총 '+all.length+'개'+(all.length>=3000*Math.max(1,connRoots.length)?' (일부 생략)':'')+'</div>'+body;
+                wireBar();
+                // 선택/미리보기/다운로드/첨부 (클라우드 뷰와 동일 UX)
+                const _mlSel=new Map();
+                const _mlBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); const pa=ov.querySelector('#_sf-pickattach'); if(sb) sb.style.display=_mlSel.size?'flex':'none'; if(cn) cn.textContent=_mlSel.size+'개 선택'; if(pa) pa.textContent='✔ 선택 첨부 ('+_mlSel.size+')'; };
+                // 병합 뷰에선 상단 작업바의 preview/share/rename/delete(로컬 그리드 전용)는 숨김 — 첨부/해제만 사용
+                try{ ov.querySelectorAll('#_sf-selbar ._sf-act').forEach(b=>{ b.style.display='none'; }); }catch(_){}
+                const _desc=(el)=>({ rootId:el.getAttribute('data-rootid'), rpath:(function(){ const p=el.getAttribute('data-path')||''; return (p?p+'/':'')+el.getAttribute('data-fname'); })(), cloud:false, mime:el.getAttribute('data-mime')||'', size:Number(el.getAttribute('data-size'))||0 });
+                const _mlPreview=async(el)=>{ const rid=el.getAttribute('data-rootid'); const parts=(el.getAttribute('data-path')||'').split('/').filter(Boolean); const fn=el.getAttribute('data-fname'); const mime=el.getAttribute('data-mime')||'';
+                    try{ if(/\.dcm$/i.test(fn) && window.rcOpenInLiveViewer){ try{ if(R.setActiveRoot) await R.setActiveRoot(rid); }catch(_){}; window.rcOpenInLiveViewer(parts, fn); return; }
+                        const f=await R.getFileAtRoot(rid, parts, fn); if(!f){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(f); (window.__rcMlUrls=window.__rcMlUrls||[]).push(u); if(window.__rcMlUrls.length>40){ try{ URL.revokeObjectURL(window.__rcMlUrls.shift()); }catch(_){} } openMediaUrlPreview(u, fn, mime||f.type||''); }catch(_){ showToast('열기 실패'); } };
+                const _mlDownload=async(el)=>{ const rid=el.getAttribute('data-rootid'); const parts=(el.getAttribute('data-path')||'').split('/').filter(Boolean); const fn=el.getAttribute('data-fname');
+                    try{ const f=await R.getFileAtRoot(rid, parts, fn); if(!f){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); showToast('💾 다운로드됨: '+fn); }catch(_){ showToast('다운로드 실패'); } };
+                grid.querySelectorAll('.rc-mlview').forEach(el=>{
+                    const _toggle=()=>{ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-path')+'|'+el.getAttribute('data-fname'); const on=!_mlSel.has(k); const chk=el.querySelector('.rc-ml-chk'); if(on) _mlSel.set(k,_desc(el)); else _mlSel.delete(k); if(chk){ chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; _mlBar(); };
+                    const chk=el.querySelector('.rc-ml-chk'); if(chk){ chk.addEventListener('click',(e)=>{ e.stopPropagation(); _toggle(); }); }
+                    el.addEventListener('dragstart',(e)=>{ window.__sfDragFileRef=[{ rootId:el.getAttribute('data-rootid'), rpath:_desc(el).rpath, fname:el.getAttribute('data-fname'), mtime:0, modality:'', cloud:false, mime:el.getAttribute('data-mime')||'', size:Number(el.getAttribute('data-size'))||0 }]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', el.getAttribute('data-fname')||'file'); }catch(_){} });
+                    el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; },60); });
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('.rc-mlmenu')||e.target.closest('.rc-ml-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_desc(el)]); return; } _toggle(); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('.rc-ml-chk')||e.target.closest('.rc-mlmenu')) return; e.preventDefault(); e.stopPropagation(); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_desc(el)]); return; } _mlPreview(el); });
+                    const mb=el.querySelector('.rc-mlmenu'); if(mb) mb.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); const r=mb.getBoundingClientRect(); const items=[ {label:'👁 미리보기',fn:()=>_mlPreview(el)}, {label:'💾 원본 다운로드',fn:()=>_mlDownload(el)} ]; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ items.push({label:'📎 의뢰서에 첨부',fn:()=>window._sfAttachDescs([_desc(el)])}); } ctxMenu(r.right-160, r.bottom+4, items); });
+                });
+                { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_mlSel.size){ showToast('첨부할 파일을 선택하세요.'); return; } window._sfAttachDescs([..._mlSel.values()]); }; }
+                { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _mlSel.clear(); grid.querySelectorAll('.rc-mlview').forEach(el=>{ el.style.outline=''; const c=el.querySelector('.rc-ml-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mlBar(); }; }
+                // 🖼 썸네일 지연 로드(루트별 원본 → getThumb)
+                (async()=>{ if(!R||!R.getFileAtRoot||!R.getThumb) return; try{ if(R.csReady) await R.csReady(); }catch(_){}
+                    const cards=[].slice.call(grid.querySelectorAll('.rc-mlview')); let i=0; const CONC=4;
+                    async function w(){ while(i<cards.length){ if(!window.__sfMergedActive) return; const el=cards[i++]; const box=el.querySelector('.rc-mlthumb'); const ic=el.querySelector('.rc-mlic'); if(!box||box.querySelector('img')) continue; const rid=el.getAttribute('data-rootid'); const parts=(el.getAttribute('data-path')||'').split('/').filter(Boolean); const fn=el.getAttribute('data-fname'); const mime=el.getAttribute('data-mime')||'';
+                        try{ const f=await R.getFileAtRoot(rid, parts, fn); if(!f) continue; let t=await R.getThumb(f, mime||f.type||'', fn); if(!t && /\.dcm$/i.test(fn) && R.dicomImage){ try{ t=await R.dicomImage(f,300); }catch(_){} } if(t){ if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:1;">'); } }catch(_){}
                     } }
                     const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws);
                 })();
