@@ -21006,14 +21006,20 @@ pdfjsScript,
                         const pc = document.createElement('canvas'); pc.width = canvas.width; pc.height = sliceH;
                         const ctx = pc.getContext('2d'); ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,pc.width,sliceH);
                         ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-                        const data = pc.toDataURL('image/jpeg', 0.92);
-                        if(!data || data.length < 200) throw new Error('의뢰서 이미지 생성 실패');
+                        const data = pc.toDataURL('image/png');   // PNG = jsPDF에서 가장 검증된 경로(JPEG 경로 손상 회피)
+                        if(!data || data.indexOf('data:image/png')!==0 || data.length < 200) throw new Error('의뢰서 이미지 생성 실패');
                         const mmH = sliceH * pw / canvas.width;
                         if(!first) doc.addPage();
-                        doc.addImage(data, 'JPEG', 0, 0, pw, mmH, undefined, 'FAST');
+                        doc.addImage(data, 'PNG', 0, 0, pw, mmH);
                         y += sliceH; first = false;
                     }
-                    return doc.output('blob');
+                    // arraybuffer→Blob(명시적 application/pdf) + 유효성(%PDF…%%EOF) 검사
+                    const ab = doc.output('arraybuffer');
+                    const bytes = new Uint8Array(ab);
+                    const head = String.fromCharCode(bytes[0],bytes[1],bytes[2],bytes[3]);
+                    let tailOk=false; try{ const t=bytes.slice(-1024); for(let k=0;k<t.length-3;k++){ if(t[k]===0x25&&t[k+1]===0x25&&t[k+2]===0x45&&t[k+3]===0x4F){ tailOk=true; break; } } }catch(_){ tailOk=true; }
+                    if(head!=='%PDF' || !tailOk || bytes.length < 1000) throw new Error('PDF 무결성 검증 실패');
+                    return new Blob([ab], { type:'application/pdf' });
                 } finally {
                     try{ document.body.removeChild(wrap); }catch(_){}
                 }
