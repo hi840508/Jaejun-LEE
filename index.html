@@ -7547,9 +7547,11 @@
                 if(card && window.checkAndReplaceOrderCard) window.checkAndReplaceOrderCard(card.id, d.orderId, card.dataset.productName||'', +(card.dataset.amount||0));
                 // 🦷 의뢰서 PDF 카드 상태 배지도 실시간 갱신
                 if(document.querySelector('.rxdoc-status[data-order="'+d.orderId+'"]') && window.refreshRxDocStatus) window.refreshRxDocStatus(d.orderId);
+                // 🧾 메세지 탭 주문 목록 실시간 갱신(결제완료 시 판매자에 노출 / 완료·환불 시 자동 제거)
+                try{ if(window.loadOrderListMsgr) loadOrderListMsgr(); }catch(_){}
             });
             // 💬 주문 대화방 종료(구매확정/3일 자동확정) — 판매자/타 기기 포함, 열려있으면 목록으로 이동 + 리스트 갱신
-            socket.on('room_closed', d => { try { if(d && typeof currentChatRoomId !== 'undefined' && currentChatRoomId === d.roomId) { if(typeof backToDrawerList === 'function') backToDrawerList(); } if(typeof loadChatList === 'function') loadChatList(); } catch(e){} });
+            socket.on('room_closed', d => { try { if(d && typeof currentChatRoomId !== 'undefined' && currentChatRoomId === d.roomId) { if(typeof backToDrawerList === 'function') backToDrawerList(); } if(typeof loadChatList === 'function') loadChatList(); if(window.loadOrderListMsgr) loadOrderListMsgr(); } catch(e){} });
 
             // 초대 URL 처리 (자동 친구 등록 + 대화방 즉시 개설; 양측 모두 별도 새로고침 없이 반영)
             const urlParams = new URLSearchParams(window.location.search);
@@ -17460,13 +17462,26 @@ pdfjsScript,
         // 📦 메신저 '주문' 탭 — 내 주문/진행중 거래
         window.loadOrderListMsgr = async function(){
             const box=document.getElementById('order-list-container'); if(!box||!currentUser) return;
+            const me=currentUser.name;
             box.innerHTML='<div style="padding:24px;text-align:center;color:#94a3b8;font-size:13px;">불러오는 중…</div>';
-            let items=[]; try{ items=await (await fetch(`${API_URL}/api/purchases/${encodeURIComponent(currentUser.name)}`)).json()||[]; }catch(_){}
             const esc=(t)=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-            // 🕒 최신순 정렬
-            const _ts=o=>{ const d=new Date(o.date||o.created_at||0); const n=d.getTime(); return isNaN(n)?(Number(o.id)||0):n; };
-            items=items.slice().sort((a,b)=>_ts(b)-_ts(a));
-            // 👤 특정 인물 주문 필터(있으면) — 주문에 patientKey가 기록된 경우만 필터, 없으면 전체 유지
+            // 🛒 구매(구매자) + 🏪 판매(판매자) 주문을 함께 로드 → 결제 완료 시 판매자에게도 주문이 보이게
+            let buys=[], sells=[];
+            try{ buys=await (await fetch(`${API_URL}/api/purchases/${encodeURIComponent(me)}`)).json()||[]; }catch(_){}
+            try{ sells=await (await fetch(`${API_URL}/api/orders/seller/${encodeURIComponent(me)}`)).json()||[]; }catch(_){}
+            // 🚫 메세지 목록 자동 제외: 환불완료·구매확정(거래완료)·거절·취소 — (계정 아이콘 '주문관리'에는 그대로 유지)
+            const DONE=new Set(['refunded','confirmed','completed','done','rejected','cancelled','canceled','dismissed']);
+            const norm=[];
+            (buys||[]).forEach(o=>{ const status=o.refunded?'refunded':String(o.orderStatus||'').toLowerCase();
+                norm.push({ role:'buyer', id:o.orderId||o.id||'', productName:o.productName||'주문', counterparty:o.seller||'', amount:Number(o.amount||o.orderAmount||0), date:o.date||o.orderCreatedAt||o.rawDate||'', status:status, patientKey:o.patientKey||'', patient:o.patient||'' }); });
+            (sells||[]).forEach(o=>{ const status=String(o.status||'').toLowerCase();
+                norm.push({ role:'seller', id:o.id||'', productName:o.productName||'주문', counterparty:o.buyer||'', amount:Number(o.amount||0), date:o.created_at||o.date||'', status:status, patientKey:o.patientKey||'', patient:o.patient||'' }); });
+            // 유효(주문id 있음) + 진행 중(종료상태 제외)
+            let items=norm.filter(o=> o.id && !DONE.has(o.status));
+            const seen=new Set(); items=items.filter(o=>{ const k=o.role+':'+o.id; if(seen.has(k)) return false; seen.add(k); return true; });
+            const _ts=o=>{ const d=new Date(o.date||0); const n=d.getTime(); return isNaN(n)?(Number(o.id)||0):n; };
+            items.sort((a,b)=>_ts(b)-_ts(a));
+            // 👤 특정 인물 주문 필터(있으면)
             let hdr='<div style="padding:4px 2px 6px; font-size:11px; font-weight:800; color:#94a3b8; letter-spacing:.3px;">주문</div>'; const pk=window.__msgrOrderPatient;
             if(pk){ const nameOf=(()=>{ try{ return (window.__sbPatients||[]).find(p=>p.patientKey===pk); }catch(_){ return null; } })();
                 items=items.filter(o=> o.patientKey===pk || (nameOf&&o.patient&&o.patient===nameOf.name));
@@ -17474,15 +17489,25 @@ pdfjsScript,
                 hdr='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:8px;background:#eef4f8;border-radius:9px;font-size:12px;font-weight:800;color:#0f2f52;"><span style="flex:1;">👤 '+(label||'선택 인물')+' 주문</span><button onclick="window.__msgrOrderPatient=null;loadOrderListMsgr();" style="flex:none;border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">전체</button></div>';
             }
             if(!items.length){ box.innerHTML=hdr+'<div style="padding:28px 16px;text-align:center;color:#94a3b8;font-size:13px;line-height:1.7;">진행 중인 주문이 없습니다.<br><span style="font-size:12px;">연락처에서 상점을 선택해 주문할 수 있어요.</span></div>'; return; }
+            // 상태 배지(관점별 라벨)
+            const badgeFor=(o)=>{
+                const B={
+                    pending:            o.role==='seller'?{t:'🆕 신규 주문',c:'#9a3412',b:'#ffedd5'}:{t:'승인 대기',c:'#92400e',b:'#fef3c7'},
+                    awaiting_payment:   o.role==='seller'?{t:'구매자 결제 대기',c:'#92400e',b:'#fef3c7'}:{t:'결제 필요',c:'#9a3412',b:'#ffedd5'},
+                    approved:           o.role==='seller'?{t:'💳 결제완료·제작/준비',c:'#065f46',b:'#d1fae5'}:{t:'결제완료·준비중',c:'#065f46',b:'#d1fae5'},
+                    shipping:           {t:'🚚 배송중',c:'#1e40af',b:'#dbeafe'},
+                    delivered:          {t:'📦 배송완료·확인요망',c:'#0f2f52',b:'#eef4f8'}
+                };
+                return B[o.status]||{t:'진행 중',c:'#0f2f52',b:'#eef4f8'};
+            };
             box.innerHTML = hdr + items.slice(0,100).map(o=>{
-                const nm=esc(o.productName||'주문'); const sel=esc(o.seller||''); const amt=Number(o.amount||0);
-                const dt=String(o.date||o.created_at||'').replace('T',' ').substring(0,16);
-                const pend=(o.orderStatus==='pending'||o.orderStatus==='awaiting_payment');
-                const st = o.refunded?'환불됨':(pend?'승인 대기':'진행/완료');
-                const stc = o.refunded?'#991b1b':(pend?'#92400e':'#0f2f52'); const stb=o.refunded?'#fee2e2':(pend?'#fef3c7':'#eef4f8');
-                return `<div class="_ord-item" onclick="msgrOpenOrder('${sel}','${esc(o.id||'')}')" style="background:#fff;border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;">`
-                    +`<div style="display:flex;align-items:center;gap:8px;"><b style="flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${nm}</b><span style="flex:none;font-size:10px;font-weight:800;color:${stc};background:${stb};border-radius:20px;padding:2px 8px;">${st}</span></div>`
-                    +`<div style="font-size:11px;color:#64748b;margin-top:4px;">${sel?('판매자 '+sel+' · '):''}${dt}${amt?(' · '+amt.toLocaleString()+'원'):''}</div></div>`;
+                const nm=esc(o.productName); const cp=esc(o.counterparty); const amt=o.amount;
+                const dt=String(o.date||'').replace('T',' ').substring(0,16);
+                const L=badgeFor(o);
+                const who=(o.role==='seller')?('주문처 '+cp):('판매자 '+cp);
+                return `<div class="_ord-item" onclick="msgrOpenOrder('${cp}','${esc(String(o.id))}')" style="background:#fff;border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;">`
+                    +`<div style="display:flex;align-items:center;gap:8px;"><b style="flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${nm}</b><span style="flex:none;font-size:10px;font-weight:800;color:${L.c};background:${L.b};border-radius:20px;padding:2px 8px;">${L.t}</span></div>`
+                    +`<div style="font-size:11px;color:#64748b;margin-top:4px;">${o.role==='seller'?'🏪 판매 · ':''}${cp?(who+' · '):''}${dt}${amt?(' · '+amt.toLocaleString()+'원'):''}</div></div>`;
             }).join('');
         };
         window.msgrOpenOrder = function(seller, orderId){ try{ if(window.openBuyerOrderRoom && seller) { openBuyerOrderRoom(seller, orderId); return; } }catch(_){} };
@@ -19824,6 +19849,18 @@ pdfjsScript,
                         }
                     }
                 }
+                // 🗨 보철 품목/상용구 선택 모달이 '메신저 안 의뢰서(rx)'에서 열렸으면 → 서랍 내부 바텀시트로 렌더
+                //    (body 전체 오버레이로 띄우면 바깥클릭 판정에 걸려 메신저가 닫혀 진행 불가 → 서랍 자식으로 넣어 방지)
+                if(id==='rx-picker-modal' || id==='rx-phrase-modal'){
+                    let _dr=null; try{ _dr=document.getElementById('messenger-drawer'); }catch(_){}
+                    if(_dr && _dr.classList.contains('open') && window.__msgrStoreMode==='rx'){
+                        ov.style.cssText='position:absolute;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;background:rgba(15,23,42,.4);';
+                        ov.innerHTML='<div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-height:90%;overflow:auto;box-shadow:0 -8px 30px rgba(0,0,0,.28);">'+innerHtml+'</div>';
+                        ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+                        _dr.appendChild(ov);
+                        return ov;
+                    }
+                }
                 if(id==='rx-form-modal' || id==='rx-choice-modal'){
                     // 📋 의뢰서(선택·작성) = 우측 도킹 패널(배경 없음 → 좌측 파일검색/사이드바 그대로 사용, 파일 카드 클릭/드래그 첨부 가능)
                     ov.style.cssText = 'position:fixed;top:56px;right:0;bottom:0;width:'+(440)+'px;max-width:94vw;z-index:4002;display:flex;flex-direction:column;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);border-left:1px solid var(--border-color);';
@@ -20455,49 +20492,62 @@ pdfjsScript,
             function _toothWidthFactor(fdi){ const d=fdi%10; return ({1:0.98,2:0.74,3:0.82,4:0.82,5:0.84,6:1.18,7:1.1,8:1.0}[d])||1; }
             function _toothBuccalSVG(fdi,on){ const T=_TB[_toothType(fdi)]||_TB.incisor; const f=on?'#dbeafe':'#ffffff', s=on?'#2563eb':'#566178', dl=on?'#8fb3ea':'#b9c2d0'; let o=''; (T.roots||[]).forEach(r=>{ o+='<path d="'+r+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.3" stroke-linejoin="round"/>'; }); o+='<path d="'+T.crown+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.4" stroke-linejoin="round"/>'; if(T.detail) o+='<path d="'+T.detail+'" fill="none" stroke="'+dl+'" stroke-width="0.9" stroke-linecap="round"/>'; return o; }
             function _toothOcclusalSVG(fdi,on){ const T=_TO[_toothType(fdi)]||_TO.incisor; const f=on?'#dbeafe':'#ffffff', s=on?'#2563eb':'#566178', dl=on?'#8fb3ea':'#aab3c2'; return '<path d="'+T.shape+'" fill="'+f+'" stroke="'+s+'" stroke-width="1.4" stroke-linejoin="round"/>'+(T.detail?'<path d="'+T.detail+'" fill="none" stroke="'+dl+'" stroke-width="0.9" stroke-linecap="round"/>':''); }
-            // ── 4분면(협측) ──
+            // ── 4분면(협측 측면도) — 단일 SVG(viewBox+width:100%) → 폭에 자동 맞춤(우측 잘림 없음)·고해상(벡터) ──
             function _rxQuadHtml(i, upA, loA, teeth){
-                const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi'; const TW=25;
-                const DIV='<div style="width:2px;background:#cbd5e1;align-self:stretch;margin:0 3px;flex:none;"></div>';
-                const numCell=fdi=>'<div style="width:'+TW+'px;flex:none;text-align:center;font-size:13px;font-weight:800;color:'+(sel.has(fdi)?'#1d4ed8':'#475569')+';line-height:1.4;">'+_toothLabelFor(fdi,nota)+'</div>';
-                const toothCell=(fdi,flip)=>'<div style="position:relative;width:'+TW+'px;height:60px;flex:none;"><div style="width:100%;height:100%;transform:'+(flip?'scaleY(-1)':'none')+';"><svg viewBox="0 0 44 104" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="display:block;overflow:visible;">'+_toothBuccalSVG(fdi,sel.has(fdi))+'</svg></div><button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="position:absolute;inset:0;background:none;border:none;cursor:pointer;padding:0;"></button></div>';
-                const row=(arr,builder,ai)=>{ let h='<div style="display:flex;justify-content:center;align-items:center;">'; arr.forEach((fdi,k)=>{ if(k===8) h+=DIV; h+=builder(fdi); }); return h+'</div>'; };
-                const sideLbl='<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:#94a3b8;padding:0 2px 2px;"><span>우측 Right</span><span>좌측 Left</span></div>';
-                const W2=TW*16+12;
-                return '<div style="width:100%;overflow:hidden;"><div style="width:'+W2+'px;margin:0 auto;transform-origin:top center;" data-archw="'+W2+'">'
-                    + sideLbl
-                    + row(upA, numCell)
-                    + row(upA, fdi=>toothCell(fdi,true))
-                    + '<div style="height:2px;background:#0f2f52;margin:4px 0;opacity:.3;"></div>'
-                    + row(loA, fdi=>toothCell(fdi,false))
-                    + row(loA, numCell)
-                    + '</div></div>';
+                const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi';
+                const TW=26, TH=56, pad=10, midGap=12;
+                const VW=pad*2+TW*16+midGap, VH=174;
+                const upTeethY=16, upNumY=86, loNumY=104, loTeethY=112, midY=95;
+                const cellLeft=k=> pad + k*TW + (k>=8?midGap:0);
+                const cxk=k=> cellLeft(k)+TW/2;
+                const sx=TW/44;
+                const col=fdi=>sel.has(fdi)?'#1d4ed8':'#334155';
+                let vis='', rects='';
+                vis+='<text x="'+(pad)+'" y="12" font-size="9" font-weight="700" fill="#94a3b8">우측 R</text>';
+                vis+='<text x="'+(VW-pad)+'" y="12" text-anchor="end" font-size="9" font-weight="700" fill="#94a3b8">좌측 L</text>';
+                // 상악: 치아(뿌리 위로 뒤집기) + 번호(치아 아래, 정중선 쪽)
+                upA.forEach((fdi,k)=>{ const X=cellLeft(k), on=sel.has(fdi);
+                    vis+='<g transform="translate('+X.toFixed(1)+','+(upTeethY+TH)+') scale('+sx.toFixed(4)+','+(-(TH/104)).toFixed(4)+')">'+_toothBuccalSVG(fdi,on)+'</g>';
+                    vis+='<text x="'+cxk(k).toFixed(1)+'" y="'+upNumY+'" text-anchor="middle" font-size="12" font-weight="800" fill="'+col(fdi)+'">'+_toothLabelFor(fdi,nota)+'</text>';
+                    rects+='<rect x="'+X.toFixed(1)+'" y="'+upTeethY+'" width="'+TW+'" height="'+(upNumY-upTeethY)+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
+                });
+                // 하악: 번호(치아 위, 정중선 쪽) + 치아(정상)
+                loA.forEach((fdi,k)=>{ const X=cellLeft(k), on=sel.has(fdi);
+                    vis+='<text x="'+cxk(k).toFixed(1)+'" y="'+loNumY+'" text-anchor="middle" font-size="12" font-weight="800" fill="'+col(fdi)+'">'+_toothLabelFor(fdi,nota)+'</text>';
+                    vis+='<g transform="translate('+X.toFixed(1)+','+loTeethY+') scale('+sx.toFixed(4)+','+(TH/104).toFixed(4)+')">'+_toothBuccalSVG(fdi,on)+'</g>';
+                    rects+='<rect x="'+X.toFixed(1)+'" y="'+(loNumY-14)+'" width="'+TW+'" height="'+(loTeethY+TH-(loNumY-14))+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
+                });
+                const midX=pad+8*TW+midGap/2;
+                vis+='<line x1="'+midX+'" y1="'+upTeethY+'" x2="'+midX+'" y2="'+(loTeethY+TH)+'" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="3 3"/>';
+                vis+='<line x1="'+pad+'" y1="'+midY+'" x2="'+(VW-pad)+'" y2="'+midY+'" stroke="#0f2f52" stroke-width="1" opacity="0.16"/>';
+                return '<svg viewBox="0 0 '+VW+' '+VH+'" width="100%" style="display:block;max-width:'+VW+'px;margin:0 auto;height:auto;overflow:visible;">'+vis+rects+'</svg>';
             }
-            // ── 아치형(교합면 상면도 · 실제 악궁형 타원, 치아 비율 반영) ──
+            // ── 아치형(교합면 상면도) — 상악 ∩ + 하악 ∪ 두 개의 말굽(레퍼런스 형태). 단일 SVG로 잘림 없음 ──
             function _rxArchHtml(i, upA, loA, teeth){
                 const sel=new Set((teeth||[]).map(Number)); const nota=window._rxToothNotation||'fdi';
-                // 하나의 타원(연속 악궁): 상악=윗반, 하악=아랫반. 양 끝(대구치)에서 상·하악이 세로로 맞닿아 실제 악궁처럼.
-                const W=432, H=470, cx=216, cy=228, rx=150, ry=186, base=38; const cells=[];
-                const place=(arr,upper)=>{
-                    const ws=arr.map(_toothWidthFactor); const tot=ws.reduce((a,b)=>a+b,0);
-                    let acc=0;
-                    arr.forEach((fdi,k)=>{ const mid=acc+ws[k]/2; acc+=ws[k];
-                        const t=mid/tot; const th=Math.PI*(0.94-0.88*t);   // 0.94π(좌 대구치)..0.06π(우 대구치), 0.5π=앞니
-                        const x=cx+rx*Math.cos(th); const y=upper?(cy-ry*Math.sin(th)):(cy+ry*Math.sin(th));
-                        const ox=rx*Math.cos(th), oy=upper?(-ry*Math.sin(th)):(ry*Math.sin(th));
-                        const rot=Math.atan2(ox,-oy)*180/Math.PI;
-                        const sz=base*_toothWidthFactor(fdi); const on=sel.has(fdi);
-                        const nrx=rx+26, nry=ry+26; const nx=cx+nrx*Math.cos(th); const ny=upper?(cy-nry*Math.sin(th)):(cy+nry*Math.sin(th));
-                        cells.push('<div style="position:absolute;left:'+(x-sz/2).toFixed(1)+'px;top:'+(y-sz/2).toFixed(1)+'px;width:'+sz.toFixed(1)+'px;height:'+sz.toFixed(1)+'px;"><div style="width:100%;height:100%;transform:rotate('+rot.toFixed(1)+'deg);transform-origin:center;"><svg viewBox="0 0 40 40" width="100%" height="100%" style="display:block;overflow:visible;">'+_toothOcclusalSVG(fdi,on)+'</svg></div><button type="button" title="FDI '+fdi+'" onclick="rxToothToggle('+i+','+fdi+')" style="position:absolute;inset:0;background:none;border:none;cursor:pointer;"></button></div>');
-                        cells.push('<div style="position:absolute;left:'+(nx-12).toFixed(1)+'px;top:'+(ny-8).toFixed(1)+'px;width:24px;text-align:center;font-size:10.5px;font-weight:800;color:'+(on?'#1d4ed8':'#94a3b8')+';pointer-events:none;">'+_toothLabelFor(fdi,nota)+'</div>');
+                const VW=384, VH=440, base=31;
+                const arcs=[
+                    {arr:upA, cx:192, cy:196, rx:150, ry:152, upper:true,  nlab:32, lbl:'상악', lblY:30},
+                    {arr:loA, cx:192, cy:250, rx:150, ry:152, upper:false, nlab:36, lbl:'하악', lblY:418}
+                ];
+                let vis='', rects='';
+                arcs.forEach(A=>{
+                    const ws=A.arr.map(_toothWidthFactor); const tot=ws.reduce((a,b)=>a+b,0); let acc=0;
+                    A.arr.forEach((fdi,k)=>{ const t=(acc+ws[k]/2)/tot; acc+=ws[k];
+                        const th=Math.PI*(1-t);   // π(좌 대구치) → 0(우 대구치), π/2=앞니(중앙)
+                        const x=A.cx + A.rx*Math.cos(th);
+                        const y=A.upper?(A.cy - A.ry*Math.sin(th)):(A.cy + A.ry*Math.sin(th));
+                        const rot=A.upper?(90 - th*180/Math.PI):(th*180/Math.PI - 90);
+                        const sz=base*_toothWidthFactor(fdi), on=sel.has(fdi);
+                        vis+='<g transform="translate('+x.toFixed(1)+','+y.toFixed(1)+') rotate('+rot.toFixed(1)+') scale('+(sz/40).toFixed(4)+')"><g transform="translate(-20,-20)">'+_toothOcclusalSVG(fdi,on)+'</g></g>';
+                        const nx=A.cx + (A.rx+A.nlab)*Math.cos(th);
+                        const ny=A.upper?(A.cy-(A.ry+A.nlab)*Math.sin(th)):(A.cy+(A.ry+A.nlab)*Math.sin(th));
+                        vis+='<text x="'+nx.toFixed(1)+'" y="'+(ny+3.5).toFixed(1)+'" text-anchor="middle" font-size="11" font-weight="800" fill="'+(on?'#1d4ed8':'#94a3b8')+'">'+_toothLabelFor(fdi,nota)+'</text>';
+                        rects+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(sz*0.46).toFixed(1)+'" fill="transparent" style="cursor:pointer" onclick="rxToothToggle('+i+','+fdi+')"/>';
                     });
-                };
-                place(upA,true); place(loA,false);
-                // 가로가 좁으면(모바일) 축소해서 한 화면에 — 컨테이너 폭에 맞춰 scale
-                return '<div id="rx-arch-wrap-'+i+'" style="width:100%;overflow:hidden;"><div style="position:relative;width:'+W+'px;height:'+H+'px;margin:0 auto;transform-origin:top center;" data-archw="'+W+'" data-archh="'+H+'">'
-                    +'<div style="position:absolute;left:0;right:0;top:'+(cy-ry-14)+'px;text-align:center;font-size:10.5px;font-weight:800;color:#cbd5e1;pointer-events:none;">상악</div>'
-                    +'<div style="position:absolute;left:0;right:0;top:'+(cy+ry+2)+'px;text-align:center;font-size:10.5px;font-weight:800;color:#cbd5e1;pointer-events:none;">하악</div>'
-                    +cells.join('')+'</div></div>';
+                    vis+='<text x="'+A.cx+'" y="'+A.lblY+'" text-anchor="middle" font-size="11" font-weight="800" fill="#cbd5e1">'+A.lbl+'</text>';
+                });
+                return '<svg viewBox="0 0 '+VW+' '+VH+'" width="100%" style="display:block;max-width:'+VW+'px;margin:0 auto;height:auto;overflow:visible;">'+vis+rects+'</svg>';
             }
             function _rxNotaSel(){ const n=window._rxToothNotation||'fdi'; const o=(v,t)=>'<option value="'+v+'"'+(n===v?' selected':'')+'>'+t+'</option>'; return '<select onchange="rxSetToothNotation(this.value)" title="치식 표기법" style="font-size:10.5px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;">'+o('fdi','FDI')+o('palmer','Palmer')+o('universal','Universal')+'</select>'; }
             function _rxLayoutSel(){ const L=window._rxToothLayout||'quad'; const b=(v,t,pos)=>'<button type="button" onclick="rxSetToothLayout(\''+v+'\')" style="font-size:10.5px;padding:3px 9px;border:1px solid '+(L===v?'#0f2f52':'#cbd5e1')+';background:'+(L===v?'#0f2f52':'#fff')+';color:'+(L===v?'#fff':'#475569')+';cursor:pointer;'+(pos==='l'?'border-radius:6px 0 0 6px;':'border-radius:0 6px 6px 0;border-left:none;')+'">'+t+'</button>'; return '<span style="display:inline-flex;">'+b('quad','4분면','l')+b('arch','아치형','r')+'</span>'; }
