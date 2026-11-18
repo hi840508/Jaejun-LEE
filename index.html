@@ -4535,6 +4535,7 @@
                         showToast('📥 받은 파일 저장 중: ' + t.name + ' → ' + _folder);
                         const resp = await fetch(t.url); if(!resp.ok) throw new Error('http '+resp.status);
                         const blob = await resp.blob();
+                        if(!blob || blob.size === 0) throw new Error('빈 파일(0바이트) 수신 — 저장 보류(소스 준비 후 자동 재시도)');
                         await R.writeFileInRoom(_folder, t.name, blob);
                         changed = true;
                         // ☁️ 미러 백업이 켜져 있으면 클라우드에도 사본 업로드(실패해도 로컬 저장엔 영향 없음)
@@ -4833,7 +4834,7 @@
             async function sharedUrl(id){ const r=await fetch(A()+'/api/mirror/shared-download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'URL 오류'); return d.url; }
             async function sharedRemove(id){ try{ await fetch(A()+'/api/mirror/shared-remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); }catch(_){}}
             // 받은 공유를 내 공유폴더로 저장(다운로드)
-            async function sharedSaveToFolder(id, name){ const R=window.RCFolder; if(!R||!R.chosen()) throw new Error('공유폴더가 지정되지 않았습니다.'); const url=await sharedUrl(id); const blob=await (await fetch(url)).blob(); await R.writeFileAt([], name||('shared_'+id), blob); return true; }
+            async function sharedSaveToFolder(id, name){ const R=window.RCFolder; if(!R||!R.chosen()) throw new Error('공유폴더가 지정되지 않았습니다.'); const url=await sharedUrl(id); const blob=await (await fetch(url)).blob(); if(!blob||blob.size===0) throw new Error('빈 파일(0바이트)입니다. 원본 공유가 완료되었는지 확인하세요.'); await R.writeFileAt([], name||('shared_'+id), blob); return true; }
             return { status, enable, backupAll, autoMirror, list, restoreAll, restoreOne, del, uploadOne, walk:_walk, excludes, sharedWithMe, sharedUrl, sharedRemove, sharedSaveToFolder };
         })();
 
@@ -7282,7 +7283,7 @@
                         if(d.toDevice!==myDev() || d.fromDevice===myDev()) return;
                         if(!(await window.RCFolder.ensureAccess())){ try{ window._showFolderPermHelp(function(){ if(window.RCFolder.pick) window.RCFolder.pick(); }); }catch(_){ showToast('📥 나에게 보내기: 공유폴더 권한이 필요합니다.'); } return; }
                         showToast('📥 나에게 보내기 수신 중: '+d.name);
-                        try{ const r=await fetch(d.url); const blob=await r.blob(); await window.RCFolder.writeFile(d.name, blob); showToast('✅ 이 기기 공유폴더에 저장됨: '+d.name); window.RCFolder.syncIndex(); }catch(e){ showToast('수신 실패: '+d.name); }
+                        try{ const r=await fetch(d.url); const blob=await r.blob(); if(!blob||blob.size===0) throw new Error('빈 파일(0바이트)'); await window.RCFolder.writeFile(d.name, blob); showToast('✅ 이 기기 공유폴더에 저장됨: '+d.name); window.RCFolder.syncIndex(); }catch(e){ showToast('수신 실패: '+d.name); }
                         return;
                     }
                 }catch(_){}
