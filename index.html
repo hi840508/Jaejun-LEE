@@ -6100,6 +6100,7 @@
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:8px 14px;min-height:52px;box-sizing:border-box;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f0f1f3;">'
                     + ((path.length||window.__sfPatientFilter||window.__sfDeepQuery)&&!_cloudSel&&!window.__sfStoreView?'<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>':'')
+                    + ((!_cloudSel && !window.__sfStoreView && !window.__sfPatientFilter && !window.__sfDeepQuery && path.length===0)?'<button id="_sf-allcomp" title="전체 취합 ↔ 폴더별 보기" style="flex:none;padding:7px 11px;font-size:12px;font-weight:800;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:9px;white-space:nowrap;cursor:pointer;">'+(window.__sfFolderBrowse?'🗂 전체 취합':'📂 폴더별')+'</button>':'')
                     + (function(){ var _store=!!window.__sfStoreView, _local=(!window.__sfStoreView&&!_cloudSel);
                         var on='border-color:#0b2b4b;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;', off='border-color:#cbd5e1;background:#fff;color:#0f2f52;';
                         var base='flex:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;border-style:solid;border-width:1px;';
@@ -6240,6 +6241,7 @@
                 // ☁️ 클라우드 버튼 = 로컬↔클라우드 보관함 뷰 전환 토글
                 const mir=ov.querySelector('#_sf-mirror'); if(mir) mir.onclick=()=>{ window.__sfCloudView = !window.__sfCloudView; render(); };
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
+                { const ac=ov.querySelector('#_sf-allcomp'); if(ac) ac.onclick=()=>{ window.__sfFolderBrowse=!window.__sfFolderBrowse; render(); }; }
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); if(i<0 && (window.__sfPatientFilter||window.__sfDeepQuery)){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} } path = i<0?[]:path.slice(0,i+1); render(); }));
                 const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else if(window.__sfPatientFilter||window.__sfDeepQuery){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); } else { close(); } };
                     bk.addEventListener('dragover',(e)=>{ if(window.__rcDragFile && path.length){ e.preventDefault(); e.dataTransfer.dropEffect='move'; bk.style.outline='2px solid #0f2f52'; } });
@@ -6536,7 +6538,8 @@
                 else if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
                 else if(window.__sfDeepQuery){ try{ _sbHighlightPatient(); _sfRenderDeepSearch(ov, window.__sfDeepQuery); }catch(_){} }
                 else if(window.__sfPatientFilter){ try{ _sbHighlightPatient(); _sfRenderPatientGrid(ov, window.__sfPatientFilter); }catch(_){} }
-                else { try{ _sbHighlightPatient(); }catch(_){} }
+                else if(path.length===0 && connected && !window.__sfFolderBrowse){ try{ _sbHighlightPatient(); }catch(_){} try{ _sfRenderMergedLocal(ov); }catch(_){} }
+                else { window.__sfMergedActive=false; try{ _sbHighlightPatient(); }catch(_){} }
             }
             // 🏪 내 상점 — 파일검색 셸 안에서 상점 카드(쇼케이스)를 그리드로 표시. 카드 클릭 시 기존 상점 화면(enterBrandStore)으로.
             async function _sfRenderStoreCards(ov){
@@ -7001,18 +7004,20 @@
                     if(perT && mt<perT) return false;
                     return true;
                 });
+                // 🩻 같은 폴더(루트+경로)의 DICOM 2장↑ → 1개 CT 시리즈로 묶음(566장 개별표시 방지·대표 썸네일 1개)
+                (function(){ const byDir={}; const rest=[]; all.forEach(it=>{ if(/\.dcm$/i.test(String(it.fname||''))){ const kk=it.rootId+'|'+((it.pathArr||[]).join('/')); (byDir[kk]=byDir[kk]||[]).push(it); } else rest.push(it); }); const mg=[]; Object.keys(byDir).forEach(kk=>{ const L=byDir[kk].sort((a,b)=>String(a.fname).localeCompare(String(b.fname),undefined,{numeric:true})); if(L.length>=2){ const rep=Object.assign({},L[0]); rep.series=L.length; mg.push(rep); } else mg.push(L[0]); }); all=rest.concat(mg); })();
                 if(!all.length){ grid.innerHTML=bar+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+(connRoots.length?'조건에 맞는 파일이 없습니다.':'연결된 폴더가 없습니다. 위 폴더의 <b>[재연결]</b>을 누르거나 폴더를 추가하세요.')+'</div>'; wireBar(); return; }
                 all.sort((a,b)=> flt.sort==='name' ? String(a.fname).localeCompare(String(b.fname)) : flt.sort==='old' ? (Number(a.mtime)||0)-(Number(b.mtime)||0) : (Number(b.mtime)||0)-(Number(a.mtime)||0));
                 // 날짜별 그룹(최신순 기본)
                 const _tsLabel=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '날짜 미상'; const n=new Date(); const sd=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); const y=new Date(n); y.setDate(n.getDate()-1); if(sd(d,n)) return '오늘'; if(sd(d,y)) return '어제'; return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0'); };
                 const _key=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '0000-00-00'; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
                 const useDate=(flt.sort!=='name');
-                const card=(it)=>{ const nm=it.fname; const pth=(it.pathArr||[]).join('/'); const sub=(it.rootName||'')+(pth?(' / '+pth):'');
-                    return '<div class="rc-mlview" draggable="true" data-rootid="'+ESC(it.rootId)+'" data-path="'+ESC(pth)+'" data-fname="'+ESC(nm)+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'" title="'+ESC(sub+'/'+nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
-                        +'<div class="rc-mlthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="rc-mlic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+_sfFileTile(nm)+'</div>'
+                const card=(it)=>{ const nm=it.fname; const isSeries=(it.series>1); const label=isSeries?('CT 시리즈 · '+it.series+'컷'):nm; const pth=(it.pathArr||[]).join('/'); const sub=(it.rootName||'')+(pth?(' / '+pth):'');
+                    return '<div class="rc-mlview" draggable="true" data-rootid="'+ESC(it.rootId)+'" data-path="'+ESC(pth)+'" data-fname="'+ESC(nm)+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'" data-series="'+(isSeries?it.series:'')+'" title="'+ESC(sub+'/'+nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
+                        +'<div class="rc-mlthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;">'+(isSeries?('<span style="position:absolute;top:6px;right:6px;z-index:3;font-size:9px;font-weight:800;color:#fff;background:#0d9488;border-radius:5px;padding:1px 6px;">'+it.series+'컷</span>'):'')+'<div class="rc-mlic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+_sfFileTile(nm)+'</div>'
                         +'<div class="rc-ml-chk" style="position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);"></div>'
                         +'<button class="rc-mlmenu" title="미리보기·다운로드" style="position:absolute;bottom:5px;right:5px;width:26px;height:26px;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+_SFIC.dots+'</button></div>'
-                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
+                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
                         +'<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub)+'</div>'
                         +'</div>'; };
                 const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
