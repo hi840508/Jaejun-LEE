@@ -12833,7 +12833,7 @@
                     const pc = new RTCPeerConnection(VC_ICE); window._rcp = { pc: pc };
                     pc.onicecandidate = function(e){ if(e.candidate && socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtcsc', sub:'ice', cand:e.candidate }); };
                     pc.ontrack = function(e){ const v=document.getElementById('rc-view-vid'); if(v && e.streams && e.streams[0]){ v.srcObject = e.streams[0]; const w=document.getElementById('rc-view-wait'); if(w) w.style.display='none'; try{ const p=v.play(); if(p&&p.catch)p.catch(function(){}); }catch(_){} } };
-                    pc.oniceconnectionstatechange = function(){ const w=document.getElementById('rc-view-wait'); if(!w) return; const s=pc.iceConnectionState; if(s==='connected'||s==='completed'){ w.style.display='none'; } else if(s==='failed'){ w.style.display='block'; w.textContent='연결 실패 — 네트워크/방화벽 문제일 수 있어요. 다시 시도해 주세요.'; } };
+                    pc.oniceconnectionstatechange = function(){ const s=pc.iceConnectionState; const w=document.getElementById('rc-view-wait'); if(s==='connected'||s==='completed'){ if(w) w.style.display='none'; try{ clearTimeout(window.__rcViewDropT); }catch(_){} window.__rcViewDropT=null; } else if(s==='failed'||s==='closed'||s==='disconnected'){ try{ clearTimeout(window.__rcViewDropT); }catch(_){} window.__rcViewDropT=setTimeout(function(){ const st=pc.iceConnectionState; if((st==='failed'||st==='closed'||st==='disconnected') && window._rc && window._rc.active && window._rc.role==='controller'){ try{ showToast('원격 연결이 종료되었습니다 (상대 종료 또는 네트워크).'); }catch(_){} try{ window.stopRemoteControl(true); }catch(_){} } }, (s==='disconnected')?6000:1500); } };
                     await pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
                     const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
                     if(socket && socket.connected) socket.emit('rc_signal', { to:peer, room:room, kind:'rtcsc', sub:'answer', sdp:ans });
@@ -13963,9 +13963,12 @@
             const stage = document.getElementById('rc-view-stage'); if(!stage) return;
             let last = 0;
             // ── 데스크톱(마우스) ──
-            stage.addEventListener('mousemove', function(e){ const now=(window.performance&&performance.now)?performance.now():0; if(now&&now-last<45)return; last=now; const p=_rcFrac(e); if(p) _rcSendInput({t:'m',fx:p.fx,fy:p.fy}); });
-            stage.addEventListener('mousedown', function(e){ e.preventDefault(); });
-            stage.addEventListener('click', function(e){ const p=_rcFrac(e); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:0}); });
+            // 🖱 드래그 지원: 누름(md)→이동(m)→뗌(mu). 이동 없이 떼면 일반 클릭(c). 드래그 후 뒤따르는 click은 억제.
+            let _dn=false, _drg=false, _dPt=null, _lp=null, _dgd=false;
+            stage.addEventListener('mousemove', function(e){ const now=(window.performance&&performance.now)?performance.now():0; if(now&&now-last<45)return; last=now; const p=_rcFrac(e); if(!p) return; _lp=p; if(_dn && !_drg && _dPt){ _drg=true; _rcSendInput({t:'md',fx:_dPt.fx,fy:_dPt.fy}); } _rcSendInput({t:'m',fx:p.fx,fy:p.fy}); });
+            stage.addEventListener('mousedown', function(e){ if(e.button!==0){ return; } e.preventDefault(); _dn=true; _drg=false; _dPt=_rcFrac(e); _lp=_dPt; });
+            window.addEventListener('mouseup', function(e){ if(e.button!==0) return; if(_dn && _drg){ const p=_rcFrac(e)||_lp||_dPt; if(p) _rcSendInput({t:'mu',fx:p.fx,fy:p.fy}); _dgd=true; setTimeout(function(){ _dgd=false; }, 350); } _dn=false; _drg=false; }, true);
+            stage.addEventListener('click', function(e){ if(_dgd){ _dgd=false; return; } const p=_rcFrac(e); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:0}); });
             stage.addEventListener('dblclick', function(e){ const p=_rcFrac(e); if(p) _rcSendInput({t:'dc',fx:p.fx,fy:p.fy}); });
             stage.addEventListener('contextmenu', function(e){ e.preventDefault(); const p=_rcFrac(e); if(p) _rcSendInput({t:'c',fx:p.fx,fy:p.fy,b:2}); });
             stage.addEventListener('wheel', function(e){ e.preventDefault(); _rcSendInput({t:'w',d:(e.deltaY<0?120:-120)}); }, {passive:false});
