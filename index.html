@@ -2420,7 +2420,8 @@
                             <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
                         </svg>
                     </button>
-                    <button id="remote-ctrl-btn" style="width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#334155; color:#fff; border:none; cursor:pointer; flex-shrink:0;" onclick="requestRemoteControl()" title="원격제어 요청" aria-label="원격제어 요청">🖥</button>
+                    <!-- 🖥 원격제어는 화상통화 컨트롤의 '제어권 요청'으로 통합 — 대화방 별도 버튼 숨김(함수는 통화에서 재사용) -->
+                    <button id="remote-ctrl-btn" style="display:none; width:40px; height:40px; border-radius:50%; align-items:center; justify-content:center; background:#334155; color:#fff; border:none; cursor:pointer; flex-shrink:0;" onclick="requestRemoteControl()" title="원격제어 요청" aria-label="원격제어 요청">🖥</button>
                     <!-- (채팅 상단 '구매 완료' 버튼 제거: 상품 주문 카드에서 구매확정 처리 — 사용자 요청) -->
                     <!-- (나가기 버튼 제거: 좌측 ◀ 버튼으로 목록 이동) -->
                 </div>
@@ -12559,6 +12560,7 @@
               +   '<button id="vc-cam" onclick="toggleVcCam()" title="카메라" style="'+VCBTN+'">'+VCICON.cam+'</button>'
               +   '<button id="vc-screen" onclick="shareScreenInCall()" title="화면 공유" style="'+VCBTN+'">'+VCICON.screen+'</button>'
               +   '<button id="vc-chat" onclick="vcShowChat()" title="채팅" style="'+VCBTN+'">'+VCICON.chat+'</button>'
+              +   '<button id="vc-ctrlreq" onclick="vcRequestControl()" title="제어권 요청 — 상대 PC 화면을 제어(상대가 수락·앱 필요)" style="'+VCBTN+'">🖱</button>'
               +   '<button onclick="stopVideoChat()" title="통화 종료" style="'+VCBTN+'color:#ef4444;"><span style="display:inline-flex;transform:rotate(134deg);">'+VCICON.phone+'</span></button>'
               + '</div>';
             // 원격 오디오 자동재생(막히면 '소리 켜기' 버튼 노출)
@@ -12575,6 +12577,15 @@
         window.toggleVcMic = function(){ const t=window._vc.local&&window._vc.local.getAudioTracks()[0]; if(!t) return; t.enabled=!t.enabled; const b=document.getElementById('vc-mic'); if(b){ b.innerHTML=t.enabled?VCICON.mic:VCICON.micOff; b.style.color=t.enabled?'#fff':'#ef4444'; } };
         window.toggleVcCam = function(){ const t=window._vc.local&&window._vc.local.getVideoTracks()[0]; if(!t) return; t.enabled=!t.enabled; const b=document.getElementById('vc-cam'); if(b){ b.innerHTML=t.enabled?VCICON.cam:VCICON.camOff; b.style.color=t.enabled?'#fff':'#ef4444'; } };
         window._vcUnlockAudio = function(){ const rv=document.getElementById('vc-remote'); if(rv){ rv.muted=false; try{ const p=rv.play(); if(p&&p.catch)p.catch(function(){}); }catch(_){} } const u=document.getElementById('vc-audio-unlock'); if(u) u.style.display='none'; };
+        // 🖱 [통합] 화상통화 중 '제어권 요청' — 같은 상대/방으로 원격제어 요청(기존 로직 재사용). 상대가 수락하면 통화에 이어 원격 지원이 시작된다.
+        //    (원격 = 화상 + 제어권 / 화상 = 원격 − 제어권. 카메라는 toggleVcCam으로 끄면 순수 원격지원.)
+        window.vcRequestControl = function(){
+            try{
+                if(window._rc && window._rc.active){ showToast('이미 원격제어가 진행 중입니다.'); return; }
+                if(typeof requestRemoteControl==='function'){ requestRemoteControl(); }
+                else showToast('원격 요청을 사용할 수 없습니다.');
+            }catch(_){}
+        };
         // 🖥 화면 공유 소스 선택(앱) — 화면/창 썸네일 목록에서 고르게 한다. 취소 시 null.
         window._pickShareSource = function(list){
             return new Promise(function(resolve){
