@@ -3935,7 +3935,7 @@
             async function _tGet(k){ try{ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(TSTORE,'readonly').objectStore(TSTORE).get(k); q.onsuccess=()=>res(q.result||''); q.onerror=()=>res(''); }); }catch(_){ return ''; } }
             async function _tPut(k,v){ try{ const db=await _idb(); await new Promise((res)=>{ const q=db.transaction(TSTORE,'readwrite').objectStore(TSTORE).put(v,k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }catch(_){} }
             // 영구 썸네일: 파일명|크기|수정시각 키로 IndexedDB 캐시(재방문/재인덱싱 시 재디코딩·깜빡임 방지)
-            async function getThumb(file, mime, fname){ try{ const key='v4|'+(fname||file.name)+'|'+file.size+'|'+(file.lastModified||0); let t=await _tGet(key); if(t) return t; t=await makeThumbForFile(file, mime, fname); if(t) _tPut(key,t); return t; }catch(_){ return ''; } }
+            async function getThumb(file, mime, fname){ try{ const key='v5|'+(fname||file.name)+'|'+file.size+'|'+(file.lastModified||0); let t=await _tGet(key); if(t) return t; t=await makeThumbForFile(file, mime, fname); if(t) _tPut(key,t); return t; }catch(_){ return ''; } }
             async function _get(k){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readonly').objectStore(STORE).get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
             async function _put(k,v){ const db=await _idb(); return await new Promise((res,rej)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).put(v,k); q.onsuccess=()=>res(); q.onerror=()=>rej(q.error); }); }
             async function _rm(k){ const db=await _idb(); return await new Promise((res)=>{ const q=db.transaction(STORE,'readwrite').objectStore(STORE).delete(k); q.onsuccess=()=>res(); q.onerror=()=>res(); }); }
@@ -4166,7 +4166,12 @@
                     const pd=image.getPixelData();
                     const src=document.createElement('canvas'); src.width=w; src.height=h; const sctx=src.getContext('2d'); const idata=sctx.createImageData(w,h); const out=idata.data;
                     if(image.color){ const stride = (pd.length>=w*h*4)?4:3; for(let i=0,j=0;i<w*h;i++,j+=4){ out[j]=pd[i*stride]; out[j+1]=pd[i*stride+1]; out[j+2]=pd[i*stride+2]; out[j+3]=255; } }
-                    else { for(let i=0,j=0;i<w*h;i++,j+=4){ let v=pd[i]*slope+intercept; let g=((v-lo)/ww)*255; g=g<0?0:(g>255?255:g); out[j]=out[j+1]=out[j+2]=g; out[j+3]=255; } }
+                    else { const N=w*h;
+                        const _applyWin=(loV,wwV)=>{ let sum=0; const wwd=wwV||1; for(let i=0,j=0;i<N;i++,j+=4){ let v=pd[i]*slope+intercept; let g=((v-loV)/wwd)*255; g=g<0?0:(g>255?255:g); out[j]=out[j+1]=out[j+2]=g; out[j+3]=255; sum+=g; } return sum/N; };
+                        let mean=_applyWin(lo, ww);
+                        // DICOM에 적힌 윈도우(WW/WC)가 부적절해 전부 검정/백색이면 → 실제 픽셀 분포(1~99% 백분위)로 자동 윈도잉 재적용(CBCT·비표준 윈도우 대응)
+                        if(mean<6 || mean>249){ const step=Math.max(1,Math.floor(N/20000)); const arr=[]; for(let i=0;i<N;i+=step) arr.push(pd[i]*slope+intercept); if(arr.length){ arr.sort((a,b)=>a-b); const _pc=(q)=>arr[Math.min(arr.length-1,Math.max(0,Math.floor(q*(arr.length-1))))]; const loA=_pc(0.01), hiA=_pc(0.99); const wwA=(hiA-loA)||255; _applyWin(loA, wwA); } }
+                    }
                     sctx.putImageData(idata,0,0);
                     const max=maxSize||160, sc=Math.min(1,max/Math.max(w,h)); const tw=Math.max(1,Math.round(w*sc)), th=Math.max(1,Math.round(h*sc));
                     const cv=document.createElement('canvas'); cv.width=tw; cv.height=th; cv.getContext('2d').drawImage(src,0,0,tw,th);
