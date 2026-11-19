@@ -5688,7 +5688,7 @@
                     ? roots.map(r=>'<div class="_sb-root" data-id="'+esc(r.id)+'" data-conn="'+(r.connected?'1':'0')+'" style="'+row+'padding-left:30px;color:#334155;" title="'+esc(r.name)+(r.connected?' · 연결됨':' · 연결 불가(클릭 시 재연결)')+'">'
                         +'<span style="flex:none;opacity:.7;display:inline-flex;">'+fico+'</span>'
                         +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.name)+'</span>'
-                        +'<span style="flex:none;font-size:10px;font-weight:800;color:'+(r.connected?'#16a34a':'#dc2626')+';margin-right:4px;">'+(r.connected?'● 연결됨':'● 연결불가')+'</span>'
+                        +'<span style="flex:none;font-size:10px;font-weight:800;color:'+(r.connected?'#16a34a':'#dc2626')+';margin-right:4px;cursor:'+(r.connected?'default':'pointer')+';">'+(r.connected?'● 연결됨':'🔄 재연결')+'</span>'
                         +'<button class="_sb-rootx" data-id="'+esc(r.id)+'" title="연결 해제" style="flex:none;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:22px;height:22px;font-weight:900;cursor:pointer;line-height:1;">×</button></div>').join('')
                     : '<div style="padding:9px 12px 9px 30px;color:#94a3b8;font-size:12px;">연결된 폴더가 없습니다. (아래 ＋ 폴더 경로 추가)</div>';
                 folderHtml = header + tree;
@@ -6822,16 +6822,22 @@
                 // 📅 검사일(스터디)별 그룹 — 파일 목록과 동일한 날짜 섹션 + 카드 그리드
                 const gmap={}; const order=[];
                 files.forEach(f=>{ const k=_ptDobFmt(f.studyDate)||'날짜 미상'; if(!gmap[k]){ gmap[k]=[]; order.push(k); } gmap[k].push(f); });
-                const card=(f)=>{ const nm=f.fname||''; const manual=(f.source==='manual'); const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):'';
-                    return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" data-cloud="'+(f.cloud?'1':'')+'" data-mime="'+ESC(f.mime||'')+'" data-size="'+(Number(f.size)||0)+'" title="'+ESC(nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
-                        +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+tile+'</div>'
-                        +(f.modality?('<span style="position:absolute;top:6px;left:34px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;z-index:2;">'+ESC(f.modality)+'</span>'):'')
+                const card=(f,seriesN)=>{ const nm=f.fname||''; const manual=(f.source==='manual'); const isSeries=(seriesN>1); const label=isSeries?('CT 시리즈 · '+seriesN+'컷'):nm; const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):'';
+                    return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" data-cloud="'+(f.cloud?'1':'')+'" data-mime="'+ESC(f.mime||'')+'" data-size="'+(Number(f.size)||0)+'" data-series="'+(isSeries?seriesN:'')+'" title="'+ESC(label)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
+                        +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;">'+(isSeries?('<span style="position:absolute;top:6px;right:6px;z-index:3;font-size:9px;font-weight:800;color:#fff;background:#0d9488;border-radius:5px;padding:1px 6px;">'+seriesN+'컷</span>'):'')+'<div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+tile+'</div>'
+                        +((f.modality&&!isSeries)?('<span style="position:absolute;top:6px;left:34px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;z-index:2;">'+ESC(f.modality)+'</span>'):'')
                         +'<button class="_pt-menu" title="더보기" style="position:absolute;bottom:6px;right:6px;width:26px;height:26px;padding:0;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;font-size:15px;font-weight:800;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+((typeof _SFIC!=='undefined'&&_SFIC.dots)?_SFIC.dots:'⋯')+'</button></div>'
-                        +'<div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
+                        +'<div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
                         +'<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(f.rootName||'')+(manual?' · 🔗연결':'')+'</div>'
                         +'</div>'; };
                 const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
-                const secs=order.map(k=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(k)+' <span style="color:#94a3b8;font-weight:600;">('+gmap[k].length+')</span></div><div class="_sf-secgrid" style="'+secStyle+'">'+gmap[k].map(card).join('')+'</div></div>').join('');
+                // 🩻 같은 폴더의 DICOM 2장↑은 1개 'CT 시리즈' 카드로 묶음(루트뷰와 동일 — 566장 개별표시 방지, 썸네일 1개 생성)
+                const secs=order.map(k=>{
+                    const arr=gmap[k]; const dcmByDir={}; const disp=[];
+                    arr.forEach(f=>{ if(RC_DCM_RE.test(String(f.fname||'').toLowerCase())){ const dir=String(f.rpath||'').split('/').slice(0,-1).join('/'); (dcmByDir[dir]=dcmByDir[dir]||[]).push(f); } else { disp.push([f,0]); } });
+                    Object.keys(dcmByDir).forEach(dir=>{ const L=dcmByDir[dir].slice().sort((a,b)=>String(a.fname||'').localeCompare(String(b.fname||''),undefined,{numeric:true})); if(L.length>=2){ disp.push([L[0], L.length]); } else { L.forEach(f=>disp.push([f,0])); } });
+                    return '<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(k)+' <span style="color:#94a3b8;font-weight:600;">('+disp.length+')</span></div><div class="_sf-secgrid" style="'+secStyle+'">'+disp.map(x=>card(x[0],x[1])).join('')+'</div></div>';
+                }).join('');
                 grid.innerHTML=head+secs;
                 _wireHead();
                 const _byEl=el=>{ const row=el.closest('._pt-file'); return { rootId:row.getAttribute('data-rootid'), rpath:row.getAttribute('data-rpath'), fname:(row.getAttribute('data-rpath')||'').split('/').pop(), manual:row.getAttribute('data-manual')==='1', cloud:row.getAttribute('data-cloud')==='1', mime:row.getAttribute('data-mime')||'', size:Number(row.getAttribute('data-size'))||0 }; };
