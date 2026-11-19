@@ -13816,6 +13816,13 @@
               + '</div>';
             window._rcZoom=1; window._rcPanX=0; window._rcPanY=0; try{ _rcApplyXf(); }catch(_){}
             _rcBindViewerInput();
+            // 📎 (가) 원격 중 파일 전송 — 원격 화면에 OS 파일을 끌어다 놓으면 상대(호스트)에게 채팅 파일로 전송(상대 PC에서 받기/저장)
+            try{ const _stg=document.getElementById('rc-view-stage'); if(_stg && !_stg.__rcDropWired){ _stg.__rcDropWired=true;
+                const _hasF=(e)=>{ try{ const t=e.dataTransfer&&e.dataTransfer.types; if(!t) return false; for(let i=0;i<t.length;i++) if(t[i]==='Files') return true; }catch(_){} return false; };
+                _stg.addEventListener('dragover', function(e){ if(_hasF(e)){ e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} _stg.style.outline='4px dashed #22d3ee'; _stg.style.outlineOffset='-8px'; let h=document.getElementById('rc-drop-hint'); if(!h){ h=document.createElement('div'); h.id='rc-drop-hint'; h.style.cssText='position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:30;background:rgba(8,47,82,.95);color:#fff;font-weight:800;font-size:13px;padding:8px 16px;border-radius:999px;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.4);'; h.textContent='📤 놓으면 상대 PC로 파일 전송'; _stg.appendChild(h); } } }, true);
+                _stg.addEventListener('dragleave', function(e){ if(e.target===_stg){ _stg.style.outline=''; const h=document.getElementById('rc-drop-hint'); if(h) h.remove(); } }, true);
+                _stg.addEventListener('drop', function(e){ if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length){ e.preventDefault(); e.stopPropagation(); _stg.style.outline=''; const h=document.getElementById('rc-drop-hint'); if(h) h.remove(); window._rcSendFilesToPeer(e.dataTransfer.files); } }, true);
+            } }catch(_){}
             try { if(_rcEmbedded()) window.parent.postMessage({ type:'earth_rc_expand' }, '*'); } catch(_){}   // 임베드 시 채팅 패널을 넓혀 큰 화면 확보
             // 💬 항상 보이는 플로팅 토글 — 채팅이 전체로 덮여도(가로모드 포함) 이 버튼으로 원격↔채팅 전환 가능(드로어보다 위)
             try{
@@ -13826,6 +13833,30 @@
             }catch(_){}
             try { _rcLayoutViewer(); } catch(_){}   // 채팅 서랍이 열려 있으면 나란히 배치(원격 보며 채팅 입력)
             try { document.getElementById('rc-view-stage').focus(); } catch(_){}
+        };
+        // 📤 (가)/(나) 원격 중 파일 전송 — 드롭한 OS 파일을 상대(호스트) 대화방으로 채팅 파일 전송(업로드→[FILE_ATTACH]). 상대는 채팅/다운로드로 받음(앱이면 자동저장 가능).
+        window._rcSendFilesToPeer = async function(files){
+            try{
+                const room = (window._rc && window._rc.room) || window.currentChatRoomId;
+                const peer = (window._rc && window._rc.peer) || window.activeChatFriend || '상대';
+                if(!room){ showToast('전송할 대화방이 없습니다.'); return; }
+                try{ if(typeof socket!=='undefined' && socket && socket.connected) socket.emit('join_room', room); }catch(_){}
+                const arr = Array.prototype.slice.call(files||[]); if(!arr.length) return;
+                showToast('📤 파일 전송 중… ('+arr.length+'개)');
+                let n=0, pic=''; try{ pic=document.getElementById('my-profile-pic').src; }catch(_){}
+                for(const f of arr){
+                    try{
+                        let ref=''; try{ ref = await window.uploadChatBlob(f, f.name, f.type||'application/octet-stream'); }catch(_){ ref=''; }
+                        if(!ref) continue;
+                        const sizeKB=(f.size/1024).toFixed(1);
+                        const msg='[FILE_ATTACH]'+f.name+'|'+sizeKB+'|'+(f.type||'application/octet-stream')+'|'+ref;
+                        if(typeof socket!=='undefined' && socket && socket.connected) socket.emit('send_message', { roomId:room, sender:currentUser.name, senderPic:pic, message:msg });
+                        try{ if(room===window.currentChatRoomId && window.appendMainMessage) appendMainMessage(currentUser.name, msg, pic); }catch(_){}
+                        n++;
+                    }catch(_){}
+                }
+                showToast(n?('✅ '+n+'개 파일을 '+peer+'님께 보냈습니다. (상대 채팅/다운로드에서 받기)'):'전송 실패');
+            }catch(_){ showToast('전송 실패'); }
         };
         // 🖥 원격 뷰어를 채팅과 나란히 배치 — 채팅 서랍이 열려 있으면 그 폭만큼 뷰어를 비워 '원격 보면서 내 채팅 입력' 가능
         window._rcLayoutViewer = function(){
@@ -13863,6 +13894,8 @@
         window._rcToggleChatWhileRemote = function(){
             const d=document.getElementById('messenger-drawer');
             try{ if(window.toggleMessengerDrawer) toggleMessengerDrawer(); }catch(_){}
+            // 💬 원격 중 채팅을 열면 '상대방 대화방'을 띄운다 → 채팅에 파일을 드롭하면(나) 상대(호스트)에게 전송됨
+            try{ if(d && d.classList.contains('open') && window._rc && window._rc.peer && window.openMessengerChat){ setTimeout(function(){ try{ openMessengerChat(window._rc.peer, window._rc.room); }catch(_){} }, 60); } }catch(_){}
             // 즉시 반영 — 모바일은 전체화면 슬라이드(닫힘=-100vw로 완전히 숨김) + 플로팅 버튼 라벨 즉시 갱신(깜빡임 방지)
             try{ if(d && _rcIsMobile()){ const nowOpen=d.classList.contains('open'); d.style.width='100vw'; d.style.maxWidth='100vw'; d.style.right = nowOpen?'0':'-100vw'; } }catch(_){}
             try{ _rcUpdateFloatToggle(); }catch(_){}
