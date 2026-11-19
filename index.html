@@ -6565,10 +6565,11 @@
                 (function(){
                     const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
                     try{ if(getComputedStyle(grid).position==='static') grid.style.position='relative'; }catch(_){}
-                    const _interactive=(t)=> !!(t && t.closest && (t.closest('.rc-gf')||t.closest('.rc-gfd')||t.closest('.rc-serf')||t.closest('.rc-clview')||t.closest('._pt-file')||t.closest('button')||t.closest('input')||t.closest('a')||t.closest('select')||t.closest('._sf-datehead')||t.closest('._sf-sechead')));
+                    const _interactive=(t)=> !!(t && t.closest && (t.closest('.rc-gf')||t.closest('.rc-gfd')||t.closest('.rc-serf')||t.closest('._sr-file')||t.closest('.rc-clview')||t.closest('._pt-file')||t.closest('button')||t.closest('input')||t.closest('a')||t.closest('select')||t.closest('._sf-datehead')||t.closest('._sf-sechead')));
                     grid.addEventListener('mousedown',(e)=>{
                         if(e.button!==0 || _interactive(e.target)) return;
-                        const additive = e.ctrlKey||e.metaKey||e.shiftKey; if(!additive) _clearSel();
+                        const agg=!!(window.__sfMergedActive && ov.__mlSelHook);
+                        const additive = e.ctrlKey||e.metaKey||e.shiftKey; if(!additive){ if(agg) ov.__mlSelHook.clear(); else _clearSel(); }
                         const gr0=grid.getBoundingClientRect();
                         const sx=e.clientX-gr0.left+grid.scrollLeft, sy=e.clientY-gr0.top+grid.scrollTop;
                         const band=document.createElement('div'); band.style.cssText='position:absolute;border:1.5px solid #0f2f52;background:rgba(15,47,82,.12);z-index:60;pointer-events:none;left:'+sx+'px;top:'+sy+'px;width:0;height:0;border-radius:3px;';
@@ -6579,8 +6580,8 @@
                             const x=Math.min(sx,cx), y=Math.min(sy,cy), w=Math.abs(cx-sx), h=Math.abs(cy-sy);
                             band.style.left=x+'px'; band.style.top=y+'px'; band.style.width=w+'px'; band.style.height=h+'px';
                             const rl=g.left+(x-grid.scrollLeft), rt=g.top+(y-grid.scrollTop), rr=rl+w, rb=rt+h;
-                            _allCards().forEach(el=>{ if(el.style.display==='none') return; const b=el.getBoundingClientRect(); const hit=!(b.right<rl||b.left>rr||b.bottom<rt||b.top>rb); if(hit){ if(!_isSelected(el)) _cardOn(el,true); } else if(!additive && _isSelected(el)) _cardOn(el,false); });
-                            updCnt();
+                            (agg?ov.__mlSelHook.cards():_allCards()).forEach(el=>{ if(el.style.display==='none') return; const b=el.getBoundingClientRect(); const hit=!(b.right<rl||b.left>rr||b.bottom<rt||b.top>rb); if(hit){ if(agg){ if(!ov.__mlSelHook.isOn(el)) ov.__mlSelHook.toggle(el); } else if(!_isSelected(el)) _cardOn(el,true); } else if(!additive){ if(agg){ if(ov.__mlSelHook.isOn(el)) ov.__mlSelHook.toggle(el); } else if(_isSelected(el)) _cardOn(el,false); } });
+                            if(!agg) updCnt();
                             if(ev.clientY>g.bottom-28) grid.scrollTop+=20; else if(ev.clientY<g.top+28) grid.scrollTop-=20;
                         };
                         const mu=()=>{ document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu); try{band.remove();}catch(_){} grid.style.userSelect=''; };
@@ -6610,6 +6611,7 @@
                 }catch(_){}
                 try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){}
                 // 🏪 내 상점(상점 카드) / ☁️ 클라우드 / 🔎 경로검색 / 🧑‍⚕️ 이름 필터 / 기본=폴더 목록
+                window.__sfMergedActive=false;   // 전체취합 외 모든 뷰 진입 전 리셋(러버밴드 선택계 오판 방지) — _sfRenderMergedLocal이 다시 true로
                 if(window.__sfStoreView){ window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sfRenderStoreCards(ov); }catch(_){} }
                 else if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
                 else if(window.__sfDeepQuery){ try{ _sbHighlightPatient(); _sfRenderDeepSearch(ov, window.__sfDeepQuery); }catch(_){} }
@@ -7121,6 +7123,8 @@
                 const _mDownload=async(el)=>{ const o=_mParts(el); try{ const f=await R.getFileAtRoot(o.rid, o.parts, o.fn); if(!f){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=o.fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); showToast('💾 다운로드됨: '+o.fn); }catch(_){ showToast('다운로드 실패'); } };
                 const _mBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); const pa=ov.querySelector('#_sf-pickattach'); if(sb) sb.style.display=_mSel.size?'flex':'none'; if(cn) cn.textContent=_mSel.size+'개 선택'; if(pa) pa.textContent='✔ 선택 첨부 ('+_mSel.size+')'; };
                 const _mToggle=(el)=>{ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); const on=!_mSel.has(k); const chk=el.querySelector('._sr-chk'); if(on) _mSel.set(k,_mDesc(el)); else _mSel.delete(k); if(chk){ chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; _mBar(); };
+                // 🖱 러버밴드(범위선택)가 전체취합 선택계(_mSel)를 구동하도록 훅 노출 — 폴더뷰와 동일 UX
+                ov.__mlSelHook={ cards:()=>[].slice.call(grid.querySelectorAll('._sr-file')), isOn:(el)=>_mSel.has(el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath')), toggle:(el)=>_mToggle(el), clear:()=>{ _mSel.clear(); grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); } };
                 grid.querySelectorAll('._sr-file').forEach(el=>{
                     // 🖱 드래그: 통합검색과 동일한 '검증된' 배선(단일) + 선택 다중은 dragstart에서 선택셋으로 확장
                     try{ if(window._sfWireFileCardAttach) window._sfWireFileCardAttach(el); }catch(_){}
