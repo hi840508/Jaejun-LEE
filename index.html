@@ -4532,6 +4532,8 @@
                         // 📁 주문 대화방이면 저장 직전에 폴더명(상점명_차트 / ID_차트 / 날짜)을 확실히 해석(타이밍 무관)
                         let _folder = t.room;
                         if(String(_folder||'').startsWith('room_ord_')){ _folder = await _resolveOrderFolderName(_folder); }
+                        // 🔁 이미 폴더에 정상(0바이트 아님) 파일이 있으면 재다운로드 생략 — 기존 대화방 데이터 중복 재수신 방지(장부만 갱신)
+                        try{ const _pa=String(_folder||'').split('/').filter(Boolean); const _ex=await R.getFileAt(_pa, t.name); if(_ex && _ex.size>0){ ledger.push(t.key); localStorage.setItem('rc_saved_files', JSON.stringify(ledger.slice(-2000))); continue; } }catch(_){}
                         showToast('📥 받은 파일 저장 중: ' + t.name + ' → ' + _folder);
                         const resp = await fetch(t.url); if(!resp.ok) throw new Error('http '+resp.status);
                         const blob = await resp.blob();
