@@ -13840,12 +13840,14 @@
                 ov.style.left='0'; ov.style.right='0';
                 try{ if(d){ d.style.width='100vw'; d.style.maxWidth='100vw'; d.style.right = open ? '0' : '-100vw'; } }catch(_){}
             } else {
-                // 🖥 데스크톱: 채팅 서랍이 열려 있으면 그 폭만큼 비워 나란히
-                if(open){ let w=380; try{ w=Math.round(d.getBoundingClientRect().width)||380; }catch(_){}; ov.style.right = w+'px'; }
+                // 🖥 데스크톱: 채팅 서랍이 열려 있으면 그 '실제 폭(기본 520px)'만큼 비워 나란히 — 측정 실패/애니메이션 중 과소예약(잘림) 방지
+                if(open){ let w=520; try{ const bw=Math.round(d.getBoundingClientRect().width); if(bw>60) w=bw; }catch(_){}; ov.style.right = w+'px'; }
                 else { ov.style.right = '0'; }
             }
             try{ setTimeout(function(){ _rcApplyXf(); }, 60); }catch(_){}   // 영상 크기 변화 반영(좌표 정확도 유지)
         };
+        // 🧷 원격 뷰어가 떠 있는 동안 채팅 서랍이 '어떤 경로로든' 열리고 닫힐 때 뷰어 폭을 자동 재배치(채팅 잘림 방지)
+        (function(){ try{ const d=document.getElementById('messenger-drawer'); if(d && !d.__rcLayoutObs){ d.__rcLayoutObs=true; new MutationObserver(function(){ try{ if(document.getElementById('rc-view-overlay') && window._rcLayoutViewer){ window._rcLayoutViewer(); setTimeout(function(){ try{ window._rcLayoutViewer(); }catch(_){} }, 340); } }catch(_){} }).observe(d,{attributes:true,attributeFilter:['class']}); } }catch(_){} })();
         function _rcUpdateFloatToggle(){
             const fb=document.getElementById('rc-float-toggle'); if(!fb) return;
             const d=document.getElementById('messenger-drawer');
