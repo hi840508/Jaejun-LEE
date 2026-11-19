@@ -4003,6 +4003,8 @@
                 await register();
                 try{ await syncIndex(); }catch(_){}
                 showToast('✅ 공유폴더 추가됨: '+h.name+' (총 '+rs.length+'개)');
+                // 🧑‍⚕️ 새 폴더의 DICOM을 즉시 PMS 스캔 → 환자 리스트 자동 등록(재접속 없이 반영)
+                try{ showToast('🧑‍⚕️ 새 폴더 환자 스캔 중…'); await scanPatients(); window.__pmsScanOnce=true; try{ if(window._sbLoadPatients){ window.__sbLoaded=true; window._sbLoadPatients(); } }catch(_){} try{ if(window.__sfRender) window.__sfRender(); }catch(_){} }catch(_){}
                 return true;
             }
             async function disconnect(){ _handle=null; _roots=[]; try{ await _put(KEY_LIST, []); }catch(_){} try{ await _rm(KEY); }catch(_){} try{ localStorage.removeItem('rc_folder_chosen'); localStorage.removeItem('rc_active_root'); }catch(_){} await register(); }
@@ -6666,7 +6668,7 @@
                         +'<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;"><div style="font-size:34px;">🧑‍⚕️</div><div style="font-size:11px;font-weight:800;color:#0e7490;">영상 '+(p.fileCount||0)+'건</div>'+(mods.length?('<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;max-width:90%;">'+mods.map(m=>'<span style="font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:0 5px;">'+ESC(m)+'</span>').join('')+'</div>'):'')+'</div></div>'
                         +'<div style="padding:7px 9px;"><div style="font-weight:800;font-size:13px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(p.name||'(이름없음)')+'</div><div style="font-size:10.5px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(meta||(p.patientId?('ID '+ESC(p.patientId)):'&nbsp;'))+'</div></div>'
                         +'</div>'; };
-                const addCard='<div id="_pt-add" title="환자 수동 추가" style="border:1.5px dashed #9fb6cc;border-radius:14px;background:#f7fafd;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:'+(zoom+46)+'px;color:#0f2f52;gap:6px;"><div style="font-size:30px;line-height:1;">＋</div><div style="font-size:12px;font-weight:800;">환자 추가</div></div>';
+                const addCard='<div id="_pt-add" title="신규 등록" style="border:1.5px dashed #9fb6cc;border-radius:14px;background:#f7fafd;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:'+(zoom+46)+'px;color:#0f2f52;gap:6px;"><div style="font-size:30px;line-height:1;">＋</div><div style="font-size:12px;font-weight:800;">신규 등록</div></div>';
                 const sec=document.createElement('div'); sec.id='_sf-ptsec'; sec.className='_sf-sec'; sec.style.marginBottom='8px';
                 sec.innerHTML='<div class="_sf-sechead-plain" style="display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;color:#334155;padding:6px 2px 8px;"><span>🧑‍⚕️ 환자 <span style="color:#94a3b8;font-weight:600;">('+items.length+')</span></span><input id="_pt-q" placeholder="환자 검색(이름·ID·생년월일)" style="flex:1;min-width:120px;max-width:300px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-weight:500;"></div>'
                     +'<div class="_sf-secgrid _pt-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;">'+addCard+items.map(card).join('')+'</div>';
@@ -6682,14 +6684,14 @@
                 const ov2=document.createElement('div'); ov2.style.cssText='position:fixed;inset:0;z-index:100090;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:18px;';
                 const fld=(id,ph,val,extra)=>'<input id="'+id+'" placeholder="'+ph+'" value="'+ESC(val||'')+'" '+(extra||'')+' style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;font-size:13.5px;margin-bottom:9px;">';
                 ov2.innerHTML='<div style="background:#fff;border-radius:16px;max-width:400px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);">'
-                    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;"><div style="font-weight:800;font-size:16px;">🧑‍⚕️ '+(existing?'환자 정보 수정':'환자 추가')+'</div><button id="_pc2-x" style="margin-left:auto;border:0;background:#f1f5f9;border-radius:8px;width:30px;height:30px;cursor:pointer;">✕</button></div>'
-                    +fld('_pc2-name','환자 이름 *',e.name)
-                    +fld('_pc2-id','환자 ID(선택)',e.patientId)
-                    +fld('_pc2-dob','생년월일 8자리(YYYYMMDD, 선택)',e.dob,'inputmode="numeric" maxlength="8"')
+                    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;"><div style="font-weight:800;font-size:16px;">🧑‍⚕️ '+(existing?'환자 정보 수정':'신규 등록')+'</div><button id="_pc2-x" style="margin-left:auto;border:0;background:#f1f5f9;border-radius:8px;width:30px;height:30px;cursor:pointer;">✕</button></div>'
+                    +fld('_pc2-name','이름 *',e.name)
+                    +fld('_pc2-id','ID(선택)',e.patientId)
+                    +'<input id="_pc2-dob" type="date" value="'+(e.dob?String(e.dob).replace(/[^0-9]/g,'').replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3'):'')+'" style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;font-size:13.5px;margin-bottom:9px;color:#334155;">'
                     +'<select id="_pc2-sex" style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;font-size:13.5px;margin-bottom:14px;"><option value="">성별(선택)</option><option value="M"'+(String(e.sex).toUpperCase()==='M'?' selected':'')+'>남</option><option value="F"'+(String(e.sex).toUpperCase()==='F'?' selected':'')+'>여</option></select>'
                     +'<div style="display:flex;gap:8px;">'
                     +(existing?'<button id="_pc2-del" style="flex:none;padding:12px 16px;border:1px solid #fecaca;border-radius:10px;background:#fff5f5;color:#dc2626;font-weight:800;cursor:pointer;">삭제</button>':'')
-                    +'<button id="_pc2-save" style="flex:1;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;cursor:pointer;">'+(existing?'저장':'추가')+'</button>'
+                    +'<button id="_pc2-save" style="flex:1;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;cursor:pointer;">'+(existing?'저장':'신규 등록')+'</button>'
                     +'</div>'
                     +'</div>';
                 document.body.appendChild(ov2); ov2.addEventListener('click',ev=>{ if(ev.target===ov2) ov2.remove(); });
@@ -6697,7 +6699,7 @@
                 { const db=ov2.querySelector('#_pc2-del'); if(db) db.onclick=async()=>{ const key=(existing&&existing.patientKey)||''; if(!key){ ov2.remove(); return; } const ok=await (window._sfConfirm?window._sfConfirm('이 환자 카드를 삭제할까요?\n(연결 링크만 삭제 · 원본 영상 파일은 보존됩니다. DICOM은 재스캔 시 다시 생길 수 있어요)','삭제'):Promise.resolve(confirm('환자 카드를 삭제할까요?'))); if(!ok) return; try{ const r=await fetch(API_URL+'/api/pms/patient/delete',{method:'POST',headers:{"Content-Type":"application/json"},body:JSON.stringify({patientKey:key})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); ov2.remove(); showToast('삭제되었습니다.'); try{ if(window.__sfPatientFilter===key) window.__sfPatientFilter=null; }catch(_){} if(onDone) onDone(); }catch(err){ showToast('삭제 실패: '+((err&&err.message)||err)); } }; }
                 ov2.querySelector('#_pc2-save').onclick=async()=>{
                     const body={ patientKey:(existing&&existing.patientKey)||'', name:(ov2.querySelector('#_pc2-name').value||'').trim(), patientId:(ov2.querySelector('#_pc2-id').value||'').trim(), dob:(ov2.querySelector('#_pc2-dob').value||'').replace(/[^0-9]/g,''), sex:ov2.querySelector('#_pc2-sex').value };
-                    if(!body.name && !body.patientId){ showToast('이름 또는 환자ID를 입력하세요.'); return; }
+                    if(!body.name && !body.patientId){ showToast('이름 또는 ID를 입력하세요.'); return; }
                     try{ const r=await fetch(API_URL+'/api/pms/patient',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'실패'); ov2.remove(); showToast('✅ 저장되었습니다.'); if(onDone) onDone(); }
                     catch(err){ showToast('실패: '+((err&&err.message)||err)); }
                 };
