@@ -4388,28 +4388,39 @@
                 }
                 return await new Promise((resolve)=>{ _gate(resolve); });
             }
-            // 첫 사용자 제스처에서 딱 한 번 권한을 되찾는다(브라우저 정책상 제스처 밖에서는 항상 실패).
+            // 첫 사용자 제스처에서 딱 한 번, '모든 등록 폴더'의 권한을 한꺼번에 되찾는다(브라우저 정책상 제스처 밖에선 항상 실패).
             let _gestureArmed=false;
+            async function _reconnectAllRoots(){
+                let any=false;
+                try{ const rs=await _loadRoots();
+                    const act=(function(){ try{ return localStorage.getItem('rc_active_root')||''; }catch(_){ return ''; } })();
+                    rs.sort((a,b)=>((String(b.id)===act)-(String(a.id)===act)));   // 활성 루트 먼저(가장 중요). '매 방문 허용'된 폴더는 프롬프트 없이 조용히 복구됨.
+                    for(const r of rs){ try{ if(!r.handle) continue; let p='denied'; try{ p=await r.handle.queryPermission({mode:'readwrite'}); }catch(_){} if(p!=='granted'){ try{ p=await r.handle.requestPermission({mode:'readwrite'}); }catch(_){} } if(p==='granted') any=true; }catch(_){} }
+                }catch(_){}
+                return any;
+            }
             function _armGestureReconnect(){
                 if(_gestureArmed || !supported) return; _gestureArmed=true;
                 const once=async function(){
                     document.removeEventListener('pointerdown', once, true);
                     document.removeEventListener('keydown', once, true);
-                    try{ if(chosen() && !(await isConnected())) await _ensurePerm(true); }catch(_){}
                     _gestureArmed=false;
+                    try{ const ok=await _reconnectAllRoots(); if(ok){ try{ if(window.__sfRender) window.__sfRender(); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} } }catch(_){}
                 };
                 document.addEventListener('pointerdown', once, true);
                 document.addEventListener('keydown', once, true);
             }
-            // 페이지가 열리면: 마지막에 연결했던 폴더를 조용히 되살린다(묻지 않음).
-            //  · 권한이 이미 영구 허용이면 즉시 연결됨
-            //  · 아니면 첫 탭/키 입력 때 자동 재시도 → 사용자는 '연결하라'는 창을 매번 보지 않는다
+            // 페이지가 열리면: 등록한 '모든' 폴더를 조용히 되살린다. 권한이 '매 방문 허용'이면 즉시 연결됨.
+            //  아니면 첫 탭/클릭 한 번에 '모든 폴더'를 자동 재연결 → 폴더마다 재연결 버튼을 누를 필요 없음.
             (function _autoReconnectOnLoad(){
                 if(!supported) return;
                 try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function(){}); }catch(_){}   // 핸들이 저장소 정리로 날아가지 않게
                 setTimeout(async function(){
-                    try{ if(!chosen()) return; if(await isConnected()) return; _armGestureReconnect(); }catch(_){}
-                }, 800);
+                    try{ const rs=await _loadRoots(); if(!rs||!rs.length) return;
+                        let needs=false; for(const r of rs){ try{ if(!r.handle){ needs=true; continue; } const p=await r.handle.queryPermission({mode:'read'}); if(p!=='granted'){ needs=true; break; } }catch(_){ needs=true; } }
+                        if(needs) _armGestureReconnect();
+                    }catch(_){}
+                }, 600);
             })();
             function _overlay(html){
                 const ov=document.createElement('div');
