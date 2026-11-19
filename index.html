@@ -4474,7 +4474,42 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            return { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, searchInPath, scanPatients, getFileAtRoot, listFilesAtRoot, rootsStatus, walkRoot, listAtRoot };
+            const _RF = { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, searchInPath, scanPatients, getFileAtRoot, listFilesAtRoot, rootsStatus, walkRoot, listAtRoot };
+            // 📁 [Phase 2a] 앱이면 핵심 파일 접근을 '네이티브(Node fs)'로 교체 — 권한 프롬프트 없음·빠름·영구. (scanPatients/검색은 2b)
+            try{ if(window.rayApp && window.rayApp.fs && window.rayApp.fs.available){ const RF=window.rayApp.fs;
+                let _nc=null; const _aid=()=>{ try{ return localStorage.getItem('rc_active_root')||''; }catch(_){ return ''; } };
+                const _rel=(pa,nm)=>{ const p=(pa||[]).filter(Boolean).join('/'); return nm?(p?p+'/'+nm:nm):p; };
+                const _toFile=(r)=>{ if(!r||!r.ok||!r.bytes) return null; try{ return new File([r.bytes], r.name||'file', {type:r.mime||''}); }catch(_){ try{ return new Blob([r.bytes],{type:r.mime||''}); }catch(__){ return null; } } };
+                const _roots=async()=>{ try{ _nc=await RF.listRoots()||[]; if(_nc.length){ try{ localStorage.setItem('rc_folder_chosen','1'); if(!_aid()) localStorage.setItem('rc_active_root', _nc[0].id); }catch(_){} } }catch(_){ _nc=_nc||[]; } return _nc; };
+                _roots();
+                const _mapFiles=(r)=>({ folders:(r&&r.folders)||[], files:((r&&r.files)||[]).map(f=>({fname:f.name,size:f.size,mtime:f.mtime,mime:f.mime})) });
+                Object.assign(_RF, {
+                    supported:true,
+                    chosen: ()=>!!((_nc&&_nc.length) || (function(){ try{ return localStorage.getItem('rc_folder_chosen')==='1'; }catch(_){ return false; } })()),
+                    isConnected: async()=>{ const rs=await _roots(); return rs.length>0; },
+                    ensureAccess: async()=>{ const rs=await _roots(); return rs.length>0; },
+                    setActiveRoot: async(id)=>{ try{ localStorage.setItem('rc_active_root', id||''); }catch(_){} return true; },
+                    listRoots: async()=>{ const rs=await _roots(); const a=_aid(); return rs.map(r=>({id:r.id,name:r.name,handle:null,active:String(r.id)===a})); },
+                    rootsStatus: async()=>{ const rs=await _roots(); return rs.map(r=>({id:r.id,name:r.name,connected:true})); },
+                    pick: async()=>{ try{ const r=await RF.addFolder(); if(r&&r.ok&&r.root){ try{ localStorage.setItem('rc_active_root', r.root.id); localStorage.setItem('rc_folder_chosen','1'); }catch(_){} _nc=null; await _roots(); return true; } }catch(_){} return false; },
+                    addFolder: async()=>_RF.pick(),
+                    removeRoot: async(id)=>{ try{ await RF.removeRoot(id); }catch(_){} _nc=null; await _roots(); return true; },
+                    disconnect: async()=>true,
+                    listAt: async(pa)=>_mapFiles(await RF.list(_aid(), _rel(pa))),
+                    listAtRoot: async(rid,pa)=>_mapFiles(await RF.list(rid, _rel(pa))),
+                    listFilesAtRoot: async(rid,pa)=>{ const r=await RF.list(rid,_rel(pa)); return (r&&r.ok)?(r.files||[]).map(f=>f.name):[]; },
+                    getFileAt: async(pa,nm)=>{ try{ return _toFile(await RF.read(_aid(), _rel(pa,nm))); }catch(_){ return null; } },
+                    getFileAtRoot: async(rid,pa,nm)=>{ try{ return _toFile(await RF.read(rid, _rel(pa,nm))); }catch(_){ return null; } },
+                    getFileByName: async(nm)=>{ try{ return _toFile(await RF.read(_aid(), nm)); }catch(_){ return null; } },
+                    fileExists: async(nm)=>{ try{ const r=await RF.read(_aid(), nm); return !!(r&&r.ok); }catch(_){ return false; } },
+                    walkRoot: async(rid,opts)=>{ try{ const r=await RF.walk(rid, (opts&&opts.max)||5000); return (r&&r.ok)?(r.files||[]):[]; }catch(_){ return []; } },
+                    writeFile: async(nm,blob)=>{ try{ await RF.write(_aid(), nm, new Uint8Array(await blob.arrayBuffer())); return nm; }catch(_){ return null; } },
+                    writeFileAt: async(pa,nm,blob)=>{ try{ await RF.write(_aid(), _rel(pa,nm), new Uint8Array(await blob.arrayBuffer())); return nm; }catch(_){ return null; } },
+                    writeFileInRoom: async(folder,nm,blob)=>{ try{ await RF.write(_aid(), (folder?folder+'/':'')+nm, new Uint8Array(await blob.arrayBuffer())); return nm; }catch(_){ return null; } }
+                });
+                try{ window.__RCFS_NATIVE=true; }catch(_){}
+            } }catch(_){}
+            return _RF;
         })();
 
         // ============ 📥 2C: 받은 대용량 파일 → 공유폴더 자동저장·즉시등록 (오프라인이면 재접속 후 히스토리 재스캔으로 이어받기) ============
