@@ -18198,7 +18198,8 @@ pdfjsScript,
                 const r = await fetch(`${API_URL}/api/orders/pending/${encodeURIComponent(currentUser.name)}`);
                 if(!r.ok) return;
                 const data = await r.json();
-                const allSellerOrders = data.sellerPendingOrders || [];
+                // 🧹 자기주문(내가 구매자=판매자, buyer=seller) 제외 — 내가 낸 주문엔 '승인' 액션이 필요 없다(알림은 액션 주체에게만).
+                const allSellerOrders = (data.sellerPendingOrders || []).filter(o => o && o.buyer !== currentUser.name);
                 const allBuyerOrders = data.buyerPendingOrders || [];
 
                 // 🚀 [v7p3] 이미 진입한 채팅방의 주문은 알림에서 제외
@@ -18207,7 +18208,9 @@ pdfjsScript,
                 const sellerCount = unseenSellerOrders.length;
                 const buyerCount = allBuyerOrders.length;
 
-                if(sellerCount > 0) {
+                // 🔕 화상통화/원격 지원 중에는 쇼핑 주문 배너를 띄우지 않는다(통화 화면 위 노출·맥락 혼선 방지). 통화 종료 후 폴링이 다시 표시.
+                const _inSession = !!((window._rc && window._rc.active) || (window._vc && window._vc.active) || document.getElementById('rc-view-overlay') || document.getElementById('vc-overlay'));
+                if(sellerCount > 0 && !_inSession) {
                     showOrderApprovalBanner(sellerCount, unseenSellerOrders);
                     // 알림음·토스트는 '새 주문이 늘었을 때만' (5초마다 반복 재생 방지)
                     if(sellerCount > window.__pendingOrdersPoll.prevSellerCount) {
