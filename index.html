@@ -6111,7 +6111,7 @@
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:8px 14px;min-height:52px;box-sizing:border-box;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f0f1f3;">'
                     + ((path.length||window.__sfPatientFilter||window.__sfDeepQuery)&&!_cloudSel&&!window.__sfStoreView?'<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>':'')
-                    + ((!_cloudSel && !window.__sfStoreView && !window.__sfPatientFilter && !window.__sfDeepQuery && path.length===0)?'<button id="_sf-allcomp" title="전체 취합 ↔ 폴더별 보기" style="flex:none;padding:7px 11px;font-size:12px;font-weight:800;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:9px;white-space:nowrap;cursor:pointer;">'+(window.__sfFolderBrowse?'🗂 전체 취합':'📂 폴더별')+'</button>':'')
+                    + ((!_cloudSel && !window.__sfStoreView && !window.__sfPatientFilter && !window.__sfDeepQuery && path.length===0)?'<button id="_sf-allcomp" title="전체 취합 ↔ 폴더별 보기" style="flex:none;padding:7px 11px;font-size:12px;font-weight:800;border:1px solid '+(window.__sfAllView?'#0b2b4b':'#cbd5e1')+';background:'+(window.__sfAllView?'linear-gradient(135deg,#22446b,#0b2b4b)':'#fff')+';color:'+(window.__sfAllView?'#fff':'#0f2f52')+';border-radius:9px;white-space:nowrap;cursor:pointer;">'+(window.__sfAllView?'📂 폴더별 보기':'🗂 전체 취합')+'</button>':'')
                     + (function(){ var _store=!!window.__sfStoreView, _local=(!window.__sfStoreView&&!_cloudSel);
                         var on='border-color:#0b2b4b;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;', off='border-color:#cbd5e1;background:#fff;color:#0f2f52;';
                         var base='flex:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;border-style:solid;border-width:1px;';
@@ -6252,7 +6252,7 @@
                 // ☁️ 클라우드 버튼 = 로컬↔클라우드 보관함 뷰 전환 토글
                 const mir=ov.querySelector('#_sf-mirror'); if(mir) mir.onclick=()=>{ window.__sfCloudView = !window.__sfCloudView; render(); };
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
-                { const ac=ov.querySelector('#_sf-allcomp'); if(ac) ac.onclick=()=>{ window.__sfFolderBrowse=!window.__sfFolderBrowse; render(); }; }
+                { const ac=ov.querySelector('#_sf-allcomp'); if(ac) ac.onclick=()=>{ window.__sfAllView=!window.__sfAllView; render(); }; }
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); if(i<0 && (window.__sfPatientFilter||window.__sfDeepQuery)){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} } path = i<0?[]:path.slice(0,i+1); render(); }));
                 const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else if(window.__sfPatientFilter||window.__sfDeepQuery){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); } else { close(); } };
                     bk.addEventListener('dragover',(e)=>{ if(window.__rcDragFile && path.length){ e.preventDefault(); e.dataTransfer.dropEffect='move'; bk.style.outline='2px solid #0f2f52'; } });
@@ -6549,7 +6549,7 @@
                 else if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
                 else if(window.__sfDeepQuery){ try{ _sbHighlightPatient(); _sfRenderDeepSearch(ov, window.__sfDeepQuery); }catch(_){} }
                 else if(window.__sfPatientFilter){ try{ _sbHighlightPatient(); _sfRenderPatientGrid(ov, window.__sfPatientFilter); }catch(_){} }
-                else if(path.length===0 && connected && !window.__sfFolderBrowse){ try{ _sbHighlightPatient(); }catch(_){} try{ _sfRenderMergedLocal(ov); }catch(_){} }
+                else if(path.length===0 && connected && window.__sfAllView){ try{ _sbHighlightPatient(); }catch(_){} try{ _sfRenderMergedLocal(ov); }catch(_){} }
                 else { window.__sfMergedActive=false; try{ _sbHighlightPatient(); }catch(_){} }
             }
             // 🏪 내 상점 — 파일검색 셸 안에서 상점 카드(쇼케이스)를 그리드로 표시. 카드 클릭 시 기존 상점 화면(enterBrandStore)으로.
@@ -6849,7 +6849,7 @@
                 const secs=order.map(k=>{
                     const arr=gmap[k]; const dcmByDir={}; const disp=[];
                     arr.forEach(f=>{ if(RC_DCM_RE.test(String(f.fname||'').toLowerCase())){ const dir=String(f.rpath||'').split('/').slice(0,-1).join('/'); (dcmByDir[dir]=dcmByDir[dir]||[]).push(f); } else { disp.push([f,0]); } });
-                    Object.keys(dcmByDir).forEach(dir=>{ const L=dcmByDir[dir].slice().sort((a,b)=>String(a.fname||'').localeCompare(String(b.fname||''),undefined,{numeric:true})); if(L.length>=2){ disp.push([L[0], L.length]); } else { L.forEach(f=>disp.push([f,0])); } });
+                    Object.keys(dcmByDir).forEach(dir=>{ const L=dcmByDir[dir].slice().sort((a,b)=>String(a.fname||'').localeCompare(String(b.fname||''),undefined,{numeric:true})); if(L.length>=2){ disp.push([L[Math.floor(L.length/2)], L.length]); } else { L.forEach(f=>disp.push([f,0])); } });
                     return '<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(k)+' <span style="color:#94a3b8;font-weight:600;">('+disp.length+')</span></div><div class="_sf-secgrid" style="'+secStyle+'">'+disp.map(x=>card(x[0],x[1])).join('')+'</div></div>';
                 }).join('');
                 grid.innerHTML=head+secs;
@@ -7016,7 +7016,7 @@
                     return true;
                 });
                 // 🩻 같은 폴더(루트+경로)의 DICOM 2장↑ → 1개 CT 시리즈로 묶음(566장 개별표시 방지·대표 썸네일 1개)
-                (function(){ const byDir={}; const rest=[]; all.forEach(it=>{ if(/\.dcm$/i.test(String(it.fname||''))){ const kk=it.rootId+'|'+((it.pathArr||[]).join('/')); (byDir[kk]=byDir[kk]||[]).push(it); } else rest.push(it); }); const mg=[]; Object.keys(byDir).forEach(kk=>{ const L=byDir[kk].sort((a,b)=>String(a.fname).localeCompare(String(b.fname),undefined,{numeric:true})); if(L.length>=2){ const rep=Object.assign({},L[0]); rep.series=L.length; mg.push(rep); } else mg.push(L[0]); }); all=rest.concat(mg); })();
+                (function(){ const byDir={}; const rest=[]; all.forEach(it=>{ if(/\.dcm$/i.test(String(it.fname||''))){ const kk=it.rootId+'|'+((it.pathArr||[]).join('/')); (byDir[kk]=byDir[kk]||[]).push(it); } else rest.push(it); }); const mg=[]; Object.keys(byDir).forEach(kk=>{ const L=byDir[kk].sort((a,b)=>String(a.fname).localeCompare(String(b.fname),undefined,{numeric:true})); if(L.length>=2){ const rep=Object.assign({},L[Math.floor(L.length/2)]); rep.series=L.length; mg.push(rep); } else mg.push(L[0]); }); all=rest.concat(mg); })();
                 if(!all.length){ grid.innerHTML=bar+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+(connRoots.length?'조건에 맞는 파일이 없습니다.':'연결된 폴더가 없습니다. 위 폴더의 <b>[재연결]</b>을 누르거나 폴더를 추가하세요.')+'</div>'; wireBar(); return; }
                 all.sort((a,b)=> flt.sort==='name' ? String(a.fname).localeCompare(String(b.fname)) : flt.sort==='old' ? (Number(a.mtime)||0)-(Number(b.mtime)||0) : (Number(b.mtime)||0)-(Number(a.mtime)||0));
                 // 날짜별 그룹(최신순 기본)
