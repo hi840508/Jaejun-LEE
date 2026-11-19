@@ -6111,7 +6111,7 @@
                 const rootsRow = (notSupported || !connected) ? '' :
                     ('<div id="_sf-roots" style="flex:none;background:#fff;padding:8px 14px;min-height:52px;box-sizing:border-box;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f0f1f3;">'
                     + ((path.length||window.__sfPatientFilter||window.__sfDeepQuery)&&!_cloudSel&&!window.__sfStoreView?'<button id="_sf-back" class="_sf-ic" title="뒤로" style="flex:none;">'+_SFIC.back+'</button>':'')
-                    + ''
+                    + ((!_cloudSel && !window.__sfStoreView && !window.__sfPatientFilter && !window.__sfDeepQuery && path.length===0)?'<button id="_sf-allcomp" title="전체 취합 ↔ 폴더별 보기" style="flex:none;padding:7px 11px;font-size:12px;font-weight:800;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:9px;white-space:nowrap;cursor:pointer;">'+(window.__sfFolderBrowse?'🗂 전체 취합':'📂 폴더별 보기')+'</button>':'')
                     + (function(){ var _store=!!window.__sfStoreView, _local=(!window.__sfStoreView&&!_cloudSel);
                         var on='border-color:#0b2b4b;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;', off='border-color:#cbd5e1;background:#fff;color:#0f2f52;';
                         var base='flex:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;border-style:solid;border-width:1px;';
@@ -6252,7 +6252,7 @@
                 // ☁️ 클라우드 버튼 = 로컬↔클라우드 보관함 뷰 전환 토글
                 const mir=ov.querySelector('#_sf-mirror'); if(mir) mir.onclick=()=>{ window.__sfCloudView = !window.__sfCloudView; render(); };
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
-                { const ac=ov.querySelector('#_sf-allcomp'); if(ac) ac.onclick=()=>{ window.__sfAllView=!window.__sfAllView; render(); }; }
+                { const ac=ov.querySelector('#_sf-allcomp'); if(ac) ac.onclick=()=>{ window.__sfFolderBrowse=!window.__sfFolderBrowse; render(); }; }
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); if(i<0 && (window.__sfPatientFilter||window.__sfDeepQuery)){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} } path = i<0?[]:path.slice(0,i+1); render(); }));
                 const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else if(window.__sfPatientFilter||window.__sfDeepQuery){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); } else { close(); } };
                     bk.addEventListener('dragover',(e)=>{ if(window.__rcDragFile && path.length){ e.preventDefault(); e.dataTransfer.dropEffect='move'; bk.style.outline='2px solid #0f2f52'; } });
@@ -6549,6 +6549,7 @@
                 else if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
                 else if(window.__sfDeepQuery){ try{ _sbHighlightPatient(); _sfRenderDeepSearch(ov, window.__sfDeepQuery); }catch(_){} }
                 else if(window.__sfPatientFilter){ try{ _sbHighlightPatient(); _sfRenderPatientGrid(ov, window.__sfPatientFilter); }catch(_){} }
+                else if(path.length===0 && connected && !window.__sfFolderBrowse){ try{ _sbHighlightPatient(); }catch(_){} try{ _sfRenderMergedLocal(ov); }catch(_){} }
                 else { window.__sfMergedActive=false; try{ _sbHighlightPatient(); }catch(_){} }
             }
             // 🏪 내 상점 — 파일검색 셸 안에서 상점 카드(쇼케이스)를 그리드로 표시. 카드 클릭 시 기존 상점 화면(enterBrandStore)으로.
@@ -7022,13 +7023,11 @@
                 const _tsLabel=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '날짜 미상'; const n=new Date(); const sd=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); const y=new Date(n); y.setDate(n.getDate()-1); if(sd(d,n)) return '오늘'; if(sd(d,y)) return '어제'; return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0'); };
                 const _key=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '0000-00-00'; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
                 const useDate=(flt.sort!=='name');
-                const card=(it)=>{ const nm=it.fname; const isSeries=(it.series>1); const label=isSeries?('CT 시리즈 · '+it.series+'컷'):nm; const pth=(it.pathArr||[]).join('/'); const sub=(it.rootName||'')+(pth?(' / '+pth):'');
-                    return '<div class="rc-mlview" draggable="true" data-rootid="'+ESC(it.rootId)+'" data-path="'+ESC(pth)+'" data-rpath="'+ESC((pth?pth+'/':'')+nm)+'" data-fname="'+ESC(nm)+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'" data-series="'+(isSeries?it.series:'')+'" title="'+ESC(sub+'/'+nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
-                        +'<div class="rc-mlthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;">'+(isSeries?('<span style="position:absolute;top:6px;right:6px;z-index:3;font-size:9px;font-weight:800;color:#fff;background:#0d9488;border-radius:5px;padding:1px 6px;">'+it.series+'컷</span>'):'')+'<div class="rc-mlic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+_sfFileTile(nm)+'</div>'
-                        +'<div class="rc-ml-chk" style="position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);"></div>'
-                        +'<button class="rc-mlmenu" title="미리보기·다운로드" style="position:absolute;bottom:5px;right:5px;width:26px;height:26px;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+_SFIC.dots+'</button></div>'
-                        +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
-                        +'<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub)+'</div>'
+                const card=(it)=>{ const nm=it.fname; const isSeries=(it.series>1); const label=isSeries?('CT 시리즈 · '+it.series+'컷'):nm; const pth=(it.pathArr||[]).join('/'); const rpath=(pth?pth+'/':'')+nm; const sub=(it.rootName||'')+(pth?(' / '+pth):'');
+                    return '<div class="_sr-file" draggable="true" data-rootid="'+ESC(it.rootId)+'" data-rpath="'+ESC(rpath)+'" title="'+ESC(sub+'/'+nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
+                        +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;">'+(isSeries?('<span style="position:absolute;top:6px;right:6px;z-index:3;font-size:9px;font-weight:800;color:#fff;background:#0d9488;border-radius:5px;padding:1px 6px;">'+it.series+'컷</span>'):'')+'<div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+(typeof _sfFileTile==='function'?_sfFileTile(nm):'')+'</div></div>'
+                        +'<div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
+                        +'<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub||' ')+'</div>'
                         +'</div>'; };
                 const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
                 let body='';
@@ -7037,32 +7036,15 @@
                 } else { body='<div class="_sf-secgrid" style="'+secStyle+'">'+all.map(card).join('')+'</div>'; }
                 grid.innerHTML=bar+'<div style="font-size:12px;color:#64748b;margin:0 2px 8px;">총 '+all.length+'개'+(all.length>=3000*Math.max(1,connRoots.length)?' (일부 생략)':'')+'</div>'+body;
                 wireBar();
-                // 선택/미리보기/다운로드/첨부 (클라우드 뷰와 동일 UX)
-                const _mlSel=new Map();
-                const _mlBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); const pa=ov.querySelector('#_sf-pickattach'); if(sb) sb.style.display=_mlSel.size?'flex':'none'; if(cn) cn.textContent=_mlSel.size+'개 선택'; if(pa) pa.textContent='✔ 선택 첨부 ('+_mlSel.size+')'; };
-                // 병합 뷰에선 상단 작업바의 preview/share/rename/delete(로컬 그리드 전용)는 숨김 — 첨부/해제만 사용
-                try{ ov.querySelectorAll('#_sf-selbar ._sf-act').forEach(b=>{ b.style.display='none'; }); }catch(_){}
-                const _desc=(el)=>({ rootId:el.getAttribute('data-rootid'), rpath:(function(){ const p=el.getAttribute('data-path')||''; return (p?p+'/':'')+el.getAttribute('data-fname'); })(), cloud:false, mime:el.getAttribute('data-mime')||'', size:Number(el.getAttribute('data-size'))||0 });
-                const _mlPreview=async(el)=>{ const rid=el.getAttribute('data-rootid'); const parts=(el.getAttribute('data-path')||'').split('/').filter(Boolean); const fn=el.getAttribute('data-fname'); const mime=el.getAttribute('data-mime')||'';
-                    try{ if(/\.dcm$/i.test(fn) && window.rcOpenInLiveViewer){ try{ if(R.setActiveRoot) await R.setActiveRoot(rid); }catch(_){}; window.rcOpenInLiveViewer(parts, fn); return; }
-                        const f=await R.getFileAtRoot(rid, parts, fn); if(!f){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(f); (window.__rcMlUrls=window.__rcMlUrls||[]).push(u); if(window.__rcMlUrls.length>40){ try{ URL.revokeObjectURL(window.__rcMlUrls.shift()); }catch(_){} } openMediaUrlPreview(u, fn, mime||f.type||''); }catch(_){ showToast('열기 실패'); } };
-                const _mlDownload=async(el)=>{ const rid=el.getAttribute('data-rootid'); const parts=(el.getAttribute('data-path')||'').split('/').filter(Boolean); const fn=el.getAttribute('data-fname');
-                    try{ const f=await R.getFileAtRoot(rid, parts, fn); if(!f){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); showToast('💾 다운로드됨: '+fn); }catch(_){ showToast('다운로드 실패'); } };
-                grid.querySelectorAll('.rc-mlview').forEach(el=>{
-                    const _toggle=()=>{ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-path')+'|'+el.getAttribute('data-fname'); const on=!_mlSel.has(k); const chk=el.querySelector('.rc-ml-chk'); if(on) _mlSel.set(k,_desc(el)); else _mlSel.delete(k); if(chk){ chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; _mlBar(); };
-                    const chk=el.querySelector('.rc-ml-chk'); if(chk){ chk.addEventListener('click',(e)=>{ e.stopPropagation(); _toggle(); }); }
-                    try{ if(window._sfWireFileCardAttach) window._sfWireFileCardAttach(el); }catch(_){}   // ✅ 통합검색과 동일한 '검증된' 드래그 배선 재사용(전체취합 드래그 복구)
-                    el.addEventListener('click',(e)=>{ if(e.target.closest('.rc-mlmenu')||e.target.closest('.rc-ml-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_desc(el)]); return; } _toggle(); });
-                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('.rc-ml-chk')||e.target.closest('.rc-mlmenu')) return; e.preventDefault(); e.stopPropagation(); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_desc(el)]); return; } _mlPreview(el); });
-                    const mb=el.querySelector('.rc-mlmenu'); if(mb) mb.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); const r=mb.getBoundingClientRect(); const items=[ {label:'👁 미리보기',fn:()=>_mlPreview(el)}, {label:'💾 원본 다운로드',fn:()=>_mlDownload(el)} ]; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ items.push({label:'📎 의뢰서에 첨부',fn:()=>window._sfAttachDescs([_desc(el)])}); } ctxMenu(r.right-160, r.bottom+4, items); });
+                // 📎 통합검색과 '동일한' 드래그/클릭 배선(검증됨) — 전체취합도 드래그·클릭열기·첨부가 동일하게 동작
+                grid.querySelectorAll('._sr-file').forEach(el=>{ try{ if(window._sfWireFileCardAttach) window._sfWireFileCardAttach(el); }catch(_){}
+                    el.addEventListener('click',()=>{ const rootId=el.getAttribute('data-rootid'); const rpath=el.getAttribute('data-rpath'); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:rootId, rpath:rpath}]); return; } _sfOpenPmsFile({ rootId:rootId, rpath:rpath, fname:String(rpath).split('/').pop() }); });
                 });
-                { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_mlSel.size){ showToast('첨부할 파일을 선택하세요.'); return; } window._sfAttachDescs([..._mlSel.values()]); }; }
-                { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _mlSel.clear(); grid.querySelectorAll('.rc-mlview').forEach(el=>{ el.style.outline=''; const c=el.querySelector('.rc-ml-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mlBar(); }; }
-                // 🖼 썸네일 지연 로드(루트별 원본 → getThumb)
+                // 🖼 썸네일 지연 로드(루트별 getFileAtRoot → getThumb/dicomImage)
                 (async()=>{ if(!R||!R.getFileAtRoot||!R.getThumb) return; try{ if(R.csReady) await R.csReady(); }catch(_){}
-                    const cards=[].slice.call(grid.querySelectorAll('.rc-mlview')); let i=0; const CONC=4;
-                    async function w(){ while(i<cards.length){ if(!window.__sfMergedActive) return; const el=cards[i++]; const box=el.querySelector('.rc-mlthumb'); const ic=el.querySelector('.rc-mlic'); if(!box||box.querySelector('img')) continue; const rid=el.getAttribute('data-rootid'); const parts=(el.getAttribute('data-path')||'').split('/').filter(Boolean); const fn=el.getAttribute('data-fname'); const mime=el.getAttribute('data-mime')||'';
-                        try{ const f=await R.getFileAtRoot(rid, parts, fn); if(!f) continue; let t=await R.getThumb(f, mime||f.type||'', fn); if(!t && /\.dcm$/i.test(fn) && R.dicomImage){ try{ t=await R.dicomImage(f,300); }catch(_){} } if(t){ if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:1;">'); } }catch(_){}
+                    const cards=[].slice.call(grid.querySelectorAll('._sr-file')); let i=0; const CONC=3;
+                    async function w(){ while(i<cards.length){ if(!window.__sfMergedActive) return; const el=cards[i++]; const box=el.querySelector('._pt-thumb'); if(!box||box.querySelector('img')) continue; const rid=el.getAttribute('data-rootid'); const parts=String(el.getAttribute('data-rpath')||'').split('/'); const fn=parts.pop();
+                        try{ const f=await R.getFileAtRoot(rid, parts, fn); if(!f) continue; let t=await R.getThumb(f, f.type||'', fn); if(!t && /\.dcm$/i.test(fn) && R.dicomImage){ try{ t=await R.dicomImage(f,300); }catch(_){} } if(t){ const ic=box.querySelector('._pt-ic'); if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:1;">'); } }catch(_){}
                     } }
                     const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws);
                 })();
