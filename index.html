@@ -4491,7 +4491,7 @@
                     setActiveRoot: async(id)=>{ try{ localStorage.setItem('rc_active_root', id||''); }catch(_){} return true; },
                     listRoots: async()=>{ const rs=await _roots(); const a=_aid(); return rs.map(r=>({id:r.id,name:r.name,handle:null,active:String(r.id)===a})); },
                     rootsStatus: async()=>{ const rs=await _roots(); return rs.map(r=>({id:r.id,name:r.name,connected:true})); },
-                    pick: async()=>{ try{ const r=await RF.addFolder(); if(r&&r.ok&&r.root){ try{ localStorage.setItem('rc_active_root', r.root.id); localStorage.setItem('rc_folder_chosen','1'); }catch(_){} _nc=null; await _roots(); return true; } }catch(_){} return false; },
+                    pick: async()=>{ try{ const r=await RF.addFolder(); if(r&&r.ok&&r.root){ try{ localStorage.setItem('rc_active_root', r.root.id); localStorage.setItem('rc_folder_chosen','1'); }catch(_){} _nc=null; await _roots(); try{ showToast('🧑‍⚕️ DICOM 환자 스캔 중…'); await _RF.scanPatients(); window.__pmsScanOnce=true; if(window._sbLoadPatients){ window.__sbLoaded=true; window._sbLoadPatients(); } if(window.__sfRender) window.__sfRender(); }catch(_){} return true; } }catch(_){} return false; },
                     addFolder: async()=>_RF.pick(),
                     removeRoot: async(id)=>{ try{ await RF.removeRoot(id); }catch(_){} _nc=null; await _roots(); return true; },
                     disconnect: async()=>true,
@@ -4505,7 +4505,35 @@
                     walkRoot: async(rid,opts)=>{ try{ const r=await RF.walk(rid, (opts&&opts.max)||5000); return (r&&r.ok)?(r.files||[]):[]; }catch(_){ return []; } },
                     writeFile: async(nm,blob)=>{ try{ await RF.write(_aid(), nm, new Uint8Array(await blob.arrayBuffer())); return nm; }catch(_){ return null; } },
                     writeFileAt: async(pa,nm,blob)=>{ try{ await RF.write(_aid(), _rel(pa,nm), new Uint8Array(await blob.arrayBuffer())); return nm; }catch(_){ return null; } },
-                    writeFileInRoom: async(folder,nm,blob)=>{ try{ await RF.write(_aid(), (folder?folder+'/':'')+nm, new Uint8Array(await blob.arrayBuffer())); return nm; }catch(_){ return null; } }
+                    writeFileInRoom: async(folder,nm,blob)=>{ try{ await RF.write(_aid(), (folder?folder+'/':'')+nm, new Uint8Array(await blob.arrayBuffer())); return nm; }catch(_){ return null; } },
+                    // 📁 [Phase 2b] 네이티브 DICOM 환자 자동색인 — 등록폴더 전체 walk → 시리즈(폴더)당 대표 1건 헤더 파싱 → /api/pms/sync (FSA scanPatients와 동일 산출물)
+                    scanPatients: async(onProg)=>{ try{
+                        const rs=await _roots(); const groups={}; let scanned=0; let series=0; const CAP=4000;
+                        for(const root of rs){
+                            let files=[]; try{ const r=await RF.walk(root.id, 20000); files=(r&&r.ok)?(r.files||[]):[]; }catch(_){}
+                            const byDir={};
+                            for(const f of files){ if(!/\.dcm$/i.test(f.fname)) continue; const dir=((f.pathArr||[]).join('/')); (byDir[dir]=byDir[dir]||[]).push(f); }
+                            const dirs=Object.keys(byDir);
+                            for(const dir of dirs){ if(series>=CAP) break;
+                                const dcms=byDir[dir].sort((a,b)=>String(a.fname).localeCompare(String(b.fname),undefined,{numeric:true}));
+                                const rep=dcms[0]; const nm=rep.fname; scanned+=dcms.length; series++;
+                                const rpath=(dir?dir+'/':'')+nm; const ck=root.id+'|'+dir+'|'+dcms.length;
+                                let meta=_metaCache.get(ck);
+                                if(meta===undefined){ try{ const rd=await RF.read(root.id, rpath); const file=(rd&&rd.ok&&rd.bytes)?new File([rd.bytes], nm, {type:'application/dicom'}):null; meta=file?await _readDicomMeta(file):null; }catch(_){ meta=null; } _metaCache.set(ck, meta); }
+                                if(meta){ const key=_pmsKey(meta); if(key){
+                                    let g=groups[key]; if(!g){ g={ patientKey:key, patientId:String(meta.pid||''), name:String(meta.patient||''), dob:String(meta.dob||''), sex:String(meta.sex||''), lastStudy:String(meta.date||''), files:[] }; groups[key]=g; }
+                                    if(meta.date && meta.date>g.lastStudy) g.lastStudy=meta.date;
+                                    if(!g.name && meta.patient) g.name=String(meta.patient);
+                                    if(g.patientId!==(meta.pid||'') && meta.pid) g.patientId=String(meta.pid);
+                                    g.files.push({ rootId:root.id, rootName:root.name, rpath:rpath, fname:(dcms.length>1?(nm+' (시리즈 '+dcms.length+'컷)'):nm), modality:String(meta.modality||''), studyDate:String(meta.date||''), mtime:(rep.mtime||0) });
+                                } }
+                                if(onProg){ try{ onProg(scanned, Object.keys(groups).length); }catch(_){} }
+                            }
+                        }
+                        const patients=Object.values(groups); const CH=40;
+                        for(let i=0;i<patients.length;i+=CH){ try{ await fetch(API_URL+'/api/pms/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patients:patients.slice(i,i+CH)})}); }catch(_){} }
+                        return { patients:patients.length, scanned, series };
+                    }catch(e){ return { patients:0, scanned:0, series:0 }; } }
                 });
                 try{ window.__RCFS_NATIVE=true; }catch(_){}
             } }catch(_){}
