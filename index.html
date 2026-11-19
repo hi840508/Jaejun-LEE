@@ -2420,8 +2420,8 @@
                             <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
                         </svg>
                     </button>
-                    <!-- 🖥 원격제어는 화상통화 컨트롤의 '제어권 요청'으로 통합 — 대화방 별도 버튼 숨김(함수는 통화에서 재사용) -->
-                    <button id="remote-ctrl-btn" style="display:none; width:40px; height:40px; border-radius:50%; align-items:center; justify-content:center; background:#334155; color:#fff; border:none; cursor:pointer; flex-shrink:0;" onclick="requestRemoteControl()" title="원격제어 요청" aria-label="원격제어 요청">🖥</button>
+                    <!-- 🖥 원격제어 직접 진입(화상 선행 불필요) — 미팅룸 로비에서도 전환 가능하지만, 바로 요청도 지원 -->
+                    <button id="remote-ctrl-btn" style="width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#334155; color:#fff; border:none; cursor:pointer; flex-shrink:0;" onclick="requestRemoteControl()" title="원격제어 요청(카메라 없이 바로)" aria-label="원격제어 요청">🖥</button>
                     <!-- (채팅 상단 '구매 완료' 버튼 제거: 상품 주문 카드에서 구매확정 처리 — 사용자 요청) -->
                     <!-- (나가기 버튼 제거: 좌측 ◀ 버튼으로 목록 이동) -->
                 </div>
@@ -19299,10 +19299,19 @@ pdfjsScript,
                 b.style.cssText='position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:100300;background:'+(isRemote?'#b91c1c':'#16a34a')+';color:#fff;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.45);font-weight:800;font-size:14px;width:min(94vw,440px);box-sizing:border-box;animation:rcAlertPop .25s ease;';
                 b.innerHTML='<span style="font-size:20px;flex:none;">'+(isRemote?'🖥':'📹')+'</span>'
                     +'<span style="flex:1;min-width:0;line-height:1.35;word-break:keep-all;">'+String(from||'상대')+' 님의 '+(isRemote?'원격제어 요청':'화상 통화 요청')+'<span style="display:block;font-weight:600;font-size:12px;opacity:.9;">탭하여 대화방에서 '+(isRemote?'수락':'받기')+'</span></span>'
-                    +'<button id="rc-inc-open" style="flex:none;background:#fff;color:'+(isRemote?'#b91c1c':'#16a34a')+';border:0;border-radius:9px;padding:8px 14px;font-weight:800;cursor:pointer;">열기</button>'
+                    +'<button id="rc-inc-open" style="flex:none;background:#fff;color:'+(isRemote?'#b91c1c':'#16a34a')+';border:0;border-radius:9px;padding:8px 16px;font-weight:800;cursor:pointer;">수락</button>'
                     +'<button id="rc-inc-x" style="flex:none;background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:9px;padding:8px 11px;font-weight:800;cursor:pointer;">✕</button>';
                 document.body.appendChild(b);
-                const go=function(){ try{ if(window.openEarthRoom && roomId) openEarthRoom(roomId); }catch(_){} try{ b.remove(); }catch(_){} };
+                // 📲 '수락' = 바로 연결(채팅에서 다시 수락 안 눌러도 됨). 원격=acceptRemoteControl / 화상=대기 오퍼 즉시수락, 없으면 callme로 재요청 후 자동수락.
+                const go=function(){
+                    try{ if(window.openEarthRoom && roomId) openEarthRoom(roomId); }catch(_){}
+                    try{ b.remove(); }catch(_){}
+                    setTimeout(function(){ try{
+                        if(isRemote){ if(!(window._rc && window._rc.active) && typeof acceptRemoteControl==='function') acceptRemoteControl(); }
+                        else { if(window._vcPendingOffer){ if(window.acceptVideoCall) window.acceptVideoCall(); }
+                            else { window.__autoAcceptCall=true; try{ if(typeof socket!=='undefined' && socket && socket.connected && from){ socket.emit('rc_signal',{ to:String(from), room:roomId, kind:'rtc', sub:'callme' }); } }catch(_){} } }
+                    }catch(_){} }, 450);
+                };
                 b.querySelector('#rc-inc-open').onclick=go;
                 b.querySelector('#rc-inc-x').onclick=function(){ try{ b.remove(); }catch(_){} };
                 try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(_){}
