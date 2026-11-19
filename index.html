@@ -3182,6 +3182,10 @@
         //  토큰은 서버 sessions 테이블에 영속되어 자동로그인/서버재시작 후에도 유효.
         window.EARTH_TOKEN = localStorage.getItem('earth_token') || '';
         window.setEarthToken = function(tok){ window.EARTH_TOKEN = tok || ''; if(tok) localStorage.setItem('earth_token', tok); else localStorage.removeItem('earth_token'); try{ if(tok && window.__alphakRegisterFcm){ window.__alphakFcmTries=0; window.__alphakRegisterFcm(); } }catch(_){} try{ if(tok && window.__alphakBeacon) window.__alphakBeacon(); }catch(_){} };
+        // 🔗 [앱 핸드오프] alphak://call?...&token=... 로 앱(통화전용모드)이 열릴 때 URL에 ?rtok=<token>(+room/mode)을 달고 들어오면
+        //    재로그인 없이 그 토큰으로 세션 승계 → 설치와 동시에 바로 그 통화/원격에 연결. (설치형 '화상앱'=Alpha K 통화모드)
+        (function(){ try{ const u=new URL(location.href); const rtok=u.searchParams.get('rtok'); if(rtok){ try{ window.setEarthToken(rtok); }catch(_){} try{ window.__callHandoff={ room:u.searchParams.get('room')||'', peer:u.searchParams.get('peer')||'', mode:(u.searchParams.get('mode')||'video') }; }catch(_){}
+            try{ ['rtok','room','peer','mode'].forEach(k=>u.searchParams.delete(k)); history.replaceState(null,'',u.pathname+(u.searchParams.toString()?('?'+u.searchParams.toString()):'')+u.hash); }catch(_){} } }catch(_){} })();
         (function(){
             const _origFetch = window.fetch.bind(window);
             window.fetch = function(input, opts){
@@ -12538,7 +12542,7 @@
             if(!document.getElementById('vc-style')){
                 const s=document.createElement('style'); s.id='vc-style';
                 s.textContent = '#vc-overlay{position:fixed;top:0;left:0;bottom:0;right:0;z-index:4600;background:#0b0b0f;display:flex;flex-direction:column;}'
-                    + '@media (min-width:900px){#vc-overlay:not(.vc-mini){right:392px;}}'   /* 데스크톱: 오른쪽 채팅 패널(380px) 영역은 비워 채팅 계속 가능 */
+                    + '@media (min-width:900px){#vc-overlay:not(.vc-mini){right:520px;}}'   /* 데스크톱: 오른쪽 채팅 드로어(실폭 520px) 영역을 그만큼 비워 채팅이 잘리지 않게 */
                     + '#vc-overlay.vc-mini{top:auto;left:auto;right:12px;bottom:150px;width:200px;height:280px;max-width:60vw;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.5);border:2px solid #1f2937;}'
                     + '#vc-overlay.vc-mini #vc-local{width:60px;} #vc-overlay.vc-mini .vc-ctrls button{width:34px;height:34px;font-size:14px;} #vc-overlay.vc-mini .vc-title{font-size:11px;}';
                 document.head.appendChild(s);
@@ -12763,6 +12767,8 @@
                     window._vcPendingOffer = { d: d, peer: peer, room: room };
                     window._vcPendingIce = [];
                     _showIncomingCall(peer);
+                    // 📲 앱 핸드오프/통화전용모드: 들어온 오퍼를 자동 수락(사용자는 이미 수락을 눌러 앱으로 넘어온 상태)
+                    if(window.__autoAcceptCall){ window.__autoAcceptCall=false; setTimeout(function(){ try{ if(window.acceptVideoCall) window.acceptVideoCall(); }catch(_){} }, 300); }
                 } else if(d.sub==='answer'){
                     if(window._vc.pc) await window._vc.pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
                 } else if(d.sub==='ice'){
@@ -12797,8 +12803,26 @@
                 + '</div>';
             if(!document.getElementById('vcpulse-style')){ const s=document.createElement('style'); s.id='vcpulse-style'; s.textContent='@keyframes vcpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}'; document.head.appendChild(s); }
         };
+        // 📲 브라우저에서 통화/원격을 수락할 때 'Alpha K 앱에서 받기' 안내(로그인 없이 설치·즉시연결). 앱이면 통과, '웹에서 계속'이면 그대로 진행.
+        window._callAppGate = function(retry, mode){
+            try{
+                if(window.rayApp) return true;            // 이미 앱(통화전용모드 포함)
+                if(window.__callWebAck) return true;      // '웹에서 계속' 선택함
+                const p=window._vcPendingOffer||{}; const peer=p.peer||window.activeChatFriend||''; const room=p.room||window.currentChatRoomId||'';
+                const tok=window.EARTH_TOKEN||localStorage.getItem('earth_token')||'';
+                let ov=document.getElementById('call-appgate'); if(ov) ov.remove();
+                ov=document.createElement('div'); ov.id='call-appgate'; ov.style.cssText='position:fixed;inset:0;z-index:100700;background:rgba(8,12,18,.68);display:flex;align-items:center;justify-content:center;padding:18px;';
+                ov.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:16px;max-width:360px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.42);text-align:center;"><div style="font-size:40px;">📲</div><div style="font-weight:800;font-size:17px;margin:8px 0 4px;">Alpha K 앱에서 '+(mode==='remote'?'원격 지원':'통화')+'</div><div style="font-size:13px;color:#475569;line-height:1.6;">앱에서 받으면 카메라·화면공유·원격제어가 권한 문제없이 동작합니다.<br><b>로그인 없이</b> 지금 계정으로 설치와 동시에 바로 연결됩니다.</div><div style="display:flex;flex-direction:column;gap:9px;margin-top:16px;"><button id="_cg-app" style="padding:13px;border:none;border-radius:11px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-weight:800;font-size:14px;cursor:pointer;">📲 앱에서 받기 (설치/열기)</button><button id="_cg-web" style="padding:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:11px;font-weight:700;font-size:13px;cursor:pointer;">웹에서 계속</button></div></div>';
+                document.body.appendChild(ov);
+                const close=function(){ try{ ov.remove(); }catch(_){} };
+                ov.querySelector('#_cg-app').onclick=function(){ try{ var dl='alphak://call?room='+encodeURIComponent(room)+'&peer='+encodeURIComponent(peer)+'&mode='+encodeURIComponent(mode||'video')+'&token='+encodeURIComponent(tok); location.href=dl; }catch(_){} setTimeout(function(){ try{ window.open(API_URL+'/download/APP_Setup.exe','_blank'); }catch(_){} }, 900); showToast('앱이 있으면 바로 열립니다. 없으면 설치파일을 실행하면 설치와 동시에 자동 연결됩니다.'); close(); };
+                ov.querySelector('#_cg-web').onclick=function(){ window.__callWebAck=true; close(); try{ if(typeof retry==='function') retry(); }catch(_){} };
+                return false;
+            }catch(_){ return true; }
+        };
         window.acceptVideoCall = async function(){
             const p = window._vcPendingOffer; if(!p) return;
+            if(!window._callAppGate(window.acceptVideoCall, 'video')) return;
             const peer = p.peer, room = p.room, d = p.d;
             // ⚠️ 권한 실패 시 재시도 가능하도록, 성공 전에는 pending offer·수신 UI를 지우지 않는다.
             let local; try { local = await window._getCallMedia(); }
@@ -13046,6 +13070,24 @@
                 setTimeout(function(){ try{ if(!(window._rc && window._rc.active) && typeof acceptRemoteControl==='function'){ acceptRemoteControl(); } }catch(_){} }, 1400);
             }catch(_){}
         }); } }catch(_){}
+        // 📲 [앱 통화전용모드 핸드오프] alphak://call?...&token= → ?rtok 로 열려 로그인 없이 세션 승계 → 소켓 준비되면 방 열고 통화/원격 자동 연결(설치와 동시에 바로 연결)
+        (function(){ try{
+            var h=window.__callHandoff; if(!h || !h.room) return; window.__callHandoff=null; var tries=0;
+            (function wait(){
+                try{
+                    if(typeof socket!=='undefined' && socket && socket.connected){
+                        try{ if(window.rayApp && window.rayApp.showWindow) window.rayApp.showWindow(); }catch(_){}
+                        try{ if(window.openEarthRoom) window.openEarthRoom(h.room); }catch(_){}
+                        setTimeout(function(){ try{
+                            if(h.mode==='remote'){ if(typeof acceptRemoteControl==='function'){ acceptRemoteControl(); } else if(typeof requestRemoteControl==='function'){ requestRemoteControl(); } }
+                            else { window.__autoAcceptCall=true; if(h.peer){ try{ socket.emit('rc_signal',{ to:h.peer, room:h.room, kind:'rtc', sub:'callme' }); }catch(_){} } }
+                        }catch(_){} }, 1600);
+                        return;
+                    }
+                }catch(_){}
+                if(tries++<50) setTimeout(wait, 300);
+            })();
+        }catch(_){} })();
         // 🔔 [네이티브 앱/Android FCM] 알림 탭 → 방 열기 훅 + FCM 토큰 서버 등록
         try{
             if(window.AndroidBridge){
