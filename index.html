@@ -17335,6 +17335,16 @@ pdfjsScript,
                 sync();
             } catch(_){}
         })();
+        // 🖱 파일카드 드래그 중에는 서랍(채팅) 바깥클릭-닫힘 억제 — 파일을 채팅으로 끌어오려다 채팅이 닫히는 문제 방지.
+        (function _sfDragGuardDrawer(){
+            try{
+                window.__sfDragActive = false;
+                document.addEventListener('dragstart', function(e){ try{ if(window.__sfDragFileRef || (e.target && e.target.closest && e.target.closest('[draggable="true"]'))) window.__sfDragActive=true; }catch(_){} }, true);
+                const _end=function(){ try{ setTimeout(function(){ window.__sfDragActive=false; }, 450); }catch(_){} };
+                document.addEventListener('dragend', _end, true);
+                document.addEventListener('drop', _end, true);
+            }catch(_){}
+        })();
         // 🔒 바깥클릭 정책: 팝업(전체화면 모달)은 바깥을 눌러도 닫히지 않음. 단, 두 서랍(채팅 메신저 / 햄버거 사이드바)만 바깥 클릭 시 닫힘.
         (function _setupOutsideClickPolicy(){
             try{
@@ -17357,13 +17367,13 @@ pdfjsScript,
                 function _wireDrawerOutside(drawerId, keepSel, closeFn){
                     const el=document.getElementById(drawerId); if(!el) return;
                     let handler=null;
-                    const add=()=>{ if(handler) return; handler=function(e){ try{ const t=e.target; if(!t) return; if(t.nodeType===1 && !document.contains(t)) return; /* 클릭 중 재렌더로 분리된 요소(서랍 내부 버튼) → 바깥클릭 아님 */ if(t.closest && t.closest('#'+drawerId)) return; if(keepSel && t.closest && t.closest(keepSel)) return; if(_isOverModal(t)) return; closeFn(); }catch(_){} }; setTimeout(()=>{ try{ document.addEventListener('click', handler, false); }catch(_){} }, 0); };
+                    const add=()=>{ if(handler) return; handler=function(e){ try{ const t=e.target; if(!t) return; if(window.__sfDragActive) return; if(t.nodeType===1 && !document.contains(t)) return; /* 클릭 중 재렌더로 분리된 요소(서랍 내부 버튼) → 바깥클릭 아님 */ if(t.closest && t.closest('#'+drawerId)) return; if(keepSel && t.closest && t.closest(keepSel)) return; if(_isOverModal(t)) return; closeFn(); }catch(_){} }; setTimeout(()=>{ try{ document.addEventListener('click', handler, false); }catch(_){} }, 0); };
                     const remove=()=>{ if(handler){ try{ document.removeEventListener('click', handler, false); }catch(_){} handler=null; } };
                     try{ new MutationObserver(()=>{ if(el.classList.contains('open')) add(); else { remove(); if(drawerId==='messenger-drawer'){ try{ if(window.closeScreenKeyboard) window.closeScreenKeyboard(); }catch(_){} } } }).observe(el,{attributes:true,attributeFilter:['class']}); }catch(_){}
                     if(el.classList.contains('open')) add();
                 }
                 // #osk-panel(화면 키보드)은 서랍 밖이지만 클릭해도 메신저가 닫히지 않게 keepSel에 포함
-                _wireDrawerOutside('messenger-drawer', '[onclick*="toggleMessengerDrawer"], .yt-menu-btn, #osk-panel, #osk-vcursor', function(){ try{ const d=document.getElementById('messenger-drawer'); if(d) d.classList.remove('open'); }catch(_){} });
+                _wireDrawerOutside('messenger-drawer', '#rc-folder-page, [draggable="true"], [onclick*="toggleMessengerDrawer"], .yt-menu-btn, #osk-panel, #osk-vcursor', function(){ try{ const d=document.getElementById('messenger-drawer'); if(d) d.classList.remove('open'); }catch(_){} });
                 _wireDrawerOutside('yt-sidebar', '.yt-menu-btn, [onclick*="toggleSidebar"]', function(){ try{ const s=document.getElementById('yt-sidebar'); if(s) s.classList.remove('open'); document.body.classList.remove('sidebar-open'); }catch(_){} });
             }catch(_){}
         })();
