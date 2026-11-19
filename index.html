@@ -7067,21 +7067,8 @@
                 const connRoots=roots.filter(r=>r.connected);
                 let all=[];
                 for(const r of connRoots){ try{ const fs=(R&&R.walkRoot)?await R.walkRoot(r.id,{max:3000}):[]; all=all.concat(fs); }catch(_){} }
-                // 필터(유형/검색/기간) 적용
-                const q=(flt.q||'').trim().toLowerCase();
-                const tf=flt.type||'all';
-                const fromT=flt.from?new Date(flt.from+'T00:00:00').getTime():0;
-                const toT=flt.to?new Date(flt.to+'T23:59:59').getTime():0;
-                let perT=0; if(flt.period==='today'){ const d=new Date(); d.setHours(0,0,0,0); perT=d.getTime(); } else if(flt.period==='7'){ perT=Date.now()-7*864e5; } else if(flt.period==='30'){ perT=Date.now()-30*864e5; }
-                all=all.filter(f=>{
-                    if(q && String(f.fname||'').toLowerCase().indexOf(q)<0) return false;
-                    if(tf!=='all'){ try{ if(_sfType(f.mime,f.fname)!==tf) return false; }catch(_){} }
-                    const mt=Number(f.mtime)||0;
-                    if(fromT && mt<fromT) return false;
-                    if(toT && mt>toT) return false;
-                    if(perT && mt<perT) return false;
-                    return true;
-                });
+                // 🗂 전체취합은 '모든 파일'을 렌더하고, 유형/기간/검색 필터는 applyFilter가 제자리에서 토글(폴더뷰와 동일 방식).
+                //    → 렌더 시 사전필터하지 않으므로 칩으로 좁히기/넓히기 모두 정상 동작(이전엔 사전필터로 다른 유형 카드가 DOM에 없어 안 보였음).
                 // 🩻 같은 폴더(루트+경로)의 DICOM 2장↑ → 1개 CT 시리즈로 묶음(566장 개별표시 방지·대표 썸네일 1개)
                 (function(){ const byDir={}; const rest=[]; all.forEach(it=>{ if(/\.dcm$/i.test(String(it.fname||''))){ const kk=it.rootId+'|'+((it.pathArr||[]).join('/')); (byDir[kk]=byDir[kk]||[]).push(it); } else rest.push(it); }); const mg=[]; Object.keys(byDir).forEach(kk=>{ const L=byDir[kk].sort((a,b)=>String(a.fname).localeCompare(String(b.fname),undefined,{numeric:true})); if(L.length>=2){ const rep=Object.assign({},L[Math.floor(L.length/2)]); rep.series=L.length; mg.push(rep); } else mg.push(L[0]); }); all=rest.concat(mg); })();
                 if(!all.length){ grid.innerHTML=bar+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+(connRoots.length?'조건에 맞는 파일이 없습니다.':'연결된 폴더가 없습니다. 위 폴더의 <b>[재연결]</b>을 누르거나 폴더를 추가하세요.')+'</div>'; wireBar(); return; }
@@ -7136,6 +7123,8 @@
                 });
                 { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_mSel.size){ showToast('첨부할 파일을 선택하세요.'); return; } window._sfAttachDescs([..._mSel.values()]); }; }
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _mSel.clear(); grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); }; }
+                // 🔎 렌더 직후 현재 칩(유형/기간/검색) 상태를 제자리 반영
+                try{ if(window.__sfApplyFilter) window.__sfApplyFilter(); }catch(_){}
                 // 🖼 썸네일 지연 로드(루트별 getFileAtRoot → getThumb/dicomImage)
                 (async()=>{ if(!R||!R.getFileAtRoot||!R.getThumb) return; try{ if(R.csReady) await R.csReady(); }catch(_){}
                     const cards=[].slice.call(grid.querySelectorAll('._sr-file')); let i=0; const CONC=3;
