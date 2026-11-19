@@ -13217,7 +13217,8 @@
         function _rcHostBannerInstall(){
             let b = document.getElementById('rc-host-banner'); if(!b){ _rcShowHostBanner(); b = document.getElementById('rc-host-banner'); }
             b.innerHTML = '<span id="rc-host-banner-txt">🖥 화면 공유 중 · 보기 전용</span> '
-              + (window.rayApp ? '' : '<button onclick="downloadDesktopApp()" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">PC 앱 설치(제어까지)</button> ')
+              + (window.rayApp ? '' : ('<button onclick="_rcOpenInApp()" style="background:#fff;color:#0f2f52;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">앱으로 열기(제어 허용)</button> '
+                 + '<button onclick="downloadDesktopApp()" style="background:#fff;color:#b91c1c;border:0;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer;">PC 앱 설치</button> '))
               + '<button onclick="stopRemoteControl(false)" style="background:transparent;color:#fff;border:1px solid #fff;border-radius:8px;padding:5px 12px;font-weight:700;cursor:pointer;">종료</button>';
         }
         // raycloud:// 프로토콜로 이 PC의 로컬 서버(원격 도우미)를 조용히 기동 (숨은 iframe 트릭)
@@ -13227,6 +13228,26 @@
                 document.body.appendChild(f); setTimeout(function(){ try { f.remove(); } catch(_){} }, 3000);
             } catch(_){ try { window.location.href = 'raycloud://rc-start'; } catch(__){} }
         }
+        // 🔗 alphak:// 딥링크로 설치된 Alpha K 앱을 '제어 가능(입력 에이전트)' 호스트로 띄움. 미설치면 설치 안내 폴백.
+        //    (앱 쪽 프로토콜 등록은 2단계 앱 배포에서 추가 — 그 전엔 설치 안내로 폴백됨)
+        window._rcOpenInApp = function(){
+            try{
+                const r = window._rc || {};
+                const url = 'alphak://remote?role=host&room=' + encodeURIComponent(r.room||'') + '&peer=' + encodeURIComponent(r.peer||'');
+                let stayed = true; const onBlur = function(){ stayed = false; };
+                window.addEventListener('blur', onBlur);
+                try{ location.href = url; }catch(_){ }
+                try{ showToast('Alpha K 앱을 여는 중… (설치돼 있으면 앱에서 제어가 시작됩니다)'); }catch(_){}
+                setTimeout(function(){
+                    window.removeEventListener('blur', onBlur);
+                    if(stayed && !document.hidden){
+                        if(confirm('Alpha K 앱이 설치돼 있지 않은 것 같습니다.\n제어를 받으려면 앱이 필요합니다. 설치 페이지를 열까요?')){
+                            try{ if(window.downloadDesktopApp) downloadDesktopApp(); }catch(_){}
+                        }
+                    }
+                }, 2500);
+            }catch(_){}
+        };
         function _rcHostBannerNeedAgent(){
             let b = document.getElementById('rc-host-banner');
             if(!b){ _rcShowHostBanner(); b = document.getElementById('rc-host-banner'); }
