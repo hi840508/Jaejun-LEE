@@ -6726,13 +6726,23 @@
             // 🧑‍⚕️ [PMS] 환자 통합 뷰 — 여러 폴더의 DICOM을 환자 카드로 집계(서버 인덱스). 카드=폴더 역할.
             const _ptDobFmt=(dob)=>{ const d=String(dob||'').replace(/[^0-9]/g,''); return d.length>=8?(d.slice(0,4)+'.'+d.slice(4,6)+'.'+d.slice(6,8)):''; };
             const _ptSexAge=(dob,sex)=>{ let s=({M:'남',F:'여',O:'기타'})[String(sex||'').toUpperCase()]||''; let age=''; const d=String(dob||'').replace(/[^0-9]/g,''); if(d.length>=8){ const y=+d.slice(0,4),m=+d.slice(4,6),day=+d.slice(6,8); const now=new Date(); let a=now.getFullYear()-y; if(now.getMonth()+1<m||(now.getMonth()+1===m&&now.getDate()<day))a--; if(a>=0&&a<150) age=a+'세'; } return [s,age].filter(Boolean).join(' · '); };
+            // 📂 미리보기(탐색기식): DICOM→슬라이스 탐색, 3D→모델뷰어, 미디어→인앱 미리보기, 문서·기타→연결 프로그램(OS). (전체취합 _mPreview와 동일 라우팅으로 통일)
             async function _sfOpenPmsFile(f){
                 if(!f||!f.rpath){ return; }
-                const parts=String(f.rpath).split('/'); const fname=parts.pop(); const pathArr=parts;
+                const parts=String(f.rpath).split('/'); const fname=parts.pop(); const pathArr=parts; const low=String(fname||'').toLowerCase();
                 let ok=false; try{ if(window.RCFolder && window.RCFolder.setActiveRoot) ok=await window.RCFolder.setActiveRoot(f.rootId); }catch(_){}
                 if(!ok){ showToast('이 기기에 없는 폴더의 파일입니다. 해당 PC/앱에서 열거나 클라우드 저장소를 이용하세요.'); return; }
-                if(/\.dcm$/i.test(fname) && window.rcOpenInLiveViewer){ window.rcOpenInLiveViewer(pathArr, fname); return; }
-                try{ window.__sfPatientView=false; window.__sfPath=pathArr.slice(); if(window.__sfRender){ await window.__sfRender(); setTimeout(()=>{ try{ window.rcPreviewFolderFile(fname,''); }catch(_){} }, 150); } }catch(_){}
+                // 🩻 DICOM → 슬라이스 탐색 미리보기(2D 라이브). 전체 Viewer(3D)는 별도 실행.
+                if(/\.dcm$/i.test(low) && window.rcOpenInLiveViewer){ try{ window.rcOpenInLiveViewer(pathArr, fname); }catch(_){ showToast('미리보기 실패'); } return; }
+                let file=null; try{ const R=window.RCFolder; file=(R&&R.getFileAtRoot)?await R.getFileAtRoot(f.rootId,pathArr,fname):null; if(!file&&R&&R.getFileAt){ try{ file=await R.getFileAt(pathArr,fname); }catch(_){} } }catch(_){}
+                if(!file){ showToast('파일을 읽지 못했습니다.'); return; }
+                if(/\.(ply|stl|obj|glb|gltf)$/.test(low) && window._model3DViewer){ try{ window._model3DViewer(file, fname); }catch(_){ showToast('3D 미리보기 실패'); } return; }
+                const isMedia=/\.(png|jpe?g|gif|webp|bmp|svg|mp4|webm|mov|m4v|avi|mkv|mp3|wav|ogg|m4a)$/.test(low);
+                try{
+                    if(isMedia){ const u=URL.createObjectURL(file); (window.__rcMlUrls=window.__rcMlUrls||[]).push(u); if(window.__rcMlUrls.length>40){ try{ URL.revokeObjectURL(window.__rcMlUrls.shift()); }catch(_){} } openMediaUrlPreview(u, fname, f.mime||file.type||''); }
+                    else if(window.rcOpenExternalFile){ window.rcOpenExternalFile(file, fname); }   // 📄 문서·기타 → 연결 프로그램(탐색기처럼)
+                    else { const u=URL.createObjectURL(file); openMediaUrlPreview(u, fname, f.mime||file.type||''); }
+                }catch(_){ showToast('열기 실패'); }
             }
             // 🧑‍⚕️ 환자 카드 섹션을 파일 목록 상단에 주입(루트에서만). DICOM 자동 스캔(세션 1회) + 수동 추가/검색.
             async function _sfInjectPatientCards(ov){
@@ -6945,8 +6955,9 @@
                 grid.querySelectorAll('._pt-file').forEach(el=>{ const f=_byEl(el);
                     const chk=document.createElement('div'); chk.className='_pt-chk'; chk.style.cssText='position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);'; el.appendChild(chk);
                     chk.addEventListener('click',(e)=>{ e.stopPropagation(); _toggle(el,f); });
-                    el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}]); return; } _sfOpenPmsFile(f); });
-                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._pt-chk')||e.target.closest('._pt-menu')) return; e.preventDefault(); e.stopPropagation(); _attachNow([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}]); });
+                    // 🖱 단일클릭=체크(선택)만 · 더블클릭=미리보기 (폼 첨부모드면 클릭/더블클릭 모두 첨부)
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}]); return; } _toggle(el,f); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._pt-chk')||e.target.closest('._pt-menu')) return; e.preventDefault(); e.stopPropagation(); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ _attachNow([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}]); return; } _sfOpenPmsFile(f); });
                 });
                 if(_paBtn) _paBtn.onclick=()=>_attachNow([..._ptSel.values()]);
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _ptSel.clear(); grid.querySelectorAll('._pt-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._pt-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _updBar(); }; }
@@ -17373,7 +17384,7 @@ pdfjsScript,
                     if(el.classList.contains('open')) add();
                 }
                 // #osk-panel(화면 키보드)은 서랍 밖이지만 클릭해도 메신저가 닫히지 않게 keepSel에 포함
-                _wireDrawerOutside('messenger-drawer', '#rc-folder-page, [draggable="true"], [onclick*="toggleMessengerDrawer"], .yt-menu-btn, #osk-panel, #osk-vcursor', function(){ try{ const d=document.getElementById('messenger-drawer'); if(d) d.classList.remove('open'); }catch(_){} });
+                _wireDrawerOutside('messenger-drawer', '[onclick*="toggleMessengerDrawer"], .yt-menu-btn, #osk-panel, #osk-vcursor', function(){ try{ const d=document.getElementById('messenger-drawer'); if(d) d.classList.remove('open'); }catch(_){} });
                 _wireDrawerOutside('yt-sidebar', '.yt-menu-btn, [onclick*="toggleSidebar"]', function(){ try{ const s=document.getElementById('yt-sidebar'); if(s) s.classList.remove('open'); document.body.classList.remove('sidebar-open'); }catch(_){} });
             }catch(_){}
         })();
