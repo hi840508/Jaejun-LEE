@@ -5749,8 +5749,7 @@
         // 🎨 좌측 로컬/클라우드 저장소 — 현재 선택된 쪽을 네이비로 채워 명확히 표시
         // 🖥/☁ 드라이브 버튼 아이콘(또렷한 SVG) — 내 컴퓨터 / 클라우드
         const _DRIVE_ICO_PC='<svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
-        // ☁️🔄 클라우드 뷰일 때 드라이브 좌측 아이콘 = 구름+동기화 화살표(클릭=내 컴퓨터 동기화)
-        const _DRIVE_ICO_CLOUD='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 18.5a4.3 4.3 0 0 0 .4-8.56 5.7 5.7 0 0 0-10.96-1.2A4.3 4.3 0 0 0 6.5 18.5"/><path d="M14.6 12.9a2.7 2.7 0 1 0 .2 2.3"/><path d="M14.9 11.2l.2 1.9-1.9.1"/></svg>';
+        const _DRIVE_ICO_CLOUD='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .4-8.98 6 6 0 0 0-11.5-1.3A4.5 4.5 0 0 0 6.5 19z"/></svg>';
         window._sbUpdateStorageSel = function(){ const cloud=!!window.__sfCloudView; const base='display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;border:1px solid;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;text-align:left;'; const on='background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-color:#0b2b4b;', off='background:#fff;color:#0f2f52;border-color:#cbd5e1;'; const ls=document.getElementById('sb-localstore'), cs=document.getElementById('sb-cloudstore'); if(ls) ls.style.cssText=base+(cloud?off:on); if(cs) cs.style.cssText=base+(cloud?on:off); try{ const ic=document.getElementById('sb-drive-ico'); if(ic) ic.innerHTML = cloud?_DRIVE_ICO_CLOUD:_DRIVE_ICO_PC; }catch(_){} };
         window._sbPatientAdd = function(){ if(window._sfCreatePatient) window._sfCreatePatient(null, ()=>window._sbLoadPatients()); else showToast('파일검색을 먼저 열어 주세요.'); };
         // ▾ 사이드바 버튼(상점검색/파일검색) 공용 드롭다운 — 패널 개폐 여부와 무관하게 동작, 버튼 우측에 팝오버
@@ -5791,7 +5790,7 @@
             else { try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} }
             try{ window._sfSyncDriveIcon&&window._sfSyncDriveIcon(); }catch(_){} };
         // 🔁 드라이브 버튼(사이드바) — 누를 때마다 내 컴퓨터 ↔ 클라우드 토글(글자 앞 아이콘도 전환)
-        window._sfSyncDriveIcon = function(){ const ic=document.getElementById('sb-drive-ico'); if(ic){ ic.innerHTML = window.__sfCloudView ? _DRIVE_ICO_CLOUD : _DRIVE_ICO_PC; const btn=ic.closest('button'); if(btn) btn.title = window.__sfCloudView ? '내 컴퓨터 동기화 (연결된 모든 폴더를 클라우드로)' : '드라이브 — 클릭하면 내 컴퓨터 ↔ 클라우드 전환'; } };
+        window._sfSyncDriveIcon = function(){ const ic=document.getElementById('sb-drive-ico'); if(ic){ ic.innerHTML = window.__sfCloudView ? _DRIVE_ICO_CLOUD : _DRIVE_ICO_PC; const btn=ic.closest('button'); if(btn) btn.title = window.__sfCloudView ? '드라이브 — 클릭하면 내 컴퓨터로 전환' : '드라이브 — 클릭하면 클라우드로 전환'; } };
         // ☁️🔄 내 컴퓨터 동기화(지금) — 연결된 모든 폴더를 클라우드로. 드라이브 좌측 구름 아이콘 클릭 시 호출.
         window._sfCloudSyncNow = async function(){
             if(window.__sfSyncBusy){ showToast('이미 동기화 중입니다.'); return; }
@@ -5806,11 +5805,27 @@
             }catch(e){ showToast('동기화 실패: '+((e&&e.message)||e)); }
             finally{ window.__sfSyncBusy=false; const ic2=document.getElementById('sb-drive-ico'); if(ic2) ic2.style.opacity=''; }
         };
+        // ☁️ 클라우드 뷰 경로바 컨트롤 — '클라우드 저장소' 글씨 대신 [동기화 버튼 + 용량 프로그레스바 + 용량 구매]
+        window._sfRenderCloudCtl = async function(ov){
+            const box=(ov||document).querySelector('#_sf-cloudctl'); if(!box) return;
+            let st=window.__sfCloudStatus||null; try{ st=await window.RCMirror.status(); window.__sfCloudStatus=st; }catch(_){}
+            const fmt=(b)=>{ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
+            const used=st?Number(st.used||0):0; const quota=st?Number(st.quota||st.freeBytes||104857600):104857600;
+            const pct=quota?Math.min(100,Math.round(used/quota*100)):0; const over=used>=quota;
+            const col=pct<=30?'#2563eb':(pct<=60?'#16a34a':(pct<=80?'#eab308':'#ef4444'));
+            box.innerHTML=''
+                +'<button id="_sf-syncnow" title="내 컴퓨터 동기화" aria-label="내 컴퓨터 동기화" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:none;border-radius:9px;background:linear-gradient(135deg,#2563eb,#0b2b4b);color:#fff;cursor:pointer;box-shadow:0 2px 7px rgba(37,99,235,.4);"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></button>'
+                +'<div style="flex:1;min-width:90px;max-width:300px;"><div style="height:8px;border-radius:5px;background:#e2e8f0;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+col+';transition:width .3s,background .3s;"></div></div><div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;">'+fmt(used)+' / '+fmt(quota)+(over?' · <b style="color:#ef4444;">초과</b>':'')+'</div></div>'
+                +'<button id="_sf-buycap" title="용량 구매" aria-label="용량 구매" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #bcd0e6;border-radius:9px;background:#fff;color:#0f2f52;cursor:pointer;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 18a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.3 8.5 4.5 4.5 0 0 0 7 18"/><line x1="12" y1="11.5" x2="12" y2="16.5"/><line x1="9.5" y1="14" x2="14.5" y2="14"/></svg></button>';
+            const sb=box.querySelector('#_sf-syncnow'); if(sb) sb.onclick=async()=>{ if(window.__sfSyncBusy) return; sb.disabled=true; sb.style.opacity='.6'; try{ await window._sfCloudSyncNow(); }finally{ sb.disabled=false; sb.style.opacity=''; try{ window._sfRenderCloudCtl(ov); }catch(_){} } };
+            const bc=box.querySelector('#_sf-buycap'); if(bc) bc.onclick=()=>{ try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} };
+        };
         window._sfDriveToggle = function(){
-            if(window.__sfCloudView){ try{ window._sfCloudSyncNow&&window._sfCloudSyncNow(); }catch(_){} return; }   // ☁ 클라우드 뷰: 구름 아이콘 클릭 = 내 컴퓨터 동기화
+            // 🔁 드라이브 버튼 = 내 컴퓨터 ↔ 클라우드 전환(동기화는 경로바의 동기화 버튼으로 분리)
             const mob=(window._isMobileDevice&&window._isMobileDevice());
             if(mob){ try{ window._sfComputerBtn&&window._sfComputerBtn(); }catch(_){} return; }   // 📱 모바일: 클라우드 전용
-            try{ window._sbCloudToggle&&window._sbCloudToggle(); }catch(_){}                        // 내 컴퓨터 → 클라우드
+            if(window.__sfCloudView){ try{ window._sfComputerBtn&&window._sfComputerBtn(); }catch(_){} }   // 클라우드 → 내 컴퓨터
+            else { try{ window._sbCloudToggle&&window._sbCloudToggle(); }catch(_){} }                        // 내 컴퓨터 → 클라우드
             try{ window._sfSyncDriveIcon&&window._sfSyncDriveIcon(); }catch(_){}
         };
         // ☁/📁 툴바 경로 앞 저장소 전환 ▾ — 내 컴퓨터 ↔ 클라우드만 스위칭
@@ -6279,7 +6294,9 @@
                         ? ('<span class="_sf-crumb" data-i="-1" style="cursor:pointer;color:#0f2f52;font-weight:700;">'+_rootLbl+'</span>'+path.map((seg,i)=>' <span style="color:#c4c9d0;font-weight:500;">›</span> <span class="_sf-crumb" data-i="'+i+'" style="cursor:pointer;'+(i===path.length-1?'font-weight:800;color:#0f172a;':'color:#334155;')+'">'+_sfEsc(seg)+'</span>').join(''))
                         : (window.__sfPatientFilter
                             ? ('<span class="_sf-crumb" data-i="-1" style="cursor:pointer;color:#0f2f52;font-weight:700;">'+_rootLbl+'</span> <span style="color:#c4c9d0;font-weight:500;">›</span> <span style="font-weight:800;color:#0f172a;">🧑‍⚕️ '+_sfEsc((window.__selectedPatient&&window.__selectedPatient.name)||'환자')+'</span>')
-                            : ('<span style="font-weight:800;color:#0f2f52;">'+_rootLbl+'</span>')));
+                            : (_cloudSel
+                                ? '<div id="_sf-cloudctl" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;"></div>'   // ☁ 클라우드: 글씨 대신 [동기화·용량바·구매]
+                                : ('<span style="font-weight:800;color:#0f2f52;">'+_rootLbl+'</span>'))));
                 const head='';
                 // 📁 탐색기식 툴바 1줄: [뒤로] 경로(좌) ········· 검색(우) · 미리보기/Viewer(우측 끝). 로컬/클라우드는 좌측 사이드바로.
                 const rootsRow = (notSupported || !connected) ? '' :
@@ -6425,6 +6442,7 @@
                 const dc=ov.querySelector('#_sf-disc'); if(dc) dc.onclick=async()=>{ if(confirm('이 기기의 공유폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다. 언제든 다시 지정 가능)')){ try{ await R.disconnect(); }catch(_){} path=[]; render(); } };
                 { const ac=ov.querySelector('#_sf-allcomp'); if(ac) ac.onclick=()=>{ window.__sfFolderBrowse=!window.__sfFolderBrowse; render(); }; }
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); if(i<0 && (window.__sfPatientFilter||window.__sfDeepQuery)){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} } path = i<0?[]:path.slice(0,i+1); render(); }));
+                if(_cloudSel){ try{ window._sfRenderCloudCtl&&window._sfRenderCloudCtl(ov); }catch(_){} }   // ☁ 경로바에 동기화·용량바·구매 채우기
                 const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else if(window.__sfPatientFilter||window.__sfDeepQuery){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); } else { close(); } };
                     bk.addEventListener('dragover',(e)=>{ if(window.__rcDragFile && path.length){ e.preventDefault(); e.dataTransfer.dropEffect='move'; bk.style.outline='2px solid #0f2f52'; } });
                     bk.addEventListener('dragleave',()=>{ bk.style.outline=''; });
