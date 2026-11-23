@@ -7099,13 +7099,11 @@
                 try{ window.__sfCloudStatus=await window.RCMirror.status(); }catch(_){}
                 const head='<div style="display:flex;align-items:center;gap:8px;margin:4px 2px 10px;flex-wrap:wrap;">'
                     +'<button id="_cl-back" title="뒤로" aria-label="뒤로" style="flex:none;width:36px;height:36px;padding:0;border:1px solid #ededf0;background:#fff;color:#4b5563;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></button>'
-                    +'<div style="font-weight:800;font-size:15px;color:#0f2f52;">클라우드 저장소 <span style="color:#94a3b8;font-weight:600;">('+items.length+')</span></div>'
-                    +'<div style="font-size:11px;color:#64748b;font-weight:500;">· 모든 기기에서 동일하게 보임 · 탭하여 열기</div>'
                     +'</div>';
                 const wireHead=()=>{
                     const bb=grid.querySelector('#_cl-back'); if(bb) bb.onclick=()=>{ try{ window.__sfCloudView=false; if(window.__sfRender) window.__sfRender(); else if(window.__sfClose) window.__sfClose(); }catch(_){ if(window.__sfClose) window.__sfClose(); } };
                 };
-                if(!items.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">클라우드 저장소에 데이터가 없습니다.<br><span style="font-size:12px;">아래 <b>🔄 지금 동기화</b>를 누르면 연결된 모든 폴더가 클라우드로 올라갑니다(무료 100MB).</span></div>'; wireHead(); try{ _sfCloudSyncBar(ov); }catch(_){} _sfSharedBanner(grid); return; }
+                if(!items.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">클라우드 저장소에 데이터가 없습니다.<br><span style="font-size:12px;">위의 <b>🔄 동기화 아이콘</b>을 누르면 연결된 모든 폴더가 클라우드로 올라갑니다(무료 100MB).</span></div>'; wireHead(); try{ _sfCloudSyncBar(ov); }catch(_){} _sfSharedBanner(grid); return; }
                 // 📅 날짜별 그룹(mtime 내림차순) — PC 파일검색과 동일한 섹션 구조.
                 const _tsLabel=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '날짜 미상'; const n=new Date(); const sd=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); const y=new Date(n); y.setDate(n.getDate()-1); if(sd(d,n)) return '오늘'; if(sd(d,y)) return '어제'; return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0'); };
                 const _key=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '0000-00-00'; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
@@ -7363,15 +7361,22 @@
                 const st=window.__sfCloudStatus||null;
                 const used=st?Number(st.used||0):0; const quota=st?Number(st.quota||st.freeBytes||104857600):104857600;
                 const pct=quota?Math.min(100,Math.round(used/quota*100)):0; const over=used>=quota;
+                // 🎨 용량 그래프 색상 단계: ~30% 파랑 · ~60% 초록 · ~80% 노랑 · 80%초과 빨강
+                const barColor = pct<=30?'#2563eb':(pct<=60?'#16a34a':(pct<=80?'#eab308':'#ef4444'));
                 bar.innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#f0f6ff;border:1px solid #dbe7f5;border-radius:12px;padding:10px 14px;">'
-                    +'<button id="_sf-syncnow" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-size:13px;font-weight:800;cursor:pointer;">🔄 지금 동기화</button>'
-                    +'<div style="flex:1;min-width:150px;"><div style="height:8px;border-radius:5px;background:#e2e8f0;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+(over?'#ef4444':'#0f2f52')+';transition:width .3s;"></div></div>'
-                    +'<div style="font-size:11px;color:#64748b;margin-top:3px;">'+fmt(used)+' / '+fmt(quota)+' 사용'+(over?' · <b style="color:#ef4444;">용량 초과 — 구매 필요</b>':'')+'</div></div>'
-                    +'<button id="_sf-buycap" style="flex:none;padding:8px 14px;border:1px solid #bcd0e6;border-radius:10px;background:#fff;color:#0f2f52;font-size:12px;font-weight:800;cursor:pointer;">용량 구매</button>'
-                    +'<div id="_sf-syncprog" style="flex-basis:100%;font-size:12px;color:#0f2f52;font-weight:700;min-height:0;"></div></div>';
+                    // 🔄 아이콘만 — 호버 시 "내 컴퓨터 동기화"
+                    +'<button id="_sf-syncnow" title="내 컴퓨터 동기화" aria-label="내 컴퓨터 동기화" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;cursor:pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></button>'
+                    +'<div id="_sf-syncprog" style="flex:1;min-width:0;font-size:12px;color:#0f2f52;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>'
+                    // 우측: 용량 표시(색상 그래프) + 용량 구매(클라우드+ 아이콘)
+                    +'<div style="flex:none;display:flex;align-items:center;gap:10px;margin-left:auto;">'
+                    +  '<div style="min-width:120px;"><div style="height:8px;border-radius:5px;background:#e2e8f0;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+barColor+';transition:width .3s,background .3s;"></div></div>'
+                    +  '<div style="font-size:11px;color:#64748b;margin-top:3px;text-align:right;white-space:nowrap;">'+fmt(used)+' / '+fmt(quota)+(over?' · <b style="color:#ef4444;">초과</b>':'')+'</div></div>'
+                    +  '<button id="_sf-buycap" title="용량 구매" aria-label="용량 구매" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border:1px solid #bcd0e6;border-radius:10px;background:#fff;color:#0f2f52;cursor:pointer;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 18a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.3 8.5 4.5 4.5 0 0 0 7 18"/><line x1="12" y1="11.5" x2="12" y2="16.5"/><line x1="9.5" y1="14" x2="14.5" y2="14"/></svg></button>'
+                    +'</div>'
+                    +'</div>';
                 const btn=bar.querySelector('#_sf-syncnow'); const prog=bar.querySelector('#_sf-syncprog');
                 if(btn) btn.onclick=async()=>{
-                    if(window.__sfSyncBusy) return; window.__sfSyncBusy=true; btn.disabled=true; const o=btn.textContent; btn.textContent='동기화 중…';
+                    if(window.__sfSyncBusy) return; window.__sfSyncBusy=true; btn.disabled=true; btn.style.opacity='.6'; if(prog) prog.textContent='동기화 중…';
                     try{
                         const r=await window.RCMirror.backupAllRoots((n,fn,act)=>{ if(prog) prog.textContent=act+': '+fn+' ('+n+'번째)'; });
                         if(r&&r.over){ if(prog) prog.innerHTML='⚠️ 기본 용량(100MB)을 초과했습니다 — 용량을 구매하면 계속 동기화됩니다.'; try{ if(window.openCloudBackup) openCloudBackup(); }catch(_){} }
