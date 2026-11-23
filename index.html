@@ -5749,7 +5749,8 @@
         // 🎨 좌측 로컬/클라우드 저장소 — 현재 선택된 쪽을 네이비로 채워 명확히 표시
         // 🖥/☁ 드라이브 버튼 아이콘(또렷한 SVG) — 내 컴퓨터 / 클라우드
         const _DRIVE_ICO_PC='<svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
-        const _DRIVE_ICO_CLOUD='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .4-8.98 6 6 0 0 0-11.5-1.3A4.5 4.5 0 0 0 6.5 19z"/></svg>';
+        // ☁️🔄 클라우드 뷰일 때 드라이브 좌측 아이콘 = 구름+동기화 화살표(클릭=내 컴퓨터 동기화)
+        const _DRIVE_ICO_CLOUD='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 18.5a4.3 4.3 0 0 0 .4-8.56 5.7 5.7 0 0 0-10.96-1.2A4.3 4.3 0 0 0 6.5 18.5"/><path d="M14.6 12.9a2.7 2.7 0 1 0 .2 2.3"/><path d="M14.9 11.2l.2 1.9-1.9.1"/></svg>';
         window._sbUpdateStorageSel = function(){ const cloud=!!window.__sfCloudView; const base='display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;border:1px solid;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;text-align:left;'; const on='background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-color:#0b2b4b;', off='background:#fff;color:#0f2f52;border-color:#cbd5e1;'; const ls=document.getElementById('sb-localstore'), cs=document.getElementById('sb-cloudstore'); if(ls) ls.style.cssText=base+(cloud?off:on); if(cs) cs.style.cssText=base+(cloud?on:off); try{ const ic=document.getElementById('sb-drive-ico'); if(ic) ic.innerHTML = cloud?_DRIVE_ICO_CLOUD:_DRIVE_ICO_PC; }catch(_){} };
         window._sbPatientAdd = function(){ if(window._sfCreatePatient) window._sfCreatePatient(null, ()=>window._sbLoadPatients()); else showToast('파일검색을 먼저 열어 주세요.'); };
         // ▾ 사이드바 버튼(상점검색/파일검색) 공용 드롭다운 — 패널 개폐 여부와 무관하게 동작, 버튼 우측에 팝오버
@@ -5790,12 +5791,26 @@
             else { try{ if(typeof openSharedFolderPanel==='function') openSharedFolderPanel(); }catch(_){} }
             try{ window._sfSyncDriveIcon&&window._sfSyncDriveIcon(); }catch(_){} };
         // 🔁 드라이브 버튼(사이드바) — 누를 때마다 내 컴퓨터 ↔ 클라우드 토글(글자 앞 아이콘도 전환)
-        window._sfSyncDriveIcon = function(){ const ic=document.getElementById('sb-drive-ico'); if(ic) ic.innerHTML = window.__sfCloudView ? _DRIVE_ICO_CLOUD : _DRIVE_ICO_PC; };
+        window._sfSyncDriveIcon = function(){ const ic=document.getElementById('sb-drive-ico'); if(ic){ ic.innerHTML = window.__sfCloudView ? _DRIVE_ICO_CLOUD : _DRIVE_ICO_PC; const btn=ic.closest('button'); if(btn) btn.title = window.__sfCloudView ? '내 컴퓨터 동기화 (연결된 모든 폴더를 클라우드로)' : '드라이브 — 클릭하면 내 컴퓨터 ↔ 클라우드 전환'; } };
+        // ☁️🔄 내 컴퓨터 동기화(지금) — 연결된 모든 폴더를 클라우드로. 드라이브 좌측 구름 아이콘 클릭 시 호출.
+        window._sfCloudSyncNow = async function(){
+            if(window.__sfSyncBusy){ showToast('이미 동기화 중입니다.'); return; }
+            if(!window.RCMirror||!window.RCMirror.backupAllRoots){ showToast('동기화를 사용할 수 없습니다.'); return; }
+            window.__sfSyncBusy=true; const ic=document.getElementById('sb-drive-ico'); if(ic) ic.style.opacity='.5'; showToast('🔄 내 컴퓨터 동기화 중…');
+            try{
+                const r=await window.RCMirror.backupAllRoots();
+                if(r&&r.over){ showToast('⚠️ 기본 용량(100MB)을 초과했습니다 — 용량을 구매하면 계속 동기화됩니다.'); try{ if(window.openCloudBackup) openCloudBackup(); }catch(_){} }
+                else showToast('✅ 동기화 완료 — 올림 '+(r.up||0)+'개 · 유지 '+(r.skip||0)+'개'+((r.fail)?(' · 실패 '+r.fail+'개'):''));
+                try{ window.__sfCloudStatus=await window.RCMirror.status(); }catch(_){}
+                try{ if(window.__sfCloudView && window.__sfCloudReload) window.__sfCloudReload(); }catch(_){}
+            }catch(e){ showToast('동기화 실패: '+((e&&e.message)||e)); }
+            finally{ window.__sfSyncBusy=false; const ic2=document.getElementById('sb-drive-ico'); if(ic2) ic2.style.opacity=''; }
+        };
         window._sfDriveToggle = function(){
+            if(window.__sfCloudView){ try{ window._sfCloudSyncNow&&window._sfCloudSyncNow(); }catch(_){} return; }   // ☁ 클라우드 뷰: 구름 아이콘 클릭 = 내 컴퓨터 동기화
             const mob=(window._isMobileDevice&&window._isMobileDevice());
             if(mob){ try{ window._sfComputerBtn&&window._sfComputerBtn(); }catch(_){} return; }   // 📱 모바일: 클라우드 전용
-            if(window.__sfCloudView){ try{ window._sfComputerBtn&&window._sfComputerBtn(); }catch(_){} }   // 클라우드 → 내 컴퓨터
-            else { try{ window._sbCloudToggle&&window._sbCloudToggle(); }catch(_){} }                        // 내 컴퓨터 → 클라우드
+            try{ window._sbCloudToggle&&window._sbCloudToggle(); }catch(_){}                        // 내 컴퓨터 → 클라우드
             try{ window._sfSyncDriveIcon&&window._sfSyncDriveIcon(); }catch(_){}
         };
         // ☁/📁 툴바 경로 앞 저장소 전환 ▾ — 내 컴퓨터 ↔ 클라우드만 스위칭
@@ -6447,7 +6462,7 @@
                 window._sfCloudBtnAction = async function(){
                     if(window.__sfCloudView){ return; }   // 이미 클라우드
                     // 💡 무료 기본 용량(100MB)까지는 구독 없이 바로 클라우드 뷰로 진입. 결제/구독 안내는 '지금 동기화' 용량초과(402)에서만.
-                    window.__sfCloudView=true; window.__sfPatientFilter=null; window.__sfDeepQuery=null; window.__sfStoreView=false; render(); try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){}
+                    window.__sfCloudView=true; window.__sfPatientFilter=null; window.__sfDeepQuery=null; window.__sfStoreView=false; render(); try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){} try{ window._sfSyncDriveIcon&&window._sfSyncDriveIcon(); }catch(_){}
                 };
                 // 🗂 로컬 저장소 선택(+폴더 드롭다운) — 좌측 사이드바 버튼에서 호출
                 window._sfLocalBtnAction = function(anchor){ window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null; window.__sfStoreView=false; flt.q=''; render(); try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){} if(anchor) _sfOpenLocalStore(anchor); };
@@ -7097,13 +7112,9 @@
                 // 오너 기기(공유폴더 연결)면 '지금 백업' 제공 — 그 외 기기는 조회 전용.
                 let connected=false; try{ const R=window.RCFolder; connected=!!(R&&(R.isConnected?await R.isConnected():R.chosen())); }catch(_){}
                 try{ window.__sfCloudStatus=await window.RCMirror.status(); }catch(_){}
-                const head='<div style="display:flex;align-items:center;gap:8px;margin:4px 2px 10px;flex-wrap:wrap;">'
-                    +'<button id="_cl-back" title="뒤로" aria-label="뒤로" style="flex:none;width:36px;height:36px;padding:0;border:1px solid #ededf0;background:#fff;color:#4b5563;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></button>'
-                    +'</div>';
-                const wireHead=()=>{
-                    const bb=grid.querySelector('#_cl-back'); if(bb) bb.onclick=()=>{ try{ window.__sfCloudView=false; if(window.__sfRender) window.__sfRender(); else if(window.__sfClose) window.__sfClose(); }catch(_){ if(window.__sfClose) window.__sfClose(); } };
-                };
-                if(!items.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">클라우드 저장소에 데이터가 없습니다.<br><span style="font-size:12px;">위의 <b>🔄 동기화 아이콘</b>을 누르면 연결된 모든 폴더가 클라우드로 올라갑니다(무료 100MB).</span></div>'; wireHead(); try{ _sfCloudSyncBar(ov); }catch(_){} _sfSharedBanner(grid); return; }
+                const head='';   // 뒤로 버튼·헤더 제거(사용자 요청). 내 컴퓨터 전환은 드라이브 ▼ 드롭다운에서.
+                const wireHead=()=>{};
+                if(!items.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">클라우드 저장소에 데이터가 없습니다.<br><span style="font-size:12px;">드라이브 좌측 <b>☁ 동기화 아이콘</b>을 누르면 연결된 모든 폴더가 클라우드로 올라갑니다(무료 100MB).</span></div>'; _sfSharedBanner(grid); return; }
                 // 📅 날짜별 그룹(mtime 내림차순) — PC 파일검색과 동일한 섹션 구조.
                 const _tsLabel=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '날짜 미상'; const n=new Date(); const sd=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); const y=new Date(n); y.setDate(n.getDate()-1); if(sd(d,n)) return '오늘'; if(sd(d,y)) return '어제'; return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0'); };
                 const _key=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '0000-00-00'; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
@@ -7120,9 +7131,9 @@
                         +(sub?('<div style="font-size:10px;color:#94a3b8;padding:0 8px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub)+'</div>'):'')
                         +'</div>'; };
                 const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
-                const secs=groups.map(g=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(g.label)+' <span style="color:#94a3b8;font-weight:600;">('+g.items.length+')</span></div><div class="_sf-secgrid" style="'+secStyle+'">'+g.items.map(card).join('')+'</div></div>').join('');
+                const secs=groups.map(g=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(g.label)+'</div><div class="_sf-secgrid" style="'+secStyle+'">'+g.items.map(card).join('')+'</div></div>').join('');
                 grid.innerHTML=head+secs;
-                wireHead(); try{ _sfCloudSyncBar(ov); }catch(_){}
+                wireHead();
                 // ☁️ 클라우드 카드 = 내 컴퓨터 카드와 동일 UX: 체크박스 다중선택 + 드래그 + 클릭(폼열림시 첨부=14일 링크)
                 const _clSel=new Map();
                 const _clBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); if(sb) sb.style.display=_clSel.size?'flex':'none'; if(cn) cn.textContent=_clSel.size+'개 선택'; };
@@ -7222,7 +7233,7 @@
                 const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
                 let body='';
                 if(useDate){ const groups=[]; const gmap={}; all.forEach(it=>{ const k=_key(it.mtime); if(!gmap[k]){ gmap[k]={label:_tsLabel(it.mtime),items:[]}; groups.push(gmap[k]); } gmap[k].items.push(it); });
-                    body=groups.map(g=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(g.label)+' <span style="color:#94a3b8;font-weight:600;">('+g.items.length+')</span></div><div class="_sf-secgrid" style="'+secStyle+'">'+g.items.map(card).join('')+'</div></div>').join('');
+                    body=groups.map(g=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(g.label)+'</div><div class="_sf-secgrid" style="'+secStyle+'">'+g.items.map(card).join('')+'</div></div>').join('');
                 } else { body='<div class="_sf-secgrid" style="'+secStyle+'">'+all.map(card).join('')+'</div>'; }
                 grid.innerHTML=bar+'<div style="font-size:12px;color:#64748b;margin:0 2px 8px;">총 '+all.length+'개'+(all.length>=3000*Math.max(1,connRoots.length)?' (일부 생략)':'')+'</div>'+body;
                 wireBar();
@@ -17716,7 +17727,7 @@ pdfjsScript,
                     if(el.classList.contains('open')) add();
                 }
                 // #osk-panel(화면 키보드)은 서랍 밖이지만 클릭해도 메신저가 닫히지 않게 keepSel에 포함
-                _wireDrawerOutside('messenger-drawer', '[onclick*="toggleMessengerDrawer"], .yt-menu-btn, #osk-panel, #osk-vcursor', function(){ try{ const d=document.getElementById('messenger-drawer'); if(d) d.classList.remove('open'); }catch(_){} });
+                // 🛑 메신저는 바깥 화면 클릭으로 자동 닫지 않음(닫기 버튼으로만 닫음) — 사용자 요청. (_wireDrawerOutside 미적용)
                 _wireDrawerOutside('yt-sidebar', '.yt-menu-btn, [onclick*="toggleSidebar"]', function(){ try{ const s=document.getElementById('yt-sidebar'); if(s) s.classList.remove('open'); document.body.classList.remove('sidebar-open'); }catch(_){} });
             }catch(_){}
         })();
