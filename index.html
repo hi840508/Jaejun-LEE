@@ -7119,19 +7119,22 @@
                 let roots=[]; try{ roots=(R&&R.rootsStatus)?await R.rootsStatus():[]; }catch(_){}
                 let mainId=''; try{ mainId=await window._sfMainRootId(); }catch(_){}
                 const mainRoot=(roots||[]).find(r=>String(r.id)===String(mainId))||null;
+                const mainFixed=!!(mainRoot&&mainRoot.fixed);   // 앱=OS 고정 Alpha K(변경불가), 웹=사용자 지정(변경가능)
                 // 상단 연결상태 요약 바(폴더별 연결됨/연결불가 + 재연결). ⭐=주 폴더(드롭 추가 기본 위치).
                 const bar='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 2px 12px;">'
                     +'<div style="font-weight:800;font-size:15px;color:#0f2f52;">📁 내 컴퓨터 <span style="color:#94a3b8;font-weight:600;font-size:12px;">· 등록 폴더 전체 취합</span></div>'
-                    +(mainRoot?('<span title="주 폴더 — 파일을 여기로 끌어다 놓으면 이 폴더에 추가됩니다" style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid #fde68a;background:#fffbeb;color:#b45309;">⭐ 주 폴더: '+ESC(mainRoot.name)+'</span>'):'')
-                    +(roots.length?roots.filter(r=>String(r.id)!==String(mainId)).map(r=>'<span class="_ml-pill" data-rootid="'+ESC(r.id)+'" title="'+ESC(r.name)+'" style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid '+(r.connected?'#bbf7d0':'#fecaca')+';background:'+(r.connected?'#f0fdf4':'#fef2f2')+';color:'+(r.connected?'#15803d':'#b91c1c')+';">'+(r.connected?'🟢':'🔴')+' '+ESC(r.name)+(r.connected?'':' <b class="_ml-recon" style="cursor:pointer;text-decoration:underline;margin-left:2px;">재연결</b>')+'</span>').join(''):'<span style="color:#94a3b8;font-size:13px;">등록된 폴더가 없습니다. 좌측 폴더 추가(＋)로 폴더를 등록하세요.</span>')
+                    +(mainRoot?('<span title="주 폴더 — 파일을 여기로 끌어다 놓으면 이 폴더에 추가됩니다'+(mainFixed?' (앱 고정 폴더)':' (지정됨 — 다른 폴더의 ⭐지정으로 변경 가능)')+'" style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid #fde68a;background:#fffbeb;color:#b45309;">⭐ 주 폴더: '+ESC(mainRoot.name)+(mainFixed?' <span style="font-weight:600;opacity:.7;">(고정)</span>':'')+'</span>'):'')
+                    +(roots.length?roots.filter(r=>String(r.id)!==String(mainId)).map(r=>'<span class="_ml-pill" data-rootid="'+ESC(r.id)+'" title="'+ESC(r.name)+'" style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid '+(r.connected?'#bbf7d0':'#fecaca')+';background:'+(r.connected?'#f0fdf4':'#fef2f2')+';color:'+(r.connected?'#15803d':'#b91c1c')+';">'+(r.connected?'🟢':'🔴')+' '+ESC(r.name)+(r.connected?((!mainFixed)?' <b class="_ml-setmain" data-rootid="'+ESC(r.id)+'" title="이 폴더를 주 폴더로 지정(드롭·저장 기본 위치)" style="cursor:pointer;text-decoration:underline;margin-left:3px;color:#b45309;">⭐지정</b>':''):' <b class="_ml-recon" style="cursor:pointer;text-decoration:underline;margin-left:2px;">재연결</b>')+'</span>').join(''):'<span style="color:#94a3b8;font-size:13px;">등록된 폴더가 없습니다. 좌측 폴더 추가(＋)로 폴더를 등록하세요.</span>')
                     +'</div>';
                 grid.innerHTML=bar+'<div style="padding:34px;text-align:center;color:#64748b;font-size:14px;">모든 폴더에서 파일을 불러오는 중…</div>';
-                const wireBar=()=>{ grid.querySelectorAll('._ml-pill').forEach(el=>{ const rid=el.getAttribute('data-rootid'); const rc=el.querySelector('._ml-recon'); if(rc) rc.addEventListener('click',async(e)=>{ e.stopPropagation(); try{ if(R.setActiveRoot) await R.setActiveRoot(rid); const ok=R.ensureAccess?await R.ensureAccess():false; if(ok){ showToast('✅ 연결됨'); _sfRenderMergedLocal(ov); } else showToast('연결 권한이 거부되었습니다. 폴더를 다시 선택해 주세요.'); }catch(_){ showToast('재연결 실패'); } }); }); };
+                const wireBar=()=>{ grid.querySelectorAll('._ml-pill').forEach(el=>{ const rid=el.getAttribute('data-rootid'); const rc=el.querySelector('._ml-recon'); if(rc) rc.addEventListener('click',async(e)=>{ e.stopPropagation(); try{ if(R.setActiveRoot) await R.setActiveRoot(rid); const ok=R.ensureAccess?await R.ensureAccess():false; if(ok){ showToast('✅ 연결됨'); _sfRenderMergedLocal(ov); } else showToast('연결 권한이 거부되었습니다. 폴더를 다시 선택해 주세요.'); }catch(_){ showToast('재연결 실패'); } });
+                    const sm=el.querySelector('._ml-setmain'); if(sm) sm.addEventListener('click',(e)=>{ e.stopPropagation(); const mid=sm.getAttribute('data-rootid')||rid; try{ localStorage.setItem('rc_main_root', mid); }catch(_){} const nm=(el.getAttribute('title')||'선택한 폴더'); showToast('⭐ 주 폴더로 지정: '+nm); _sfRenderMergedLocal(ov); }); }); };
                 wireBar();
                 // 📥 OS 탐색기 파일을 그리드에 드롭 → 주 폴더에 추가(네이티브 드래그 내보내기와 짝)
                 try{ if(!grid.__osDropWired){ grid.__osDropWired=true;
-                    grid.addEventListener('dragover',(e)=>{ if(e.dataTransfer && (e.dataTransfer.types||[]).indexOf('Files')>=0){ e.preventDefault(); e.dataTransfer.dropEffect='copy'; grid.style.outline='2.5px dashed #c51b7d'; grid.style.outlineOffset='-6px'; } });
-                    grid.addEventListener('dragleave',(e)=>{ if(e.target===grid){ grid.style.outline=''; } });
+                    grid.addEventListener('dragover',(e)=>{ if(window.__sfDragFileRef||window.__rcDragFile||window.__rcDragFiles) return; if(e.dataTransfer && (e.dataTransfer.types||[]).indexOf('Files')>=0){ e.preventDefault(); e.dataTransfer.dropEffect='copy'; grid.style.outline='2.5px dashed #c51b7d'; grid.style.outlineOffset='-6px'; } });
+                    grid.addEventListener('dragleave',(e)=>{ if(e.target===grid){ grid.style.outline=''; grid.style.outlineOffset=''; } });
+                    grid.addEventListener('dragend',()=>{ grid.style.outline=''; grid.style.outlineOffset=''; });
                     grid.addEventListener('drop',async(e)=>{ grid.style.outline=''; if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length){ e.preventDefault(); e.stopPropagation(); await window._sfWriteFilesToMain(e.dataTransfer.files); } });
                 } }catch(_){}
                 // 연결된 루트만 순회 병합
@@ -7430,7 +7433,10 @@
                 // ⛔ (제거) 화면 어디에 놓아도 첨부되던 전역 드롭 — 사용자 원칙: 첨부는 '점선 드롭 영역'에 정확히 놓았을 때만.
                 //    실제 드롭존(order-buyer-dropzone / rx-dropzone / 채팅방)은 각자 dragover+drop을 가지고 있어 정상 동작한다.
                 // 🧹 드래그 종료 시 잔류 표시(점선 오버레이·드롭존 하이라이트) 정리 — 공유 후에도 점선이 안 사라지던 버그 수정
-                const _sfDragCleanup=function(){ try{ const o=document.getElementById('chat-drag-overlay'); if(o) o.classList.remove('active'); }catch(_){} try{ document.querySelectorAll('.dropzone.dragover, .mini-dropzone.dragover').forEach(d=>d.classList.remove('dragover')); }catch(_){} try{ if(window.__sfOv) window.__sfOv.style.outline=''; }catch(_){} try{ document.querySelectorAll('.rc-gfd[style*="2px solid"]').forEach(el=>{ el.style.outline=''; }); }catch(_){} };
+                const _sfDragCleanup=function(){ try{ const o=document.getElementById('chat-drag-overlay'); if(o) o.classList.remove('active'); }catch(_){} try{ document.querySelectorAll('.dropzone.dragover, .mini-dropzone.dragover').forEach(d=>d.classList.remove('dragover')); }catch(_){} try{ if(window.__sfOv) window.__sfOv.style.outline=''; }catch(_){} try{ document.querySelectorAll('.rc-gfd[style*="2px solid"]').forEach(el=>{ el.style.outline=''; }); }catch(_){}
+                    // 🧹 병합/환자 그리드·폴더뷰에 드래그 중 켜둔 인라인 점선/실선 아웃라인 잔류 제거(파일카드를 밖으로 끌어낸 뒤 점선이 남던 버그 확실 수정)
+                    try{ const g=document.getElementById('_sf-grid'); if(g){ g.style.outline=''; g.style.outlineOffset=''; } }catch(_){}
+                    try{ document.querySelectorAll('.rc-gf,.rc-gfd,._pt-file,._sr-file,.rc-clview').forEach(el=>{ if(el.style && el.style.outline){ el.style.outline=''; el.style.outlineOffset=''; } }); }catch(_){} };
                 document.addEventListener('dragend', _sfDragCleanup, false);
                 document.addEventListener('drop', _sfDragCleanup, false);
             }
