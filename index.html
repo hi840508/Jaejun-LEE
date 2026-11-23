@@ -4975,19 +4975,33 @@
                 let roots=[]; try{ roots=(R.rootsStatus)?await R.rootsStatus():((R.listRoots)?await R.listRoots():[]); }catch(_){ roots=[]; }
                 const conn=(roots||[]).filter(r=>r && r.connected!==false);
                 const have={}; try{ const l=await (await fetch(A()+'/api/mirror/list')).json(); (l.items||[]).forEach(it=>have[it.rpath]=it); }catch(_){}
-                let up=0,skip=0,fail=0,total=0,over=false;
+                // 💾 현재 사용량/용량 — CT 시리즈를 '단위'로 올리기 전에 충분한 용량인지 미리 검사
+                let used=0, quota=104857600; try{ const st=await status(); used=Number(st.used||0); quota=Number(st.quota||st.freeBytes||quota); }catch(_){}
+                let up=0,skip=0,fail=0,total=0,over=false,needBytes=0;
                 for(const r of conn){
-                    let files=[]; try{ files=(R.walkRoot)?await R.walkRoot(r.id,{max:5000}):[]; }catch(_){ files=[]; }
-                    for(const f of files){ total++;
-                        const rel=(f.pathArr||[]).concat(f.fname).join('/'); const rpath=String(r.id)+'/'+rel;
-                        const ex=have[rpath]; if(ex && ex.size===f.size){ skip++; if(onProg)onProg(total,f.fname,'건너뜀'); continue; }
-                        try{ const blob=(R.getFileAtRoot)?await R.getFileAtRoot(r.id,f.pathArr,f.fname):null; if(!blob){ fail++; continue; }
-                            await uploadOne(rpath, blob, f.mime, f.mtime, true); up++; if(onProg)onProg(total,f.fname,'백업'); }
-                        catch(e){ fail++; if(e&&e.quotaExceeded) over=true; if(onProg)onProg(total,f.fname,(e&&e.message)||'실패'); if(over) break; }
+                    let files=[]; try{ files=(R.walkRoot)?await R.walkRoot(r.id,{max:8000}):[]; }catch(_){ files=[]; }
+                    // 🩻 CT 시리즈 묶기: 같은 폴더의 .dcm 2장↑ = 한 단위(파일카드 1개). 그 외는 개별 단위.
+                    const byDir={}; const units=[];
+                    files.forEach(f=>{ const rel=(f.pathArr||[]).concat(f.fname).join('/'); const rpath=String(r.id)+'/'+rel; const it=Object.assign({},f,{rel:rel,rpath:rpath}); if(/\.dcm$/i.test(String(f.fname||''))){ const k=(f.pathArr||[]).join('/'); (byDir[k]=byDir[k]||[]).push(it); } else units.push({series:false,files:[it]}); });
+                    Object.keys(byDir).forEach(k=>{ const arr=byDir[k]; units.push({series:arr.length>=2, files:arr}); });
+                    for(const u of units){ total+=u.files.length;
+                        // 아직 동기화 안 된(크기 다름) 파일만 대상
+                        const pending=u.files.filter(f=>{ const ex=have[f.rpath]; return !(ex && ex.size===f.size); });
+                        skip+=(u.files.length-pending.length);
+                        if(!pending.length){ if(onProg)onProg(total,(u.series?'CT 시리즈':u.files[0].fname),'건너뜀'); continue; }
+                        const unitSize=pending.reduce((s,f)=>s+(Number(f.size)||0),0);
+                        // 📏 용량 선검사: 이 단위(시리즈 전체)가 들어갈 공간이 없으면 올리지 않고 '용량 확장 안내'로.
+                        if(used+unitSize>quota){ over=true; needBytes=Math.max(needBytes,(used+unitSize)-quota); if(onProg)onProg(total,(u.series?('CT 시리즈('+u.files.length+'컷)'):u.files[0].fname),'용량 부족'); break; }
+                        for(const f of pending){
+                            try{ const blob=(R.getFileAtRoot)?await R.getFileAtRoot(r.id,f.pathArr,f.fname):null; if(!blob){ fail++; continue; }
+                                await uploadOne(f.rpath, blob, f.mime, f.mtime, true); up++; used+=(Number(f.size)||0); if(onProg)onProg(total,f.fname,(u.series?'CT 시리즈 백업':'백업')); }
+                            catch(e){ fail++; if(e&&e.quotaExceeded){ over=true; } if(over) break; }
+                        }
+                        if(over) break;
                     }
                     if(over) break;
                 }
-                return {total,up,skip,fail,over};
+                return {total,up,skip,fail,over,needBytes};
             }
             async function list(){ try{ return (await (await fetch(A()+'/api/mirror/list')).json()).items||[]; }catch(_){ return []; } }
             async function restoreOne(rpath){ const R=window.RCFolder; const d=await fetch(A()+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath})}); const dj=await d.json(); if(!d.ok) throw new Error(dj.error||'복원 오류'); const blob=await (await fetch(dj.url)).blob(); const parts=rpath.split('/'); const fname=parts.pop(); let acc=[]; for(const p of parts){ try{ await R.mkdirAt(acc.slice(),p); }catch(_){} acc.push(p); } await R.writeFileAt(parts,fname,blob); return true; }
@@ -7185,13 +7199,16 @@
                 // 📅 날짜별 그룹(mtime 내림차순) — PC 파일검색과 동일한 섹션 구조.
                 const _tsLabel=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '날짜 미상'; const n=new Date(); const sd=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); const y=new Date(n); y.setDate(n.getDate()-1); if(sd(d,n)) return '오늘'; if(sd(d,y)) return '어제'; return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0'); };
                 const _key=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '0000-00-00'; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+                // 🩻 CT 시리즈 — 같은 폴더의 .dcm 2장↑ = 1 카드(대표 중간 슬라이스 + 컷 수). 로컬 병합뷰와 동일.
+                (function(){ const byDir={}; const rest=[]; items.forEach(it=>{ if(it.__shared){ rest.push(it); return; } const rp=String(it.rpath||''); if(/\.dcm$/i.test(rp)){ const k=rp.replace(/\/[^/]*$/,''); (byDir[k]=byDir[k]||[]).push(it); } else rest.push(it); }); const mg=[]; Object.keys(byDir).forEach(k=>{ const L=byDir[k].sort((a,b)=>String(a.rpath).localeCompare(String(b.rpath),undefined,{numeric:true})); if(L.length>=2){ const rep=Object.assign({}, L[Math.floor(L.length/2)]); rep.series=L.length; rep.__seriesDir=k; mg.push(rep); } else mg.push(L[0]); }); items=rest.concat(mg); })();
                 const sorted=items.slice().sort((a,b)=>(Number(b.mtime)||0)-(Number(a.mtime)||0));
                 const groups=[]; const gmap={};
                 sorted.forEach(it=>{ const k=_key(it.mtime); if(!gmap[k]){ gmap[k]={label:_tsLabel(it.mtime),items:[]}; groups.push(gmap[k]); } gmap[k].items.push(it); });
-                const card=(it)=>{ const nm=_b(it.rpath); const sub=(it.rpath||'').split('/').slice(0,-1).join(' / ');
+                const card=(it)=>{ const _rawnm=_b(it.rpath); const isSeries=(Number(it.series)||0)>1; const nm=isSeries?('CT 시리즈 · '+it.series+'컷'):_rawnm; const sub=(it.rpath||'').split('/').slice(0,-1).join(' / ');
                     const _shAttr=it.__shared?(' data-shared="1" data-shareid="'+ESC(it.shareId)+'" data-from="'+ESC(it.from||'')+'"'):'';
                     return '<div class="rc-clview"'+(it.__shared?'':' draggable="true"')+' data-rpath="'+ESC(it.rpath)+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'"'+_shAttr+(_isImg(nm)?' data-img="1"':'')+' title="'+ESC(it.rpath)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #ebedf0;border-radius:14px;display:flex;flex-direction:column;cursor:pointer;">'
-                        +'<div class="rc-clthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="rc-clic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+_sfFileTile(nm)+'</div>'
+                        +'<div class="rc-clthumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;"><div class="rc-clic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+_sfFileTile(_rawnm)+'</div>'
+                        +(isSeries?('<span style="position:absolute;top:6px;right:6px;z-index:6;background:rgba(14,116,144,.95);color:#fff;font-size:9px;font-weight:800;padding:2px 6px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.2);">🩻 '+it.series+'컷</span>'):'')
                         +(it.__shared?('<span style="position:absolute;top:6px;left:6px;z-index:6;background:#0d9488;color:#fff;font-size:9px;font-weight:800;padding:2px 6px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.2);">📥 공유받음'+(it.daysLeft!=null?(' · '+it.daysLeft+'일'):'')+'</span>'):'<div class="rc-cl-chk" style="position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);"></div>')
                         +'<button class="rc-clmenu" data-rpath="'+ESC(it.rpath)+'" title="열기·공유·삭제" style="position:absolute;bottom:5px;right:5px;width:26px;height:26px;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+_SFIC.dots+'</button></div>'
                         +'<div style="flex:none;padding:7px 8px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(nm)+'</div>'
