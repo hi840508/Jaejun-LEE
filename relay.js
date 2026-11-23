@@ -1049,6 +1049,9 @@ function initTables() {
             //    중지 중에는 새 백업(켜기·업로드)만 막고, 이미 올라간 파일의 목록·복원은 계속 허용한다
             //    (회원이 이미 맡긴 데이터를 못 꺼내는 상태를 만들지 않기 위함).
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('mirror_enabled', '0')`, () => {});
+            // ☁️🔁 [주/전체 폴더 자동 클라우드 동기화] 기본 '1'(전원 ON). 연결된 모든 폴더를 무료 100MB 내 자동 백업,
+            //    초과 시 결제 안내. 관리자 킬스위치(settings 'auto_sync_enabled'). mirror_enabled(수동 미러)와 독립.
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_sync_enabled', '1')`, () => {});
             // ☁️ [공유폴더 백업 구독] 월 구독료(원). 관리자 변경 가능.
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('backup_sub_price', '9900')`, () => {});
             // ☁️ [클라우드저장소] GB당 월요금(원). 기본 50원/GB(=100GB 5,000원). 관리자 변경 가능.
@@ -3264,6 +3267,33 @@ function requireMirrorOn(req, res) {
     res.status(503).json({ error: '클라우드 미러 백업이 현재 중지되어 있습니다. (관리자 설정)', disabled: true });
     return false;
 }
+// ☁️🔁 자동 동기화 전역 스위치 — 기본 ON. 연결된 모든 폴더를 무료 100MB 내 자동 백업(수동 미러와 독립).
+let AUTO_SYNC_ON = true;
+function _loadAutoSyncFlag(cb) {
+    db.get(`SELECT value FROM settings WHERE key='auto_sync_enabled'`, [], (e, r) => {
+        AUTO_SYNC_ON = String((r && r.value) || '1') === '1';   // 행이 없으면 기본 ON
+        if (cb) cb(AUTO_SYNC_ON);
+    });
+}
+setTimeout(() => _loadAutoSyncFlag(), 1500);
+// 자동 동기화 요청(req.body.auto)은 수동 미러 중지 중에도 허용(전역 auto 스위치만 따름). 용량 초과는 402로 별도 처리.
+function allowMirrorWrite(req, res) {
+    if (req.body && req.body.auto) {
+        if (AUTO_SYNC_ON) return true;
+        res.status(503).json({ error: '자동 클라우드 동기화가 중지되어 있습니다. (관리자 설정)', disabled: true });
+        return false;
+    }
+    return requireMirrorOn(req, res);
+}
+app.get('/api/admin/autosync-flag', (req, res) => { if (!requireAdmin(req, res)) return; res.json({ enabled: AUTO_SYNC_ON }); });
+app.post('/api/admin/autosync-flag', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const on = req.body.enabled ? '1' : '0';
+    db.run(`INSERT INTO settings (key, value) VALUES ('auto_sync_enabled', ?) ON CONFLICT(key) DO UPDATE SET value=?`, [on, on], (e) => {
+        if (e) return res.status(500).json({ error: e.message });
+        _loadAutoSyncFlag(() => res.json({ ok: true, enabled: AUTO_SYNC_ON }));
+    });
+});
 // 🛠 Admin: 미러 서비스 on/off 조회·변경
 app.get('/api/admin/mirror-flag', (req, res) => {
     if (!requireAdmin(req, res)) return;
@@ -3480,7 +3510,7 @@ app.get('/api/admin/aws-cost', async (req, res) => {
 });
 app.post('/api/mirror/upload-url', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
-    if (!requireMirrorOn(req, res)) return;
+    if (!allowMirrorWrite(req, res)) return;
     if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
     const rpath = String(req.body.rpath || ''); const size = Math.max(0, Math.floor(Number(req.body.size) || 0)); const mime = String(req.body.mime || 'application/octet-stream');
     if (!rpath) return res.status(400).json({ error: 'rpath 필요' });
@@ -3501,7 +3531,7 @@ app.post('/api/mirror/upload-url', (req, res) => {
 });
 app.post('/api/mirror/commit', (req, res) => {
     const name = requireUser(req, res); if (!name) return;
-    if (!requireMirrorOn(req, res)) return;
+    if (!allowMirrorWrite(req, res)) return;
     const rpath = String(req.body.rpath || ''); const key = String(req.body.key || '');
     const size = Math.max(0, Math.floor(Number(req.body.size) || 0)); const mime = String(req.body.mime || ''); const mtime = Math.floor(Number(req.body.mtime) || Date.now());
     if (!rpath || key !== _mirrorKey(name, rpath)) return res.status(400).json({ error: '잘못된 요청' });

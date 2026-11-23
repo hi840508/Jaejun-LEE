@@ -4913,11 +4913,11 @@
             async function enable(on){ try{ const r=await fetch(A()+'/api/mirror/enable',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:!!on})}); return await r.json(); }catch(_){ return null; } }
             async function _enabled(){ const s=await status(); return !!(s&&s.enabled); }
             async function _walk(R){ const out=[]; async function rec(pathArr){ const {folders,files}=await R.listAt(pathArr); for(const f of files){ out.push({pathArr, fname:f.fname, size:f.size, mime:f.mime, mtime:f.mtime, rpath:pathArr.concat(f.fname).join('/')}); } for(const d of folders){ await rec(pathArr.concat(d)); } } await rec([]); return out; }
-            async function uploadOne(rpath, blob, mime, mtime){
-                const u=await fetch(A()+'/api/mirror/upload-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath,size:blob.size,mime:mime||''})});
-                const uj=await u.json(); if(!u.ok) throw new Error(uj.error||'용량 부족/오류');
+            async function uploadOne(rpath, blob, mime, mtime, auto){
+                const u=await fetch(A()+'/api/mirror/upload-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath,size:blob.size,mime:mime||'',auto:!!auto})});
+                const uj=await u.json(); if(!u.ok){ const err=new Error(uj.error||'용량 부족/오류'); if(u.status===402) err.quotaExceeded=true; throw err; }
                 const put=await fetch(uj.url,{method:'PUT',headers:{'Content-Type':mime||'application/octet-stream'},body:blob}); if(!put.ok) throw new Error('업로드 실패('+put.status+')');
-                const c=await fetch(A()+'/api/mirror/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath,key:uj.key,size:blob.size,mime:mime||'',mtime:mtime||Date.now()})});
+                const c=await fetch(A()+'/api/mirror/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath,key:uj.key,size:blob.size,mime:mime||'',mtime:mtime||Date.now(),auto:!!auto})});
                 const cj=await c.json(); if(!c.ok) throw new Error(cj.error||'commit 오류'); return cj;
             }
             async function backupAll(onProg){
@@ -4933,6 +4933,26 @@
                 return {total:files.length,up,skip,fail};
             }
             async function autoMirror(rpath, blob, mime, mtime){ try{ if(!(await _enabled())) return; await uploadOne(rpath,blob,mime,mtime); }catch(_){}}
+            // ☁️🔁 연결된 '모든' 폴더를 클라우드로 자동 백업(루트별 walk, rpath=rootId/상대경로로 네임스페이스, 변경분만). auto=true로 무료 100MB 내 허용.
+            async function backupAllRoots(onProg){
+                const R=window.RCFolder; if(!R) throw new Error('폴더 기능이 없습니다.');
+                let roots=[]; try{ roots=(R.rootsStatus)?await R.rootsStatus():((R.listRoots)?await R.listRoots():[]); }catch(_){ roots=[]; }
+                const conn=(roots||[]).filter(r=>r && r.connected!==false);
+                const have={}; try{ const l=await (await fetch(A()+'/api/mirror/list')).json(); (l.items||[]).forEach(it=>have[it.rpath]=it); }catch(_){}
+                let up=0,skip=0,fail=0,total=0,over=false;
+                for(const r of conn){
+                    let files=[]; try{ files=(R.walkRoot)?await R.walkRoot(r.id,{max:5000}):[]; }catch(_){ files=[]; }
+                    for(const f of files){ total++;
+                        const rel=(f.pathArr||[]).concat(f.fname).join('/'); const rpath=String(r.id)+'/'+rel;
+                        const ex=have[rpath]; if(ex && ex.size===f.size){ skip++; if(onProg)onProg(total,f.fname,'건너뜀'); continue; }
+                        try{ const blob=(R.getFileAtRoot)?await R.getFileAtRoot(r.id,f.pathArr,f.fname):null; if(!blob){ fail++; continue; }
+                            await uploadOne(rpath, blob, f.mime, f.mtime, true); up++; if(onProg)onProg(total,f.fname,'백업'); }
+                        catch(e){ fail++; if(e&&e.quotaExceeded) over=true; if(onProg)onProg(total,f.fname,(e&&e.message)||'실패'); if(over) break; }
+                    }
+                    if(over) break;
+                }
+                return {total,up,skip,fail,over};
+            }
             async function list(){ try{ return (await (await fetch(A()+'/api/mirror/list')).json()).items||[]; }catch(_){ return []; } }
             async function restoreOne(rpath){ const R=window.RCFolder; const d=await fetch(A()+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath})}); const dj=await d.json(); if(!d.ok) throw new Error(dj.error||'복원 오류'); const blob=await (await fetch(dj.url)).blob(); const parts=rpath.split('/'); const fname=parts.pop(); let acc=[]; for(const p of parts){ try{ await R.mkdirAt(acc.slice(),p); }catch(_){} acc.push(p); } await R.writeFileAt(parts,fname,blob); return true; }
             async function restoreAll(onProg){ const items=await list(); let done=0,ok=0,fail=0; for(const it of items){ done++; try{ await restoreOne(it.rpath); ok++; }catch(_){ fail++; } if(onProg)onProg(done,items.length,it.rpath); } return {total:items.length,ok,fail}; }
@@ -4943,7 +4963,34 @@
             async function sharedRemove(id){ try{ await fetch(A()+'/api/mirror/shared-remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); }catch(_){}}
             // 받은 공유를 내 공유폴더로 저장(다운로드)
             async function sharedSaveToFolder(id, name){ const R=window.RCFolder; if(!R||!R.chosen()) throw new Error('공유폴더가 지정되지 않았습니다.'); const url=await sharedUrl(id); const blob=await (await fetch(url)).blob(); if(!blob||blob.size===0) throw new Error('빈 파일(0바이트)입니다. 원본 공유가 완료되었는지 확인하세요.'); await R.writeFileAt([], name||('shared_'+id), blob); return true; }
-            return { status, enable, backupAll, autoMirror, list, restoreAll, restoreOne, del, uploadOne, walk:_walk, excludes, sharedWithMe, sharedUrl, sharedRemove, sharedSaveToFolder };
+            return { status, enable, backupAll, backupAllRoots, autoMirror, list, restoreAll, restoreOne, del, uploadOne, walk:_walk, excludes, sharedWithMe, sharedUrl, sharedRemove, sharedSaveToFolder };
+        })();
+
+        // ☁️🔁 자동 클라우드 동기화 — 연결된 '모든' 폴더를 무료 100MB 내 자동 백업, 초과 시 결제 안내. 기본 ON(서버 auto_sync_enabled).
+        //   트리거: 로그인/패널 준비 8초 후 1회 + 5분 주기 + 주 폴더에 드롭 직후 + 창 포커스(최소 90초 간격). 변경분(size 다름)만 업로드.
+        (function(){
+            let busy=false, overPrompted=false, lastRun=0, timer=0;
+            function _loggedIn(){ try{ return !!(typeof currentUser!=='undefined' && currentUser && currentUser.name); }catch(_){ return false; } }
+            async function run(reason){
+                if(busy) return; if(!_loggedIn()) return;
+                const R=window.RCFolder; if(!R||!window.RCMirror||!RCMirror.backupAllRoots) return;
+                busy=true; lastRun=Date.now();
+                try{
+                    const r=await RCMirror.backupAllRoots();
+                    if(r && r.over && !overPrompted){ overPrompted=true; _promptOver(); }
+                    else if(r && r.up>0){ try{ showToast('☁️ 클라우드 동기화 '+r.up+'개 완료'); }catch(_){} if(r.up && !r.over) overPrompted=false; }
+                }catch(_){}
+                finally{ busy=false; }
+            }
+            function _promptOver(){
+                try{ showToast('⚠️ 클라우드 기본 용량(100MB)을 초과했습니다. 용량을 구매하면 계속 동기화됩니다.'); }catch(_){}
+                try{ if(window.openCloudBackup) setTimeout(()=>{ try{ openCloudBackup(); }catch(_){} }, 900); }catch(_){}
+            }
+            function schedule(reason, delay){ try{ clearTimeout(timer); }catch(_){} timer=setTimeout(()=>{ run(reason); }, delay||1500); }
+            window.syncAllFolders=function(reason){ schedule(reason||'manual', 500); };
+            setTimeout(()=>{ try{ run('init'); }catch(_){} }, 8000);
+            setInterval(()=>{ try{ run('interval'); }catch(_){} }, 5*60*1000);
+            try{ window.addEventListener('focus', ()=>{ if(Date.now()-lastRun>90000) schedule('focus', 2000); }); }catch(_){}
         })();
 
         // ☁️🔁 클라우드 버튼 진입점 — 구독 상태로 흐름 결정: 구독중/카드결제 비활성 → 백업패널, 미구독 → 구독 안내.
@@ -7389,7 +7436,7 @@
             // 📤 파일 카드 → OS 탐색기로 네이티브 드래그 내보내기(앱 전용, 로컬 파일만). 성공 시 true.
             window._sfStartNativeDrag = function(descs, e){ try{ if(!(window.rayApp&&window.rayApp.fs&&window.rayApp.fs.startDrag)) return false; const items=[]; for(const d of (descs||[])){ if(!d||d.cloud||!d.rootId) continue; let rel=String(d.rpath||''); if(!rel) continue; if(/\.dcm$/i.test(rel) && Number(d.series)>1){ rel=rel.split('/').slice(0,-1).join('/'); } items.push({rootId:d.rootId, relPath:rel}); } if(!items.length) return false; window.rayApp.fs.startDrag(items); try{ if(e) e.preventDefault(); }catch(_){} return true; }catch(_){ return false; } };
             // 📥 OS 파일 드롭 → 주 폴더에 저장(등록). 드래그로 추가되는 파일은 항상 주 폴더 경로로.
-            window._sfWriteFilesToMain = async function(fileList){ const files=[].slice.call(fileList||[]); if(!files.length) return; const R=window.RCFolder; if(!R){ showToast('폴더가 연결되지 않았습니다.'); return; } const mid=await window._sfMainRootId(); if(!mid){ showToast('주 폴더가 없습니다. 먼저 폴더를 지정하세요.'); return; } showToast('주 폴더에 추가 중… ('+files.length+'개)'); let ok=0; try{ if(R.setActiveRoot) await R.setActiveRoot(mid); }catch(_){} for(const f of files){ try{ if(R.writeFileAt){ await R.writeFileAt([], f.name, f); ok++; } }catch(_){} } showToast(ok?('📥 주 폴더에 추가: '+ok+'개'):'추가 실패'); try{ if(R.scanPatients) R.scanPatients(); }catch(_){} try{ if(window.__sfRender) window.__sfRender(); }catch(_){} };
+            window._sfWriteFilesToMain = async function(fileList){ const files=[].slice.call(fileList||[]); if(!files.length) return; const R=window.RCFolder; if(!R){ showToast('폴더가 연결되지 않았습니다.'); return; } const mid=await window._sfMainRootId(); if(!mid){ showToast('주 폴더가 없습니다. 먼저 폴더를 지정하세요.'); return; } showToast('주 폴더에 추가 중… ('+files.length+'개)'); let ok=0; try{ if(R.setActiveRoot) await R.setActiveRoot(mid); }catch(_){} for(const f of files){ try{ if(R.writeFileAt){ await R.writeFileAt([], f.name, f); ok++; } }catch(_){} } showToast(ok?('📥 주 폴더에 추가: '+ok+'개'):'추가 실패'); try{ if(R.scanPatients) R.scanPatients(); }catch(_){} try{ if(window.__sfRender) window.__sfRender(); }catch(_){} try{ if(ok && window.syncAllFolders) window.syncAllFolders('drop'); }catch(_){} };
             window._sfDownloadDesc = async function(d){ try{ const name=String(d.rpath||'file').split('/').pop(); const resolved=await window._sfResolveFileToFile(d); if(!resolved){ showToast('파일을 읽지 못했습니다.'); return; } if(resolved.__cloudLink){ window.open(resolved.url,'_blank'); return; } const u=URL.createObjectURL(resolved); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}},60000); showToast('💾 다운로드됨: '+name); }catch(_){ showToast('다운로드 실패'); } };
             window._sfRenameDesc = async function(d, onDone){ const parts=String(d.rpath||'').split('/'); const old=parts.pop(); if(d.cloud){ showToast('클라우드 파일은 이름변경을 지원하지 않습니다.'); return; } const nn=await window._sfPrompt('새 이름', old); if(!nn||nn===old) return; const R=window.RCFolder; let ok=false; try{ if(R.renameAtRoot) ok=await R.renameAtRoot(d.rootId, parts, old, nn); else { if(R.setActiveRoot) await R.setActiveRoot(d.rootId); ok=await R.renameAt(parts, old, nn); } }catch(_){} if(ok){ showToast('이름을 변경했습니다.'); try{ onDone&&onDone(); }catch(_){} } else showToast('이름변경 실패'+(window.__rcLastErr?(': '+window.__rcLastErr):'')); };
             window._sfDeleteDescsUI = async function(descs, opts, onDone){ opts=opts||{}; if(!descs||!descs.length){ showToast('삭제할 파일을 선택하세요.'); return; } const okc=await window._sfConfirm('선택한 '+descs.length+'개 항목을 삭제할까요?\n실제 파일이 삭제됩니다(CT 시리즈는 폴더 내 전체 슬라이스). 되돌릴 수 없습니다.','삭제'); if(!okc) return; const r=await window._sfPhysicalDelete(descs, opts); let msg; if(r.ok) msg='🗑 삭제 '+r.ok+'개'+(r.fail?(' · 접근불가 '+r.fail+'개는 목록에서 제거'):''); else if(r.removed) msg='목록에서 제거 '+r.removed+'개(원본 접근불가/이미 삭제됨)'; else msg='삭제 실패'+(r.lastErr?(': '+r.lastErr):''); showToast(msg); try{ onDone&&onDone(); }catch(_){} };
