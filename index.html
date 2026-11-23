@@ -2950,7 +2950,7 @@
     <div id="chat-file-preview-modal" class="cfp-dock" onclick="if(event.target===this)closeChatFilePreview()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:4400; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px);">
         <div id="cfp-titlebar" style="position:fixed; top:14px; left:24px; right:82px; display:flex; align-items:center; gap:10px; z-index:4300;">
             <span id="cfp-title" style="flex:1; min-width:0; color:#fff; font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(17,24,39,0.55); padding:9px 16px; border-radius:10px; border:1px solid rgba(255,255,255,.14); backdrop-filter:blur(4px);">파일</span>
-            <a id="cfp-download" download="" href="#" onclick="return _cfpSaveAs(this.href, this.getAttribute('download'), event)" title="내 컴퓨터의 원하는 위치에 저장(탐색기)" style="flex:none; display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg,#22446b,#0b2b4b); color:#fff; padding:9px 16px; border-radius:10px; text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.32); transition:all .15s ease;">💾 원본 저장하기</a>
+            <a id="cfp-download" download="" href="#" onclick="return _cfpSaveAs(this.href, this.getAttribute('download'), event)" title="내 컴퓨터의 원하는 위치에 저장(탐색기)" style="flex:none; display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg,#22446b,#0b2b4b); color:#fff; padding:9px 16px; border-radius:10px; text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.32); transition:all .15s ease;">💾 다른 이름으로 저장하기</a>
         </div>
         <button id="cfp-close-btn" onclick="closeChatFilePreview()" title="닫기 (ESC)" style="position:fixed; top:14px; right:16px; background:rgba(17,24,39,0.55); border:1px solid rgba(255,255,255,.25); color:#fff; font-size:22px; line-height:1; cursor:pointer; width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; z-index:4300; box-shadow:0 4px 14px rgba(0,0,0,.32); transition:all .15s ease; backdrop-filter:blur(4px);">&times;</button>
         <div id="cfp-content" style="max-width:min(1400px,96vw); max-height:90vh; width:100%; height:auto; display:flex; align-items:center; justify-content:center;"></div>
@@ -4990,8 +4990,8 @@
                 finally{ busy=false; }
             }
             function _promptOver(){
-                try{ showToast('⚠️ 클라우드 기본 용량(100MB)을 초과했습니다. 용량을 구매하면 계속 동기화됩니다.'); }catch(_){}
-                try{ if(window.openCloudBackup) setTimeout(()=>{ try{ openCloudBackup(); }catch(_){} }, 900); }catch(_){}
+                // 자동(백그라운드) 동기화 초과 시엔 토스트 안내만. 결제 모달은 사용자가 '지금 동기화'를 눌렀을 때만 뜬다.
+                try{ showToast('⚠️ 클라우드 기본 용량(100MB)을 초과했습니다. 클라우드 드라이브 ▸ 지금 동기화에서 용량을 구매할 수 있습니다.'); }catch(_){}
             }
             function schedule(reason, delay){ try{ clearTimeout(timer); }catch(_){} timer=setTimeout(()=>{ run(reason); }, delay||1500); }
             window.syncAllFolders=function(reason){ schedule(reason||'manual', 500); };
@@ -6563,7 +6563,7 @@
                         if(here){
                             items.push({label:'👁 미리보기',fn:()=>window.rcPreviewFolderFile(fnm,mim)});
                             items.push({label:'🖥 실시간 뷰어로 열기',fn:()=>{ try{ window.rcOpenInLiveViewer(path, fnm); }catch(_){ showToast('뷰어 열기 실패'); } }});
-                            items.push({label:(multi?('💾 원본 다운로드 ('+sel.length+'개)'):'💾 원본 다운로드'),fn:async()=>{ let ok=0; for(const nm of sel){ try{ const f=await R.getFileAt(path, nm); if(!f) continue; const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=nm; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} }, 60000); ok++; }catch(_){} } showToast(multi?('원본 다운로드 '+ok+'개'):'원본 다운로드'); }});
+                            items.push({label:(multi?('💾 다른 이름으로 저장하기 ('+sel.length+'개)'):'💾 다른 이름으로 저장하기'),fn:async()=>{ let ok=0; for(const nm of sel){ try{ const f=await R.getFileAt(path, nm); if(!f) continue; if(!multi && window.showSaveFilePicker){ try{ const handle=await window.showSaveFilePicker({ suggestedName: nm }); const w=await handle.createWritable(); await w.write(f); await w.close(); showToast('✅ 저장했습니다: '+nm); return; }catch(e){ if(e && e.name==='AbortError') return; } } const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=nm; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} }, 60000); ok++; }catch(_){} } showToast(multi?('저장 '+ok+'개'):'저장됨'); }});
                             items.push({label:(multi?('📤 공유 / 나에게 보내기 ('+sel.length+'개)'):'📤 공유 / 나에게 보내기'),fn:()=>openShareRecipientPicker(sel)});
                             items.push({label:'🔗 외부 공유(비회원 · QR/링크)',fn:()=>window.guestShareLocalFile(path, fnm, mim, 0)});
                             items.push({label:'✏️ 이름 변경',fn:async()=>{ const nn=await _sfPrompt('새 파일 이름',fnm); if(nn&&nn!==fnm){ if(await R.renameAt(path,fnm,nn,false)) render(); else showToast('이름변경 실패'); } }});
@@ -6759,7 +6759,7 @@
                 const menu=document.createElement('div'); menu.style.cssText='position:fixed;z-index:100063;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 36px rgba(15,23,42,.22);overflow:hidden;min-width:190px;';
                 const B='display:block;width:100%;text-align:left;padding:12px 15px;border:none;border-bottom:1px solid #f1f5f9;background:#fff;font-size:14px;font-weight:700;color:#0f172a;cursor:pointer;white-space:nowrap;';
                 menu.innerHTML='<button id="_ca-open" style="'+B+'">👁 열기 (미리보기)</button>'
-                    +'<button id="_ca-dl" style="'+B+'">💾 원본 다운로드</button>'
+                    +'<button id="_ca-dl" style="'+B+'">💾 다른 이름으로 저장하기</button>'
                     +'<button id="_ca-share" style="'+B+'">📤 다른 계정에 공유</button>'
                     +'<button id="_ca-del" style="'+B+'color:#dc2626;border-bottom:none;">🗑 클라우드에서 삭제</button>';
                 back.appendChild(menu); document.body.appendChild(back);
@@ -7476,7 +7476,11 @@
             window._sfStartNativeDrag = function(descs, e){ try{ if(!(window.rayApp&&window.rayApp.fs&&window.rayApp.fs.startDrag)) return false; const items=[]; for(const d of (descs||[])){ if(!d||d.cloud||!d.rootId) continue; let rel=String(d.rpath||''); if(!rel) continue; if(/\.dcm$/i.test(rel) && Number(d.series)>1){ rel=rel.split('/').slice(0,-1).join('/'); } items.push({rootId:d.rootId, relPath:rel}); } if(!items.length) return false; window.rayApp.fs.startDrag(items); try{ if(e) e.preventDefault(); }catch(_){} return true; }catch(_){ return false; } };
             // 📥 OS 파일 드롭 → 주 폴더에 저장(등록). 드래그로 추가되는 파일은 항상 주 폴더 경로로.
             window._sfWriteFilesToMain = async function(fileList){ const files=[].slice.call(fileList||[]); if(!files.length) return; const R=window.RCFolder; if(!R){ showToast('폴더가 연결되지 않았습니다.'); return; } const mid=await window._sfMainRootId(); if(!mid){ showToast('주 폴더가 없습니다. 먼저 폴더를 지정하세요.'); return; } showToast('주 폴더에 추가 중… ('+files.length+'개)'); let ok=0; try{ if(R.setActiveRoot) await R.setActiveRoot(mid); }catch(_){} for(const f of files){ try{ if(R.writeFileAt){ await R.writeFileAt([], f.name, f); ok++; } }catch(_){} } showToast(ok?('📥 주 폴더에 추가: '+ok+'개'):'추가 실패'); try{ if(R.scanPatients) R.scanPatients(); }catch(_){} try{ if(window.__sfRender) window.__sfRender(); }catch(_){} try{ if(ok && window.syncAllFolders) window.syncAllFolders('drop'); }catch(_){} };
-            window._sfDownloadDesc = async function(d){ try{ const name=String(d.rpath||'file').split('/').pop(); const resolved=await window._sfResolveFileToFile(d); if(!resolved){ showToast('파일을 읽지 못했습니다.'); return; } if(resolved.__cloudLink){ window.open(resolved.url,'_blank'); return; } const u=URL.createObjectURL(resolved); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}},60000); showToast('💾 다운로드됨: '+name); }catch(_){ showToast('다운로드 실패'); } };
+            // 💾 다른 이름으로 저장하기 — 탐색기 저장 위치/이름 선택(showSaveFilePicker). 미지원 시 기본 다운로드 폴백. 클라우드·로컬 공통.
+            window._sfDownloadDesc = async function(d){ try{ const name=String(d.rpath||'file').split('/').pop(); const resolved=await window._sfResolveFileToFile(d); if(!resolved){ showToast('파일을 읽지 못했습니다.'); return; }
+                if(window.showSaveFilePicker){ try{ const b = resolved.__cloudLink ? await (await fetch(resolved.url)).blob() : resolved; const handle=await window.showSaveFilePicker({ suggestedName: name }); const w=await handle.createWritable(); await w.write(b); await w.close(); showToast('✅ 저장했습니다: '+name); return; }catch(e){ if(e && e.name==='AbortError') return; } }
+                if(resolved.__cloudLink){ window.open(resolved.url,'_blank'); return; }
+                const u=URL.createObjectURL(resolved); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}},60000); showToast('💾 저장됨: '+name); }catch(_){ showToast('저장 실패'); } };
             window._sfRenameDesc = async function(d, onDone){ const parts=String(d.rpath||'').split('/'); const old=parts.pop(); if(d.cloud){ showToast('클라우드 파일은 이름변경을 지원하지 않습니다.'); return; } const nn=await window._sfPrompt('새 이름', old); if(!nn||nn===old) return; const R=window.RCFolder; let ok=false; try{ if(R.renameAtRoot) ok=await R.renameAtRoot(d.rootId, parts, old, nn); else { if(R.setActiveRoot) await R.setActiveRoot(d.rootId); ok=await R.renameAt(parts, old, nn); } }catch(_){} if(ok){ showToast('이름을 변경했습니다.'); try{ onDone&&onDone(); }catch(_){} } else showToast('이름변경 실패'+(window.__rcLastErr?(': '+window.__rcLastErr):'')); };
             window._sfDeleteDescsUI = async function(descs, opts, onDone){ opts=opts||{}; if(!descs||!descs.length){ showToast('삭제할 파일을 선택하세요.'); return; } const okc=await window._sfConfirm('선택한 '+descs.length+'개 항목을 삭제할까요?\n실제 파일이 삭제됩니다(CT 시리즈는 폴더 내 전체 슬라이스). 되돌릴 수 없습니다.','삭제'); if(!okc) return; const r=await window._sfPhysicalDelete(descs, opts); let msg; if(r.ok) msg='🗑 삭제 '+r.ok+'개'+(r.fail?(' · 접근불가 '+r.fail+'개는 목록에서 제거'):''); else if(r.removed) msg='목록에서 제거 '+r.removed+'개(원본 접근불가/이미 삭제됨)'; else msg='삭제 실패'+(r.lastErr?(': '+r.lastErr):''); showToast(msg); try{ onDone&&onDone(); }catch(_){} };
             // 📤 공유(카카오톡식) — 친구/내 기기(채팅)로 파일 전송. descs 다건 지원.
@@ -7488,7 +7492,7 @@
                 items.push({label:'👁 미리보기', fn:()=>{ try{ window._sfOpenPmsFile(d); }catch(_){} }});
                 items.push({label:(multi?('📤 공유 ('+sel.length+'개)'):'📤 공유'), fn:()=>window._sfShareDesc(sel)});
                 if(window.RCFolder && window.RCFolder.revealAtRoot && !d.cloud) items.push({label:'📂 파일 위치 열기(탐색기)', fn:()=>window._sfRevealFile(d)});
-                items.push({label:'💾 원본 저장하기', fn:()=>window._sfDownloadDesc(d)});
+                items.push({label:'💾 다른 이름으로 저장하기', fn:()=>window._sfDownloadDesc(d)});
                 if(!d.cloud && !multi) items.push({label:'✏️ 이름 변경', fn:()=>window._sfRenameDesc(d, onDone)});
                 (ctx.extras||[]).forEach(x=>items.push(x));
                 items.push({label:(multi?('🗑 삭제 ('+sel.length+'개)'):(series>1?'🗑 시리즈 삭제':'🗑 삭제')), danger:true, fn:()=>window._sfDeleteDescsUI(sel, {indexAlways:!!ctx.patient}, onDone)});
@@ -10940,20 +10944,10 @@
         // ☁️ 사이드바 '클라우드' 버튼 — 미구독이면 구독 결제 팝업, 구독 중이면 파일검색 UI의 클라우드 보관함 뷰로 진입.
         window.openCloudFromSidebar = async function(){
             if(!window.CLOUD_MIRROR_ENABLED){ showToast('클라우드 기능이 비활성화되어 있습니다.'); return; }
-            // 구독 상태 확인(카드결제 PG 기반)
-            let sub=null; try{ sub=await fetch(API_URL+'/api/mirror/subscription',{credentials:'include'}).then(r=>r.json()); }catch(_){}
-            if(sub && sub.billingEnabled){
-                if(!sub.active){ if(window.openCloudBackup) window.openCloudBackup(); else if(window.openMirrorPanel) window.openMirrorPanel(); return; }   // 미구독 → 구독 결제 팝업
-            } else {
-                // 카드결제(PG) 비활성 환경 → 기존 미러 ON/OFF 패널로 처리
-                let s=null; try{ s=await window.RCMirror.status(); }catch(_){}
-                if(s && s.serviceEnabled===false){ showToast('클라우드 서비스가 현재 중지되어 있습니다. (관리자 설정)'); return; }
-                if(!s || !s.enabled){ if(window.openMirrorPanel) window.openMirrorPanel(); return; }
-            }
-            // 구독 중 → 파일검색 화면을 열고 클라우드 보관함 뷰로 전환(동일 UI) + 공유폴더 데이터 자동 동기화
-            try{ await window.RCMirror.enable(true); }catch(_){}
+            // 💡 무료 기본 용량(100MB)까지는 구독 없이 바로 클라우드 드라이브 뷰로 진입.
+            //    유료 구독/용량 구매 안내는 '지금 동기화'에서 용량 초과(402)될 때만 뜬다(진입 시 팝업 금지).
             try{ openSharedFolderPanel(); }catch(_){}
-            setTimeout(()=>{ try{ const b=document.getElementById('_sf-mirror'); if(b && !window.__sfCloudView) b.click(); }catch(_){} }, 260);
+            setTimeout(()=>{ try{ const b=document.getElementById('_sf-mirror'); if(b && !window.__sfCloudView) b.click(); else if(!window.__sfCloudView){ window.__sfCloudView=true; if(window.__sfRender) window.__sfRender(); } }catch(_){} }, 260);
         };
         // 🛠 관리자: 클라우드 기능 on/off 토글
         window.toggleCloudMirrorAdmin = async function(){
