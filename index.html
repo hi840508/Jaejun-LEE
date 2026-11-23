@@ -330,17 +330,17 @@
 
         .yt-layout {
             display: block;
-            min-height: calc(100vh - 56px);
+            min-height: 100vh;
         }
 
         /* 🚀 [v8] 사이드바를 모든 화면에서 슬라이드 인 (햄버거로 토글) */
         .yt-sidebar {
             position: fixed;
             left: calc(-1 * var(--sidebar-w) - 24px);
-            top: 56px;
+            top: 0;
             width: var(--sidebar-w);
-            height: calc(100vh - 56px);
-            height: calc(100dvh - 56px); /* 📱 iOS 동적 뷰포트(주소창 포함 잘림 방지) */
+            height: 100vh;
+            height: 100dvh; /* 📱 iOS 동적 뷰포트 */
             background: var(--chrome-bg);
             border-right: 1px solid var(--chrome-border);
             padding: 12px 0;
@@ -387,7 +387,7 @@
             body.rx-docked #rc-folder-page { right: 440px !important; }
             /* 📝 일반 주문서(order-form-modal)도 우측 도킹 패널로 */
             #order-form-modal { background: transparent !important; justify-content: flex-end !important; align-items: stretch !important; padding: 0 !important; pointer-events: none !important; }
-            #order-form-modal .modal-content { position: fixed; top: 56px; right: 0; bottom: 0; width: 440px; max-width: 94vw; max-height: none; margin: 0; border-radius: 0; box-shadow: -8px 0 30px rgba(0,0,0,.18); display: flex; flex-direction: column; pointer-events: auto !important; }
+            #order-form-modal .modal-content { position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 94vw; max-height: none; margin: 0; border-radius: 0; box-shadow: -8px 0 30px rgba(0,0,0,.18); display: flex; flex-direction: column; pointer-events: auto !important; }
             /* 🖥 본문도 파일검색처럼 화면 가득 차게 — 1400px 중앙정렬 캡 해제(여백 최소화) */
             .yt-main { max-width: none !important; margin: 0 !important; }
             /* 🏷 상단 로고영역을 사이드바 폭과 동일하게 — 사이드바 우측 경계선이 상단바까지 연장되어 보이게 */
@@ -443,6 +443,13 @@
         #topbar-account-btn { background:transparent !important; border:none !important; border-radius:10px !important; }
         #topbar-account-btn:hover { background:#273349 !important; }
         #topbar-logout-btn { border-radius:10px !important; }
+        /* 🧹 상단바(광고 배너 포함) 제거 — 계정 컨트롤은 사이드바 상단 헤더로 이동, 콘텐츠 맨 위로 */
+        .yt-topbar { display:none !important; }
+        .yt-ad-slot { display:none !important; }
+        #rc-folder-page { top:0 !important; }
+        #yt-sidebar > #topbar-brand { width:100% !important; height:52px !important; flex:none; display:flex; align-items:center; gap:8px; padding:0 10px !important; border-right:none !important; border-bottom:1px solid #2a3448 !important; background:#1b2436 !important; }
+        #_mobile-menu-fab{ display:none; position:fixed; top:10px; left:10px; z-index:98; width:40px; height:40px; border:none; border-radius:10px; background:#1b2436; color:#c6d2e2; align-items:center; justify-content:center; box-shadow:0 2px 10px rgba(0,0,0,.3); cursor:pointer; }
+        @media (max-width:1023px){ #_mobile-menu-fab{ display:flex; } }
         .yt-topbar .yt-menu-btn { color:#c6d2e2 !important; }
         .yt-topbar #display-name, .yt-topbar #topbar-uname-wrap { color:#e8edf5 !important; }
         #tb-acct-exit { color:#4db8e8 !important; }
@@ -694,7 +701,7 @@
         .floating-badge { position: absolute; top: -2px; right: -2px; background: var(--notify); color: white; font-size: 11px; font-weight: bold; padding: 3px 7px; border-radius: 20px; border: 2px solid #fff; display: none; }
         
         /* 메신저 드로어 — 상단 바(56px) 아래부터(메인 통합검색창은 덮음). 자체 통합검색을 상단에 가짐 */
-        .messenger-drawer { position: fixed; top: 56px; right: -560px; width: 100%; max-width: 520px; height: calc(100vh - 56px); height: calc(100dvh - 56px); background: #ffffff; box-shadow: -5px 0 25px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 4001; display: flex; flex-direction: column; border-left: 1px solid var(--border-color); border-top: 1px solid var(--border-color); }
+        .messenger-drawer { position: fixed; top: 0; right: -560px; width: 100%; max-width: 520px; height: 100vh; height: 100dvh; background: #ffffff; box-shadow: -5px 0 25px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 4001; display: flex; flex-direction: column; border-left: 1px solid var(--border-color); border-top: 1px solid var(--border-color); }
         .messenger-drawer.open { right: 0; }
         .drawer-header { padding: 15px 20px; background: #f8fafc; color: var(--text-main); font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
         
@@ -5772,6 +5779,11 @@
             try{ _renderAccountBtn(); }catch(_){}
         };
         // 👤 상단 계정 버튼 = 토글(파일검색 ↔ 계정모드), 모드별 버튼 디자인
+        // 🧹 상단바 제거 — 계정 컨트롤(#topbar-brand)을 사이드바 상단 헤더로 이동 + 모바일 메뉴 버튼 생성.
+        window._relocateAccountToSidebar = function(){
+            try{ const sb=document.getElementById('yt-sidebar'); const brand=document.getElementById('topbar-brand'); if(sb && brand && brand.parentElement!==sb){ sb.insertBefore(brand, sb.firstChild); } }catch(_){}
+            try{ if(!document.getElementById('_mobile-menu-fab')){ const fab=document.createElement('button'); fab.id='_mobile-menu-fab'; fab.title='메뉴'; fab.setAttribute('aria-label','메뉴'); fab.innerHTML='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>'; fab.onclick=function(){ try{ toggleSidebar(); }catch(_){} }; document.body.appendChild(fab); } }catch(_){}
+        };
         window.accountIconToggle = function(){ if(window.__accountMode) exitAccountMode(); else enterAccountMode(); };
         window._renderAccountBtn = function(){
             const acc=!!window.__accountMode;
@@ -6320,7 +6332,7 @@
             var _sfPick = !!window.__sfPickResolve;
             if(!_sfPick) ov.className='sf-docked';   // 🖥 데스크톱 상시 사이드바에 안 가리게 본문 영역으로 밀기
             // 📎 픽 모드(의뢰서 첨부)는 전체화면(모달 위) — 선택 후 파일이 의뢰서로 확실히 반환되게
-            ov.style.cssText='position:fixed;'+(_sfPick?'inset:0;z-index:100500;':'top:56px;left:0;right:0;bottom:0;z-index:95;')+'background:#f6f7f9;color:#1f2937;display:flex;flex-direction:column;';
+            ov.style.cssText='position:fixed;'+(_sfPick?'inset:0;z-index:100500;':'top:0;left:0;right:0;bottom:0;z-index:95;')+'background:#f6f7f9;color:#1f2937;display:flex;flex-direction:column;';
             document.body.appendChild(ov); window.__sfOv=ov;
             // 🧭 좌측/하단 네비에서 '공유폴더' 항목을 현재 위치로 하이라이트(다른 탭 active 해제). switchTab으로 나가면 자동 해제됨.
             try{ if(!_sfPick){ document.querySelectorAll('.yt-sb-item,.yt-bn-item').forEach(function(el){ el.classList.remove('active'); }); var _sb=document.getElementById('sb-sharedfolder'); if(_sb) _sb.classList.add('active'); } }catch(_){}
@@ -7958,6 +7970,7 @@
 
         function loginSuccess(data) {
             currentUser = data; try{ document.body.classList.add('app-authed'); }catch(_){} document.getElementById('login-section').style.display = 'none'; document.getElementById('login-wrap').style.display = 'none'; document.getElementById('workspace-section').style.display = 'block';
+            try{ window._relocateAccountToSidebar&&window._relocateAccountToSidebar(); }catch(_){}
             try { if(window.RCFolder) window.RCFolder.onLogin(); } catch(_){}
             try { if(window.__ensureBackGuard) setTimeout(window.__ensureBackGuard, 500); } catch(_){}   // 🔙 로그인 후 뒤로가기 가드 확보(앱 종료 방지)
             // 🔐 주기 세션 체크 — 다른 기기에서 로그인해 이 세션이 무효화되면(단일 세션) 자동 로그아웃
@@ -20628,7 +20641,7 @@ pdfjsScript,
                 }
                 if(id==='rx-form-modal' || id==='rx-choice-modal'){
                     // 📋 의뢰서(선택·작성) = 우측 도킹 패널(배경 없음 → 좌측 파일검색/사이드바 그대로 사용, 파일 카드 클릭/드래그 첨부 가능)
-                    ov.style.cssText = 'position:fixed;top:56px;right:0;bottom:0;width:'+(440)+'px;max-width:94vw;z-index:4002;display:flex;flex-direction:column;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);border-left:1px solid var(--border-color);';
+                    ov.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:'+(440)+'px;max-width:94vw;z-index:4002;display:flex;flex-direction:column;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);border-left:1px solid var(--border-color);';
                     ov.innerHTML = '<div style="flex:1;overflow:auto;">'+innerHtml+'</div>';
                     // ✕ 버튼으로만 닫힘(바깥 클릭=파일검색 조작). 열릴 때 파일검색을 함께 띄워 클릭/드래그 첨부 가능하게.
                     try{ document.body.classList.add('rx-docked'); }catch(_){}
