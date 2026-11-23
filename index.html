@@ -5717,7 +5717,7 @@
             // 📋 의뢰서(우측 패널)가 열려 있으면 선택 환자로 주문 정보 자동 재입력
             try{ if(document.getElementById('rx-form-modal') && window.rxAutofillSelectedPatient){ setTimeout(()=>{ try{ window.rxAutofillSelectedPatient(); }catch(_){} }, 60); } }catch(_){}
             // ☁️ 클라우드 보기 중이어도 환자 클릭 시 해당 환자 파일로 전환(클릭 먹통 수정). _sfShowPatient가 클라우드→환자뷰 전환.
-            window.__sfStoreView=false; window.__sfCloudView=false; window.__sfPatientFilter=key;
+            window.__sfStoreView=false; window.__sfCloudView=true; window.__sfPatientFilter=key;   /* 환자 클릭 = 클라우드 화면 */
             if(typeof window.__sfRender==='function' && window.__sfOv && document.body.contains(window.__sfOv)){
                 try{ if(window._sfShowPatient) window._sfShowPatient(key); else window.__sfRender(); }catch(_){}
             } else {
@@ -5965,7 +5965,7 @@
             list.innerHTML=items.map(p=>{ const sx=String(p.sex||'').toUpperCase(); const bg=sx==='M'?'#3b82f6':(sx==='F'?'#ec4899':'#334155'); const ini=(String(p.name||'·').trim()[0]||'·'); const meta=_sa(p.dob,p.sex);
                 return '<div class="_sbpt" data-key="'+E(p.patientKey)+'" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid #e6edf4;border-radius:11px;background:#fff;cursor:pointer;transition:background .12s,border-color .12s;">'
                     +'<div style="flex:none;width:34px;height:34px;border-radius:50%;background:'+bg+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">'+E(ini)+'</div>'
-                    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#e8edf5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+E(p.name||'(이름없음)')+(meta?(' <span style="font-size:10px;color:#9fb0c7;font-weight:600;">('+E(meta)+')</span>'):'')+'</div><div style="font-size:10.5px;color:#8ea2bd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(p.patientId?('ID '+E(p.patientId)):'')+' · 영상 '+(p.fileCount||0)+'</div></div>'
+                    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#e8edf5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+E(p.name||'(이름없음)')+(meta?(' <span style="font-size:10px;color:#9fb0c7;font-weight:600;">('+E(meta)+')</span>'):'')+'</div><div style="font-size:10.5px;color:#8ea2bd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(p.patientId?('ID '+E(p.patientId)):'')+'</div></div>'
                     +'<button class="_sbpt-edit" title="환자 정보 수정·삭제" style="display:none;flex:none;border:1px solid #34415c;background:#222d42;color:#c6d2e2;border-radius:8px;width:28px;height:28px;cursor:pointer;line-height:1;font-size:13px;">✏️</button>'
                     +'</div>'; }).join('');
             list.querySelectorAll('._sbpt').forEach(el=>{ const key=el.getAttribute('data-key');
@@ -6773,7 +6773,7 @@
                 window.__sfMergedActive=false;   // 전체취합 외 모든 뷰 진입 전 리셋(러버밴드 선택계 오판 방지) — _sfRenderMergedLocal이 다시 true로
                 window.__sfActOverride=null;      // 선택바 액션(삭제/이름변경/공유) 기본=폴더(selected). 전체취합뷰가 _mSel 기준으로 다시 설정.
                 if(window.__sfStoreView){ window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sfRenderStoreCards(ov); }catch(_){} }
-                else if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
+                else if(window.__sfCloudView){ window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }   /* 환자 필터 유지 → 클라우드 리스트가 해당 환자 동기화분만 표시 */
                 else if(window.__sfDeepQuery){ try{ _sbHighlightPatient(); _sfRenderDeepSearch(ov, window.__sfDeepQuery); }catch(_){} }
                 else if(window.__sfPatientFilter){ try{ _sbHighlightPatient(); _sfRenderPatientGrid(ov, window.__sfPatientFilter); }catch(_){} }
                 else if(path.length===0 && connected){ try{ _sbHighlightPatient(); }catch(_){} try{ _sfRenderMergedLocal(ov); }catch(_){} }
@@ -7156,6 +7156,11 @@
                 let items=[]; try{ items=await window.RCMirror.list(); }catch(_){}
                 // ☁️🤝 받은 공유(2주 열람권) — 내 클라우드 저장소에 함께 표시
                 try{ const shared=(window.RCMirror&&window.RCMirror.sharedWithMe)?await window.RCMirror.sharedWithMe():[]; (shared||[]).forEach(s=>{ items.push({ rpath:String(s.name||'file'), mtime:Number(s.createdAt)||Date.now(), mime:s.mime||'', size:Number(s.size)||0, __shared:true, shareId:s.id, from:s.owner, daysLeft:s.daysLeft }); }); }catch(_){}
+                // 🧑‍⚕️ 환자 필터 — 이 환자의 '클라우드 동기화된' 영상만 표시(환자리스트 클릭 시)
+                let _ptName='';
+                if(window.__sfPatientFilter){
+                    try{ const d=await (await fetch(API_URL+'/api/pms/patients/'+encodeURIComponent(window.__sfPatientFilter)+'/files')).json(); const pf=(d&&d.files)||[]; _ptName=(d&&d.card&&d.card.name)||(window.__selectedPatient&&window.__selectedPatient.name)||''; const want=new Set(); pf.forEach(f=>{ const rel=String(f.rpath||''); if(rel){ want.add(rel); want.add(String(f.rootId||'')+'/'+rel); } }); items=items.filter(it=> !it.__shared && want.has(String(it.rpath||'')) ); }catch(_){ items=[]; }
+                }
                 const _b=rp=>{ const a=String(rp||'').split('/'); return a[a.length-1]||rp; };
                 const ESC=(typeof _sfEsc==='function')?_sfEsc:(s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
                 const zoom=(flt.zoom||150);
@@ -7163,9 +7168,10 @@
                 // 오너 기기(공유폴더 연결)면 '지금 백업' 제공 — 그 외 기기는 조회 전용.
                 let connected=false; try{ const R=window.RCFolder; connected=!!(R&&(R.isConnected?await R.isConnected():R.chosen())); }catch(_){}
                 try{ window.__sfCloudStatus=await window.RCMirror.status(); }catch(_){}
-                const head='';   // 뒤로 버튼·헤더 제거(사용자 요청). 내 컴퓨터 전환은 드라이브 ▼ 드롭다운에서.
-                const wireHead=()=>{};
-                if(!items.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">클라우드 저장소에 데이터가 없습니다.<br><span style="font-size:12px;">드라이브 좌측 <b>☁ 동기화 아이콘</b>을 누르면 연결된 모든 폴더가 클라우드로 올라갑니다(무료 100MB).</span></div>'; _sfSharedBanner(grid); return; }
+                // 🧑‍⚕️ 환자 필터 중이면 상단에 환자 칩 + '전체 클라우드' 복귀(×)
+                const head = window.__sfPatientFilter ? ('<div style="display:flex;align-items:center;gap:8px;margin:4px 2px 10px;flex-wrap:wrap;"><span style="display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;background:#e8f0fe;color:#1e3a8a;font-size:13px;font-weight:800;border:1px solid #c7d7f5;">🧑‍⚕️ '+ESC(_ptName||'환자')+' · 클라우드 영상<button id="_cl-ptclear" title="전체 클라우드 보기" style="margin-left:4px;border:none;background:transparent;color:#1e3a8a;cursor:pointer;font-size:15px;line-height:1;">✕</button></span></div>') : '';
+                const wireHead=()=>{ const c=grid.querySelector('#_cl-ptclear'); if(c) c.onclick=()=>{ try{ window.__sfPatientFilter=null; window.__selectedPatient=null; window.__selectedPatientKey=null; if(window.__sfRender) window.__sfRender(); }catch(_){} }; };
+                if(!items.length){ grid.innerHTML=head+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+(window.__sfPatientFilter?('이 환자의 <b>클라우드 동기화된 영상</b>이 없습니다.<br><span style="font-size:12px;">드라이브 좌측 ☁ 동기화 아이콘으로 먼저 폴더를 클라우드에 올려주세요.</span>'):'클라우드 저장소에 데이터가 없습니다.<br><span style="font-size:12px;">드라이브 좌측 <b>☁ 동기화 아이콘</b>을 누르면 연결된 모든 폴더가 클라우드로 올라갑니다(무료 100MB).</span>')+'</div>'; wireHead(); _sfSharedBanner(grid); return; }
                 // 📅 날짜별 그룹(mtime 내림차순) — PC 파일검색과 동일한 섹션 구조.
                 const _tsLabel=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '날짜 미상'; const n=new Date(); const sd=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); const y=new Date(n); y.setDate(n.getDate()-1); if(sd(d,n)) return '오늘'; if(sd(d,y)) return '어제'; return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0'); };
                 const _key=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '0000-00-00'; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
@@ -7484,7 +7490,7 @@
             // 🔙 패널 재렌더/닫기를 전역으로 노출(클라우드 뷰 등에서 '뒤로/닫기' 호출용)
             window.__sfRender = render; window.__sfClose = close;
             // 🧑‍⚕️ 좌측 환자 클릭 = 그 환자로 '필터'(같은 파일 UI 유지, 해당 환자 데이터만). 해제는 로컬/클라우드 저장소 클릭.
-            window._sfShowPatient = function(key){ window.__sfPatientFilter=key; window.__sfCloudView=false; try{ render(); }catch(_){} };
+            window._sfShowPatient = function(key){ window.__sfPatientFilter=key; window.__sfCloudView=true; window.__sfStoreView=false; try{ render(); }catch(_){} };   /* 환자 클릭 = 무조건 클라우드 화면(동기화된 영상만) */
             window._sfCreatePatient = _sfCreatePatient;
             // 🔎 탐색기식 검색 — 현재 경로(폴더) 하위를 파일명·DICOM 헤더로 검색해 결과만 표시(타이핑마다 자동 갱신, 비우면 복귀).
             window.__sfDeepTimer=null;
