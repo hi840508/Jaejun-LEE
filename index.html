@@ -4207,6 +4207,8 @@
             async function writeFileInRoom(roomName, name, blob){ if(!(await _ensurePerm(true))) throw new Error('공유폴더 권한 없음'); const h=await _loadHandle(); const parts=String(roomName||'received').split('/').map(_safe).filter(Boolean); if(!parts.length) parts.push('received'); let dir=h; for(const p of parts){ dir=await dir.getDirectoryHandle(p,{create:true}); } const safe=_safe(name); const fh=await dir.getFileHandle(safe,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); _scheduleSync(); return parts.join('/')+'/'+safe; }
             async function mkdirAt(pathArr, name){ if(!(await _ensurePerm(true))) return false; try{ const h=await _dirAt(pathArr); await h.getDirectoryHandle(_safe(name),{create:true}); _scheduleSync(); return true; }catch(e){ return false; } }
             async function removeAt(pathArr, name, recursive){ if(!(await _ensurePerm(true))){ window.__rcLastErr='공유폴더 권한 없음(권한 허용 필요)'; return false; } try{ const h=await _dirAt(pathArr); await h.removeEntry(name, {recursive:!!recursive}); try{ if((pathArr||[]).length===0) fetch(API_URL+'/api/devices/files/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fname:name, deviceId:deviceId()})}); }catch(_){} _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
+            // 🗑 (루트 단위) 삭제 — 활성 루트 전환 없이 특정 rootId 안의 경로를 삭제(환자그리드 등 여러 루트 혼재 뷰용)
+            async function removeAtRoot(rootId, pathArr, name, recursive){ try{ const rs=await _loadRoots(); const root=rs.find(r=>String(r.id)===String(rootId)); let h=root&&root.handle; if(!h){ window.__rcLastErr='루트 없음'; return false; } try{ if((await h.queryPermission({mode:'readwrite'}))!=='granted'){ if((await h.requestPermission({mode:'readwrite'}))!=='granted'){ window.__rcLastErr='권한 거부'; return false; } } }catch(_){} for(const p of (pathArr||[])){ h=await h.getDirectoryHandle(_safe(p)); } await h.removeEntry(_safe(name), {recursive:!!recursive}); _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
             async function _copyDir(srcDir, dstDir){ for await (const [nm,ent] of srcDir.entries()){ if(ent.kind==='directory'){ const nd=await dstDir.getDirectoryHandle(nm,{create:true}); await _copyDir(ent, nd); } else { const f=await ent.getFile(); const nf=await dstDir.getFileHandle(nm,{create:true}); const w=await nf.createWritable(); await w.write(f); await w.close(); } } }
             async function renameAt(pathArr, oldName, newName, isDir){ if(!(await _ensurePerm(true))){ window.__rcLastErr='권한 없음'; return false; } const safeNew=_safe(newName); let h; try{ h=await _dirAt(pathArr); }catch(_){ return false; }
                 // 1) 네이티브 move() (Chrome 최신: 파일·폴더 지원)
@@ -4484,7 +4486,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            const _RF = { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, searchInPath, scanPatients, getFileAtRoot, listFilesAtRoot, rootsStatus, walkRoot, listAtRoot };
+            const _RF = { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, removeAtRoot, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, searchInPath, scanPatients, getFileAtRoot, listFilesAtRoot, rootsStatus, walkRoot, listAtRoot };
             // 📁 [Phase 2a] 앱이면 핵심 파일 접근을 '네이티브(Node fs)'로 교체 — 권한 프롬프트 없음·빠름·영구. (scanPatients/검색은 2b)
             try{ if(window.rayApp && window.rayApp.fs && window.rayApp.fs.available){ const RF=window.rayApp.fs;
                 let _nc=null; const _aid=()=>{ try{ return localStorage.getItem('rc_active_root')||''; }catch(_){ return ''; } };
@@ -4510,6 +4512,9 @@
                     listFilesAtRoot: async(rid,pa)=>{ const r=await RF.list(rid,_rel(pa)); return (r&&r.ok)?(r.files||[]).map(f=>f.name):[]; },
                     getFileAt: async(pa,nm)=>{ try{ return _toFile(await RF.read(_aid(), _rel(pa,nm))); }catch(_){ return null; } },
                     getFileAtRoot: async(rid,pa,nm)=>{ try{ return _toFile(await RF.read(rid, _rel(pa,nm))); }catch(_){ return null; } },
+                    // 🗑 네이티브 삭제 — 활성 루트/임의 루트에서 실제 파일·폴더 삭제(앱 fs.delete). 구셸(delete 미제공)이면 false.
+                    removeAt: async(pa,nm,rec)=>{ try{ if(!RF.delete){ window.__rcLastErr='앱 업데이트 필요(삭제 미지원 셸)'; return false; } const r=await RF.delete(_aid(), _rel(pa,nm), !!rec); if(r&&r.ok) return true; window.__rcLastErr=(r&&r.error)||'삭제 실패'; return false; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } },
+                    removeAtRoot: async(rid,pa,nm,rec)=>{ try{ if(!RF.delete){ window.__rcLastErr='앱 업데이트 필요(삭제 미지원 셸)'; return false; } const r=await RF.delete(rid, _rel(pa,nm), !!rec); if(r&&r.ok) return true; window.__rcLastErr=(r&&r.error)||'삭제 실패'; return false; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } },
                     getFileByName: async(nm)=>{ try{ return _toFile(await RF.read(_aid(), nm)); }catch(_){ return null; } },
                     fileExists: async(nm)=>{ try{ const r=await RF.read(_aid(), nm); return !!(r&&r.ok); }catch(_){ return false; } },
                     walkRoot: async(rid,opts)=>{ try{ const r=await RF.walk(rid, (opts&&opts.max)||5000); return (r&&r.ok)?(r.files||[]):[]; }catch(_){ return []; } },
@@ -6221,7 +6226,8 @@
                     +'</div>');
                 // 작업바: 선택된 항목이 있을 때만 표시(아이콘)
                 const AB='width:34px;height:34px;border:none;border-radius:9px;background:transparent;color:#374151;cursor:pointer;display:flex;align-items:center;justify-content:center;';
-                const _pickMode = !!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive()) || !!window.__sfPatientFilter || !!window.__sfCloudView;
+                // 📎 '선택 첨부'는 실제 첨부 대상(의뢰서/주문서/채팅 선택콜백)이 있을 때만. 환자그리드·클라우드 단순 탐색에선 첨부 아닌 '삭제/미리보기' 액션을 보여준다.
+                const _pickMode = !!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive());
                 const toolbar='<div id="_sf-selbar" style="display:none;flex:none;background:#eef4f8;padding:7px 14px;align-items:center;gap:4px;border-bottom:1px solid #d7e3ee;">'
                     +'<span id="_sf-cnt" style="font-size:13px;font-weight:700;color:#0f2f52;padding:0 6px;">0개 선택</span>'
                     +'<div style="flex:1;"></div>'
@@ -6941,7 +6947,7 @@
                 }).join('');
                 grid.innerHTML=head+secs;
                 _wireHead();
-                const _byEl=el=>{ const row=el.closest('._pt-file'); return { rootId:row.getAttribute('data-rootid'), rpath:row.getAttribute('data-rpath'), fname:(row.getAttribute('data-rpath')||'').split('/').pop(), manual:row.getAttribute('data-manual')==='1', cloud:row.getAttribute('data-cloud')==='1', mime:row.getAttribute('data-mime')||'', size:Number(row.getAttribute('data-size'))||0 }; };
+                const _byEl=el=>{ const row=el.closest('._pt-file'); return { rootId:row.getAttribute('data-rootid'), rpath:row.getAttribute('data-rpath'), fname:(row.getAttribute('data-rpath')||'').split('/').pop(), manual:row.getAttribute('data-manual')==='1', cloud:row.getAttribute('data-cloud')==='1', mime:row.getAttribute('data-mime')||'', size:Number(row.getAttribute('data-size'))||0, series:Number(row.getAttribute('data-series'))||0 }; };
                 // 📎 첨부 선택 모드(의뢰서 첨부 등): 환자 파일 체크박스 다중선택 + 더블클릭=즉시 첨부
                 const _pick=!!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive()); const _ptSel=new Map();
                 const _selbar=ov.querySelector('#_sf-selbar'); const _cntEl=ov.querySelector('#_sf-cnt'); const _paBtn=ov.querySelector('#_sf-pickattach');
@@ -6955,7 +6961,44 @@
                         _ptSel.clear(); try{ grid.querySelectorAll('._pt-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._pt-chk'); if(c){ c.style.background='rgba(255,255,255,.92)'; c.textContent=''; } }); }catch(_){} _updBar();
                     }
                 };
-                const _toggle=(el,f,on)=>{ const k=f.rootId+'|'+f.rpath; if(on===undefined) on=!_ptSel.has(k); if(on){ const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); _ptSel.set(k,{rootId:f.rootId,parts,fn,rpath:f.rpath,cloud:f.cloud,mime:f.mime,size:f.size}); } else { _ptSel.delete(k); } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; const cb=el.querySelector('._pt-chk'); if(cb){ cb.style.background=on?'#0f2f52':'rgba(255,255,255,.92)'; cb.textContent=on?'✓':''; } _updBar(); };
+                const _toggle=(el,f,on)=>{ const k=f.rootId+'|'+f.rpath; if(on===undefined) on=!_ptSel.has(k); if(on){ const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); _ptSel.set(k,{rootId:f.rootId,parts,fn,rpath:f.rpath,cloud:f.cloud,mime:f.mime,size:f.size,series:f.series}); } else { _ptSel.delete(k); } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; const cb=el.querySelector('._pt-chk'); if(cb){ cb.style.background=on?'#0f2f52':'rgba(255,255,255,.92)'; cb.textContent=on?'✓':''; } _updBar(); };
+                // 🗑 환자그리드 삭제 — 로컬=실제 파일 삭제(시리즈면 폴더 내 전체 .dcm), 클라우드=미러 삭제. 삭제 후 PMS 인덱스에서도 제거.
+                const _delFiles=async(descs)=>{
+                    if(!descs||!descs.length){ showToast('삭제할 파일을 선택하세요.'); return; }
+                    const n=descs.length;
+                    if(!confirm('선택한 '+n+'개 항목을 삭제할까요?\n(실제 파일이 폴더/클라우드에서 삭제됩니다. 되돌릴 수 없습니다.)')) return;
+                    const R2=window.RCFolder; let ok=0, fail=0;
+                    for(const d of descs){
+                        try{
+                            const parts=String(d.rpath||'').split('/'); const fn=parts.pop();
+                            if(d.cloud){ try{ if(window.RCMirror&&window.RCMirror.del){ await window.RCMirror.del(d.rpath); ok++; } else fail++; }catch(_){ fail++; } }
+                            else if(/\.dcm$/i.test(fn) && d.series>1){   // CT 시리즈 → 폴더 내 전체 .dcm 삭제
+                                let listed={files:[]}; try{ listed=(R2&&R2.listAtRoot)?await R2.listAtRoot(d.rootId, parts):{files:[]}; }catch(_){}
+                                const dcms=((listed&&listed.files)||[]).map(x=>x.fname).filter(x=>/\.dcm$/i.test(x));
+                                let any=false; for(const s of (dcms.length?dcms:[fn])){ try{ if(R2&&R2.removeAtRoot&&await R2.removeAtRoot(d.rootId, parts, s, false)) any=true; }catch(_){} }
+                                any?ok++:fail++;
+                            } else {
+                                if(R2&&R2.removeAtRoot&&await R2.removeAtRoot(d.rootId, parts, fn, false)) ok++; else fail++;
+                            }
+                            try{ await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:d.rootId, rpath:d.rpath})}); }catch(_){}
+                        }catch(_){ fail++; }
+                    }
+                    showToast(ok?('🗑 삭제: '+ok+'개'+(fail?(' · 실패 '+fail):'')):('삭제 실패'+(window.__rcLastErr?(': '+window.__rcLastErr):'')));
+                    _ptSel.clear();
+                    try{ _sfRenderPatientGrid(ov, key); }catch(_){}
+                    try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){}
+                };
+                // 🧰 환자그리드 선택바 액션(미리보기·삭제) — 선택(_ptSel) 기준. selbar의 폴더용 _sf-act는 patientFilter에서 숨겨지므로 자체 버튼 주입.
+                if(_selbar){
+                    try{ _selbar.querySelectorAll('._pt-act').forEach(b=>b.remove()); }catch(_){}   // 재렌더 시 옛 클로저 버튼 제거 후 새로 주입(stale _ptSel 방지)
+                    const _AB='width:34px;height:34px;border:none;border-radius:9px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+                    const _clr=_selbar.querySelector('#_sf-selclear');
+                    const _mk=(title,html,color)=>{ const b=document.createElement('button'); b.className='_pt-act'; b.title=title; b.style.cssText=_AB+(color?('color:'+color+';'):'color:#374151;'); b.innerHTML=html; return b; };
+                    const _ic=(typeof _SFIC!=='undefined')?_SFIC:{};
+                    const bPrev=_mk('미리보기', _ic.eye||'👁'); bPrev.onclick=()=>{ const v=[..._ptSel.values()]; if(!v.length){ showToast('미리볼 파일을 선택하세요.'); return; } const d=v[0]; _sfOpenPmsFile({rootId:d.rootId, rpath:d.rpath, cloud:d.cloud, mime:d.mime, size:d.size}); };
+                    const bDel=_mk('삭제', _ic.trash||'🗑', '#dc2626'); bDel.onclick=()=>_delFiles([..._ptSel.values()]);
+                    if(_clr){ _selbar.insertBefore(bPrev,_clr); _selbar.insertBefore(bDel,_clr); } else { _selbar.appendChild(bPrev); _selbar.appendChild(bDel); }
+                }
                 // 📋 환자 파일 카드 = 내 컴퓨터 카드와 동일 UX: 항상 체크박스(좌상단, 다중선택) · 카드클릭=열기(폼열림시 첨부) · 더블클릭=첨부 · 드래그
                 grid.querySelectorAll('._pt-file').forEach(el=>{ const f=_byEl(el);
                     const chk=document.createElement('div'); chk.className='_pt-chk'; chk.style.cssText='position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);'; el.appendChild(chk);
@@ -6974,6 +7017,7 @@
                 });
                 grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el); const items=[{label:'👁 미리보기',fn:()=>_sfOpenPmsFile(f)}];
                     items.push({label:'💾 원본 다운로드',fn:async()=>{ try{ const R2=window.RCFolder; const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); let file=(R2&&R2.getFileAtRoot)?await R2.getFileAtRoot(f.rootId,parts,fn):null; if(!file&&R2&&R2.getFileAt){ try{ file=await R2.getFileAt(parts,fn); }catch(_){} } if(!file){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(file); const a=document.createElement('a'); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); }catch(err){ showToast('다운로드 실패'); } }});
+                    items.push({label:(f.series>1?('🗑 시리즈 삭제 ('+f.series+'컷)'):'🗑 삭제'),danger:true,fn:()=>_delFiles([f])});
                     if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ items.push({label:'📎 의뢰서에 첨부',fn:()=>window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}])}); }
                     if(f.manual){ items.push({label:'↔ 다른 환자로 이전',fn:()=>_sfPatientPicker(async(toKey)=>{ if(!toKey||toKey===key) return; try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:toKey, file:f})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('이전했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('이전 실패: '+((err&&err.message)||err)); } }) });
                         items.push({label:'🔗 연결 해제',danger:true,fn:async()=>{ try{ const r=await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:f.rootId,rpath:f.rpath})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('연결을 해제했습니다.'); _sfRenderPatientGrid(ov,key); if(window._sbLoadPatients) window._sbLoadPatients(); }catch(err){ showToast('해제 실패: '+((err&&err.message)||err)); } }}); }
