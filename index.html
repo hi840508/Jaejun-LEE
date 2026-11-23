@@ -7000,7 +7000,7 @@
                 _updBar();
                 // 🖱 환자 파일 카드 드래그 → 의뢰서(우측 패널) 첨부 드롭존으로 끌어 놓기
                 grid.querySelectorAll('._pt-file').forEach(el=>{ el.setAttribute('draggable','true');
-                    el.addEventListener('dragstart',(e)=>{ const f=_byEl(el); window.__sfDragFileRef=[{rootId:f.rootId, rootName:'', rpath:f.rpath, fname:f.fname, mtime:0, modality:'', cloud:f.cloud, mime:f.mime, size:f.size}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', f.fname||'file'); }catch(_){} });
+                    el.addEventListener('dragstart',(e)=>{ const f=_byEl(el); window.__sfDragFileRef=[{rootId:f.rootId, rootName:'', rpath:f.rpath, fname:f.fname, mtime:0, modality:'', cloud:f.cloud, mime:f.mime, size:f.size}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', f.fname||'file'); }catch(_){} try{ window._sfStartNativeDrag([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, series:f.series}], e); }catch(_){} });
                     el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; }, 50); });
                 });
                 const _ptRerender=()=>{ try{ _sfRenderPatientGrid(ov,key); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} };
@@ -7117,14 +7117,23 @@
                 const ESC=(typeof _sfEsc==='function')?_sfEsc:(s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
                 const R=window.RCFolder; const zoom=(flt.zoom||150);
                 let roots=[]; try{ roots=(R&&R.rootsStatus)?await R.rootsStatus():[]; }catch(_){}
-                // 상단 연결상태 요약 바(폴더별 연결됨/연결불가 + 재연결)
+                let mainId=''; try{ mainId=await window._sfMainRootId(); }catch(_){}
+                const mainRoot=(roots||[]).find(r=>String(r.id)===String(mainId))||null;
+                // 상단 연결상태 요약 바(폴더별 연결됨/연결불가 + 재연결). ⭐=주 폴더(드롭 추가 기본 위치).
                 const bar='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 2px 12px;">'
                     +'<div style="font-weight:800;font-size:15px;color:#0f2f52;">📁 내 컴퓨터 <span style="color:#94a3b8;font-weight:600;font-size:12px;">· 등록 폴더 전체 취합</span></div>'
-                    +(roots.length?roots.map(r=>'<span class="_ml-pill" data-rootid="'+ESC(r.id)+'" title="'+ESC(r.name)+'" style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid '+(r.connected?'#bbf7d0':'#fecaca')+';background:'+(r.connected?'#f0fdf4':'#fef2f2')+';color:'+(r.connected?'#15803d':'#b91c1c')+';">'+(r.connected?'🟢':'🔴')+' '+ESC(r.name)+(r.connected?'':' <b class="_ml-recon" style="cursor:pointer;text-decoration:underline;margin-left:2px;">재연결</b>')+'</span>').join(''):'<span style="color:#94a3b8;font-size:13px;">등록된 폴더가 없습니다. 좌측 폴더 추가(＋)로 폴더를 등록하세요.</span>')
+                    +(mainRoot?('<span title="주 폴더 — 파일을 여기로 끌어다 놓으면 이 폴더에 추가됩니다" style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid #fde68a;background:#fffbeb;color:#b45309;">⭐ 주 폴더: '+ESC(mainRoot.name)+'</span>'):'')
+                    +(roots.length?roots.filter(r=>String(r.id)!==String(mainId)).map(r=>'<span class="_ml-pill" data-rootid="'+ESC(r.id)+'" title="'+ESC(r.name)+'" style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid '+(r.connected?'#bbf7d0':'#fecaca')+';background:'+(r.connected?'#f0fdf4':'#fef2f2')+';color:'+(r.connected?'#15803d':'#b91c1c')+';">'+(r.connected?'🟢':'🔴')+' '+ESC(r.name)+(r.connected?'':' <b class="_ml-recon" style="cursor:pointer;text-decoration:underline;margin-left:2px;">재연결</b>')+'</span>').join(''):'<span style="color:#94a3b8;font-size:13px;">등록된 폴더가 없습니다. 좌측 폴더 추가(＋)로 폴더를 등록하세요.</span>')
                     +'</div>';
                 grid.innerHTML=bar+'<div style="padding:34px;text-align:center;color:#64748b;font-size:14px;">모든 폴더에서 파일을 불러오는 중…</div>';
                 const wireBar=()=>{ grid.querySelectorAll('._ml-pill').forEach(el=>{ const rid=el.getAttribute('data-rootid'); const rc=el.querySelector('._ml-recon'); if(rc) rc.addEventListener('click',async(e)=>{ e.stopPropagation(); try{ if(R.setActiveRoot) await R.setActiveRoot(rid); const ok=R.ensureAccess?await R.ensureAccess():false; if(ok){ showToast('✅ 연결됨'); _sfRenderMergedLocal(ov); } else showToast('연결 권한이 거부되었습니다. 폴더를 다시 선택해 주세요.'); }catch(_){ showToast('재연결 실패'); } }); }); };
                 wireBar();
+                // 📥 OS 탐색기 파일을 그리드에 드롭 → 주 폴더에 추가(네이티브 드래그 내보내기와 짝)
+                try{ if(!grid.__osDropWired){ grid.__osDropWired=true;
+                    grid.addEventListener('dragover',(e)=>{ if(e.dataTransfer && (e.dataTransfer.types||[]).indexOf('Files')>=0){ e.preventDefault(); e.dataTransfer.dropEffect='copy'; grid.style.outline='2.5px dashed #c51b7d'; grid.style.outlineOffset='-6px'; } });
+                    grid.addEventListener('dragleave',(e)=>{ if(e.target===grid){ grid.style.outline=''; } });
+                    grid.addEventListener('drop',async(e)=>{ grid.style.outline=''; if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length){ e.preventDefault(); e.stopPropagation(); await window._sfWriteFilesToMain(e.dataTransfer.files); } });
+                } }catch(_){}
                 // 연결된 루트만 순회 병합
                 const connRoots=roots.filter(r=>r.connected);
                 let all=[];
@@ -7371,6 +7380,13 @@
             };
             // 🧰 공용 파일 액션(미리보기/위치열기/다운로드/이름변경/삭제) — 모든 뷰(폴더·내컴퓨터·환자)가 동일 메뉴·동작을 쓰도록 통일
             window._sfRevealFile = async function(d){ try{ const R=window.RCFolder; const parts=String(d.rpath||'').split('/'); const fn=parts.pop(); if(R && R.revealAtRoot && !d.cloud){ const ok=await R.revealAtRoot(d.rootId, parts, fn); if(ok) return; } }catch(_){} showToast(d&&d.cloud?'클라우드 파일은 위치 열기를 지원하지 않습니다.':'파일 위치 열기는 앱(데스크톱)에서만 지원됩니다.'); };
+            // 📁 주 폴더(메인 폴더) — 앱이 지정한 고정 main 루트, 없으면 저장값, 없으면 첫 루트. 드래그 추가 파일의 기본 저장 위치.
+            window._sfMainRootId = async function(){ try{ const R=window.RCFolder; const rs=(R&&R.listRoots)?await R.listRoots():[]; if(!rs||!rs.length) return ''; const m=rs.find(r=>r.main); if(m) return m.id; let s=''; try{ s=localStorage.getItem('rc_main_root')||''; }catch(_){} if(s && rs.some(r=>String(r.id)===String(s))) return s; return rs[0].id; }catch(_){ return ''; } };
+            window._sfMainRootInfo = async function(){ try{ const R=window.RCFolder; const rs=(R&&R.listRoots)?await R.listRoots():[]; const id=await window._sfMainRootId(); return (rs||[]).find(r=>String(r.id)===String(id))||null; }catch(_){ return null; } };
+            // 📤 파일 카드 → OS 탐색기로 네이티브 드래그 내보내기(앱 전용, 로컬 파일만). 성공 시 true.
+            window._sfStartNativeDrag = function(descs, e){ try{ if(!(window.rayApp&&window.rayApp.fs&&window.rayApp.fs.startDrag)) return false; const items=[]; for(const d of (descs||[])){ if(!d||d.cloud||!d.rootId) continue; let rel=String(d.rpath||''); if(!rel) continue; if(/\.dcm$/i.test(rel) && Number(d.series)>1){ rel=rel.split('/').slice(0,-1).join('/'); } items.push({rootId:d.rootId, relPath:rel}); } if(!items.length) return false; window.rayApp.fs.startDrag(items); try{ if(e) e.preventDefault(); }catch(_){} return true; }catch(_){ return false; } };
+            // 📥 OS 파일 드롭 → 주 폴더에 저장(등록). 드래그로 추가되는 파일은 항상 주 폴더 경로로.
+            window._sfWriteFilesToMain = async function(fileList){ const files=[].slice.call(fileList||[]); if(!files.length) return; const R=window.RCFolder; if(!R){ showToast('폴더가 연결되지 않았습니다.'); return; } const mid=await window._sfMainRootId(); if(!mid){ showToast('주 폴더가 없습니다. 먼저 폴더를 지정하세요.'); return; } showToast('주 폴더에 추가 중… ('+files.length+'개)'); let ok=0; try{ if(R.setActiveRoot) await R.setActiveRoot(mid); }catch(_){} for(const f of files){ try{ if(R.writeFileAt){ await R.writeFileAt([], f.name, f); ok++; } }catch(_){} } showToast(ok?('📥 주 폴더에 추가: '+ok+'개'):'추가 실패'); try{ if(R.scanPatients) R.scanPatients(); }catch(_){} try{ if(window.__sfRender) window.__sfRender(); }catch(_){} };
             window._sfDownloadDesc = async function(d){ try{ const name=String(d.rpath||'file').split('/').pop(); const resolved=await window._sfResolveFileToFile(d); if(!resolved){ showToast('파일을 읽지 못했습니다.'); return; } if(resolved.__cloudLink){ window.open(resolved.url,'_blank'); return; } const u=URL.createObjectURL(resolved); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}},60000); showToast('💾 다운로드됨: '+name); }catch(_){ showToast('다운로드 실패'); } };
             window._sfRenameDesc = async function(d, onDone){ const parts=String(d.rpath||'').split('/'); const old=parts.pop(); if(d.cloud){ showToast('클라우드 파일은 이름변경을 지원하지 않습니다.'); return; } const nn=await window._sfPrompt('새 이름', old); if(!nn||nn===old) return; const R=window.RCFolder; let ok=false; try{ if(R.renameAtRoot) ok=await R.renameAtRoot(d.rootId, parts, old, nn); else { if(R.setActiveRoot) await R.setActiveRoot(d.rootId); ok=await R.renameAt(parts, old, nn); } }catch(_){} if(ok){ showToast('이름을 변경했습니다.'); try{ onDone&&onDone(); }catch(_){} } else showToast('이름변경 실패'+(window.__rcLastErr?(': '+window.__rcLastErr):'')); };
             window._sfDeleteDescsUI = async function(descs, opts, onDone){ opts=opts||{}; if(!descs||!descs.length){ showToast('삭제할 파일을 선택하세요.'); return; } const okc=await window._sfConfirm('선택한 '+descs.length+'개 항목을 삭제할까요?\n실제 파일이 삭제됩니다(CT 시리즈는 폴더 내 전체 슬라이스). 되돌릴 수 없습니다.','삭제'); if(!okc) return; const r=await window._sfPhysicalDelete(descs, opts); let msg; if(r.ok) msg='🗑 삭제 '+r.ok+'개'+(r.fail?(' · 접근불가 '+r.fail+'개는 목록에서 제거'):''); else if(r.removed) msg='목록에서 제거 '+r.removed+'개(원본 접근불가/이미 삭제됨)'; else msg='삭제 실패'+(r.lastErr?(': '+r.lastErr):''); showToast(msg); try{ onDone&&onDone(); }catch(_){} };
@@ -7405,7 +7421,8 @@
             window._sfWireFileCardAttach = function(el){ try{
                 if(!el || el.__sfWired) return; el.__sfWired = true;
                 el.setAttribute('draggable','true');
-                el.addEventListener('dragstart',(e)=>{ const rootId=el.getAttribute('data-rootid')||''; const rpath=el.getAttribute('data-rpath')||''; window.__sfDragFileRef=[{rootId:rootId, rootName:'', rpath:rpath, fname:String(rpath).split('/').pop(), mtime:0, modality:''}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', String(rpath).split('/').pop()||'file'); }catch(_){} });
+                el.addEventListener('dragstart',(e)=>{ const rootId=el.getAttribute('data-rootid')||''; const rpath=el.getAttribute('data-rpath')||''; const series=Number(el.getAttribute('data-series'))||0; const cloud=el.getAttribute('data-cloud')==='1'; window.__sfDragFileRef=[{rootId:rootId, rootName:'', rpath:rpath, fname:String(rpath).split('/').pop(), mtime:0, modality:'', cloud:cloud, series:series}]; try{ e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain', String(rpath).split('/').pop()||'file'); }catch(_){}
+                    try{ window._sfStartNativeDrag([{rootId:rootId, rpath:rpath, cloud:cloud, series:series}], e); }catch(_){} });   // 📤 앱이면 OS 탐색기로도 드래그 내보내기(네이티브)
                 el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; }, 60); });
             }catch(_){} };
             // 🧲 전역 드롭: 주문서(의뢰서/주문서)가 열려 있을 때, 파일 카드를 '화면 어디에' 놓아도 첨부되게(드롭 타깃 모호성 제거)
