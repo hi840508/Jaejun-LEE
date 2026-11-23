@@ -448,6 +448,9 @@
         .yt-ad-slot { display:none !important; }
         #rc-folder-page { top:0 !important; }
         #yt-sidebar > #topbar-brand { width:100% !important; height:52px !important; flex:none; display:flex; align-items:center; gap:8px; padding:0 10px !important; border-right:none !important; border-bottom:1px solid #2a3448 !important; background:#1b2436 !important; }
+        /* 계정 ID·이름 글씨 — 네이비에서 안 보이던 것 → 홈으로(시안)와 동일 톤으로 */
+        #yt-sidebar #display-name, #yt-sidebar #topbar-uname-wrap { color:#4db8e8 !important; font-weight:800 !important; }
+        #yt-sidebar .yt-menu-btn { color:#c6d2e2 !important; }
         #_mobile-menu-fab{ display:none; position:fixed; top:10px; left:10px; z-index:98; width:40px; height:40px; border:none; border-radius:10px; background:#1b2436; color:#c6d2e2; align-items:center; justify-content:center; box-shadow:0 2px 10px rgba(0,0,0,.3); cursor:pointer; }
         @media (max-width:1023px){ #_mobile-menu-fab{ display:flex; } }
         .yt-topbar .yt-menu-btn { color:#c6d2e2 !important; }
@@ -7393,11 +7396,9 @@
                 let url=''; try{ const d=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath})}).then(r=>r.json()); url=d&&d.url; }catch(_){}
                 if(!url){ showToast('파일 URL을 가져오지 못했습니다.'); return; }
                 const nm=String(rpath).split('/').pop(); const l=nm.toLowerCase();
-                try{
-                    if(/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(l)){ _sfImgLightbox(url, nm); return; }
-                    if(window.rcOpenInLiveViewer && /\.(ply|stl|obj|glb|gltf|dcm|dicom|mp4|mov|webm)$/.test(l)){ /* 3D/영상은 뷰어로 */ }
-                    window.open(url,'_blank','noopener');   // pdf·문서·영상 등은 브라우저 인라인 조회
-                }catch(_){ try{ window.open(url,'_blank'); }catch(__){} }
+                // 🖼 클라우드 파일도 인앱 미리보기(URL→blob) — 이미지 라이트박스, PLY/STL/OBJ=3D 뷰어, PDF/문서=모달. 브라우저 다운로드로 안 빠지게.
+                try{ if(window.rcPreviewFolderFile){ window.__sfCloudPreviewUrl=url; await window.rcPreviewFolderFile(nm, '', url); window.__sfCloudPreviewUrl=null; return; } }catch(_){ window.__sfCloudPreviewUrl=null; }
+                try{ if(/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(l)){ _sfImgLightbox(url, nm); return; } window.open(url,'_blank','noopener'); }catch(_){ try{ window.open(url,'_blank'); }catch(__){} }
             }
             function _sfImgLightbox(url, nm){ try{ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;z-index:100060;background:rgba(0,0,0,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;'; ov.innerHTML='<div style="color:#fff;font-size:13px;margin-bottom:8px;max-width:90vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(nm||'')+'</div><img src="'+url+'" style="max-width:96vw;max-height:84vh;object-fit:contain;border-radius:8px;"><button style="margin-top:12px;background:rgba(255,255,255,.15);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;">닫기</button>'; ov.onclick=()=>ov.remove(); document.body.appendChild(ov); }catch(_){ window.open(url,'_blank'); } }
             // ☁️🤝 클라우드 파일을 다른 계정의 클라우드로 즉시 공유(서버측 복사). 친구 목록에서 수신자 선택.
@@ -7797,7 +7798,7 @@
         };
         window.rcPreviewFolderFile = async function(name, mime, url){
             try{
-                let f=null; try{ f=await window.RCFolder.getFileAt(window.__sfPath||[], name); }catch(_){}
+                let f=null; if(!window.__sfCloudPreviewUrl){ try{ f=await window.RCFolder.getFileAt(window.__sfPath||[], name); }catch(_){} }
                 if(!f && url){ try{ const r=await fetch(url); f=new File([await r.blob()], name, {type:mime||''}); }catch(_){} }
                 if(!f){ showToast('로컬에 없는 파일입니다. (다른 기기에 있으면 먼저 동기화하세요)'); return; }
                 // 💾 공유폴더 미리보기에선 플로팅 '원본 다운로드' 버튼 숨김 — 다운로드는 그리드 카드 우클릭(더보기) 메뉴로 이동.
