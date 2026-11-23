@@ -4324,7 +4324,7 @@
                         const dcms=ents.filter(e=>e.kind!=='directory' && /\.dcm$/i.test(e.name));
                         if(dcms.length){
                             dcms.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
-                            const ent=dcms[0]; const nm=ent.name; scanned+=dcms.length; series++;
+                            const ent=dcms[Math.floor(dcms.length/2)]||dcms[0]; const nm=ent.name; scanned+=dcms.length; series++;   /* 🩻 CT 대표=중간 슬라이스(첫 슬라이스는 공기층이라 썸네일이 까맣게 나옴) */
                             let f=null; try{ f=await ent.getFile(); }catch(_){}
                             if(f){ const ck=root.id+'|'+pathArr.join('/')+'|'+dcms.length;
                                 let meta=_metaCache.get(ck); if(meta===undefined){ try{ meta=await _readDicomMeta(f); }catch(_){ meta=null; } _metaCache.set(ck, meta); }
@@ -4526,7 +4526,7 @@
                             const dirs=Object.keys(byDir);
                             for(const dir of dirs){ if(series>=CAP) break;
                                 const dcms=byDir[dir].sort((a,b)=>String(a.fname).localeCompare(String(b.fname),undefined,{numeric:true}));
-                                const rep=dcms[0]; const nm=rep.fname; scanned+=dcms.length; series++;
+                                const rep=dcms[Math.floor(dcms.length/2)]||dcms[0]; const nm=rep.fname; scanned+=dcms.length; series++;   /* 🩻 CT 대표=중간 슬라이스(첫 슬라이스는 공기층이라 썸네일이 까맣게 나옴) */
                                 const rpath=(dir?dir+'/':'')+nm; const ck=root.id+'|'+dir+'|'+dcms.length;
                                 let meta=_metaCache.get(ck);
                                 if(meta===undefined){ try{ const rd=await RF.read(root.id, rpath); const file=(rd&&rd.ok&&rd.bytes)?new File([rd.bytes], nm, {type:'application/dicom'}):null; meta=file?await _readDicomMeta(file):null; }catch(_){ meta=null; } _metaCache.set(ck, meta); }
