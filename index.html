@@ -5843,16 +5843,18 @@
             }
             // 로컬 상태 → 📁 내 컴퓨터(전체 취합) 헤더 + 등록 폴더들을 연결상태(연결됨/연결불가)와 함께 나열. '사용중' 개념 없음.
             let roots=[]; try{ roots=(R&&R.rootsStatus)?await R.rootsStatus():((R&&R.listRoots)?await R.listRoots():[]); }catch(_){}
+            let mainId=''; try{ mainId=await window._sfMainRootId(); }catch(_){}   // ⭐ 현재 주 폴더(드롭다운에서 별표로 지정)
             let folderHtml;
             if(notSup){ folderHtml='<div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px;line-height:1.6;">이 기기는 폴더 지정을 지원하지 않습니다.<br>(모바일/Safari)</div>'; }
             else {
                 const header='<div class="_sb-localroot" style="'+row+'background:#eef4f8;color:#0b2b4b;"><span style="flex:none;">📁</span><span style="flex:1;">내 컴퓨터</span><span style="font-size:10px;color:#64748b;font-weight:700;">전체 취합</span></div>';
                 const tree = roots.length
-                    ? roots.map(r=>'<div class="_sb-root" data-id="'+esc(r.id)+'" data-conn="'+(r.connected?'1':'0')+'" data-name="'+esc(r.name)+'" style="'+row+'padding-left:30px;color:#334155;'+(r.connected?'':'opacity:.55;')+'" title="'+esc(r.name)+(r.connected?' · 클릭하면 탐색기에서 이 폴더가 열립니다':' · 연결 불가(클릭 시 재연결)')+'">'
+                    ? roots.map(r=>{ const isMain=String(r.id)===String(mainId); return '<div class="_sb-root" data-id="'+esc(r.id)+'" data-conn="'+(r.connected?'1':'0')+'" data-name="'+esc(r.name)+'" style="'+row+'padding-left:30px;color:#334155;'+(r.connected?'':'opacity:.55;')+'" title="'+esc(r.name)+(r.connected?' · 클릭하면 탐색기에서 이 폴더가 열립니다':' · 연결 불가(클릭 시 재연결)')+'">'
                         +'<span style="flex:none;font-size:15px;line-height:1;">📁</span>'
-                        +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.name)+'</span>'
+                        +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.name)+(isMain?' <span style="font-size:10px;color:#b45309;font-weight:800;">· 주 폴더</span>':'')+'</span>'
                         +(r.connected?'':'<b class="_sb-recon" style="flex:none;font-size:10px;font-weight:800;color:#dc2626;margin-right:4px;cursor:pointer;">재연결</b>')
-                        +'<button class="_sb-rootx" data-id="'+esc(r.id)+'" title="연결 해제" style="flex:none;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:22px;height:22px;font-weight:900;cursor:pointer;line-height:1;">×</button></div>').join('')
+                        +'<button class="_sb-star" data-id="'+esc(r.id)+'" title="'+(isMain?'현재 주 폴더':'이 폴더를 주 폴더로 지정')+'" style="flex:none;border:none;background:transparent;color:'+(isMain?'#f59e0b':'#cbd5e1')+';font-size:16px;line-height:1;cursor:pointer;padding:0 4px;">'+(isMain?'★':'☆')+'</button>'
+                        +'<button class="_sb-rootx" data-id="'+esc(r.id)+'" title="연결 해제" style="flex:none;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:22px;height:22px;font-weight:900;cursor:pointer;line-height:1;">×</button></div>'; }).join('')
                     : '<div style="padding:9px 12px 9px 30px;color:#94a3b8;font-size:12px;">연결된 폴더가 없습니다. (아래 ＋ 폴더 경로 추가)</div>';
                 folderHtml = header + tree;
             }
@@ -5866,10 +5868,12 @@
             window._sbDropdown(anchor, folderHtml+addBtn+cloudBtn+buyBtn, (dd,close)=>{
                 const buy=dd.querySelector('#_sb-cloud-buy'); if(buy) buy.addEventListener('click',()=>{ close(); try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} });
                 const lr=dd.querySelector('._sb-localroot'); if(lr) lr.addEventListener('click',()=>{ close(); try{ if(window._sfGotoPath) window._sfGotoPath([]); else if(window._sfLocalBtnAction) window._sfLocalBtnAction(); }catch(_){} });
-                dd.querySelectorAll('._sb-root').forEach(el=>el.addEventListener('click',async(e)=>{ if(e.target.closest('._sb-rootx')) return; const id=el.getAttribute('data-id'); const conn=el.getAttribute('data-conn')==='1'; const nm=el.getAttribute('data-name')||''; close();
+                dd.querySelectorAll('._sb-root').forEach(el=>el.addEventListener('click',async(e)=>{ if(e.target.closest('._sb-rootx')||e.target.closest('._sb-star')) return; const id=el.getAttribute('data-id'); const conn=el.getAttribute('data-conn')==='1'; const nm=el.getAttribute('data-name')||''; close();
                     // 미연결(웹) → 재연결. 연결됨 → 해당 경로를 탐색기에서 열기(탐색기처럼).
                     if(!conn || e.target.closest('._sb-recon')){ try{ if(R&&R.setActiveRoot) await R.setActiveRoot(id); const ok=(R&&R.ensureAccess)?await R.ensureAccess():false; showToast(ok?'✅ 연결됨':'연결 권한이 거부되었습니다. 폴더를 다시 선택하세요.'); }catch(_){} return; }
                     try{ await window._sfOpenFolderInExplorer(id, nm); }catch(_){} }));
+                // ⭐ 별표 = 주 폴더 지정(드롭·클라우드 동기화 기본 위치). 클릭 시 저장 후 드롭다운/패널 갱신.
+                dd.querySelectorAll('._sb-star').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); try{ localStorage.setItem('rc_main_root', id); }catch(_){} showToast('⭐ 주 폴더로 지정했습니다.'); close(); try{ if(window.__sfOv&&document.body.contains(window.__sfOv)&&window.__sfRender) window.__sfRender(); }catch(_){} try{ if(anchor) window._sbFolderDropdown(anchor); }catch(_){} }));
                 dd.querySelectorAll('._sb-rootx').forEach(el=>el.addEventListener('click',async(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); const ok=await (window._sfConfirm?window._sfConfirm('이 폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다)','해제'):Promise.resolve(confirm('이 폴더 연결을 해제할까요?'))); if(!ok) return; close(); try{ if(R&&R.removeRoot) await R.removeRoot(id); }catch(_){} try{ if(window.__sfOv&&document.body.contains(window.__sfOv)&&window._sfGotoPath) await window._sfGotoPath([]); }catch(_){} }));
                 const cb=dd.querySelector('#_sb-cloud-btn'); if(cb) cb.addEventListener('click',()=>{ close(); try{ window._sbCloudToggle&&window._sbCloudToggle(); }catch(_){} });
                 const ab=dd.querySelector('#_sb-root-add'); if(ab) ab.addEventListener('click',async()=>{ close(); try{ if(R&&R.pick){ const ok=await R.pick(); if(ok){ await window._sbFolderPick(null); } } }catch(_){} });
@@ -7180,18 +7184,8 @@
                 let mainId=''; try{ mainId=await window._sfMainRootId(); }catch(_){}
                 const mainRoot=(roots||[]).find(r=>String(r.id)===String(mainId))||null;
                 const mainFixed=!!(mainRoot&&mainRoot.fixed);   // 앱=OS 고정 Alpha K(변경불가), 웹=사용자 지정(변경가능)
-                // 🗂 탐색기 스타일 상단 바 — 폴더 아이콘+이름만 깔끔히. 클릭=탐색기에서 폴더 열기. ⭐=주 폴더. 미연결(웹)=흐리게+재연결.
-                const _folderChip=(r, isMain)=>{ const off=!r.connected; return '<span class="_ml-folder'+(isMain?' _main':'')+(off?' _off':'')+'" data-rootid="'+ESC(r.id)+'" data-conn="'+(r.connected?'1':'0')+'" data-name="'+ESC(r.name)+'" title="'+(off?'연결 불가 — 클릭하면 재연결':'클릭하면 탐색기에서 이 폴더가 열립니다')+' · '+ESC(r.name)+'" style="display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:#334155;border:1px solid transparent;max-width:260px;">'
-                    +'<span style="flex:none;font-size:16px;line-height:1;">'+(isMain?'⭐':'📁')+'</span>'
-                    +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(r.name)+'</span>'
-                    +(off?' <b class="_ml-recon" style="flex:none;font-size:10px;color:#dc2626;cursor:pointer;">재연결</b>':'')
-                    +((!isMain && !mainFixed && r.connected)?' <b class="_ml-setmain" data-rootid="'+ESC(r.id)+'" title="이 폴더를 주 폴더로 지정" style="flex:none;font-size:10px;color:#b45309;cursor:pointer;">주폴더지정</b>':'')
-                    +'</span>'; };
-                const _chips=[]; if(mainRoot) _chips.push(_folderChip(mainRoot,true)); (roots||[]).filter(r=>String(r.id)!==String(mainId)).forEach(r=>_chips.push(_folderChip(r,false)));
-                const bar='<div style="margin:4px 2px 12px;">'
-                    +'<div style="font-weight:800;font-size:15px;color:#0f2f52;margin-bottom:8px;">📁 내 컴퓨터 <span style="color:#94a3b8;font-weight:600;font-size:12px;">· 등록 폴더 전체 취합</span></div>'
-                    +(roots.length?('<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'+_chips.join('')+'</div>'):'<div style="color:#94a3b8;font-size:13px;">등록된 폴더가 없습니다. 좌측 폴더 추가(＋)로 폴더를 등록하세요.</div>')
-                    +'</div>';
+                // 🗂 상단 바 제거(사용자 요청) — 폴더 목록은 '드라이브 ▼ 드롭다운'에서만. 내 컴퓨터 뷰는 파일만 깔끔히 표시.
+                const bar='';
                 grid.innerHTML=bar+'<div style="padding:34px;text-align:center;color:#64748b;font-size:14px;">모든 폴더에서 파일을 불러오는 중…</div>';
                 const _reconnect=async(rid)=>{ try{ if(R.setActiveRoot) await R.setActiveRoot(rid); const ok=R.ensureAccess?await R.ensureAccess():false; if(ok){ showToast('✅ 연결됨'); _sfRenderMergedLocal(ov); } else showToast('연결 권한이 거부되었습니다. 폴더를 다시 선택해 주세요.'); }catch(_){ showToast('재연결 실패'); } };
                 const wireBar=()=>{ grid.querySelectorAll('._ml-folder').forEach(el=>{ const rid=el.getAttribute('data-rootid'); const conn=el.getAttribute('data-conn')==='1';
@@ -7370,7 +7364,6 @@
                 const used=st?Number(st.used||0):0; const quota=st?Number(st.quota||st.freeBytes||104857600):104857600;
                 const pct=quota?Math.min(100,Math.round(used/quota*100)):0; const over=used>=quota;
                 bar.innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#f0f6ff;border:1px solid #dbe7f5;border-radius:12px;padding:10px 14px;">'
-                    +'<div style="font-weight:800;font-size:14px;color:#0f2f52;">☁️ 클라우드 드라이브 <span style="color:#94a3b8;font-weight:600;font-size:11px;">· 연결된 모든 폴더</span></div>'
                     +'<button id="_sf-syncnow" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:10px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-size:13px;font-weight:800;cursor:pointer;">🔄 지금 동기화</button>'
                     +'<div style="flex:1;min-width:150px;"><div style="height:8px;border-radius:5px;background:#e2e8f0;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+(over?'#ef4444':'#0f2f52')+';transition:width .3s;"></div></div>'
                     +'<div style="font-size:11px;color:#64748b;margin-top:3px;">'+fmt(used)+' / '+fmt(quota)+' 사용'+(over?' · <b style="color:#ef4444;">용량 초과 — 구매 필요</b>':'')+'</div></div>'
@@ -7485,7 +7478,7 @@
             // 📂 등록 폴더(루트) 자체를 탐색기로 열기 — 폴더 아이콘+이름 클릭 시. 앱(데스크톱)에서만 가능, 웹은 안내 토스트.
             window._sfOpenFolderInExplorer = async function(rootId, rootName){ try{ const R=window.RCFolder; if(R && R.revealAtRoot){ const ok=await R.revealAtRoot(rootId, []); if(ok){ return true; } } }catch(_){} showToast('탐색기에서 폴더 열기는 앱(데스크톱)에서만 가능합니다.'); return false; };
             // 📁 주 폴더(메인 폴더) — 앱이 지정한 고정 main 루트, 없으면 저장값, 없으면 첫 루트. 드래그 추가 파일의 기본 저장 위치.
-            window._sfMainRootId = async function(){ try{ const R=window.RCFolder; const rs=(R&&R.listRoots)?await R.listRoots():[]; if(!rs||!rs.length) return ''; const m=rs.find(r=>r.main); if(m) return m.id; let s=''; try{ s=localStorage.getItem('rc_main_root')||''; }catch(_){} if(s && rs.some(r=>String(r.id)===String(s))) return s; return rs[0].id; }catch(_){ return ''; } };
+            window._sfMainRootId = async function(){ try{ const R=window.RCFolder; const rs=(R&&R.listRoots)?await R.listRoots():[]; if(!rs||!rs.length) return ''; let s=''; try{ s=localStorage.getItem('rc_main_root')||''; }catch(_){} if(s && rs.some(r=>String(r.id)===String(s))) return s; const m=rs.find(r=>r.main); if(m) return m.id; return rs[0].id; }catch(_){ return ''; } };
             window._sfMainRootInfo = async function(){ try{ const R=window.RCFolder; const rs=(R&&R.listRoots)?await R.listRoots():[]; const id=await window._sfMainRootId(); return (rs||[]).find(r=>String(r.id)===String(id))||null; }catch(_){ return null; } };
             // 📤 파일 카드 → OS 탐색기로 네이티브 드래그 내보내기(앱 전용, 로컬 파일만). 성공 시 true.
             window._sfStartNativeDrag = function(descs, e){ try{ if(!(window.rayApp&&window.rayApp.fs&&window.rayApp.fs.startDrag)) return false; const items=[]; for(const d of (descs||[])){ if(!d||d.cloud||!d.rootId) continue; let rel=String(d.rpath||''); if(!rel) continue; if(/\.dcm$/i.test(rel) && Number(d.series)>1){ rel=rel.split('/').slice(0,-1).join('/'); } items.push({rootId:d.rootId, relPath:rel}); } if(!items.length) return false; window.rayApp.fs.startDrag(items); try{ if(e) e.preventDefault(); }catch(_){} return true; }catch(_){ return false; } };
