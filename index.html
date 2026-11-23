@@ -1101,7 +1101,7 @@
       /* 카드가 배경에 묻히지 않도록 공통 패널에 또렷한 경계 보장 */
       .panel{ border:1px solid var(--border-color); background:var(--panel-bg); }
       /* 🎨 세련된 배경(평평한 단색 → 은은한 그라데이션) */
-      #rc-folder-page{ background: radial-gradient(1200px 500px at 85% -8%, rgba(37,99,235,.06), transparent 60%), radial-gradient(1000px 460px at 0% 108%, rgba(197,27,125,.05), transparent 58%), linear-gradient(162deg,#e9eef5 0%,#f3f6fb 46%,#eaeff6 100%) !important; }
+      #rc-folder-page{ background: #f3f5f9 !important; }   /* 🎨 캡처 톤: 깔끔한 플랫 배경(부유 흰 카드 강조) */
       #rc-folder-page #_sf-grid{ background:transparent; }
       /* 🃏 파일/폴더/클라우드 카드 — 배경과 또렷이 분리(흰 카드 + 진한 보더 + 레이어드 섀도우 + 호버 엘리베이션) */
       /* 🗂 탐색기 스타일 폴더 칩(내 컴퓨터 상단 바·드라이브 드롭다운) — 폴더 아이콘+이름, 클릭=탐색기 열기 */
@@ -1110,12 +1110,12 @@
       ._ml-folder._main{ color:#b45309; font-weight:800; }
       ._ml-folder._off{ opacity:.55; }
       #rc-folder-page .rc-gf, #rc-folder-page .rc-gfd, #rc-folder-page .rc-serf, .rc-clview{
-        background:#ffffff !important; border:1px solid #d4dde8 !important;
-        box-shadow: 0 1px 2px rgba(16,34,54,.05), 0 5px 16px rgba(16,34,54,.08) !important;
+        background:#ffffff !important; border:1px solid #eceff4 !important; border-radius:14px !important;
+        box-shadow: 0 1px 2px rgba(16,34,54,.04), 0 8px 22px rgba(16,34,54,.06) !important;
         transition: box-shadow .2s var(--ak-ease), transform .16s var(--ak-ease), border-color .2s var(--ak-ease) !important;
       }
       #rc-folder-page .rc-gf:hover, #rc-folder-page .rc-gfd:hover, #rc-folder-page .rc-serf:hover, .rc-clview:hover{
-        border-color:#b3c3d4 !important; box-shadow: 0 10px 26px rgba(16,34,54,.15) !important; transform:translateY(-2px);
+        border-color:#dbe3ec !important; box-shadow: 0 12px 30px rgba(16,34,54,.12) !important; transform:translateY(-2px);
       }
       /* 날짜 섹션 헤더 — 더 또렷하게 */
       #rc-folder-page ._sf-datehead, #rc-folder-page ._sf-sechead, #rc-folder-page ._sf-sechead-plain{ font-size:14.5px !important; color:#1e2b3a !important; }
@@ -5905,7 +5905,7 @@
             else { folderHtml = conn.map(r=>{ const isMain=String(r.id)===String(mainId); return '<div class="_sb-root" data-id="'+esc(r.id)+'" data-name="'+esc(r.name)+'" style="'+row+'cursor:default;color:#334155;" title="'+esc(r.name)+'">'
                 +'<button class="_sb-star" data-id="'+esc(r.id)+'" title="'+(isMain?'현재 주 폴더':'이 폴더를 주 폴더로 지정')+'" style="flex:none;border:none;background:transparent;color:'+(isMain?'#f59e0b':'#cbd5e1')+';font-size:17px;line-height:1;cursor:pointer;padding:0 2px;">'+(isMain?'★':'☆')+'</button>'
                 +'<span style="flex:none;font-size:15px;line-height:1;">📁</span>'
-                +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.name)+(isMain?' <span style="font-size:10px;color:#b45309;font-weight:800;">· 주 폴더</span>':'')+'</span>'
+                +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(String(r.name||'').replace(/\s*\(주\s*폴더\)\s*$/,''))+'</span>'
                 +'<button class="_sb-rootx" data-id="'+esc(r.id)+'" title="연결 해제" style="flex:none;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:22px;height:22px;font-weight:900;cursor:pointer;line-height:1;">×</button></div>'; }).join(''); }
             window._sbDropdown(anchor, folderHtml, (dd,close)=>{
                 dd.querySelectorAll('._sb-star').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); try{ localStorage.setItem('rc_main_root', id); }catch(_){} showToast('⭐ 주 폴더로 지정했습니다.'); close(); try{ if(window.__sfOv&&document.body.contains(window.__sfOv)&&window.__sfRender) window.__sfRender(); }catch(_){} }));
@@ -7259,7 +7259,7 @@
                 if(useDate){ const groups=[]; const gmap={}; all.forEach(it=>{ const k=_key(it.mtime); if(!gmap[k]){ gmap[k]={label:_tsLabel(it.mtime),items:[]}; groups.push(gmap[k]); } gmap[k].items.push(it); });
                     body=groups.map(g=>'<div class="_sf-sec"><div class="_sf-sechead-plain" style="font-weight:800;font-size:14px;color:#334155;padding:14px 2px 8px;">📅 '+ESC(g.label)+'</div><div class="_sf-secgrid" style="'+secStyle+'">'+g.items.map(card).join('')+'</div></div>').join('');
                 } else { body='<div class="_sf-secgrid" style="'+secStyle+'">'+all.map(card).join('')+'</div>'; }
-                grid.innerHTML=bar+'<div style="font-size:12px;color:#64748b;margin:0 2px 8px;">총 '+all.length+'개'+(all.length>=3000*Math.max(1,connRoots.length)?' (일부 생략)':'')+'</div>'+body;
+                grid.innerHTML=bar+(all.length>=3000*Math.max(1,connRoots.length)?'<div style="font-size:12px;color:#94a3b8;margin:0 2px 8px;">일부 항목이 생략되었습니다.</div>':'')+body;
                 wireBar();
                 // 📎 폴더뷰와 '동일 동작'으로 통일(루트-인식): 클릭=선택 · 더블클릭=미리보기 · ⋯=메뉴 · 드래그=첨부
                 const _mSel=new Map();
