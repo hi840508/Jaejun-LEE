@@ -2935,13 +2935,17 @@
         #chat-file-preview-modal.cfp-dock #cfp-close-btn{ right:408px; }
         #chat-file-preview-modal.cfp-dock #cfp-titlebar{ right:474px; }
       }
+      /* 🎨 미리보기 버튼 = 메인페이지 버튼 톤(네이비 그라데이션 저장 + 다크 글래스 닫기, 둥근 사각 10px) */
+      #cfp-download:hover{ filter:brightness(1.1); transform:translateY(-1px); box-shadow:0 6px 18px rgba(0,0,0,.45); }
+      #cfp-close-btn:hover{ background:rgba(220,38,38,.92); border-color:rgba(255,255,255,.5); transform:translateY(-1px); }
+      #cfp-close-btn:active{ transform:translateY(0); }
     </style>
     <div id="chat-file-preview-modal" class="cfp-dock" onclick="if(event.target===this)closeChatFilePreview()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:4400; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px);">
         <div id="cfp-titlebar" style="position:fixed; top:14px; left:24px; right:82px; display:flex; align-items:center; gap:10px; z-index:4300;">
-            <span id="cfp-title" style="flex:1; min-width:0; color:#fff; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(0,0,0,0.5); padding:8px 16px; border-radius:20px;">파일</span>
-            <a id="cfp-download" download="" href="#" onclick="return _cfpSaveAs(this.href, this.getAttribute('download'), event)" title="내 컴퓨터의 원하는 위치에 저장(탐색기)" style="flex:none; background:linear-gradient(135deg,#22446b,#0b2b4b); color:#fff; padding:9px 18px; border-radius:20px; text-decoration:none; font-size:13px; font-weight:700; white-space:nowrap; box-shadow:0 2px 10px rgba(0,0,0,.4);">💾 원본 저장하기</a>
+            <span id="cfp-title" style="flex:1; min-width:0; color:#fff; font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(17,24,39,0.55); padding:9px 16px; border-radius:10px; border:1px solid rgba(255,255,255,.14); backdrop-filter:blur(4px);">파일</span>
+            <a id="cfp-download" download="" href="#" onclick="return _cfpSaveAs(this.href, this.getAttribute('download'), event)" title="내 컴퓨터의 원하는 위치에 저장(탐색기)" style="flex:none; display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg,#22446b,#0b2b4b); color:#fff; padding:9px 16px; border-radius:10px; text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.32); transition:all .15s ease;">💾 원본 저장하기</a>
         </div>
-        <button id="cfp-close-btn" onclick="closeChatFilePreview()" title="닫기 (ESC)" style="position:fixed; top:16px; right:16px; background:rgba(220,38,38,0.95); border:2px solid #fff; color:#fff; font-size:26px; line-height:1; cursor:pointer; width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; z-index:4300; box-shadow:0 4px 16px rgba(0,0,0,.5);">&times;</button>
+        <button id="cfp-close-btn" onclick="closeChatFilePreview()" title="닫기 (ESC)" style="position:fixed; top:14px; right:16px; background:rgba(17,24,39,0.55); border:1px solid rgba(255,255,255,.25); color:#fff; font-size:22px; line-height:1; cursor:pointer; width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; z-index:4300; box-shadow:0 4px 14px rgba(0,0,0,.32); transition:all .15s ease; backdrop-filter:blur(4px);">&times;</button>
         <div id="cfp-content" style="max-width:min(1400px,96vw); max-height:90vh; width:100%; height:auto; display:flex; align-items:center; justify-content:center;"></div>
     </div>
 
@@ -4210,6 +4214,11 @@
             // 🗑 (루트 단위) 삭제 — 활성 루트 전환 없이 특정 rootId 안의 경로를 삭제(환자그리드 등 여러 루트 혼재 뷰용)
             async function removeAtRoot(rootId, pathArr, name, recursive){ try{ const rs=await _loadRoots(); const root=rs.find(r=>String(r.id)===String(rootId)); let h=root&&root.handle; if(!h){ window.__rcLastErr='루트 없음'; return false; } try{ if((await h.queryPermission({mode:'readwrite'}))!=='granted'){ if((await h.requestPermission({mode:'readwrite'}))!=='granted'){ window.__rcLastErr='권한 거부'; return false; } } }catch(_){} for(const p of (pathArr||[])){ h=await h.getDirectoryHandle(_safe(p)); } await h.removeEntry(_safe(name), {recursive:!!recursive}); _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
             async function _copyDir(srcDir, dstDir){ for await (const [nm,ent] of srcDir.entries()){ if(ent.kind==='directory'){ const nd=await dstDir.getDirectoryHandle(nm,{create:true}); await _copyDir(ent, nd); } else { const f=await ent.getFile(); const nf=await dstDir.getFileHandle(nm,{create:true}); const w=await nf.createWritable(); await w.write(f); await w.close(); } } }
+            // ✏️ (루트 단위) 이름변경 — 활성 루트 전환 없이 특정 rootId 안에서 이름변경
+            async function renameAtRoot(rootId, pathArr, oldName, newName, isDir){ const rs=await _loadRoots(); const root=rs.find(r=>String(r.id)===String(rootId)); let h=root&&root.handle; if(!h){ window.__rcLastErr='루트 없음'; return false; } try{ if((await h.queryPermission({mode:'readwrite'}))!=='granted'){ if((await h.requestPermission({mode:'readwrite'}))!=='granted'){ window.__rcLastErr='권한 거부'; return false; } } }catch(_){} try{ for(const p of (pathArr||[])){ h=await h.getDirectoryHandle(_safe(p)); } }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } const safeNew=_safe(newName);
+                try{ const ent=isDir?await h.getDirectoryHandle(oldName,{create:false}):await h.getFileHandle(oldName,{create:false}); if(ent.move){ await ent.move(safeNew); _scheduleSync(); return true; } }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); }
+                if(!isDir){ try{ const f=await (await h.getFileHandle(oldName)).getFile(); const nf=await h.getFileHandle(safeNew,{create:true}); const w=await nf.createWritable(); await w.write(f); await w.close(); await h.removeEntry(oldName); _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
+                try{ const src=await h.getDirectoryHandle(oldName,{create:false}); const dst=await h.getDirectoryHandle(safeNew,{create:true}); await _copyDir(src,dst); await h.removeEntry(oldName,{recursive:true}); _scheduleSync(); return true; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } }
             async function renameAt(pathArr, oldName, newName, isDir){ if(!(await _ensurePerm(true))){ window.__rcLastErr='권한 없음'; return false; } const safeNew=_safe(newName); let h; try{ h=await _dirAt(pathArr); }catch(_){ return false; }
                 // 1) 네이티브 move() (Chrome 최신: 파일·폴더 지원)
                 try{ const ent = isDir ? await h.getDirectoryHandle(oldName,{create:false}) : await h.getFileHandle(oldName,{create:false}); if(ent.move){ await ent.move(safeNew); _scheduleSync(); return true; } }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); }
@@ -4486,7 +4495,7 @@
                 setTimeout(()=>{ try{ b.remove(); }catch(_){} }, 15000);
             }
 
-            const _RF = { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, removeAtRoot, renameAt, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, searchInPath, scanPatients, getFileAtRoot, listFilesAtRoot, rootsStatus, walkRoot, listAtRoot };
+            const _RF = { supported, deviceId, deviceName, setDeviceName, folderName, isConnected, chosen, ensureAccess, pick, disconnect, writeFile, fileExists, getFileByName, createWriter, makeThumbForFile, getThumb, dicomImage, csReady:_ensureCornerstone, deleteFile, listAt, getFileAt, writeFileAt, writeFileInRoom, mkdirAt, removeAt, removeAtRoot, renameAt, renameAtRoot, moveInto, moveUp, listFiles, register, list, requireFolder, onLogin, buildIndex, syncIndex, allFiles, listRoots, setActiveRoot, removeRoot, addFolder:pick, searchAll, searchInPath, scanPatients, getFileAtRoot, listFilesAtRoot, rootsStatus, walkRoot, listAtRoot };
             // 📁 [Phase 2a] 앱이면 핵심 파일 접근을 '네이티브(Node fs)'로 교체 — 권한 프롬프트 없음·빠름·영구. (scanPatients/검색은 2b)
             try{ if(window.rayApp && window.rayApp.fs && window.rayApp.fs.available){ const RF=window.rayApp.fs;
                 let _nc=null; const _aid=()=>{ try{ return localStorage.getItem('rc_active_root')||''; }catch(_){ return ''; } };
@@ -4515,6 +4524,9 @@
                     // 🗑 네이티브 삭제 — 활성 루트/임의 루트에서 실제 파일·폴더 삭제(앱 fs.delete). 구셸(delete 미제공)이면 false.
                     removeAt: async(pa,nm,rec)=>{ try{ if(!RF.delete){ window.__rcLastErr='앱 업데이트 필요(삭제 미지원 셸)'; return false; } const r=await RF.delete(_aid(), _rel(pa,nm), !!rec); if(r&&r.ok) return true; window.__rcLastErr=(r&&r.error)||'삭제 실패'; return false; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } },
                     removeAtRoot: async(rid,pa,nm,rec)=>{ try{ if(!RF.delete){ window.__rcLastErr='앱 업데이트 필요(삭제 미지원 셸)'; return false; } const r=await RF.delete(rid, _rel(pa,nm), !!rec); if(r&&r.ok) return true; window.__rcLastErr=(r&&r.error)||'삭제 실패'; return false; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } },
+                    // ✏️ 네이티브 이름변경 — 같은 폴더 내 rename(앱 fs.rename). 구셸(rename 미제공)이면 false.
+                    renameAt: async(pa,on,nn)=>{ try{ if(!RF.rename){ window.__rcLastErr='앱 업데이트 필요(이름변경 미지원 셸)'; return false; } const r=await RF.rename(_aid(), _rel(pa,on), _rel(pa,nn)); if(r&&r.ok) return true; window.__rcLastErr=(r&&r.error)||'이름변경 실패'; return false; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } },
+                    renameAtRoot: async(rid,pa,on,nn)=>{ try{ if(!RF.rename){ window.__rcLastErr='앱 업데이트 필요(이름변경 미지원 셸)'; return false; } const r=await RF.rename(rid, _rel(pa,on), _rel(pa,nn)); if(r&&r.ok) return true; window.__rcLastErr=(r&&r.error)||'이름변경 실패'; return false; }catch(e){ window.__rcLastErr=(e&&e.message)||String(e); return false; } },
                     getFileByName: async(nm)=>{ try{ return _toFile(await RF.read(_aid(), nm)); }catch(_){ return null; } },
                     fileExists: async(nm)=>{ try{ const r=await RF.read(_aid(), nm); return !!(r&&r.ok); }catch(_){ return false; } },
                     walkRoot: async(rid,opts)=>{ try{ const r=await RF.walk(rid, (opts&&opts.max)||5000); return (r&&r.ok)?(r.files||[]):[]; }catch(_){ return []; } },
@@ -6522,7 +6534,10 @@
                 });
                 const allc=ov.querySelector('#_sf-all'); if(allc) allc.addEventListener('change',()=>{ selected.clear(); selectedFolders.clear(); ov.querySelectorAll('.rc-gf').forEach(el=>{ const chk=el.querySelector('.rc-gf-chk'); if(chk){ chk.checked=allc.checked; el.style.outline=allc.checked?'3px solid #0f2f52':''; if(allc.checked) selected.add(el.getAttribute('data-fname')); } }); ov.querySelectorAll('.rc-gfd').forEach(el=>{ const chk=el.querySelector('.rc-gfd-chk'); if(chk){ chk.checked=allc.checked; el.style.outline=allc.checked?'3px solid #0f2f52':''; if(allc.checked){ const rel=(el.getAttribute('data-rel')||el.getAttribute('data-name')||'').split('/').filter(Boolean); if(rel.length){ selectedFolders.set(rel.join('/'),{parent:path.concat(rel.slice(0,-1)),leaf:rel[rel.length-1]}); } } } }); updCnt(); });
                 ov.querySelectorAll('._sf-act').forEach(b=>b.addEventListener('click', async()=>{
-                    const act=b.getAttribute('data-act'); const names=[...selected]; const folders=[...selectedFolders.values()];
+                    const act=b.getAttribute('data-act');
+                    // 🔀 뷰별 선택계가 다르면(전체취합=_mSel 등) 해당 뷰가 등록한 액션을 우선 실행(폴더 selected 기준이 비어 '선택하세요' 무한루프 방지)
+                    if(window.__sfActOverride && typeof window.__sfActOverride[act]==='function'){ try{ await window.__sfActOverride[act](); }catch(_){} return; }
+                    const names=[...selected]; const folders=[...selectedFolders.values()];
                     if(act==='preview'){ if(!names.length) return showToast('미리볼 파일을 선택하세요.'); window.rcPreviewFolderFile(names[0], ''); return; }
                     if(act==='share'){ if(!names.length) return showToast('공유할 파일을 선택하세요.'); openShareRecipientPicker(names); return; }
                     if(act==='rename'){
@@ -6628,6 +6643,7 @@
                 try{ window._sbUpdateStorageSel&&window._sbUpdateStorageSel(); }catch(_){}
                 // 🏪 내 상점(상점 카드) / ☁️ 클라우드 / 🔎 경로검색 / 🧑‍⚕️ 이름 필터 / 기본=폴더 목록
                 window.__sfMergedActive=false;   // 전체취합 외 모든 뷰 진입 전 리셋(러버밴드 선택계 오판 방지) — _sfRenderMergedLocal이 다시 true로
+                window.__sfActOverride=null;      // 선택바 액션(삭제/이름변경/공유) 기본=폴더(selected). 전체취합뷰가 _mSel 기준으로 다시 설정.
                 if(window.__sfStoreView){ window.__sfCloudView=false; window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sfRenderStoreCards(ov); }catch(_){} }
                 else if(window.__sfCloudView){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; try{ _sbHighlightPatient(); }catch(_){}; try{ _sfRenderCloudList(ov); }catch(_){} }
                 else if(window.__sfDeepQuery){ try{ _sbHighlightPatient(); _sfRenderDeepSearch(ov, window.__sfDeepQuery); }catch(_){} }
@@ -6962,28 +6978,12 @@
                     }
                 };
                 const _toggle=(el,f,on)=>{ const k=f.rootId+'|'+f.rpath; if(on===undefined) on=!_ptSel.has(k); if(on){ const parts=String(f.rpath||'').split('/'); const fn=parts.pop(); _ptSel.set(k,{rootId:f.rootId,parts,fn,rpath:f.rpath,cloud:f.cloud,mime:f.mime,size:f.size,series:f.series}); } else { _ptSel.delete(k); } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; const cb=el.querySelector('._pt-chk'); if(cb){ cb.style.background=on?'#0f2f52':'rgba(255,255,255,.92)'; cb.textContent=on?'✓':''; } _updBar(); };
-                // 🗑 환자그리드 삭제 — 로컬=실제 파일 삭제(시리즈면 폴더 내 전체 .dcm), 클라우드=미러 삭제. 삭제 후 PMS 인덱스에서도 제거.
+                // 🗑 환자그리드 삭제 — .dcm=폴더 내 전체 슬라이스(시리즈) 물리삭제, 일반=단일 삭제, 클라우드=미러 삭제. 물리삭제 성공분만 PMS 인덱스에서 제거(remove).
                 const _delFiles=async(descs)=>{
                     if(!descs||!descs.length){ showToast('삭제할 파일을 선택하세요.'); return; }
-                    const n=descs.length;
-                    if(!confirm('선택한 '+n+'개 항목을 삭제할까요?\n(실제 파일이 폴더/클라우드에서 삭제됩니다. 되돌릴 수 없습니다.)')) return;
-                    const R2=window.RCFolder; let ok=0, fail=0;
-                    for(const d of descs){
-                        try{
-                            const parts=String(d.rpath||'').split('/'); const fn=parts.pop();
-                            if(d.cloud){ try{ if(window.RCMirror&&window.RCMirror.del){ await window.RCMirror.del(d.rpath); ok++; } else fail++; }catch(_){ fail++; } }
-                            else if(/\.dcm$/i.test(fn) && d.series>1){   // CT 시리즈 → 폴더 내 전체 .dcm 삭제
-                                let listed={files:[]}; try{ listed=(R2&&R2.listAtRoot)?await R2.listAtRoot(d.rootId, parts):{files:[]}; }catch(_){}
-                                const dcms=((listed&&listed.files)||[]).map(x=>x.fname).filter(x=>/\.dcm$/i.test(x));
-                                let any=false; for(const s of (dcms.length?dcms:[fn])){ try{ if(R2&&R2.removeAtRoot&&await R2.removeAtRoot(d.rootId, parts, s, false)) any=true; }catch(_){} }
-                                any?ok++:fail++;
-                            } else {
-                                if(R2&&R2.removeAtRoot&&await R2.removeAtRoot(d.rootId, parts, fn, false)) ok++; else fail++;
-                            }
-                            try{ await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:d.rootId, rpath:d.rpath})}); }catch(_){}
-                        }catch(_){ fail++; }
-                    }
-                    showToast(ok?('🗑 삭제: '+ok+'개'+(fail?(' · 실패 '+fail):'')):('삭제 실패'+(window.__rcLastErr?(': '+window.__rcLastErr):'')));
+                    if(!confirm('선택한 '+descs.length+'개 항목을 삭제할까요?\n실제 파일이 삭제됩니다(CT 시리즈는 폴더 내 전체 슬라이스). 되돌릴 수 없습니다.')) return;
+                    const r=await window._sfPhysicalDelete(descs);
+                    showToast(r.ok?('🗑 삭제: '+r.ok+'개'+(r.fail?(' · 실패 '+r.fail):'')):('삭제 실패'+(r.lastErr?(': '+r.lastErr):'')));
                     _ptSel.clear();
                     try{ _sfRenderPatientGrid(ov, key); }catch(_){}
                     try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){}
@@ -7188,6 +7188,14 @@
                 });
                 { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_mSel.size){ showToast('첨부할 파일을 선택하세요.'); return; } window._sfAttachDescs([..._mSel.values()]); }; }
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _mSel.clear(); grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); }; }
+                // 🧰 전체취합(내 컴퓨터) 선택바 액션 — 선택계가 _mSel이므로 폴더용 _sf-act 대신 이 오버라이드가 실행됨(루트-인식 삭제/이름변경/공유)
+                const _esc=(s)=>{ try{ return (window.CSS&&CSS.escape)?CSS.escape(String(s)):String(s).replace(/["\\]/g,'\\$&'); }catch(_){ return String(s); } };
+                window.__sfActOverride={
+                    preview: async()=>{ const v=[..._mSel.values()]; if(!v.length){ showToast('미리볼 파일을 선택하세요.'); return; } const d=v[0]; const el=grid.querySelector('._sr-file[data-rootid="'+_esc(d.rootId)+'"][data-rpath="'+_esc(d.rpath)+'"]'); if(el) _mPreview(el); },
+                    share: async()=>{ const v=[..._mSel.values()]; if(!v.length){ showToast('공유할 파일을 선택하세요.'); return; } openShareRecipientPicker(null, v); },
+                    delete: async()=>{ const v=[..._mSel.values()]; if(!v.length){ showToast('삭제할 파일을 선택하세요.'); return; } if(!confirm('선택한 '+v.length+'개 항목을 삭제할까요?\n실제 파일이 삭제됩니다(CT 시리즈는 폴더 내 전체 슬라이스). 되돌릴 수 없습니다.')) return; const r=await window._sfPhysicalDelete(v); showToast(r.ok?('🗑 삭제: '+r.ok+'개'+(r.fail?(' · 실패 '+r.fail):'')):('삭제 실패'+(r.lastErr?(': '+r.lastErr):''))); _mSel.clear(); try{ _sfRenderMergedLocal(ov); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} },
+                    rename: async()=>{ const v=[..._mSel.values()]; if(v.length!==1){ showToast('이름변경할 파일 1개만 선택하세요.'); return; } const d=v[0]; const parts=String(d.rpath||'').split('/'); const old=parts.pop(); const nn=await _sfPrompt('새 이름', old); if(!nn||nn===old) return; let okR=false; try{ if(R.renameAtRoot) okR=await R.renameAtRoot(d.rootId, parts, old, nn, false); else { if(R.setActiveRoot) await R.setActiveRoot(d.rootId); okR=await R.renameAt(parts, old, nn, false); } }catch(_){} if(okR){ showToast('이름을 변경했습니다.'); _mSel.clear(); try{ _sfRenderMergedLocal(ov); }catch(_){} } else showToast('이름변경 실패'+(window.__rcLastErr?(': '+window.__rcLastErr):'')); }
+                };
                 // 🔎 렌더 직후 현재 칩(유형/기간/검색) 상태를 제자리 반영
                 try{ if(window.__sfApplyFilter) window.__sfApplyFilter(); }catch(_){}
                 // 🖼 썸네일 지연 로드(루트별 getFileAtRoot → getThumb/dicomImage)
@@ -7344,6 +7352,26 @@
                 try{ const dj=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:d.rpath})}).then(r=>r.json()); if(dj&&dj.url){ const resp=await fetch(dj.url); if(resp.ok){ const blob=await resp.blob(); return new File([blob], fn, {type: blob.type||'application/octet-stream'}); } } }catch(_){}
                 return null;
             };
+            // 🗑 공용 물리삭제 — descs[{rootId,rpath,cloud}] : .dcm=폴더 내 전체 슬라이스, 일반=단일, 클라우드=미러. 삭제 성공분만 PMS 인덱스에서 remove. {ok,fail,lastErr} 반환.
+            window._sfPhysicalDelete = async function(descs){
+                const R2=window.RCFolder; let ok=0, fail=0, lastErr='';
+                for(const d of (descs||[])){
+                    const parts=String(d.rpath||'').split('/'); const fn=parts.pop(); const isDcm=/\.dcm$/i.test(fn); let deleted=false;
+                    if(R2 && R2.removeAtRoot){
+                        if(isDcm){
+                            let listed=null; try{ listed=R2.listAtRoot?await R2.listAtRoot(d.rootId, parts):null; }catch(_){}
+                            const dcms=(listed&&listed.files)?listed.files.map(x=>x.fname).filter(x=>/\.dcm$/i.test(x)):[];
+                            const targets=dcms.length?dcms:[fn];
+                            for(const s of targets){ try{ if(await R2.removeAtRoot(d.rootId, parts, s, false)) deleted=true; else lastErr=window.__rcLastErr||lastErr; }catch(_){} }
+                        } else {
+                            try{ if(await R2.removeAtRoot(d.rootId, parts, fn, false)) deleted=true; else lastErr=window.__rcLastErr||lastErr; }catch(_){}
+                        }
+                    }
+                    if(d.cloud){ try{ if(window.RCMirror&&window.RCMirror.del){ await window.RCMirror.del(d.rpath); deleted=true; } }catch(e){ lastErr=(e&&e.message)||lastErr; } }
+                    if(deleted){ try{ await fetch(API_URL+'/api/pms/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:d.rootId, rpath:d.rpath})}); }catch(_){} ok++; } else fail++;
+                }
+                return { ok, fail, lastErr };
+            };
             // 📎 파일 설명(rootId/rpath)들을 File 객체로 읽어 열려있는 주문서에 첨부
             window._sfAttachDescs = async function(descs){
                 if(!descs||!descs.length) return;
@@ -7375,7 +7403,7 @@
             render();
         }
         // 📤 공유 대상 선택 — ①나에게 보내기(내 다른 기기, 온라인만 선택) ②친구. 선택 파일 R2 1회 업로드 후 각 대상으로 전송.
-        async function openShareRecipientPicker(fileNames){
+        async function openShareRecipientPicker(fileNames, descs){
             const myId=window.RCFolder.deviceId();
             let devices=[]; try{ devices=await window.RCFolder.list(); }catch(_){}
             const _myName=window.RCFolder.deviceName();
@@ -7404,7 +7432,27 @@
             ov.querySelectorAll('._rp-chk').forEach(bind);
             // 온라인 기기 표시(핑) → 온라인만 선택 가능
             if(myDevices.length && window.RCSelf){ window.RCSelf.ping((onlineSet)=>{ ov.querySelectorAll('._rp-devrow').forEach(row=>{ const id=row.getAttribute('data-dev'); const on=onlineSet&&onlineSet.has(id); const chk=row.querySelector('._rp-chk'); const st=row.querySelector('._rp-devstat'); if(on){ row.style.opacity='1'; row.style.cursor='pointer'; if(chk) chk.disabled=false; if(st){ st.textContent='온라인'; st.style.color='#16a34a'; } } }); }, 1000); }
-            ov.querySelector('#_rp-send').onclick=async()=>{ if(!chosen.size) return showToast('보낼 대상을 선택하세요.'); close(); await sendFilesToRecipients(fileNames, [...chosen.values()]); };
+            ov.querySelector('#_rp-send').onclick=async()=>{ if(!chosen.size) return showToast('보낼 대상을 선택하세요.'); close(); if(descs&&descs.length) await sendDescsToRecipients(descs, [...chosen.values()]); else await sendFilesToRecipients(fileNames, [...chosen.values()]); };
+        }
+        // 📤 (루트 혼재/병합뷰용) desc 기반 전송 — rootId/rpath를 File로 해석해 업로드(또는 클라우드 링크 그대로) 후 각 대상에 전송
+        async function sendDescsToRecipients(descs, recipients){
+            const pic=(currentUser && currentUser.profilePic)||null; let ok=0, fail=0;
+            const friends=recipients.filter(r=>r.type==='friend'); const devs=recipients.filter(r=>r.type==='device');
+            for(const d of descs){
+                try{
+                    const name=String(d.rpath||'file').split('/').pop();
+                    showToast('📤 업로드 중: '+name);
+                    const resolved=await window._sfResolveFileToFile(d); if(!resolved){ fail++; continue; }
+                    let url, mime, sizeKB;
+                    if(resolved.__cloudLink){ url=resolved.url; mime=resolved.type||'application/octet-stream'; sizeKB=((Number(resolved.size)||0)/1024).toFixed(0); }
+                    else { url=await window.uploadBigFileToR2(resolved, null); mime=resolved.type||'application/octet-stream'; sizeKB=(resolved.size/1024).toFixed(0); }
+                    const msg='[FILE_ATTACH]'+name+'|'+sizeKB+'|'+mime+'|'+url;
+                    friends.forEach(r=>{ const roomId=createRoomId(currentUser.name, r.id); if(socket&&socket.connected) socket.emit('send_message',{ roomId:roomId, sender:currentUser.name, senderPic:pic, message:msg }); });
+                    devs.forEach(r=>{ if(socket&&socket.connected) socket.emit('rc_signal',{ to:currentUser.name, kind:'selfsend', fromDevice:window.RCFolder.deviceId(), toDevice:r.id, url:url, name:name, mime:mime, size:(Number(resolved.size)||0) }); });
+                    ok++;
+                }catch(e){ fail++; }
+            }
+            showToast('📤 전송: '+ok+'개'+(fail?(' · 실패 '+fail):'')+' → '+recipients.length+'대상');
         }
         async function sendFilesToRecipients(fileNames, recipients){
             const pic=(currentUser && currentUser.profilePic)||null; let ok=0, fail=0;

@@ -3739,6 +3739,20 @@ app.post('/api/pms/detach', (req, res) => {
     });
 });
 
+// 🗑 인덱스 행 제거 — 실제 파일을 물리 삭제한 뒤 호출(원본이 이미 없음). detach와 달리 source(dicom/manual) 무관하게 제거.
+app.post('/api/pms/remove', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    const rootId = String(req.body.rootId || ''), rpath = String(req.body.rpath || '');
+    if (!rootId || !rpath) return res.status(400).json({ error: 'rootId·rpath 필요' });
+    db.get(`SELECT patientKey FROM pms_files WHERE owner=? AND rootId=? AND rpath=?`, [owner, rootId, rpath], (e, row) => {
+        if (!row) return res.json({ ok: true });
+        db.run(`DELETE FROM pms_files WHERE owner=? AND rootId=? AND rpath=?`, [owner, rootId, rpath], (de) => {
+            if (de) return res.status(500).json({ error: de.message });
+            _pmsRecalc(owner, [row.patientKey], () => res.json({ ok: true }));
+        });
+    });
+});
+
 // ===================== 🔗 비회원 외부 공유(QR + 웹링크) =====================
 // Alpha K 미가입 고객에게 파일 전달: 회원이 링크 생성 → 메일/메신저로 QR+링크 전송 → 고객이 랜딩페이지에서 가입안내 + 공유폴더 다운로드.
 app.post('/api/guestshare/create', (req, res) => {
