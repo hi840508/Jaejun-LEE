@@ -6239,20 +6239,14 @@
                     +'<button id="_sf-kebab" class="_sf-ic" title="더보기" style="flex:none;">'+_SFIC.kebab+'</button>'
                     +'<button id="_sf-viewerbtn" title="실시간 뷰어로 열기" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:10px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;margin-left:4px;">🧊 Viewer</button>'
                     +'</div>');
-                // 작업바(선택 시 표시) — 모든 뷰 공통. 첨부 흐름=선택 첨부만, 그 외=미리보기/공유/이름변경/삭제(라벨 버튼, 메인 톤). 동작은 뷰별 __sfActOverride로 라우팅.
-                const LB='display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border:1px solid #cdd9e6;background:#fff;color:#0f2f52;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;';
-                const LBD='display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border:1px solid #f0c9d7;background:#fff;color:#dc2626;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;';
-                // 📎 '선택 첨부'는 실제 첨부 대상(의뢰서/주문서/채팅 선택콜백)이 있을 때만.
-                const _pickMode = !!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive());
+                // 작업바(선택 시 표시) — 구글드라이브식: 액션 아이콘은 두지 않음(모든 액션은 카드 ⋯/우클릭 메뉴). 선택 개수 + 해제만 표시.
+                //   단, 파일 '선택 반환' 픽커(_sfPickFiles)로 열렸을 때만 '선택 완료' 버튼을 둔다. (의뢰서/선택 첨부 버튼 제거 — 주문 첨부는 드래그로)
+                const _pickMode = !!window.__sfPickResolve;
                 const toolbar='<div id="_sf-selbar" style="display:none;flex:none;background:#eef4f8;padding:8px 14px;align-items:center;gap:6px;border-bottom:1px solid #d7e3ee;flex-wrap:wrap;">'
                     +'<span id="_sf-cnt" style="font-size:13px;font-weight:800;color:#0f2f52;padding:0 6px 0 2px;">0개 선택</span>'
+                    +'<span style="font-size:11.5px;color:#64748b;">· 파일 카드의 ⋯ 또는 우클릭으로 열기·공유·이름변경·삭제</span>'
                     +'<div style="flex:1;min-width:8px;"></div>'
-                    +(_pickMode
-                        ? '<button id="_sf-pickattach" style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(145deg,#ee0068,#c60058);color:#fff;border:0;border-radius:9px;padding:8px 14px;font-weight:800;font-size:12.5px;cursor:pointer;white-space:nowrap;box-shadow:0 4px 12px rgba(197,27,125,.24);">✔ 선택 첨부</button>'
-                        : ('<button class="_sf-act" data-act="preview" style="'+LB+'">'+_SFIC.eye+' 미리보기</button>'
-                          +'<button class="_sf-act" data-act="share" style="'+LB+'">'+_SFIC.share+' 공유</button>'
-                          +'<button class="_sf-act" data-act="rename" style="'+LB+'">'+_SFIC.edit+' 이름변경</button>'
-                          +'<button class="_sf-act" data-act="delete" style="'+LBD+'">'+_SFIC.trash+' 삭제</button>'))
+                    +(_pickMode ? '<button id="_sf-pickattach" style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(145deg,#ee0068,#c60058);color:#fff;border:0;border-radius:9px;padding:8px 14px;font-weight:800;font-size:12.5px;cursor:pointer;white-space:nowrap;box-shadow:0 4px 12px rgba(197,27,125,.24);">✔ 선택 완료</button>' : '')
                     +'<button id="_sf-selclear" title="선택 해제" style="width:34px;height:34px;border:none;border-radius:9px;background:transparent;color:#64748b;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;">✕</button>'
                     +'</div>';
 
@@ -6630,7 +6624,7 @@
                     const h=(e)=>{
                         if(window.__sfOv!==ov || !document.body.contains(ov)) return;        // 공유폴더가 현재 열린 화면일 때만
                         const ae=document.activeElement; if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName||'')) return;
-                        if(e.key==='Delete'){ e.preventDefault(); _doDeleteSelection(); }
+                        if(e.key==='Delete'){ e.preventDefault(); if(window.__sfActOverride && window.__sfActOverride.delete){ window.__sfActOverride.delete(); } else { _doDeleteSelection(); } }
                         else if((e.ctrlKey||e.metaKey) && (e.key==='a'||e.key==='A')){ e.preventDefault(); _selectAllVisible(); }
                         else if(e.key==='Escape'){ if(selected.size||selectedFolders.size){ e.preventDefault(); _clearSel(); } }
                     };
@@ -6972,7 +6966,7 @@
                 // 📎 첨부 선택 모드(의뢰서 첨부 등): 환자 파일 체크박스 다중선택 + 더블클릭=즉시 첨부
                 const _pick=!!window.__sfPickResolve || (window.__sfFormAttachActive && window.__sfFormAttachActive()); const _ptSel=new Map();
                 const _selbar=ov.querySelector('#_sf-selbar'); const _cntEl=ov.querySelector('#_sf-cnt'); const _paBtn=ov.querySelector('#_sf-pickattach');
-                const _updBar=()=>{ if(_selbar) _selbar.style.display=_ptSel.size?'flex':'none'; if(_cntEl) _cntEl.textContent=_ptSel.size+'개 선택'; if(_paBtn) _paBtn.textContent='✔ 선택 첨부 ('+_ptSel.size+')'; };
+                const _updBar=()=>{ if(_selbar) _selbar.style.display=_ptSel.size?'flex':'none'; if(_cntEl) _cntEl.textContent=_ptSel.size+'개 선택'; };
                 const _attachNow=async(descs)=>{ if(!descs||!descs.length){ showToast('첨부할 파일을 선택하세요.'); return; }
                     if(window.__sfPickResolve){ // 🔵 _sfPickFiles 콜백 흐름(풀스크린 선택) — 읽어서 콜백 후 닫기
                         showToast('파일 읽는 중… ('+descs.length+'개)'); const files=[]; for(const d of descs){ try{ const rp=d.rpath || ((d.parts?d.parts.join('/')+'/':'')+(d.fn||'')); const f=await window._sfResolveFileToFile({rootId:d.rootId, rpath:rp}); if(f) files.push(f); }catch(_){} } const cb=window.__sfPickResolve; window.__sfPickResolve=null; try{ ov.remove(); }catch(_){} try{ if(window.__sfOv===ov) window.__sfOv=null; }catch(_){} if(cb) cb(files);
@@ -6996,9 +6990,10 @@
                 grid.querySelectorAll('._pt-file').forEach(el=>{ const f=_byEl(el);
                     const chk=document.createElement('div'); chk.className='_pt-chk'; chk.style.cssText='position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);'; el.appendChild(chk);
                     chk.addEventListener('click',(e)=>{ e.stopPropagation(); _toggle(el,f); });
-                    // 🖱 단일클릭=체크(선택)만 · 더블클릭=미리보기 (폼 첨부모드면 클릭/더블클릭 모두 첨부)
-                    el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}]); return; } _toggle(el,f); });
-                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._pt-chk')||e.target.closest('._pt-menu')) return; e.preventDefault(); e.stopPropagation(); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ _attachNow([{rootId:f.rootId, rpath:f.rpath, cloud:f.cloud, mime:f.mime, size:f.size}]); return; } _sfOpenPmsFile(f); });
+                    // 🖱 구글드라이브식: 단일클릭=선택 · 더블클릭=열기 · 우클릭=메뉴
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')) return; _toggle(el,f); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._pt-chk')||e.target.closest('._pt-menu')) return; e.preventDefault(); e.stopPropagation(); _sfOpenPmsFile(f); });
+                    el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); e.stopPropagation(); _ptMenu(el, e.clientX, e.clientY); });
                 });
                 if(_paBtn) _paBtn.onclick=()=>_attachNow([..._ptSel.values()]);
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _ptSel.clear(); grid.querySelectorAll('._pt-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._pt-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _updBar(); }; }
@@ -7009,12 +7004,13 @@
                     el.addEventListener('dragend',()=>{ setTimeout(()=>{ window.__sfDragFileRef=null; }, 50); });
                 });
                 const _ptRerender=()=>{ try{ _sfRenderPatientGrid(ov,key); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} };
-                grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const f=_byEl(el);
-                    const extras=[];
+                const _ptMenu=(anchorEl, x, y)=>{ const f=_byEl(anchorEl); const extras=[];
                     if(f.manual){ extras.push({label:'↔ 다른 환자로 이전',fn:()=>_sfPatientPicker(async(toKey)=>{ if(!toKey||toKey===key) return; try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey:toKey, file:f})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('이전했습니다.'); _ptRerender(); }catch(err){ showToast('이전 실패: '+((err&&err.message)||err)); } }) });
                         extras.push({label:'🔗 연결만 해제(원본 보존)',fn:async()=>{ try{ const r=await fetch(API_URL+'/api/pms/detach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:f.rootId,rpath:f.rpath})}); const dd=await r.json(); if(!r.ok||!dd.ok) throw new Error(dd.error||'실패'); showToast('연결을 해제했습니다.'); _ptRerender(); }catch(err){ showToast('해제 실패: '+((err&&err.message)||err)); } }}); }
-                    const items=window._sfBuildFileMenu(f, { patient:true, extras:extras, onDone:_ptRerender });
-                    const r=el.getBoundingClientRect(); ctxMenu(r.right-170, r.bottom+4, items); }));
+                    const k=f.rootId+'|'+f.rpath; const sel=(_ptSel.has(k)&&_ptSel.size>1)?[..._ptSel.values()]:[f];
+                    const items=window._sfBuildFileMenu(f, { patient:true, extras:extras, sel:sel, onDone:_ptRerender });
+                    if(x!=null){ ctxMenu(x, y, items); } else { const r=anchorEl.getBoundingClientRect(); ctxMenu(r.right-170, r.bottom+4, items); } };
+                grid.querySelectorAll('._pt-menu').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); _ptMenu(el); }));
                 // 🖼 썸네일 지연 로드 — 로컬 폴더(루트별)에서 원본을 읽어 DICOM/이미지/3D 미리보기 생성(활성 루트 불변)
                 (async()=>{ const R2=window.RCFolder; if(!R2||!R2.getFileAtRoot||!R2.getThumb) return; try{ if(R2.csReady) await R2.csReady(); }catch(_){}   // DICOM 디코더 선로딩(첫 썸네일 레이스 방지)
                     const cards=[].slice.call(grid.querySelectorAll('._pt-file')); let i=0; const CONC=3;
@@ -7067,7 +7063,7 @@
                 wireHead();
                 // ☁️ 클라우드 카드 = 내 컴퓨터 카드와 동일 UX: 체크박스 다중선택 + 드래그 + 클릭(폼열림시 첨부=14일 링크)
                 const _clSel=new Map();
-                const _clBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); const pa=ov.querySelector('#_sf-pickattach'); if(sb) sb.style.display=_clSel.size?'flex':'none'; if(cn) cn.textContent=_clSel.size+'개 선택'; if(pa) pa.textContent='✔ 선택 첨부 ('+_clSel.size+')'; };
+                const _clBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); if(sb) sb.style.display=_clSel.size?'flex':'none'; if(cn) cn.textContent=_clSel.size+'개 선택'; };
                 const _openShared=async(sid)=>{ try{ const dj=await fetch(API_URL+'/api/mirror/shared-download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:Number(sid)})}).then(r=>r.json()); if(dj&&dj.url){ window.open(dj.url,'_blank','noopener'); } else showToast((dj&&dj.error)||'열람 권한이 없거나 만료되었습니다.'); }catch(_){ showToast('열람 실패'); } };
                 grid.querySelectorAll('.rc-clview').forEach(el=>{ const rp=el.getAttribute('data-rpath'); const mime=el.getAttribute('data-mime')||''; const size=Number(el.getAttribute('data-size'))||0;
                     // 📥 받은 공유 파일(열람 전용, 2주) — 단일클릭은 미리보기 안 함, 더블클릭=열람, ⋯=열기/다운로드 메뉴
@@ -7174,8 +7170,11 @@
                         else { const u=URL.createObjectURL(f); openMediaUrlPreview(u, o.fn, o.mime||f.type||''); }
                     }catch(_){ showToast('열기 실패'); } };
                 const _mDownload=async(el)=>{ const o=_mParts(el); try{ const f=await R.getFileAtRoot(o.rid, o.parts, o.fn); if(!f){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=o.fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); showToast('💾 다운로드됨: '+o.fn); }catch(_){ showToast('다운로드 실패'); } };
-                const _mBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); const pa=ov.querySelector('#_sf-pickattach'); if(sb) sb.style.display=_mSel.size?'flex':'none'; if(cn) cn.textContent=_mSel.size+'개 선택'; if(pa) pa.textContent='✔ 선택 첨부 ('+_mSel.size+')'; };
+                const _mBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); if(sb) sb.style.display=_mSel.size?'flex':'none'; if(cn) cn.textContent=_mSel.size+'개 선택'; };
                 const _mToggle=(el)=>{ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); const on=!_mSel.has(k); const chk=el.querySelector('._sr-chk'); if(on) _mSel.set(k,_mDesc(el)); else _mSel.delete(k); if(chk){ chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; _mBar(); };
+                const _mRerender=()=>{ _mSel.clear(); try{ _sfRenderMergedLocal(ov); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} };
+                // 🖱 구글드라이브식 카드 메뉴 — ⋯ 또는 우클릭. 선택 여러 개면 전체에 적용.
+                const _mMenu=(el, x, y)=>{ const d=_mDesc(el); d.series=Number(el.getAttribute('data-series'))||0; const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); const sel=(_mSel.has(k)&&_mSel.size>1)?[..._mSel.values()]:[d]; const items=window._sfBuildFileMenu(d, { sel:sel, onDone:_mRerender }); if(x!=null){ ctxMenu(x, y, items); } else { const mb=el.querySelector('._sr-menu'); const r=(mb||el).getBoundingClientRect(); ctxMenu(r.right-160, r.bottom+4, items); } };
                 // 🖱 러버밴드(범위선택)가 전체취합 선택계(_mSel)를 구동하도록 훅 노출 — 폴더뷰와 동일 UX
                 ov.__mlSelHook={ cards:()=>[].slice.call(grid.querySelectorAll('._sr-file')), isOn:(el)=>_mSel.has(el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath')), toggle:(el)=>_mToggle(el), clear:()=>{ _mSel.clear(); grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); } };
                 grid.querySelectorAll('._sr-file').forEach(el=>{
@@ -7183,21 +7182,15 @@
                     try{ if(window._sfWireFileCardAttach) window._sfWireFileCardAttach(el); }catch(_){}
                     el.addEventListener('dragstart',(e)=>{ try{ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); if(_mSel.has(k) && _mSel.size>1){ window.__sfDragFileRef=[..._mSel.values()].map(x=>({rootId:x.rootId, rootName:'', rpath:x.rpath, fname:String(x.rpath).split('/').pop(), mtime:0, modality:'', mime:x.mime, size:x.size})); } }catch(_){} });
                     const chk=el.querySelector('._sr-chk'); if(chk){ chk.addEventListener('click',(e)=>{ e.stopPropagation(); _mToggle(el); }); }
-                    el.addEventListener('click',(e)=>{ if(e.target.closest('._sr-menu')||e.target.closest('._sr-chk')) return; if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_mDesc(el)]); return; } _mToggle(el); });
-                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._sr-chk')||e.target.closest('._sr-menu')) return; e.preventDefault(); e.stopPropagation(); if(window.__sfFormAttachActive && window.__sfFormAttachActive()){ window._sfAttachDescs([_mDesc(el)]); return; } _mPreview(el); });
-                    const mb=el.querySelector('._sr-menu'); if(mb) mb.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); const r=mb.getBoundingClientRect(); const d=_mDesc(el); d.series=Number(el.getAttribute('data-series'))||0; const items=window._sfBuildFileMenu(d, { onDone:()=>{ try{ _sfRenderMergedLocal(ov); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} } }); ctxMenu(r.right-160, r.bottom+4, items); });
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('._sr-menu')||e.target.closest('._sr-chk')) return; _mToggle(el); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._sr-chk')||e.target.closest('._sr-menu')) return; e.preventDefault(); e.stopPropagation(); _mPreview(el); });
+                    el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); e.stopPropagation(); _mMenu(el, e.clientX, e.clientY); });
+                    const mb=el.querySelector('._sr-menu'); if(mb) mb.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); _mMenu(el); });
                 });
-                { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_mSel.size){ showToast('첨부할 파일을 선택하세요.'); return; } window._sfAttachDescs([..._mSel.values()]); }; }
+                { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_mSel.size){ showToast('선택된 파일이 없습니다.'); return; } window._sfAttachDescs([..._mSel.values()]); }; }
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _mSel.clear(); grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); }; }
-                // 🧰 전체취합(내 컴퓨터) 선택바 액션 — 선택계가 _mSel이므로 폴더용 _sf-act 대신 이 오버라이드가 실행됨(루트-인식 삭제/이름변경/공유)
-                const _esc=(s)=>{ try{ return (window.CSS&&CSS.escape)?CSS.escape(String(s)):String(s).replace(/["\\]/g,'\\$&'); }catch(_){ return String(s); } };
-                const _mRerender=()=>{ _mSel.clear(); try{ _sfRenderMergedLocal(ov); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} };
-                window.__sfActOverride={
-                    preview: async()=>{ const v=[..._mSel.values()]; if(!v.length){ showToast('미리볼 파일을 선택하세요.'); return; } const d=v[0]; const el=grid.querySelector('._sr-file[data-rootid="'+_esc(d.rootId)+'"][data-rpath="'+_esc(d.rpath)+'"]'); if(el) _mPreview(el); else window._sfOpenPmsFile(d); },
-                    share: async()=>{ const v=[..._mSel.values()]; if(!v.length){ showToast('공유할 파일을 선택하세요.'); return; } openShareRecipientPicker(null, v); },
-                    delete: async()=>{ await window._sfDeleteDescsUI([..._mSel.values()], {}, _mRerender); },
-                    rename: async()=>{ const v=[..._mSel.values()]; if(v.length!==1){ showToast('이름변경할 파일 1개만 선택하세요.'); return; } await window._sfRenameDesc(v[0], _mRerender); }
-                };
+                // ⌨ Delete 키 삭제 지원(구글드라이브식) — 선택계가 _mSel이므로 오버라이드로 라우팅
+                window.__sfActOverride={ delete: async()=>{ if(!_mSel.size) return; await window._sfDeleteDescsUI([..._mSel.values()], {}, _mRerender); } };
                 // 🔎 렌더 직후 현재 칩(유형/기간/검색) 상태를 제자리 반영
                 try{ if(window.__sfApplyFilter) window.__sfApplyFilter(); }catch(_){}
                 // 🖼 썸네일 지연 로드(루트별 getFileAtRoot → getThumb/dicomImage)
@@ -7381,15 +7374,19 @@
             window._sfDownloadDesc = async function(d){ try{ const name=String(d.rpath||'file').split('/').pop(); const resolved=await window._sfResolveFileToFile(d); if(!resolved){ showToast('파일을 읽지 못했습니다.'); return; } if(resolved.__cloudLink){ window.open(resolved.url,'_blank'); return; } const u=URL.createObjectURL(resolved); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}},60000); showToast('💾 다운로드됨: '+name); }catch(_){ showToast('다운로드 실패'); } };
             window._sfRenameDesc = async function(d, onDone){ const parts=String(d.rpath||'').split('/'); const old=parts.pop(); if(d.cloud){ showToast('클라우드 파일은 이름변경을 지원하지 않습니다.'); return; } const nn=await window._sfPrompt('새 이름', old); if(!nn||nn===old) return; const R=window.RCFolder; let ok=false; try{ if(R.renameAtRoot) ok=await R.renameAtRoot(d.rootId, parts, old, nn); else { if(R.setActiveRoot) await R.setActiveRoot(d.rootId); ok=await R.renameAt(parts, old, nn); } }catch(_){} if(ok){ showToast('이름을 변경했습니다.'); try{ onDone&&onDone(); }catch(_){} } else showToast('이름변경 실패'+(window.__rcLastErr?(': '+window.__rcLastErr):'')); };
             window._sfDeleteDescsUI = async function(descs, opts, onDone){ opts=opts||{}; if(!descs||!descs.length){ showToast('삭제할 파일을 선택하세요.'); return; } const okc=await window._sfConfirm('선택한 '+descs.length+'개 항목을 삭제할까요?\n실제 파일이 삭제됩니다(CT 시리즈는 폴더 내 전체 슬라이스). 되돌릴 수 없습니다.','삭제'); if(!okc) return; const r=await window._sfPhysicalDelete(descs, opts); let msg; if(r.ok) msg='🗑 삭제 '+r.ok+'개'+(r.fail?(' · 접근불가 '+r.fail+'개는 목록에서 제거'):''); else if(r.removed) msg='목록에서 제거 '+r.removed+'개(원본 접근불가/이미 삭제됨)'; else msg='삭제 실패'+(r.lastErr?(': '+r.lastErr):''); showToast(msg); try{ onDone&&onDone(); }catch(_){} };
-            // 📋 공용 파일 카드 메뉴 아이템(ctxMenu용) — 모든 뷰 동일. ctx:{patient,extras[],onDone}
+            // 📤 공유(카카오톡식) — 친구/내 기기(채팅)로 파일 전송. descs 다건 지원.
+            window._sfShareDesc = function(descs){ const arr=Array.isArray(descs)?descs:[descs]; if(!arr.length){ showToast('공유할 파일을 선택하세요.'); return; } try{ openShareRecipientPicker(null, arr); }catch(e){ showToast('공유 열기 실패'); } };
+            // 📋 공용 파일 카드 메뉴 아이템(ctxMenu용) — 모든 뷰 동일(구글드라이브식). ctx:{patient,extras[],onDone,sel[]}
+            //    sel=현재 다중선택 목록(있으면 메뉴 액션이 선택 전체에 적용). 첨부(의뢰서/선택 첨부) 개념은 제거 — 주문 첨부는 드래그로.
             window._sfBuildFileMenu = function(d, ctx){ ctx=ctx||{}; const onDone=ctx.onDone; const items=[]; const series=Number(d.series)||0;
+                const sel=(ctx.sel&&ctx.sel.length>1)?ctx.sel:[d]; const multi=sel.length>1;
                 items.push({label:'👁 미리보기', fn:()=>{ try{ window._sfOpenPmsFile(d); }catch(_){} }});
+                items.push({label:(multi?('📤 공유 ('+sel.length+'개)'):'📤 공유'), fn:()=>window._sfShareDesc(sel)});
                 if(window.RCFolder && window.RCFolder.revealAtRoot && !d.cloud) items.push({label:'📂 파일 위치 열기(탐색기)', fn:()=>window._sfRevealFile(d)});
                 items.push({label:'💾 원본 저장하기', fn:()=>window._sfDownloadDesc(d)});
-                if(!d.cloud) items.push({label:'✏️ 이름 변경', fn:()=>window._sfRenameDesc(d, onDone)});
-                if(window.__sfFormAttachActive && window.__sfFormAttachActive()) items.push({label:'📎 의뢰서에 첨부', fn:()=>window._sfAttachDescs([{rootId:d.rootId, rpath:d.rpath, cloud:d.cloud, mime:d.mime, size:d.size}])});
+                if(!d.cloud && !multi) items.push({label:'✏️ 이름 변경', fn:()=>window._sfRenameDesc(d, onDone)});
                 (ctx.extras||[]).forEach(x=>items.push(x));
-                items.push({label:(series>1?'🗑 시리즈 삭제':'🗑 삭제'), danger:true, fn:()=>window._sfDeleteDescsUI([d], {indexAlways:!!ctx.patient}, onDone)});
+                items.push({label:(multi?('🗑 삭제 ('+sel.length+'개)'):(series>1?'🗑 시리즈 삭제':'🗑 삭제')), danger:true, fn:()=>window._sfDeleteDescsUI(sel, {indexAlways:!!ctx.patient}, onDone)});
                 return items;
             };
             // 📎 파일 설명(rootId/rpath)들을 File 객체로 읽어 열려있는 주문서에 첨부
@@ -13993,6 +13990,23 @@
         };
         // 🧷 원격 뷰어가 떠 있는 동안 채팅 서랍이 '어떤 경로로든' 열리고 닫힐 때 뷰어 폭을 자동 재배치(채팅 잘림 방지)
         (function(){ try{ const d=document.getElementById('messenger-drawer'); if(d && !d.__rcLayoutObs){ d.__rcLayoutObs=true; new MutationObserver(function(){ try{ if(document.getElementById('rc-view-overlay') && window._rcLayoutViewer){ window._rcLayoutViewer(); setTimeout(function(){ try{ window._rcLayoutViewer(); }catch(_){} }, 340); } }catch(_){} }).observe(d,{attributes:true,attributeFilter:['class']}); } }catch(_){} })();
+        // 🖱 메신저 드래그 이동(카카오톡 PC식) — 좌측 아이콘 레일을 잡고 이동. 더블클릭=원위치. 데스크톱 전용(모바일 전체폭에선 생략).
+        (function(){ try{
+            const d=document.getElementById('messenger-drawer'); if(!d || d.__dragWired) return; d.__dragWired=true;
+            const rail=d.querySelector('.msgr-rail'); if(!rail) return;
+            // 레일 상단에 드래그 그립 표시
+            try{ const grip=document.createElement('div'); grip.style.cssText='width:22px;height:4px;border-radius:3px;background:rgba(100,116,139,.45);margin:6px auto 2px;flex:none;'; grip.title='여기를 잡고 창을 이동'; rail.insertBefore(grip, rail.firstChild); }catch(_){}
+            rail.style.cursor='move';
+            const clamp=(x,y)=>{ const w=d.offsetWidth||360; x=Math.max(8-(0), Math.min(x, window.innerWidth-Math.min(w,180))); y=Math.max(8, Math.min(y, window.innerHeight-60)); return [x,y]; };
+            const applyPos=(x,y)=>{ const p=clamp(x,y); d.style.right='auto'; d.style.left=p[0]+'px'; d.style.top=p[1]+'px'; d.style.transition='none'; d.setAttribute('data-moved','1'); window.__msgrPos={x:p[0],y:p[1]}; };
+            let drag=null;
+            const onMove=(e)=>{ if(!drag) return; applyPos(e.clientX-drag.dx, e.clientY-drag.dy); };
+            const onUp=()=>{ drag=null; document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp); };
+            rail.addEventListener('pointerdown',(e)=>{ if(window.innerWidth<700) return; if(e.target.closest('button')) return; e.preventDefault(); const r=d.getBoundingClientRect(); drag={dx:e.clientX-r.left, dy:e.clientY-r.top}; document.addEventListener('pointermove',onMove); document.addEventListener('pointerup',onUp); });
+            rail.addEventListener('dblclick',(e)=>{ if(e.target.closest('button')) return; d.removeAttribute('data-moved'); d.style.left=''; d.style.top=''; d.style.right=''; d.style.transition=''; d.style.display=''; window.__msgrPos=null; });
+            // 이동 상태에서 열림/닫힘 반영(닫으면 숨기고, 다시 열면 이동 위치로)
+            new MutationObserver(()=>{ try{ if(!d.getAttribute('data-moved')) return; const open=d.classList.contains('open'); if(open){ d.style.display='flex'; if(window.__msgrPos){ d.style.right='auto'; d.style.left=window.__msgrPos.x+'px'; d.style.top=window.__msgrPos.y+'px'; } } else { d.style.display='none'; } }catch(_){} }).observe(d,{attributes:true,attributeFilter:['class']});
+        }catch(_){} })();
         function _rcUpdateFloatToggle(){
             const fb=document.getElementById('rc-float-toggle'); if(!fb) return;
             const d=document.getElementById('messenger-drawer');
