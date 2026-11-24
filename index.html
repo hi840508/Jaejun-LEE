@@ -5888,44 +5888,41 @@
                 +'<div style="height:100%;width:'+cover+'%;background:#16a34a;transition:width .3s;"></div>'
                 +(qpos>=0?'<div title="현재 용량 '+fmt(quota)+' — 여기까지만 동기화됩니다" style="position:absolute;top:-1px;bottom:-1px;left:'+qpos+'%;width:2px;background:#ef4444;"></div>':'')
                 +'</div>'
-                +'<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;">내 PC '+fmt(local)+' · <span style="color:#16a34a;font-weight:700;">☁ 동기화 '+fmt(synced)+'</span>'
-                +(short>0?' · <span style="color:#ef4444;font-weight:800;" title="연결 폴더 전체가 현재 용량을 초과 — 용량을 구매하면 모두 동기화됩니다">'+fmt(short)+' 부족</span>':'')+'</div>';
+                +'<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;"><span style="color:#16a34a;font-weight:700;">☁ 클라우드 '+fmt(synced)+'</span> · 전체 '+fmt(local)+'</div>';
         };
-        // ☁️ 클라우드 뷰 경로바 컨트롤 — '클라우드 저장소' 글씨 대신 [동기화 버튼 + 통합 용량바 + 용량 구매]
-        window._sfRenderCloudCtl = async function(ov){
-            const box=(ov||document).querySelector('#_sf-cloudctl'); if(!box) return;
-            let st=window.__sfCloudStatus||null; try{ st=await window.RCMirror.status(); window.__sfCloudStatus=st; }catch(_){}
-            const fmt=(b)=>{ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
-            const used=st?Number(st.used||0):0; const quota=st?Number(st.quota||st.freeBytes||104857600):104857600;
-            const pct=quota?Math.min(100,Math.round(used/quota*100)):0; const over=used>=quota;
-            const col=pct<=30?'#2563eb':(pct<=60?'#16a34a':(pct<=80?'#eab308':'#ef4444'));
+        // 📊 통합 경로바 빌더 — [폴더 버튼(목록+추가 통합)] · [통합 용량바] · [동기화↔용량추가 통합 버튼 + 부족]. 내 PC·클라우드 뷰 공용(프로그레스바 하나).
+        window._sfBuildPathCtl = async function(box, ov){
+            if(!box) return; const fmt=window._sfCapFmt;
+            const folderSvg='<svg width="22" height="22" viewBox="0 0 24 24"><rect x="2" y="3.5" width="20" height="13" rx="1.6" fill="#3b82c4"/><rect x="3.4" y="4.9" width="17.2" height="9.3" rx="0.6" fill="#cfe8ff"/><path d="M8.5 20.2h7M12 16.5v3.7" stroke="#64748b" stroke-width="1.7" stroke-linecap="round"/></svg>';
             box.innerHTML=''
-                +'<button id="_sf-syncnow" title="내 컴퓨터 동기화" aria-label="내 컴퓨터 동기화" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:none;border-radius:9px;background:linear-gradient(135deg,#2563eb,#0b2b4b);color:#fff;cursor:pointer;box-shadow:0 2px 7px rgba(37,99,235,.4);"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></button>'
-                +'<div id="_sf-cloudbar" style="flex:1;min-width:90px;max-width:300px;"><div style="height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;"></div><div style="font-size:11px;color:#94a3b8;margin-top:2px;white-space:nowrap;">용량 계산 중…</div></div>'
-                +'<button id="_sf-buycap" title="용량 구매" aria-label="용량 구매" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #bcd0e6;border-radius:9px;background:#fff;color:#0f2f52;cursor:pointer;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 18a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.3 8.5 4.5 4.5 0 0 0 7 18"/><line x1="12" y1="11.5" x2="12" y2="16.5"/><line x1="9.5" y1="14" x2="14.5" y2="14"/></svg></button>';
-            const sb=box.querySelector('#_sf-syncnow'); if(sb) sb.onclick=async()=>{ if(window.__sfSyncBusy) return; sb.disabled=true; sb.style.opacity='.6'; try{ await window._sfCloudSyncNow(); }finally{ sb.disabled=false; sb.style.opacity=''; try{ window._sfRenderCloudCtl(ov); }catch(_){} } };
-            const bc=box.querySelector('#_sf-buycap'); if(bc) bc.onclick=()=>{ try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} };
-            // 📊 통합 용량 바 — 내 PC 전체 중 ☁ 동기화된 양 + 부족분(내 PC 뷰와 동일한 공용 바)
-            (async()=>{ let cap; try{ cap=await window._sfComputeCap(); }catch(_){ cap={local:0,used:used,quota:quota}; }
-                const cb=(ov||document).querySelector('#_sf-cloudbar'); if(!cb) return; cb.innerHTML=window._sfCapBarHTML(cap);
-            })();
+                +'<button id="_sf-folderbtn" title="내 PC 폴더 — 연결 목록·주 폴더 지정·폴더 추가" aria-label="내 PC 폴더" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;cursor:pointer;">'+folderSvg+'</button>'
+                +'<div id="_sf-capbar" style="flex:1;min-width:90px;max-width:300px;"><div style="height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;"></div><div style="font-size:11px;color:#94a3b8;margin-top:2px;white-space:nowrap;">용량 계산 중…</div></div>'
+                +'<button id="_sf-capbtn" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:none;border-radius:9px;cursor:pointer;"></button>'
+                +'<span id="_sf-capshort" style="flex:none;font-size:11.5px;font-weight:800;color:#ef4444;white-space:nowrap;"></span>';
+            const fb=box.querySelector('#_sf-folderbtn'); if(fb) fb.onclick=(e)=>{ e.stopPropagation(); try{ window._sbFolderDropdown&&window._sbFolderDropdown(fb); }catch(_){} };
+            let cap; try{ cap=await window._sfComputeCap(); }catch(_){ cap=null; } cap=cap||{local:0,used:0,quota:104857600};
+            const cb=(ov||document).querySelector('#_sf-capbar'); if(!cb) return; cb.innerHTML=window._sfCapBarHTML(cap);
+            const local=Number(cap.local)||0, used=Number(cap.used)||0, quota=Number(cap.quota)||0;
+            const short=Math.max(0, local-quota); const full = short>0 || used>=quota;   // 용량 가득참 = 초과 or 사용량≥용량
+            const btn=(ov||document).querySelector('#_sf-capbtn'); const sh=(ov||document).querySelector('#_sf-capshort');
+            if(btn){
+                if(full){   // ☁＋ 용량 추가 버튼(용량이 가득 찼을 때)
+                    btn.title='클라우드 용량 추가'; btn.setAttribute('aria-label','클라우드 용량 추가');
+                    btn.style.border='1px solid #bcd0e6'; btn.style.background='#fff'; btn.style.color='#0f2f52'; btn.style.boxShadow='none';
+                    btn.innerHTML='<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 18a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.3 8.5 4.5 4.5 0 0 0 7 18"/><line x1="12" y1="11.5" x2="12" y2="16.5"/><line x1="9.5" y1="14" x2="14.5" y2="14"/></svg>';
+                    btn.onclick=()=>{ try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} };
+                } else {   // 🔄 동기화 버튼(용량 여유 있을 때)
+                    btn.title='내 컴퓨터 동기화'; btn.setAttribute('aria-label','내 컴퓨터 동기화');
+                    btn.style.border='none'; btn.style.background='linear-gradient(135deg,#2563eb,#0b2b4b)'; btn.style.color='#fff'; btn.style.boxShadow='0 2px 7px rgba(37,99,235,.4)';
+                    btn.innerHTML='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>';
+                    btn.onclick=async()=>{ if(window.__sfSyncBusy) return; btn.disabled=true; btn.style.opacity='.6'; try{ await window._sfCloudSyncNow(); }finally{ btn.disabled=false; btn.style.opacity=''; try{ window._sfBuildPathCtl(box, ov); }catch(_){} } };
+                }
+            }
+            if(sh){ if(short>0){ sh.textContent=fmt(short)+' 부족'; sh.title='연결 폴더 전체('+fmt(local)+')가 현재 용량('+fmt(quota)+')을 초과 — 용량을 추가하면 모두 동기화됩니다.'; } else { sh.textContent=''; } }
         };
-        // 📁 내 컴퓨터 뷰 경로바 컨트롤(클라우드와 동일 레이아웃) — [폴더 목록 ▾] + [로컬총용량 vs 클라우드용량 바] + [폴더 경로 추가 +]
-        window._sfRenderCompCtl = async function(ov){
-            const box=(ov||document).querySelector('#_sf-compctl'); if(!box) return;
-            const fmt=(b)=>{ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
-            box.innerHTML=''
-                +'<button id="_sf-folderdd" title="내 PC — 연결된 폴더 목록(주 폴더 선택·연결 해제)" aria-label="내 PC 연결 폴더" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;cursor:pointer;"><svg width="22" height="22" viewBox="0 0 24 24"><rect x="2" y="3.5" width="20" height="13" rx="1.6" fill="#3b82c4"/><rect x="3.4" y="4.9" width="17.2" height="9.3" rx="0.6" fill="#cfe8ff"/><path d="M8.5 20.2h7M12 16.5v3.7" stroke="#64748b" stroke-width="1.7" stroke-linecap="round"/></svg></button>'
-                +'<div id="_sf-compbar" style="flex:1;min-width:80px;max-width:240px;"><div style="height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;"><div style="height:100%;width:0;background:#16a34a;"></div></div><div style="font-size:11px;color:#94a3b8;margin-top:2px;white-space:nowrap;">용량 계산 중…</div></div>'
-                +'<button id="_sf-folderadd" title="폴더 경로 추가" aria-label="폴더 경로 추가" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #e3cf9a;border-radius:9px;background:#fffdf5;cursor:pointer;"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M2.5 6.4c0-.8.7-1.5 1.5-1.5h4.3c.4 0 .8.17 1.08.46L11.7 6.9h7.8c.8 0 1.5.7 1.5 1.5v8.7c0 .8-.7 1.5-1.5 1.5H4c-.8 0-1.5-.7-1.5-1.5z" fill="#ffce5a" stroke="#e3a82f" stroke-width="0.8"/><circle cx="18" cy="17.2" r="4.4" fill="#22a95b" stroke="#fff" stroke-width="1.1"/><path d="M18 15v4.4M15.8 17.2h4.4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg></button>';
-            const dd=box.querySelector('#_sf-folderdd'); if(dd) dd.onclick=(e)=>{ e.stopPropagation(); try{ window._sbFolderDropdown&&window._sbFolderDropdown(dd); }catch(_){} };
-            const fa=box.querySelector('#_sf-folderadd'); if(fa) fa.onclick=async(e)=>{ e.stopPropagation(); try{ const R=window.RCFolder; if(R&&R.pick){ const ok=await R.pick(); if(ok){ window.__sfLocalTotalBytes=null; if(window._sbFolderPick) await window._sbFolderPick(null); else if(window.__sfRender) window.__sfRender(); } } }catch(_){ showToast('폴더 추가 실패'); } };
-            // 📊 통합 용량 바 — 내 PC 전체 중 ☁ 동기화된 양 + 부족분(클라우드 뷰와 동일한 공용 바)
-            const barWrap=box.querySelector('#_sf-compbar'); if(!barWrap) return;
-            let cap; try{ cap=await window._sfComputeCap(); }catch(_){ cap=null; }
-            const bw=(ov||document).querySelector('#_sf-compbar'); if(!bw) return;   // 렌더 바뀌었으면 중단
-            bw.innerHTML=window._sfCapBarHTML(cap||{local:0,used:0,quota:104857600});
-        };
+        // ☁️ 클라우드 뷰 / 📁 내 PC 뷰 경로바 — 동일한 통합 경로바를 렌더(두 바를 하나로 통합).
+        window._sfRenderCloudCtl = async function(ov){ const box=(ov||document).querySelector('#_sf-cloudctl'); if(box){ try{ await window._sfBuildPathCtl(box, ov); }catch(_){} } };
+        window._sfRenderCompCtl = async function(ov){ const box=(ov||document).querySelector('#_sf-compctl'); if(box){ try{ await window._sfBuildPathCtl(box, ov); }catch(_){} } };
         window._sfDriveToggle = function(){
             // 🔁 드라이브 버튼 = 내 컴퓨터 ↔ 클라우드 전환(동기화는 경로바의 동기화 버튼으로 분리)
             const mob=(window._isMobileDevice&&window._isMobileDevice());
@@ -5989,7 +5986,9 @@
                 +'<span style="flex:none;font-size:15px;line-height:1;">📁</span>'
                 +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(String(r.name||'').replace(/\s*\(주\s*폴더\)\s*$/,''))+'</span>'
                 +'<button class="_sb-rootx" data-id="'+esc(r.id)+'" title="연결 해제" style="flex:none;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:22px;height:22px;font-weight:900;cursor:pointer;line-height:1;">×</button></div>'; }).join(''); }
+            if(!notSup){ folderHtml += '<div class="_sb-addfolder" style="'+row+'color:#0f7a3f;border-top:1px solid #eef2f7;margin-top:5px;padding-top:11px;" title="새 폴더 경로를 추가합니다"><span style="flex:none;font-size:16px;line-height:1;">＋</span><span style="flex:1;">폴더 추가</span></div>'; }
             window._sbDropdown(anchor, folderHtml, (dd,close)=>{
+                const _af=dd.querySelector('._sb-addfolder'); if(_af) _af.addEventListener('click',async(e)=>{ e.stopPropagation(); close(); try{ const R2=window.RCFolder; if(R2&&R2.pick){ const ok=await R2.pick(); if(ok){ window.__sfLocalTotalBytes=null; if(window._sbFolderPick) await window._sbFolderPick(null); else if(window.__sfRender) window.__sfRender(); } } }catch(_){ showToast('폴더 추가 실패'); } });
                 dd.querySelectorAll('._sb-star').forEach(el=>el.addEventListener('click',(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); try{ localStorage.setItem('rc_main_root', id); }catch(_){} showToast('⭐ 주 폴더로 지정했습니다.'); close(); try{ if(window.__sfOv&&document.body.contains(window.__sfOv)&&window.__sfRender) window.__sfRender(); }catch(_){} }));
                 dd.querySelectorAll('._sb-rootx').forEach(el=>el.addEventListener('click',async(e)=>{ e.stopPropagation(); const id=el.getAttribute('data-id'); const ok=await (window._sfConfirm?window._sfConfirm('이 폴더 연결을 해제할까요?\n(폴더의 실제 파일은 삭제되지 않습니다)','해제'):Promise.resolve(confirm('이 폴더 연결을 해제할까요?'))); if(!ok) return; close(); try{ if(R&&R.removeRoot) await R.removeRoot(id); }catch(_){} try{ window.__sfLocalTotalBytes=null; }catch(_){} try{ if(window.__sfOv&&document.body.contains(window.__sfOv)&&window.__sfRender) window.__sfRender(); else if(window._sfGotoPath) await window._sfGotoPath([]); }catch(_){} }));
             });
