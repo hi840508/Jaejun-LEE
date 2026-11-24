@@ -465,6 +465,7 @@
         #sb-pt-list ._sbpt { background:#222d42 !important; border:1px solid #2f3b52 !important; }
         #sb-pt-list ._sbpt:hover { background:#28344c !important; border-color:#3a4a68 !important; }
         #sb-pt-list ._sbpt.sel { background:#2d3b57 !important; border-color:#4db8e8 !important; box-shadow:inset 0 0 0 1.5px #4db8e8 !important; }
+        #sb-pt-list ._sbpt.drop-hot { background:#13324d !important; border-color:#4db8e8 !important; outline:2.5px dashed #4db8e8 !important; outline-offset:-3px; }
         /* 검색 2행(상점검색·파일검색): 다른 항목과 동일 플랫 룩 + 우측 끝에 ▾(한 덩어리처럼 보이게) */
         .yt-sidebar #sb-search-section { padding:4px 8px; }   /* 다른 섹션(4px 8px)과 좌측 정렬 통일 */
         #sb-search-section .sb-sr-row { display:flex; align-items:center; margin:1px 6px; border-radius:6px; }
@@ -6020,9 +6021,10 @@
             list.querySelectorAll('._sbpt').forEach(el=>{ const key=el.getAttribute('data-key');
                 el.addEventListener('click',()=>{ window._sbOpenPatient(key); });
                 { const eb=el.querySelector('._sbpt-edit'); if(eb) eb.addEventListener('click',(e)=>{ e.stopPropagation(); const p=(window.__sbPatients||[]).find(x=>x.patientKey===key)||{patientKey:key}; if(window._sfCreatePatient) window._sfCreatePatient(p, ()=>{ if(window._sbLoadPatients) window._sbLoadPatients(); try{ if(window.__sfRender) window.__sfRender(); }catch(_){} }); else showToast('파일검색을 먼저 열어 주세요.'); }); }
-                el.addEventListener('dragover',(e)=>{ if(window.__sfDragFileRef&&window.__sfDragFileRef.length){ e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} el.style.background='#eef4f8'; el.style.borderColor='#0b2b4b'; } });
-                el.addEventListener('dragleave',()=>{ el.style.background='#fff'; el.style.borderColor='#e6edf4'; });
-                el.addEventListener('drop',(e)=>{ e.preventDefault(); el.style.background='#fff'; el.style.borderColor='#e6edf4'; if(window._sfAssignDraggedToPatient) window._sfAssignDraggedToPatient(key); });
+                el.addEventListener('dragover',(e)=>{ if(window.__sfDragFileRef&&window.__sfDragFileRef.length){ e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} el.classList.add('drop-hot'); } });
+                el.addEventListener('dragleave',(e)=>{ if(!el.contains(e.relatedTarget)) el.classList.remove('drop-hot'); });
+                el.addEventListener('drop',(e)=>{ e.preventDefault(); e.stopPropagation(); el.classList.remove('drop-hot'); if(window._sfAssignDraggedToPatient) window._sfAssignDraggedToPatient(key); });
+                el.addEventListener('dragend',()=>{ el.classList.remove('drop-hot'); });
             });
             try{ window._sbHighlightPatient&&window._sbHighlightPatient(); }catch(_){}
         };
@@ -6761,9 +6763,11 @@
                 const fi=ov.querySelector('#_sf-from'), ti=ov.querySelector('#_sf-to'); if(fi) fi.addEventListener('change',()=>{ flt.from=fi.value; applyFilter(); }); if(ti) ti.addEventListener('change',()=>{ flt.to=ti.value; applyFilter(); });
 
                 // 현재 폴더로 드롭(OS 파일)
-                ov.addEventListener('dragover',(e)=>{ if(window.__rcDragFile) return; e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} ov.style.outline='3px dashed #0f2f52'; ov.style.outlineOffset='-6px'; });
+                // 🖱 OS 파일 드롭존(점선)은 '외부 파일' 드래그에만 표시 — 내부 파일카드 드래그(__sfDragFileRef)엔 점선 안 띄움.
+                ov.addEventListener('dragover',(e)=>{ if(window.__rcDragFile || (window.__sfDragFileRef&&window.__sfDragFileRef.length)) return; e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} ov.style.outline='3px dashed #0f2f52'; ov.style.outlineOffset='-6px'; });
                 ov.addEventListener('dragleave',(e)=>{ if(e.target===ov) ov.style.outline=''; });
-                ov.addEventListener('drop', async(e)=>{ if(window.__rcDragFile){ ov.style.outline=''; return; } if(!(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)){ ov.style.outline=''; return; } e.preventDefault(); const fs=[].slice.call(e.dataTransfer.files); ov.style.outline=''; if(!(await R.ensureAccess())){ try{ window._showFolderPermHelp(function(){ if(R.pick) R.pick(); }); }catch(_){ showToast('공유폴더 권한이 필요합니다.'); } return; } let ok=0, err=''; for(const f of fs){ try{ await R.writeFileAt(path,f.name,f); ok++; }catch(e2){ err=(e2&&e2.message)||String(e2); } } showToast(ok?('📥 추가: '+ok+'개'):('추가 실패: '+(err||'권한/폴더 확인'))); render(); });
+                ov.addEventListener('dragend',()=>{ ov.style.outline=''; });   // ✅ 드래그 종료 시 점선 확실히 제거(자식/외부 드롭·취소 포함)
+                ov.addEventListener('drop', async(e)=>{ ov.style.outline=''; if(window.__rcDragFile){ return; } if(!(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)){ return; } e.preventDefault(); const fs=[].slice.call(e.dataTransfer.files); if(!(await R.ensureAccess())){ try{ window._showFolderPermHelp(function(){ if(R.pick) R.pick(); }); }catch(_){ showToast('공유폴더 권한이 필요합니다.'); } return; } let ok=0, err=''; for(const f of fs){ try{ await R.writeFileAt(path,f.name,f); ok++; }catch(e2){ err=(e2&&e2.message)||String(e2); } } showToast(ok?('📥 추가: '+ok+'개'):('추가 실패: '+(err||'권한/폴더 확인'))); render(); });
 
                 // 일괄 썸네일(현재 폴더, 로컬 파일)
                 (async()=>{ const pend=[].slice.call(ov.querySelectorAll('.rc-gf[data-here="1"]')).filter(el=>!el.querySelector('.rc-thumbbox img')); let i=0; const CONC=5; async function w(){ while(i<pend.length){ const el=pend[i++]; const box=el.querySelector('.rc-thumbbox'); if(!box) continue; const fn=el.getAttribute('data-fname'), mm=el.getAttribute('data-mime'); try{ const f=await R.getFileAt(path,fn); if(!f) continue; const t=await R.getThumb(f,mm,fn); if(t && !box.querySelector('img')){ const ic=box.querySelector('.rc-gf-icon'); if(ic) ic.style.display='none'; const isV=_sfType(mm,fn)==='video'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'+(isV?_vov:'')); } }catch(_){} } } const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws); })();
@@ -7596,7 +7600,18 @@
                 var run=function(){ window.__sfDeepQuery=q||null; try{ if(!q){ if(window.__sfRender) window.__sfRender(); } else { _sfRenderDeepSearch(ov, q); } }catch(_){} };
                 if(immediate) run(); else window.__sfDeepTimer=setTimeout(run, 320);
             };
-            window._sfAssignDraggedToPatient = async function(patientKey){ const refs=window.__sfDragFileRef||[]; if(!patientKey||!refs.length) return; let ok=0; for(const f of refs){ try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey, file:f})}); const d=await r.json(); if(r.ok&&d.ok) ok++; }catch(_){} } window.__sfDragFileRef=null; if(ok){ showToast('✅ '+ok+'개 파일을 환자에 연결했습니다.'); try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} } else showToast('연결 실패'); };
+            window._sfAssignDraggedToPatient = async function(patientKey, descsArg, opts){ opts=opts||{}; const refs=(descsArg||window.__sfDragFileRef||[]).slice(); if(!descsArg) window.__sfDragFileRef=null; if(!patientKey||!refs.length) return 0; let ok=0, skip=0;
+                for(const f of refs){ let rootId=String(f.rootId||''); const rpath=String(f.rpath||''); if(!rpath){ skip++; continue; }
+                    // ☁ 클라우드 전용(로컬 rootId 없음)이고 rpath가 rootId/상대경로면 첫 세그먼트를 rootId로 분리
+                    if(!rootId && f.cloud && rpath.indexOf('/')>0){ rootId=rpath.split('/')[0]; }
+                    if(!rootId){ skip++; continue; }
+                    try{ const r=await fetch(API_URL+'/api/pms/assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientKey, file:{rootId, rpath, rootName:f.rootName||'', fname:f.fname||rpath.split('/').pop(), modality:f.modality||'', studyDate:f.studyDate||'', mtime:Number(f.mtime)||0}})}); const d=await r.json(); if(r.ok&&d.ok) ok++; else skip++; }catch(_){ skip++; }
+                }
+                if(!opts.silent){ if(ok){ showToast('✅ '+ok+'개 파일을 환자에 연결했습니다'+(skip?(' (연결불가 '+skip+'개)'):'')); } else { showToast('연결 실패'+(skip?(' — '+skip+'개는 경로정보가 부족합니다(클라우드 전용 등)'):'')); } }
+                try{ if(ok && window._sbLoadPatients) window._sbLoadPatients(); }catch(_){}
+                try{ if(ok && window.__sfPatientFilter===patientKey && window.__sfRender) window.__sfRender(); }catch(_){}
+                return ok;
+            };
             // 📎 주문서(간편/상세/일반)가 열려 있으면 true — 그 때 파일 카드 '클릭'만으로 첨부(드래그 불필요, 확실)
             window.__sfFormAttachActive = function(){ try{ if(document.getElementById('rx-form-modal')) return true; const ofm=document.getElementById('order-form-modal'); if(ofm && ofm.style.display!=='none' && window.orderFormState && window.orderFormState.product) return true; }catch(_){} return false; };
             // 📎 파일 설명(rootId/rpath)을 File로 해석 — 로컬(공유폴더) 우선, 실패 시 클라우드 프리사인 다운로드
@@ -7670,6 +7685,8 @@
                 items.push({label:(multi?('📤 공유 ('+sel.length+'개)'):'📤 공유'), fn:()=>window._sfShareDesc(sel)});
                 if(window.RCFolder && window.RCFolder.revealAtRoot && !d.cloud) items.push({label:'📂 파일 위치 열기(탐색기)', fn:()=>window._sfRevealFile(d)});
                 items.push({label:'💾 다른 이름으로 저장하기', fn:()=>window._sfDownloadDesc(d)});
+                // 🧑‍⚕️ 환자에 연결(귀속) — 드래그가 어려운 환경(앱 네이티브 드래그 등)에서도 확실한 경로. 환자뷰 메뉴엔 '다른 환자로 이전'이 따로 있어 제외.
+                if(!ctx.patient){ const _pp=(typeof _sfPatientPicker==='function')?_sfPatientPicker:window._sfPatientPicker; if(_pp) items.push({label:(multi?('🧑‍⚕️ 환자에 연결 ('+sel.length+'개)'):'🧑‍⚕️ 환자에 연결'), fn:()=>_pp(async(toKey)=>{ if(!toKey) return; await window._sfAssignDraggedToPatient(toKey, sel); })}); }
                 if(!d.cloud && !multi) items.push({label:'✏️ 이름 변경', fn:()=>window._sfRenameDesc(d, onDone)});
                 (ctx.extras||[]).forEach(x=>items.push(x));
                 items.push({label:(multi?('🗑 삭제 ('+sel.length+'개)'):(series>1?'🗑 시리즈 삭제':'🗑 삭제')), danger:true, fn:()=>window._sfDeleteDescsUI(sel, {indexAlways:!!ctx.patient}, onDone)});
@@ -7678,6 +7695,8 @@
             // 📎 파일 설명(rootId/rpath)들을 File 객체로 읽어 열려있는 주문서에 첨부
             window._sfAttachDescs = async function(descs){
                 if(!descs||!descs.length) return;
+                // 🧑‍⚕️ 주문 첨부 자동귀속용 — 원본 설명자(rootId/rpath)를 기록(주문 제출 시 선택 환자로 연결). File로 변환되면 소실되므로 여기서 보관.
+                try{ const arr=(window.__orderAttachedDescs=window.__orderAttachedDescs||[]); descs.forEach(d=>{ if(d&&d.rpath && !arr.some(x=>x.rpath===d.rpath && x.rootId===(d.rootId||''))) arr.push({rootId:d.rootId||'', rpath:d.rpath, fname:String(d.rpath).split('/').pop(), cloud:!!d.cloud, mime:d.mime||'', size:d.size||0}); }); }catch(_){}
                 showToast('파일 읽는 중… ('+descs.length+'개)');
                 const files=[];
                 for(const d of descs){ try{ const f=await window._sfResolveFileToFile(d); if(f) files.push(f); }catch(_){} }
@@ -16849,6 +16868,7 @@ pdfjsScript,
             let pkg = { files: [], memo: '' };
             try { pkg = JSON.parse(pkgRaw || '{}'); } catch(e){}
             if(!Array.isArray(pkg.files)) pkg.files = [];   // 🦷 주문서(패키지) 없는 상품(예: 치과 기공소)도 주문 모달 동작 보장
+            try{ window.__orderAttachedDescs=[]; }catch(_){}   // 🧑‍⚕️ 새 주문: 첨부 자동귀속 기록 초기화(이전 주문분 유출 방지)
             window.orderFormState = { product, amount, seller, purchaseType, packageFiles: pkg.files || [], buyerFiles: [], buyerMemo: '', pdfFormText: '', pdfFilledData: null, pdfFile: pkg.files.find(f => f.role === 'order_form') || pkg.files.find(f => /\.pdf$/i.test(f.filename||'')) };
 
             const body = document.getElementById('order-form-body');
@@ -17225,6 +17245,9 @@ pdfjsScript,
             const submitData = await submitRes.json();
             if(!submitRes.ok) return showToast(submitData.error || '주문 전송 실패');
             if(!submitData.orderId) return showToast('주문 ID를 받지 못했습니다. 다시 시도해 주세요.');
+
+            // 🧑‍⚕️ 주문 첨부파일을 선택 환자에 자동 귀속(한 번에 조회) — 파일검색에서 첨부한(rootId/rpath 있는) 파일만. 업로드 blob은 대상 아님.
+            try{ const _pk=window.__selectedPatientKey; const _ds=(window.__orderAttachedDescs||[]).slice(); if(_pk && _ds.length && window._sfAssignDraggedToPatient){ const _n=await window._sfAssignDraggedToPatient(_pk, _ds, {silent:true}); if(_n) showToast('🧑‍⚕️ 첨부 '+_n+'개를 환자 데이터에 연결했습니다.'); } window.__orderAttachedDescs=[]; }catch(_){}
 
             // 💬 주문마다 새 대화방 개설 (한 쌍-한 방이 아니라 주문별 1방). 구매자는 이 방으로 진입.
             const roomId = 'room_ord_' + submitData.orderId;
@@ -21038,6 +21061,7 @@ pdfjsScript,
                     const d = await res.json(); items = d.items||[]; storeName = d.storeName||''; storeId = d.storeId||storeId;
                 } catch(_){}
                 const preName = (product && Number(product.rx_form) !== 1) ? (product.name||'') : '';
+                try{ window.__orderAttachedDescs=[]; }catch(_){}   // 🧑‍⚕️ 새 의뢰서: 첨부 자동귀속 기록 초기화
                 window.rxOrderState = { product, seller, amount:0, storeId, storeName, mode:'simple', rxItems:items, attachFiles:[], items:[], preselectName:preName, productThumb:(product&&product.thumbnail)||'', productDesc:(product&&product.description)||'' };
                 overlay('rx-choice-modal', `
                     <div style="padding:22px 24px;text-align:center;">
@@ -22207,6 +22231,9 @@ pdfjsScript,
                 });
                 const submitData = await submitRes.json().catch(()=>({}));
                 if(!submitRes.ok || !submitData.orderId) return showToast(submitData.error || '의뢰서 전송 실패');
+
+                // 🧑‍⚕️ 의뢰서 첨부파일을 환자에 자동 귀속(한 번에 조회) — 파일검색에서 첨부한(rootId/rpath 있는) 파일만.
+                try{ const _pk=(st&&st.patientKey)||window.__selectedPatientKey; const _ds=(window.__orderAttachedDescs||[]).slice(); if(_pk && _ds.length && window._sfAssignDraggedToPatient){ const _n=await window._sfAssignDraggedToPatient(_pk, _ds, {silent:true}); if(_n) showToast('🧑‍⚕️ 첨부 '+_n+'개를 환자 데이터에 연결했습니다.'); } window.__orderAttachedDescs=[]; }catch(_){}
 
                 const roomId = 'room_ord_' + submitData.orderId;
                 currentChatRoomId = roomId;
