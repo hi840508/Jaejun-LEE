@@ -5920,6 +5920,13 @@
         // ☁️ 클라우드 뷰 / 📁 내 PC 뷰 경로바 — 동일한 통합 경로바를 렌더(두 바를 하나로 통합).
         window._sfRenderCloudCtl = async function(ov){ const box=(ov||document).querySelector('#_sf-cloudctl'); if(box){ try{ await window._sfBuildPathCtl(box, ov); }catch(_){} } };
         window._sfRenderCompCtl = async function(ov){ const box=(ov||document).querySelector('#_sf-compctl'); if(box){ try{ await window._sfBuildPathCtl(box, ov); }catch(_){} } };
+        // 🔄 용량 그래프(경로바) 즉시 갱신 — 파일 삭제/동기화 후 호출. 클라우드 status 캐시를 비우고 현재 떠 있는 경로바(클라우드/내PC)를 다시 그림.
+        window._sfRefreshCapBar = async function(){
+            try{ window.__sfCloudStatus=null; }catch(_){}
+            const ov=window.__sfOv||document;
+            try{ const cc=ov.querySelector&&ov.querySelector('#_sf-cloudctl'); if(cc) await window._sfBuildPathCtl(cc, ov); }catch(_){}
+            try{ const mc=ov.querySelector&&ov.querySelector('#_sf-compctl'); if(mc) await window._sfBuildPathCtl(mc, ov); }catch(_){}
+        };
         window._sfDriveToggle = function(){
             // 🔁 드라이브 버튼 = 내 컴퓨터 ↔ 클라우드 전환(동기화는 경로바의 동기화 버튼으로 분리)
             const mob=(window._isMobileDevice&&window._isMobileDevice());
@@ -6928,7 +6935,7 @@
                     const _ser=/\.dcm$/i.test(String(rpath||''));
                     const ok=await (window._sfConfirm?window._sfConfirm((_ser?'이 CT 시리즈를 클라우드에서 완전히 삭제할까요?\n(폴더 내 전체 슬라이스)\n':'이 파일을 클라우드에서 완전히 삭제할까요?\n')+nm+'\n\n(복원할 수 없습니다)','삭제'):Promise.resolve(confirm('클라우드에서 삭제할까요?')));
                     if(!ok) return;
-                    try{ const _n=await window._sfCloudDelSeries(rpath); if(_n>0){ showToast(_n>1?('🗑 시리즈 삭제 ('+_n+'장)'):'삭제했습니다.'); if(window.__sfCloudReload) window.__sfCloudReload(); } else { showToast('삭제 실패: 클라우드에서 해당 파일을 찾지 못했습니다.'); } }catch(err){ showToast('삭제 실패: '+((err&&err.message)||err)); }
+                    try{ const _n=await window._sfCloudDelSeries(rpath); if(_n>0){ showToast(_n>1?('🗑 시리즈 삭제 ('+_n+'장)'):'삭제했습니다.'); if(window.__sfCloudReload) window.__sfCloudReload(); try{ if(window._sfRefreshCapBar) window._sfRefreshCapBar(); }catch(_){} } else { showToast('삭제 실패: 클라우드에서 해당 파일을 찾지 못했습니다.'); } }catch(err){ showToast('삭제 실패: '+((err&&err.message)||err)); }
                 };
             };
             // 📨 공유받음 배너 — 클라우드 뷰 상단에 공유받은 파일 N건을 알리고 바로 열람/저장 패널로 이동.
@@ -7711,7 +7718,7 @@
                 if(resolved.__cloudLink){ window.open(resolved.url,'_blank'); return; }
                 const u=URL.createObjectURL(resolved); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}},60000); showToast('💾 저장됨: '+name); }catch(_){ showToast('저장 실패'); } };
             window._sfRenameDesc = async function(d, onDone){ const parts=String(d.rpath||'').split('/'); const old=parts.pop(); if(d.cloud){ showToast('클라우드 파일은 이름변경을 지원하지 않습니다.'); return; } const nn=await window._sfPrompt('새 이름', old); if(!nn||nn===old) return; const R=window.RCFolder; let ok=false; try{ if(R.renameAtRoot) ok=await R.renameAtRoot(d.rootId, parts, old, nn); else { if(R.setActiveRoot) await R.setActiveRoot(d.rootId); ok=await R.renameAt(parts, old, nn); } }catch(_){} if(ok){ showToast('이름을 변경했습니다.'); try{ onDone&&onDone(); }catch(_){} } else showToast('이름변경 실패'+(window.__rcLastErr?(': '+window.__rcLastErr):'')); };
-            window._sfDeleteDescsUI = async function(descs, opts, onDone){ opts=opts||{}; if(!descs||!descs.length){ showToast('삭제할 파일을 선택하세요.'); return; } const okc=await window._sfConfirm('선택한 '+descs.length+'개 항목을 삭제할까요?\n실제 파일이 삭제됩니다(CT 시리즈는 폴더 내 전체 슬라이스). 되돌릴 수 없습니다.','삭제'); if(!okc) return; const r=await window._sfPhysicalDelete(descs, opts); let msg; if(r.ok) msg='🗑 삭제 '+r.ok+'개'+(r.fail?(' · 접근불가 '+r.fail+'개는 목록에서 제거'):''); else if(r.removed) msg='목록에서 제거 '+r.removed+'개(원본 접근불가/이미 삭제됨)'; else msg='삭제 실패'+(r.lastErr?(': '+r.lastErr):''); showToast(msg); try{ onDone&&onDone(); }catch(_){} };
+            window._sfDeleteDescsUI = async function(descs, opts, onDone){ opts=opts||{}; if(!descs||!descs.length){ showToast('삭제할 파일을 선택하세요.'); return; } const okc=await window._sfConfirm('선택한 '+descs.length+'개 항목을 삭제할까요?\n실제 파일이 삭제됩니다(CT 시리즈는 폴더 내 전체 슬라이스). 되돌릴 수 없습니다.','삭제'); if(!okc) return; const r=await window._sfPhysicalDelete(descs, opts); let msg; if(r.ok) msg='🗑 삭제 '+r.ok+'개'+(r.fail?(' · 실패 '+r.fail+'개(클라우드에서 못 찾음·카드 유지)'):''); else if(r.removed) msg='목록에서 제거 '+r.removed+'개(원본 접근불가/이미 삭제됨)'; else msg='삭제 실패'+(r.lastErr?(': '+r.lastErr):''); showToast(msg); try{ onDone&&onDone(); }catch(_){} try{ if((r.ok||r.removed)&&window._sfRefreshCapBar) window._sfRefreshCapBar(); }catch(_){} };
             // 📤 공유(카카오톡식) — 친구/내 기기(채팅)로 파일 전송. descs 다건 지원.
             window._sfShareDesc = function(descs){ const arr=Array.isArray(descs)?descs:[descs]; if(!arr.length){ showToast('공유할 파일을 선택하세요.'); return; } try{ openShareRecipientPicker(null, arr); }catch(e){ showToast('공유 열기 실패'); } };
             // 📋 공용 파일 카드 메뉴 아이템(ctxMenu용) — 모든 뷰 동일(구글드라이브식). ctx:{patient,extras[],onDone,sel[]}
