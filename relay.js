@@ -58,6 +58,23 @@ function cleanupOldChatAttachments() {
 }
 cleanupOldChatAttachments();
 setInterval(cleanupOldChatAttachments, 6 * 60 * 60 * 1000);
+// ☁️🧹 R2에 올라간 채팅/전송 파일도 14일 초과 시 자동 삭제(저장비 누적 방지). r2_transient에 기록된 키만 대상 — 미러/클레임/앱 등 영구 파일은 제외.
+function _markR2Transient(key){ try{ if(key && typeof db!=='undefined' && db) db.run(`INSERT OR IGNORE INTO r2_transient (key, createdAt) VALUES (?,?)`, [String(key), Date.now()]); }catch(_){} }
+function cleanupOldR2Transient(){
+    try{
+        if(!_r2 || typeof db==='undefined' || !db) return;
+        const cut = Date.now() - CHAT_ATTACH_TTL_MS;
+        db.all(`SELECT key FROM r2_transient WHERE createdAt < ?`, [cut], (e, rows) => {
+            if (e || !rows || !rows.length) return;
+            const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+            let n = 0;
+            rows.forEach(r => { try { _r2.client.send(new DeleteObjectCommand({ Bucket: _r2.bucket, Key: r.key })).catch(() => {}); } catch (_) {} db.run(`DELETE FROM r2_transient WHERE key=?`, [r.key]); n++; });
+            if (n) console.log('🧹 R2 전송파일 정리:', n, '개(14일 초과)');
+        });
+    } catch (_) {}
+}
+setTimeout(cleanupOldR2Transient, 60000);
+setInterval(cleanupOldR2Transient, 6 * 60 * 60 * 1000);
 
 // 실제 비대칭 디지털 서명 알고리즘(ECDSA) 
 // 🔐 서명 키페어 — 매 부팅 재생성(=재시작마다 서명 불일치, 크론 재시작 시 특히) 방지: 디스크 영속화(gitignore된 signing_keys.json).
@@ -210,7 +227,7 @@ app.post('/api/bigfile/complete', (req, res) => {
     const { CompleteMultipartUploadCommand } = require('@aws-sdk/client-s3');
     const ordered = (parts || []).slice().sort((a, b) => a.PartNumber - b.PartNumber);
     _r2.client.send(new CompleteMultipartUploadCommand({ Bucket: _r2.bucket, Key: key, UploadId: uploadId, MultipartUpload: { Parts: ordered } }))
-        .then(() => res.json({ success: true, url: _r2.publicBase + '/' + key })).catch(e => res.status(500).json({ error: e.message }));
+        .then(() => { _markR2Transient(key); res.json({ success: true, url: _r2.publicBase + '/' + key }); }).catch(e => res.status(500).json({ error: e.message }));
 });
 app.post('/api/bigfile/abort', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
@@ -881,6 +898,7 @@ function initTables() {
         // ☁️ [항목5] 로컬 공유폴더 R2 미러 백업(유료 옵션) — 원하는 사용자만 cloud_storage 할당량으로 결제해 사용.
         //   mirror_files: 사용자별 미러된 파일 목록(rpath=공유폴더 상대경로). mirror_prefs: 사용자별 on/off.
         db.run(`CREATE TABLE IF NOT EXISTS mirror_files (userName TEXT, rpath TEXT, key TEXT, size INTEGER DEFAULT 0, mime TEXT, mtime INTEGER, PRIMARY KEY(userName, rpath))`);
+        db.run(`CREATE TABLE IF NOT EXISTS r2_transient (key TEXT PRIMARY KEY, createdAt INTEGER)`);   // ☁️🧹 채팅/전송용 임시 R2 객체(14일 후 자동삭제) — 미러/클레임/앱 등 영구 파일과 구분
         db.run(`CREATE TABLE IF NOT EXISTS mirror_prefs (userName TEXT PRIMARY KEY, enabled INTEGER DEFAULT 0)`);
         // ☁️🤝 클라우드 공유 = 소유자 파일에 대한 "기간제 접근 권한"(복사 아님). 받는 사람은 만료일까지 열람·다운로드만, 용량 차감 없음.
         db.run(`CREATE TABLE IF NOT EXISTS mirror_shares (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT, rpath TEXT, key TEXT, size INTEGER DEFAULT 0, mime TEXT, name TEXT, toUser TEXT, createdAt INTEGER, expireAt INTEGER, UNIQUE(owner, rpath, toUser))`);
@@ -5401,7 +5419,7 @@ app.post('/api/chat/attach', (req, res) => {
             const { PutObjectCommand } = require('@aws-sdk/client-s3');
             const ct = (req.body && req.body.mime) || _mimeFromExt(ext);
             _r2.client.send(new PutObjectCommand({ Bucket: _r2.bucket, Key: safe, Body: buf, ContentType: ct }))
-                .then(() => res.json({ success: true, url: _r2.publicBase + '/' + safe, size: buf.length, store: 'r2' }))
+                .then(() => { _markR2Transient(safe); res.json({ success: true, url: _r2.publicBase + '/' + safe, size: buf.length, store: 'r2' }); })
                 .catch((err) => {
                     console.warn('R2 업로드 실패 → 로컬 폴백:', err && err.message);
                     try { fs.writeFileSync(path.join(CHAT_UPLOAD_DIR, safe), buf); res.json({ success: true, url: _shareBaseUrl(req) + '/chat-files/' + safe, size: buf.length, store: 'local-fallback' }); }
