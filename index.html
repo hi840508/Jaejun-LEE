@@ -6933,19 +6933,28 @@
             async function _sfOpenPmsFile(f){
                 if(!f||!f.rpath){ return; }
                 const parts=String(f.rpath).split('/'); const fname=parts.pop(); const pathArr=parts; const low=String(fname||'').toLowerCase();
+                // 🖥 내 PC 우선: 로컬 루트가 이 기기에 연결돼 있으면 로컬 원본으로 미리보기(빠름·egress 無). 로컬에 없을 때만 ☁ 클라우드 폴백.
                 let ok=false; try{ if(window.RCFolder && window.RCFolder.setActiveRoot) ok=await window.RCFolder.setActiveRoot(f.rootId); }catch(_){}
-                if(!ok){ showToast('이 기기에 없는 폴더의 파일입니다. 해당 PC/앱에서 열거나 클라우드 저장소를 이용하세요.'); return; }
-                // 🩻 DICOM → 슬라이스 탐색 미리보기(2D 라이브). 전체 Viewer(3D)는 별도 실행.
-                if(/\.dcm$/i.test(low) && window.rcOpenInLiveViewer){ try{ window.rcOpenInLiveViewer(pathArr, fname); }catch(_){ showToast('미리보기 실패'); } return; }
-                let file=null; try{ const R=window.RCFolder; file=(R&&R.getFileAtRoot)?await R.getFileAtRoot(f.rootId,pathArr,fname):null; if(!file&&R&&R.getFileAt){ try{ file=await R.getFileAt(pathArr,fname); }catch(_){} } }catch(_){}
-                if(!file){ showToast('파일을 읽지 못했습니다.'); return; }
-                if(/\.(ply|stl|obj|glb|gltf)$/.test(low) && window._model3DViewer){ try{ window._model3DViewer(file, fname); }catch(_){ showToast('3D 미리보기 실패'); } return; }
-                const isMedia=/\.(png|jpe?g|gif|webp|bmp|svg|mp4|webm|mov|m4v|avi|mkv|mp3|wav|ogg|m4a)$/.test(low);
-                try{
-                    if(isMedia){ const u=URL.createObjectURL(file); (window.__rcMlUrls=window.__rcMlUrls||[]).push(u); if(window.__rcMlUrls.length>40){ try{ URL.revokeObjectURL(window.__rcMlUrls.shift()); }catch(_){} } openMediaUrlPreview(u, fname, f.mime||file.type||''); }
-                    else if(window.rcOpenExternalFile){ window.rcOpenExternalFile(file, fname); }   // 📄 문서·기타 → 연결 프로그램(탐색기처럼)
-                    else { const u=URL.createObjectURL(file); openMediaUrlPreview(u, fname, f.mime||file.type||''); }
-                }catch(_){ showToast('열기 실패'); }
+                if(ok){
+                    // 🩻 DICOM → 슬라이스 탐색 미리보기(2D 라이브). 전체 Viewer(3D)는 별도 실행.
+                    if(/\.dcm$/i.test(low) && window.rcOpenInLiveViewer){ try{ window.rcOpenInLiveViewer(pathArr, fname); }catch(_){ showToast('미리보기 실패'); } return; }
+                    let file=null; try{ const R=window.RCFolder; file=(R&&R.getFileAtRoot)?await R.getFileAtRoot(f.rootId,pathArr,fname):null; if(!file&&R&&R.getFileAt){ try{ file=await R.getFileAt(pathArr,fname); }catch(_){} } }catch(_){}
+                    if(file){
+                        if(/\.(ply|stl|obj|glb|gltf)$/.test(low) && window._model3DViewer){ try{ window._model3DViewer(file, fname); }catch(_){ showToast('3D 미리보기 실패'); } return; }
+                        const isMedia=/\.(png|jpe?g|gif|webp|bmp|svg|mp4|webm|mov|m4v|avi|mkv|mp3|wav|ogg|m4a)$/.test(low);
+                        try{
+                            if(isMedia){ const u=URL.createObjectURL(file); (window.__rcMlUrls=window.__rcMlUrls||[]).push(u); if(window.__rcMlUrls.length>40){ try{ URL.revokeObjectURL(window.__rcMlUrls.shift()); }catch(_){} } openMediaUrlPreview(u, fname, f.mime||file.type||''); }
+                            else if(window.rcOpenExternalFile){ window.rcOpenExternalFile(file, fname); }   // 📄 문서·기타 → 연결 프로그램(탐색기처럼)
+                            else { const u=URL.createObjectURL(file); openMediaUrlPreview(u, fname, f.mime||file.type||''); }
+                        }catch(_){ showToast('열기 실패'); }
+                        return;
+                    }
+                }
+                // ☁️ 로컬에 없음(미연결 기기/타 PC 업로드분) → 클라우드에 있으면 클라우드 원본으로 미리보기. rpath 형식 2종 시도.
+                if(f.cloud){ const cands=[String(f.rootId||'')+'/'+f.rpath, String(f.rpath)].filter((v,i,a)=>v&&a.indexOf(v)===i);
+                    for(const rp of cands){ try{ const d=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:rp})}).then(r=>r.json()); if(d&&d.url){ await _sfOpenCloudFile(rp); return; } }catch(_){} }
+                }
+                showToast('이 기기에 없는 폴더의 파일입니다. 해당 PC/앱에서 열거나 클라우드 저장소를 이용하세요.');
             }
             // 🧑‍⚕️ 환자 카드 섹션을 파일 목록 상단에 주입(루트에서만). DICOM 자동 스캔(세션 1회) + 수동 추가/검색.
             async function _sfInjectPatientCards(ov){
@@ -17970,7 +17979,7 @@ pdfjsScript,
             // 🖥 상대가 화면공유 가능한 PC인지 조회 → 원격제어 버튼 활성/비활성(응답 전엔 비활성)
             try { if(window._queryPeerCapability) window._queryPeerCapability(friendName); } catch(_){}
             // 🏪 [Task1] 주문 대화방이면 헤더에 상점명(+상품명) 표시. DM은 상대방 이름 그대로.
-            let __chatTitle = `${friendName === '이재준' ? '🤖 고객센터' : friendName}`;
+            let __chatTitle = `${friendName === '이재준' ? '고객센터' : friendName}`;
             try {
                 const __meta = (window.__orderRoomStore && roomIdOverride) ? window.__orderRoomStore[roomIdOverride] : null;
                 if(__meta && (__meta.storeName || __meta.buyer)){
@@ -18742,7 +18751,7 @@ pdfjsScript,
                     if(isOrderRoom) {
                         const sName = r.storeName || (meta && meta.storeName) || '';
                         const pName = r.productName || (meta && meta.lastProductName) || '';
-                        const partnerDisplay = r.partnerName === '이재준' ? '🤖 고객센터' :r.partnerName;
+                        const partnerDisplay = r.partnerName === '이재준' ? '고객센터' :r.partnerName;
                         // 🏪 주문 대화방 제목 — 관점별: 판매자(내가 seller)는 '주문한 치과(구매자)', 구매자는 '상점명'. 상품/환자는 부제.
                         window.__orderRoomStore = window.__orderRoomStore || {};
                         window.__orderRoomStore[r.roomId] = { storeName: sName, productName: pName, partnerName: r.partnerName, buyer: r.buyer||'', seller: r.seller||'' };
@@ -18751,7 +18760,7 @@ pdfjsScript,
                         const productLabel = pName ? ` <span style="color:var(--text-sub); font-weight:normal; font-size:11px;">🧾 ${pName}</span>` : '';
                         titleHtml = `<b style="font-size:13px;">${mainTitle}</b>${productLabel}`;
                     } else {
-                        titleHtml = `<b style="font-size:14px;">${r.partnerName==='이재준'?'🤖 고객센터':r.partnerName}</b>`;
+                        titleHtml = `<b style="font-size:14px;">${r.partnerName==='이재준'?'고객센터':r.partnerName}</b>`;
                     }
 
                     const lastMsgPreview = r.lastMsg.includes('[PRIVATE_ASSET]')?'📦 1:1 비공개 상품'
@@ -19530,7 +19539,7 @@ pdfjsScript,
                     ? `<div class="kt-avatar-spacer"></div>`
                     : (avaSrc ? `<img class="kt-avatar" src="${avaSrc}">` : `<div class="kt-avatar" style="display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:13px; background:linear-gradient(135deg,#94a3b8,#64748b);">${(sender||'?').substring(0,1)}</div>`);
                 if(showName) {
-                    chatBody.insertAdjacentHTML('beforeend', `<div class="kt-sender-name">${sender === '이재준' ? '🤖 고객센터' : sender}</div>`);
+                    chatBody.insertAdjacentHTML('beforeend', `<div class="kt-sender-name">${sender === '이재준' ? '고객센터' : sender}</div>`);
                 }
                 const bubbleClass = sameAsLast ? 'kt-bubble other same-sender' : 'kt-bubble other';
                 chatBody.insertAdjacentHTML('beforeend', `<div class="kt-msg-line other${sameAsLast?' same-sender':''}" data-sender="${sender}"${idAttr}>${avatar}<div class="kt-bubble-col"><div class="${bubbleClass}">${displayHtml}</div></div><div class="kt-time">${time}</div></div>`);
