@@ -4988,6 +4988,20 @@
             try{ u=String(u||''); const m=u.match(/^(https?:\/\/[^?#]*\/s\/[^/?#]+)(?:$|[?#])/); if(m && !/\/dl(?:[\/?#]|$)/.test(u)) return m[1]+'/dl'; }catch(_){}
             return u;
         };
+        // ⏳ 클라우드 공유(/s 토큰) 파일의 2주 만료 뱃지 채움 — 대화방 카드의 ._gs-exp[data-gstoken]를 토큰별로 조회해 '남은일수/만료' 표시. 토큰별 캐시.
+        window.__gsExpCache = window.__gsExpCache || {};
+        window._gsFillExpiry = function(){
+            try{
+                document.querySelectorAll('._gs-exp:not([data-done])').forEach(function(el){
+                    const tk = el.getAttribute('data-gstoken'); el.setAttribute('data-done','1');
+                    if(!tk){ el.style.display='none'; return; }
+                    const paint=(exp)=>{ try{ if(exp===0 || (exp && Date.now()>exp)){ el.textContent='⛔ 공유 만료(2주 경과) · [저장]은 불가'; el.style.color='#ef4444'; } else if(exp){ const days=Math.max(0,Math.ceil((exp-Date.now())/86400000)); el.textContent='⏳ 공유 '+days+'일 남음'; el.style.color='#64748b'; } else { el.style.display='none'; } }catch(_){} };
+                    if(window.__gsExpCache[tk]!==undefined){ paint(window.__gsExpCache[tk]); return; }
+                    fetch(API_URL+'/api/guestshare/'+encodeURIComponent(tk)).then(r=>r.json()).then(j=>{ const exp = j ? (j.expired?0:(Number(j.expiresAt)||0)) : null; window.__gsExpCache[tk]=exp; paint(exp); }).catch(()=>{ el.style.display='none'; });
+                });
+            }catch(_){}
+        };
+        (function(){ try{ const t=setInterval(function(){ const b=document.getElementById('main-chat-body'); if(b){ clearInterval(t); let _deb=null; const mo=new MutationObserver(function(){ if(_deb) return; _deb=setTimeout(function(){ _deb=null; window._gsFillExpiry(); }, 250); }); mo.observe(b,{childList:true,subtree:true}); window._gsFillExpiry(); } }, 1000); }catch(_){} })();
         // 🖼 채팅 이미지 로드 실패 시 — 검은 박스/깨진아이콘 대신 깔끔한 클릭형 폴백(눌러서 원본 열기). 1차로 /s 랜딩↔/dl 반대형을 한번 더 시도.
         window._chatImgErr = function(img){
             try{
@@ -19694,6 +19708,7 @@ pdfjsScript,
                     <div class="kt-card-meta">
                         <div class="kt-card-name">${escFname}</div>
                         <div class="kt-card-sub">${sizeKB}KB · ${mime || (isImage?'이미지':isVideo?'영상':isPdf?'PDF':is3d?'3D 모델':'파일')}</div>
+                        ${(function(){ const m=String(dataUrl||'').match(/\/s\/([^/?#]+)/); return m?('<div class="_gs-exp" data-gstoken="'+m[1]+'" style="font-size:10px;color:#94a3b8;margin-top:2px;">⏳ 공유기간 확인…</div>'):''; })()}
                     </div>
                     <div class="kt-card-actions">${previewBtn}${dlBtn}${_isUrl ? `<button class="kt-card-btn" onclick="openGuestShareByKey('${fileKey}')">\uD83D\uDD17 \uC678\uBD80\uACF5\uC720</button>` : ''}${(!_thumb && window.parent && window.parent !== window) ? `<button class="kt-card-btn" onclick="sendChatFileToImages('${fileKey}')">\uD83D\uDCE5 Images로</button>` : ''}</div>
                 </div>`;
@@ -22288,7 +22303,7 @@ pdfjsScript,
                 const orderHtml = buildRxBundleHTML(st, info, attachUploaded);
                 const buyerInfo = { name: info.clinic, phone:'', address:'', userId: currentUser.name, clinic:info.clinic, doctor:info.doctor, patientName:info.patientName, birth:info.birth, gender:info.gender, chartNo:info.chartNo, dueDate:info.dueDate, dueAmPm:info.dueAmPm };
                 const formData = { rxMode: st.mode, orderInfo: info, items: st.items, attachMeta: attachUploaded.map(f=>({ filename:f.filename, type:f.type, url:f.url })) };
-                const body = { productId: st.product.id, buyer: currentUser.name, seller: st.seller, bundle_html: orderHtml, memo: (st.items.map(it=>it.memo).filter(Boolean).join(' / ')||''), form_data: formData, buyer_info: buyerInfo, amount: st.amount||0, status: 'pending', payMethod: 'balance' };
+                const body = { productId: st.product.id, buyer: currentUser.name, seller: st.seller, bundle_html: orderHtml, memo: (st.items.map(it=>it.memo).filter(Boolean).join(' / ')||''), form_data: formData, buyer_info: buyerInfo, amount: st.amount||0, status: 'pending', payMethod: 'balance', patientKey: (st.patientKey||window.__selectedPatientKey||'') };
                 return { body, attachUploaded };
             };
 

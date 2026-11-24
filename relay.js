@@ -1009,6 +1009,7 @@ function initTables() {
         // 💳 [KICC PG 대비] 실 PG(KICC 이지페이 등) 취소·환불 시 필요한 거래 고유번호(TID) 저장. pg_approval=승인번호와 별개.
         db.run(`ALTER TABLE transactions ADD COLUMN pg_tid TEXT`, () => {});
         db.run(`ALTER TABLE product_orders ADD COLUMN pg_tid TEXT`, () => {});
+        db.run(`ALTER TABLE product_orders ADD COLUMN patientKey TEXT`, () => {});   // 🧑‍⚕️ 주문의 환자키 — 주문방에서 받은 파일을 이 환자에 귀속할 때 사용
         // 💸 [정산 자동 지급] 정산금은 인앱 잔액 적립이 아니라 '판매자 등록계좌로 직접 지급'된다. 그 지급 기록(원장).
         //   status: paid(지급처리) | failed. auto=1이면 정산예정일 도래로 자동지급. items=포함 주문 상세, orderIds=정산된 주문 id들.
         db.run(`CREATE TABLE IF NOT EXISTS payouts (id INTEGER PRIMARY KEY AUTOINCREMENT, seller TEXT, amount INTEGER, bank TEXT, account TEXT, accountHolder TEXT, salesTotal INTEGER, payFee INTEGER, month TEXT, items TEXT, orderIds TEXT, status TEXT DEFAULT 'paid', auto INTEGER DEFAULT 0, date TEXT, rawDate TEXT, paid_at TEXT)`, () => {});
@@ -4287,8 +4288,8 @@ app.post('/api/product/submit-order', (req, res) => {
             if (!auth.ok) return res.status(400).json({ error: '카드 승인 실패: ' + (auth.error || '') });
             pgApproval = auth.approvalNo;
         }
-        db.run(`INSERT INTO product_orders (productId, buyer, seller, bundle_html, memo, form_data, pdf_filled_data, buyer_info, status, amount, created_at, pay_method, pg_approval) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [productId, buyer, seller, bundle_html || '', memo || '', JSON.stringify(form_data || {}), pdf_filled_data || '', JSON.stringify(buyer_info || {}), ordStatus, amount || 0, date, method, pgApproval],
+        db.run(`INSERT INTO product_orders (productId, buyer, seller, bundle_html, memo, form_data, pdf_filled_data, buyer_info, status, amount, created_at, pay_method, pg_approval, patientKey) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [productId, buyer, seller, bundle_html || '', memo || '', JSON.stringify(form_data || {}), pdf_filled_data || '', JSON.stringify(buyer_info || {}), ordStatus, amount || 0, date, method, pgApproval, String(req.body.patientKey || (buyer_info && buyer_info.patientKey) || '')],
             function(err) {
                 if(err) return res.status(500).json({ error: err.message });
                 const orderId = this.lastID;
@@ -5487,7 +5488,7 @@ app.get('/api/purchases/:buyer', async (req, res) => {
 // 🚀 [v5] 특정 주문의 bundle_html 만 가져오기 (재다운로드용)
 app.get('/api/order/bundle/:orderId', (req, res) => {
     const me = requireUser(req, res); if (!me) return;
-    db.get(`SELECT bundle_html, productId, buyer, seller FROM product_orders WHERE id = ?`, [req.params.orderId], (err, row) => {
+    db.get(`SELECT bundle_html, productId, buyer, seller, patientKey FROM product_orders WHERE id = ?`, [req.params.orderId], (err, row) => {
         if(err || !row) return res.status(404).json({ error: '주문을 찾을 수 없음' });
         if (me !== row.buyer && me !== row.seller && !isAdminName(me)) return res.status(403).json({ error: '본인 주문만 조회할 수 있습니다.' });   // 🔐 당사자/관리자만
         res.json(row);
