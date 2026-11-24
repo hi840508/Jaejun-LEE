@@ -674,6 +674,10 @@ function sendPushToUser(name, payload) {
             console.log('[push] →', name, '| 앱(FCM)', appN, '대 우선 — 웹푸시 생략');
             return;
         }
+        // 🖥️ 데스크톱/웹 '앱(설치형)'이 현재 소켓 접속(로그인) 중이면 웹푸시 생략 — 앱이 네이티브 알림(rayApp.notify)으로 처리.
+        //    닫힌 브라우저의 잔존 웹푸시 구독이 OS 알림을 띄워 클릭 시 크롬이 열리던 문제 방지(= 앱 로그인 중엔 앱 알림 우선).
+        //    앱이 꺼져 있으면(APP_ONLINE=0) 아래 웹푸시로 브라우저/모바일 구독에 발송(모두 로그아웃 시 모바일이 받음).
+        try { if (APP_ONLINE.get(name) > 0) { console.log('[push] →', name, '| 앱 소켓 접속중 — 웹푸시 생략(앱 네이티브 알림 우선)'); return; } } catch (_) {}
         _webPushToUser(name, payload);
     });
 }
