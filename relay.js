@@ -3710,6 +3710,17 @@ app.get('/api/pms/patients/:key/files', (req, res) => {
         });
     });
 });
+// 🧑‍⚕️ 전체 파일 색인(클라우드 카드 DICOM 환자정보 교차참조용) — pms_files ⋈ pms_patients 일괄 반환(읽기전용)
+app.get('/api/pms/allfiles', (req, res) => {
+    const owner = requireUser(req, res); if (!owner) return;
+    db.all(`SELECT pf.rootId AS rootId, pf.rpath AS rpath, pf.modality AS modality, pf.studyDate AS studyDate,
+                   pp.name AS name, pp.patientId AS patientId, pp.dob AS dob, pp.sex AS sex
+            FROM pms_files pf JOIN pms_patients pp ON pp.owner=pf.owner AND pp.patientKey=pf.patientKey
+            WHERE pf.owner=?`, [owner], (e, rows) => {
+        if (e) return res.status(500).json({ error: e.message });
+        res.json({ items: rows || [] });
+    });
+});
 // 📎 수동 귀속 — 특정 파일을 특정 환자 카드에 연결(비-DICOM/추가 파일). 4단계.
 app.post('/api/pms/assign', (req, res) => {
     const owner = requireUser(req, res); if (!owner) return;
