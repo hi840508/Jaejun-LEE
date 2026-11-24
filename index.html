@@ -4933,6 +4933,11 @@
             }
             return '[FILE_ATTACH]'+name+'|'+sizeKB+'|'+mime+'|'+url;
         };
+        // 🖼 공유 링크(/s/<token> = 랜딩 HTML)를 이미지/영상 태그에 그대로 쓰면 깨짐 → 원본 바이트 URL(/s/<token>/dl)로 변환. 그 외 URL은 그대로.
+        window._rawShareMediaUrl = function(u){
+            try{ u=String(u||''); const m=u.match(/^(https?:\/\/[^?#]*\/s\/[^/?#]+)(?:$|[?#])/); if(m && !/\/dl(?:[\/?#]|$)/.test(u)) return m[1]+'/dl'; }catch(_){}
+            return u;
+        };
 
         // 🔓 수신자: 잠금 해제(암호/결제) → 실제 URL 받아 미리보기·공유폴더 저장
         window.openLockedFile = async function(token){
@@ -6025,10 +6030,10 @@
                 +'DICOM이 있으면 자동 생성되고, 상단 <b style="color:#c6d2e2;">＋</b> 로 직접 추가할 수 있어요.'
                 +'<div style="margin-top:12px;padding-top:10px;border-top:1px solid #2f3b52;">'
                 +'<div style="font-weight:800;color:#4db8e8;font-size:12px;margin-bottom:5px;">☁ 클라우드 안내</div>'
-                +'• 환자를 누르면 그 환자의 <b style="color:#c6d2e2;">클라우드에 동기화된 영상</b>만 표시됩니다.<br>'
-                +'• 영상이 보이려면 먼저 <b style="color:#c6d2e2;">드라이브 좌측 ☁ 동기화</b> 로 연결된 폴더를 클라우드에 올리세요.<br>'
-                +'• 기본 <b style="color:#c6d2e2;">무료 100MB</b> 내 자동 동기화되며, 초과 시 <b style="color:#c6d2e2;">용량 구매(☁＋)</b> 로 늘릴 수 있어요.<br>'
-                +'• PC 앱의 <b style="color:#c6d2e2;">주 폴더(Alpha K)</b> 가 동기화돼 있으면 브라우저로 접속해도 같은 영상을 볼 수 있어요.'
+                +'• 환자를 누르면 <b style="color:#c6d2e2;">내 PC·클라우드 구분 없이</b> 데이터가 있으면 모두 표시됩니다(로그인 중엔 내 PC 우선).<br>'
+                +'• 폴더만 연결하면 바로 보이고, <b style="color:#c6d2e2;">☁ 동기화</b> 로 올리면 <b style="color:#c6d2e2;">다른 PC·브라우저</b> 에서도 같은 영상을 열람할 수 있어요.<br>'
+                +'• 기본 <b style="color:#c6d2e2;">무료 100MB</b> 내 자동 동기화되며, 용량이 차면 경로바 버튼이 <b style="color:#c6d2e2;">☁＋ 용량 추가</b> 로 바뀝니다.<br>'
+                +'• 폴더 연결을 해제해도 <b style="color:#c6d2e2;">이미 동기화된 클라우드 영상은 계속</b> 보입니다.'
                 +'</div></div>'; return; }
             list.innerHTML=items.map(p=>{ const sx=String(p.sex||'').toUpperCase(); const bg=sx==='M'?'#3b82f6':(sx==='F'?'#ec4899':'#334155'); const ini=(String(p.name||'·').trim()[0]||'·'); const meta=_sa(p.dob,p.sex);
                 return '<div class="_sbpt" data-key="'+E(p.patientKey)+'" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid #e6edf4;border-radius:11px;background:#fff;cursor:pointer;transition:background .12s,border-color .12s;">'
@@ -10997,6 +11002,27 @@
                 else if(invite && window.startChatWith) window.startChatWith(invite);
             }catch(_){}
         });
+        // 🔔 인앱 알림 토스트 — 브라우저 OS 알림처럼 우측 하단에 뜨고, 클릭하면 해당 방으로 연결. (앱 네이티브 알림이 그냥 떴다 사라지는 문제 보완)
+        window._showInAppNotif = function(title, body, roomId, sender, icon){
+            try{
+                let host=document.getElementById('_rc-notif-host');
+                if(!host){ host=document.createElement('div'); host.id='_rc-notif-host'; host.style.cssText='position:fixed;right:18px;bottom:18px;z-index:2147483600;display:flex;flex-direction:column;gap:10px;align-items:flex-end;pointer-events:none;'; document.body.appendChild(host); }
+                const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+                const card=document.createElement('div');
+                card.style.cssText='pointer-events:auto;min-width:258px;max-width:340px;background:#0f2f52;color:#fff;border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.38);padding:13px 14px;display:flex;gap:11px;align-items:flex-start;cursor:pointer;transform:translateY(12px);opacity:0;transition:transform .25s ease,opacity .25s ease;';
+                card.innerHTML='<div style="flex:none;width:38px;height:38px;border-radius:11px;background:#1e88c7;display:flex;align-items:center;justify-content:center;font-size:19px;">'+(icon||'💬')+'</div>'
+                    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+E(title)+'</div>'
+                    +'<div style="font-size:12px;color:#c7d6e8;margin-top:2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">'+E(body)+'</div></div>'
+                    +'<button aria-label="닫기" style="flex:none;border:none;background:transparent;color:#94a3b8;font-size:16px;line-height:1;cursor:pointer;padding:2px 4px;margin:-2px -2px 0 0;">✕</button>';
+                const close=()=>{ try{ card.style.opacity='0'; card.style.transform='translateY(12px)'; setTimeout(()=>{try{card.remove();}catch(_){}} ,250); }catch(_){} };
+                card.querySelector('button').addEventListener('click',(e)=>{ e.stopPropagation(); close(); });
+                card.addEventListener('click',()=>{ try{ if(roomId && window.openEarthRoom) window.openEarthRoom(roomId); else if(sender && window.openMessengerChat) window.openMessengerChat(sender); }catch(_){} close(); });
+                host.appendChild(card);
+                requestAnimationFrame(()=>{ card.style.opacity='1'; card.style.transform='translateY(0)'; });
+                setTimeout(close, 8000);
+                try{ while(host.children.length>4){ host.removeChild(host.firstChild); } }catch(_){}
+            }catch(_){}
+        };
         function fireMobileNotification(sender, message, roomId) {
             // ★부모(Alpha K 앱)에 미확인 알림 → 채팅 아이콘 깜빡임/알림음★ (iframe 임베드 시)
             try { if(window.parent && window.parent !== window) window.parent.postMessage({ type:'rc_unread', from:sender, preview:/^\[[A-Z_]+\]/.test(message||'')?'📎 파일':(message||'') }, '*'); } catch(e){}
@@ -11013,7 +11039,9 @@
                             message.length > 50 ? message.substring(0, 47) + '…' : message;
             // 🔔 앱(Electron): 메인 프로세스 네이티브 알림이 가장 확실(렌더러 new Notification이 Windows에서 막혀도 뜬다).
             if(window.rayApp && window.rayApp.notify){
-                try{ window.rayApp.notify({ title: '💬 '+sender, body: preview, roomId: roomId||'' }); return; }catch(_){}
+                try{ window.rayApp.notify({ title: '💬 '+sender, body: preview, roomId: roomId||'' }); }catch(_){}
+                try{ window._showInAppNotif('💬 '+sender, preview, roomId||'', sender, '💬'); }catch(_){}   // 우측 하단 클릭형 토스트(클릭=방 열기)
+                return;
             }
             // 브라우저: 시스템 알림
             if('Notification' in window && Notification.permission === 'granted') {
@@ -19470,18 +19498,23 @@ pdfjsScript,
                 // 🚀 글로벌 파일 등록 (모달에서 사용)
                 if(!window.__chatFileRegistry) window.__chatFileRegistry = {};
                 const fileKey = 'cf_' + Math.random().toString(36).substr(2, 10);
-                window.__chatFileRegistry[fileKey] = { filename: fname, mime, content: dataUrl, size: (parseFloat(sizeKB)||0)*1024 };
+                // 이미지/영상/오디오 URL 공유는 레지스트리에도 원본 바이트 URL(/dl)을 저장 → 풀스크린 미리보기도 안 깨지게.
+                const _regContent = (_isUrl && (isImage||isVideo||isAudio)) ? window._rawShareMediaUrl(dataUrl) : dataUrl;
+                window.__chatFileRegistry[fileKey] = { filename: fname, mime, content: _regContent, size: (parseFloat(sizeKB)||0)*1024 };
 
                 let preview;
                 if(_thumb) {
                     // 공유 통합뷰어 카드: 썸네일 클릭 = 실행/미리보기(공유폴더 파일이면 OS 실행, 아니면 인페이지 미리보기 — 창 이동 없음). 저장은 아래 버튼.
                     preview = `<div class="kt-card-preview" style="cursor:pointer" onclick="rcOpenShared('${dataUrl}','${escFname}','${mime||''}')"><img src="${_thumb}" alt=""></div>`;
                 } else if(isImage) {
-                    preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><img src="${dataUrl}" alt="" loading="lazy" decoding="async"></div>`;
+                    const _msrc = _isUrl ? window._rawShareMediaUrl(dataUrl) : dataUrl;   // 공유 링크면 원본 바이트 URL(/dl)로 — 랜딩 HTML을 img에 넣어 깨지던 문제 해결
+                    preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><img src="${_msrc}" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${_isUrl?window._rawShareMediaUrl(dataUrl):dataUrl}';"></div>`;
                 } else if(isVideo) {
-                    preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><video src="${dataUrl}" muted preload="metadata"></video><div class="play-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);font-size:36px;color:#fff;pointer-events:none;">▶</div></div>`;
+                    const _msrc = _isUrl ? window._rawShareMediaUrl(dataUrl) : dataUrl;
+                    preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><video src="${_msrc}" muted preload="metadata"></video><div class="play-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);font-size:36px;color:#fff;pointer-events:none;">▶</div></div>`;
                 } else if(isAudio) {
-                    preview = `<div class="kt-card-preview" style="aspect-ratio:auto;padding:14px;background:#1e293b;cursor:default;flex-direction:column;gap:8px;"><div class="icon" style="color:#fbbf24;">🎵</div><audio src="${dataUrl}" controls style="width:100%;max-width:240px;"></audio></div>`;
+                    const _msrc = _isUrl ? window._rawShareMediaUrl(dataUrl) : dataUrl;
+                    preview = `<div class="kt-card-preview" style="aspect-ratio:auto;padding:14px;background:#1e293b;cursor:default;flex-direction:column;gap:8px;"><div class="icon" style="color:#fbbf24;">🎵</div><audio src="${_msrc}" controls style="width:100%;max-width:240px;"></audio></div>`;
                 } else {
                     // 🗂 미리보기(썸네일) 안 되는 파일 = 공유폴더와 동일한 윈도우 탐색기식 아이콘(문서페이지+확장자 배지)으로 통일
                     const _winIcon = (window._sfDocIcon ? window._sfDocIcon(fname) : '<div class="icon">📎</div>');
@@ -19857,7 +19890,7 @@ pdfjsScript,
                     try{ showToast('🛒 ' + (_clean||'새 주문 알림')); }catch(_){}
                     try{ playNotifySound(); }catch(_){}
                     try{
-                        if(window.rayApp && window.rayApp.notify){ window.rayApp.notify({ title:'🛒 주문 알림', body:_clean, roomId:data.roomId }); }
+                        if(window.rayApp && window.rayApp.notify){ window.rayApp.notify({ title:'🛒 주문 알림', body:_clean, roomId:data.roomId }); try{ window._showInAppNotif('🛒 주문 알림', _clean||'새 주문 알림', data.roomId||'', '', '🛒'); }catch(_){} }
                         else if('Notification' in window && Notification.permission==='granted'){ const n=new Notification('🛒 주문 알림', { body:_clean, tag:'earth-order-'+data.roomId }); n.onclick=()=>{ try{ window.focus(); if(window.openEarthRoom) openEarthRoom(data.roomId); n.close(); }catch(_){} }; setTimeout(()=>{ try{ n.close(); }catch(_){} }, 8000); }
                     }catch(_){}
                     try{ if(window.loadOrderListMsgr) loadOrderListMsgr(); }catch(_){}
