@@ -5885,7 +5885,7 @@
             return '<div style="height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;">'
                 +'<div style="height:100%;width:'+pct+'%;background:'+col+';transition:width .3s,background .3s;"></div>'
                 +'</div>'
-                +'<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;"><span style="color:#0f2f52;font-weight:700;">☁ 클라우드 '+fmt(used)+' / '+fmt(quota)+'</span>'+(over?' <b style="color:#ef4444;">초과</b>':'')+(local>0?(' · 전체 '+fmt(local)):'')+'</div>';
+                +'<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;"><span style="color:#0f2f52;font-weight:700;">☁ 클라우드 '+fmt(used)+' / '+fmt(quota)+'</span>'+(over?' <b style="color:#ef4444;">초과</b>':'')+'</div>';
         };
         // 📊 통합 경로바 빌더 — [폴더 버튼(목록+추가 통합)] · [통합 용량바] · [동기화↔용량추가 통합 버튼 + 부족]. 내 PC·클라우드 뷰 공용(프로그레스바 하나).
         window._sfBuildPathCtl = async function(box, ov){
@@ -5895,7 +5895,7 @@
                 +'<button id="_sf-folderbtn" title="내 PC 폴더 — 연결 목록·주 폴더 지정·폴더 추가" aria-label="내 PC 폴더" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;cursor:pointer;">'+folderSvg+'</button>'
                 +'<div id="_sf-capbar" style="flex:1;min-width:90px;max-width:300px;"><div style="height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;"></div><div style="font-size:11px;color:#94a3b8;margin-top:2px;white-space:nowrap;">용량 계산 중…</div></div>'
                 +'<button id="_sf-capbtn" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:none;border-radius:9px;cursor:pointer;"></button>'
-                +'<span id="_sf-capshort" style="flex:none;font-size:11.5px;font-weight:800;color:#ef4444;white-space:nowrap;"></span>';
+                +'<span id="_sf-capshort" style="flex:none;display:inline-flex;flex-direction:column;align-items:flex-end;justify-content:center;line-height:1.25;white-space:nowrap;"></span>';
             const fb=box.querySelector('#_sf-folderbtn'); if(fb) fb.onclick=(e)=>{ e.stopPropagation(); try{ window._sbFolderDropdown&&window._sbFolderDropdown(fb); }catch(_){} };
             let cap; try{ cap=await window._sfComputeCap(); }catch(_){ cap=null; } cap=cap||{local:0,used:0,quota:104857600};
             const cb=(ov||document).querySelector('#_sf-capbar'); if(!cb) return; cb.innerHTML=window._sfCapBarHTML(cap);
@@ -5915,7 +5915,7 @@
                     btn.onclick=async()=>{ if(window.__sfSyncBusy) return; btn.disabled=true; btn.style.opacity='.6'; try{ await window._sfCloudSyncNow(); }finally{ btn.disabled=false; btn.style.opacity=''; try{ window._sfBuildPathCtl(box, ov); }catch(_){} } };
                 }
             }
-            if(sh){ if(short>0){ sh.textContent=fmt(short)+' 부족'; sh.title='연결 폴더 전체('+fmt(local)+')가 현재 용량('+fmt(quota)+')을 초과 — 용량을 추가하면 모두 동기화됩니다.'; } else { sh.textContent=''; } }
+            if(sh){ let _h=''; if(local>0) _h+='<span style="font-size:11px;font-weight:700;color:#64748b;">전체 '+fmt(local)+'</span>'; if(short>0) _h+='<span style="font-size:11.5px;font-weight:800;color:#ef4444;">'+fmt(short)+' 부족</span>'; sh.innerHTML=_h; sh.title=(short>0?('연결 폴더 전체('+fmt(local)+')가 현재 용량('+fmt(quota)+')을 초과 — 용량을 추가하면 모두 동기화됩니다.'):(local>0?('이 PC 연결 폴더 전체 '+fmt(local)):'')); }
         };
         // ☁️ 클라우드 뷰 / 📁 내 PC 뷰 경로바 — 동일한 통합 경로바를 렌더(두 바를 하나로 통합).
         window._sfRenderCloudCtl = async function(ov){ const box=(ov||document).querySelector('#_sf-cloudctl'); if(box){ try{ await window._sfBuildPathCtl(box, ov); }catch(_){} } };
