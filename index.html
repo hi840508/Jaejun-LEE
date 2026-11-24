@@ -5876,19 +5876,16 @@
             return { local:local, used:used, quota:quota };
         };
         window._sfCapFmt = function(b){ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
-        // 📊 통합 용량 바 HTML — 바 전체=내 PC 전체 용량, 초록 채움=☁ 동기화된 양, 빨간 세로선=현재 용량 한계, 텍스트에 부족분.
+        // 📊 통합 용량 바 HTML — 클라우드(used/quota) 기준 = 어느 PC·언제 봐도 동일. 채움=클라우드 사용량, 색상=사용률. '전체 로컬'은 이 PC에 폴더가 연결됐을 때만 부가표시.
         window._sfCapBarHTML = function(cap){
             cap=cap||{}; const fmt=window._sfCapFmt;
-            const local=Number(cap.local)||0, used=Number(cap.used)||0, quota=Number(cap.quota)||0;
-            const synced=Math.min(used, local||used);
-            const cover=local>0?Math.min(100,Math.round(synced/local*100)):(used>0?100:0);
-            const short=Math.max(0, local-quota);
-            const qpos=(local>0 && quota<local)?Math.min(99,Math.round(quota/local*100)):-1;   // 용량 한계선(로컬 스케일)
-            return '<div style="position:relative;height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;">'
-                +'<div style="height:100%;width:'+cover+'%;background:#16a34a;transition:width .3s;"></div>'
-                +(qpos>=0?'<div title="현재 용량 '+fmt(quota)+' — 여기까지만 동기화됩니다" style="position:absolute;top:-1px;bottom:-1px;left:'+qpos+'%;width:2px;background:#ef4444;"></div>':'')
+            const local=Number(cap.local)||0, used=Number(cap.used)||0, quota=Number(cap.quota)||1;
+            const pct=Math.min(100,Math.round(used/quota*100)); const over=used>=quota;
+            const col=pct<=30?'#2563eb':(pct<=60?'#16a34a':(pct<=80?'#eab308':'#ef4444'));
+            return '<div style="height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;">'
+                +'<div style="height:100%;width:'+pct+'%;background:'+col+';transition:width .3s,background .3s;"></div>'
                 +'</div>'
-                +'<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;"><span style="color:#16a34a;font-weight:700;">☁ 클라우드 '+fmt(synced)+'</span> · 전체 '+fmt(local)+'</div>';
+                +'<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;"><span style="color:#0f2f52;font-weight:700;">☁ 클라우드 '+fmt(used)+' / '+fmt(quota)+'</span>'+(over?' <b style="color:#ef4444;">초과</b>':'')+(local>0?(' · 전체 '+fmt(local)):'')+'</div>';
         };
         // 📊 통합 경로바 빌더 — [폴더 버튼(목록+추가 통합)] · [통합 용량바] · [동기화↔용량추가 통합 버튼 + 부족]. 내 PC·클라우드 뷰 공용(프로그레스바 하나).
         window._sfBuildPathCtl = async function(box, ov){
@@ -7139,7 +7136,7 @@
                     }catch(_){}
                     if(window.__sfPatientFilter!==key) return;
                     // 접근 가능 = 현재 연결된 내 컴퓨터 로컬 폴더 or 클라우드. 그 외(유령)는 숨김. 클라우드로 판정되면 f.cloud=true(링크 첨부 경로).
-                    files=files.filter(f=>{ const base=String(f.rpath||'').split('/').pop(); const isC=!!f.cloud||(_crp&&_crp.has(String(f.rpath)))||(_cbn&&_cbn.has(base)); if(isC) f.cloud=true; return _rids.has(String(f.rootId))||isC; });
+                    files=files.filter(f=>{ const base=String(f.rpath||'').split('/').pop(); const full=String(f.rootId||'')+'/'+String(f.rpath||''); const isC=!!f.cloud||(_crp&&(_crp.has(String(f.rpath))||_crp.has(full)))||(_cbn&&_cbn.has(base)); if(isC) f.cloud=true; return _rids.has(String(f.rootId))||isC; });
                 }catch(_){}
                 try{ window.__sfCurPatientCard=c; }catch(_){}
                 // 🧹 메인 페이지 상단의 환자 헤더(선택됨/수정/삭제/안내) 제거 — 수정·삭제는 좌측 환자버튼의 연필 → 팝업에서
