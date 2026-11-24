@@ -7883,12 +7883,23 @@
                     const name=String(d.rpath||'file').split('/').pop();
                     showToast('📤 업로드 중: '+name);
                     const resolved=await window._sfResolveFileToFile(d); if(!resolved){ fail++; continue; }
-                    let url, mime, sizeKB;
-                    if(resolved.__cloudLink){ url=resolved.url; mime=resolved.type||'application/octet-stream'; sizeKB=((Number(resolved.size)||0)/1024).toFixed(0); }
-                    else { url=await window.uploadBigFileToR2(resolved, null); mime=resolved.type||'application/octet-stream'; sizeKB=(resolved.size/1024).toFixed(0); }
-                    const msg='[FILE_ATTACH]'+name+'|'+sizeKB+'|'+mime+'|'+url;
-                    friends.forEach(r=>{ const roomId=createRoomId(currentUser.name, r.id); if(socket&&socket.connected) socket.emit('send_message',{ roomId:roomId, sender:currentUser.name, senderPic:pic, message:msg }); });
-                    devs.forEach(r=>{ if(socket&&socket.connected) socket.emit('rc_signal',{ to:currentUser.name, kind:'selfsend', fromDevice:window.RCFolder.deviceId(), toDevice:r.id, url:url, name:name, mime:mime, size:(Number(resolved.size)||0) }); });
+                    let mime=resolved.type||'application/octet-stream';
+                    let r2Friends=friends;
+                    // 🔗 B: 클라우드 파일이 아닌 '내 PC 파일'은 온라인 친구에게 P2P 직접전송 시도(휘발). 성공한 대상은 R2 전송 제외.
+                    if(!resolved.__cloudLink && window.RCP2P && friends.length){
+                        const p2pOk=[];
+                        for(const r of friends){ try{ if(await window.RCP2P.trySend(resolved, r.id, {name:name, mime:mime})) p2pOk.push(r.id); }catch(_){} }
+                        if(p2pOk.length){ showToast('🔗 P2P 직접전송 완료: '+p2pOk.length+'명'); r2Friends=friends.filter(r=>p2pOk.indexOf(r.id)<0); }
+                    }
+                    // ☁️/💾 P2P 안 된 친구 + 내 기기 → R2 경유(클라우드 파일은 그대로 공유 링크)
+                    if(r2Friends.length || devs.length){
+                        let url, sizeKB;
+                        if(resolved.__cloudLink){ url=resolved.url; sizeKB=((Number(resolved.size)||0)/1024).toFixed(0); }
+                        else { url=await window.uploadBigFileToR2(resolved, null); sizeKB=(resolved.size/1024).toFixed(0); }
+                        const msg='[FILE_ATTACH]'+name+'|'+sizeKB+'|'+mime+'|'+url;
+                        r2Friends.forEach(r=>{ const roomId=createRoomId(currentUser.name, r.id); if(socket&&socket.connected) socket.emit('send_message',{ roomId:roomId, sender:currentUser.name, senderPic:pic, message:msg }); });
+                        devs.forEach(r=>{ if(socket&&socket.connected) socket.emit('rc_signal',{ to:currentUser.name, kind:'selfsend', fromDevice:window.RCFolder.deviceId(), toDevice:r.id, url:url, name:name, mime:mime, size:(Number(resolved.size)||0) }); });
+                    }
                     ok++;
                 }catch(e){ fail++; }
             }
@@ -7911,6 +7922,97 @@
             }
             showToast('📤 전송: '+ok+'개'+(fail?(' · 실패 '+fail):'')+' → '+recipients.length+'대상');
         }
+        // ============ 🔗 친구 간 파일 P2P 직접전송(휘발형) — 상대 온라인이면 기기↔기기 직접전송(R2 미경유, 비용 0), 오프라인/실패면 호출측이 R2 폴백. 신호=rc_signal kind:'p2pfile'. ============
+        window.__p2pIncoming = window.__p2pIncoming || {};
+        window.RCP2P = (function(){
+            const me = ()=> (currentUser && currentUser.name) || '';
+            const _out = {};   // tid -> 발신 상태
+            const _in  = {};   // tid -> 수신 상태
+            const _probe = {}; // probeId -> resolve
+            function _sig(to, obj){ try{ if(socket && socket.connected && to) socket.emit('rc_signal', Object.assign({ to:to, kind:'p2pfile' }, obj)); }catch(_){} }
+            // 친구 온라인 여부 빠른 확인(1.3s)
+            function probe(friend){ return new Promise(res=>{ if(!socket||!socket.connected) return res(false); const id='pb_'+Math.random().toString(36).slice(2,9); _probe[id]=res; _sig(friend, { sub:'ping', probe:id }); setTimeout(()=>{ if(_probe[id]){ delete _probe[id]; res(false); } }, 1300); }); }
+            // 발신: 온라인이면 P2P 시도. 성공 시 true(상대에 휘발 수신), 실패/오프라인 시 false → 호출측이 R2 폴백.
+            async function trySend(file, friend, meta){
+                try{
+                    if(!file || !friend || !window.RTCPeerConnection) return false;
+                    if(!(await probe(friend))) return false;
+                    const tid='p2p_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
+                    return await new Promise((resolve)=>{
+                        let done=false; const pc=new RTCPeerConnection(VC_ICE);
+                        const st={ pc, _apply:null, _ice:null }; _out[tid]=st;
+                        const finish=(ok)=>{ if(done) return; done=true; clearTimeout(tmr); try{ pc.close(); }catch(_){} delete _out[tid]; resolve(!!ok); };
+                        const tmr=setTimeout(()=>finish(false), 20000);
+                        pc.onicecandidate=(e)=>{ if(e.candidate) _sig(friend, { sub:'ice', tid, cand:e.candidate, dir:'s' }); };
+                        pc.onconnectionstatechange=()=>{ if(/failed|closed|disconnected/.test(pc.connectionState)) finish(false); };
+                        const ch=pc.createDataChannel('p2pfile'); ch.binaryType='arraybuffer';
+                        ch.onopen=async()=>{ try{ const CH=16*1024; ch.bufferedAmountLowThreshold=1048576;
+                            ch.send(JSON.stringify({ t:'hdr', name:meta.name, size:file.size, mime:meta.mime||'' }));
+                            let off=0; while(off<file.size){ if(done||ch.readyState!=='open') return finish(false);
+                                if(ch.bufferedAmount>8388608){ await new Promise(r=>{ ch.onbufferedamountlow=()=>{ ch.onbufferedamountlow=null; r(); }; }); }
+                                const buf=await file.slice(off, off+CH).arrayBuffer(); ch.send(buf); off+=buf.byteLength; }
+                            ch.send(JSON.stringify({ t:'end' }));
+                        }catch(_){ finish(false); } };
+                        ch.onmessage=(e)=>{ if(typeof e.data==='string'){ let m; try{ m=JSON.parse(e.data); }catch(_){ return; } if(m.t==='ack') finish(true); } };
+                        st._apply=async(ans)=>{ try{ await pc.setRemoteDescription(ans); }catch(_){} };
+                        st._ice=async(c)=>{ try{ await pc.addIceCandidate(c); }catch(_){} };
+                        (async()=>{ try{ const offer=await pc.createOffer(); await pc.setLocalDescription(offer); _sig(friend, { sub:'offer', tid, sdp:offer, name:meta.name, size:file.size, mime:meta.mime||'' }); }catch(_){ finish(false); } })();
+                    });
+                }catch(_){ return false; }
+            }
+            async function onSignal(d){
+                try{
+                    if(!d || d.kind!=='p2pfile') return; const from=d.from||d._from; const sub=d.sub;
+                    if(sub==='ping'){ _sig(from, { sub:'pong', probe:d.probe }); return; }
+                    if(sub==='pong'){ const r=_probe[d.probe]; if(r){ delete _probe[d.probe]; r(true); } return; }
+                    if(sub==='offer'){
+                        const tid=d.tid; const pc=new RTCPeerConnection(VC_ICE);
+                        const st={ pc, chunks:[], total:Number(d.size)||0, recv:0, name:d.name||'file', mime:d.mime||'', from, _pending:[] }; _in[tid]=st;
+                        pc.onicecandidate=(e)=>{ if(e.candidate) _sig(from, { sub:'ice', tid, cand:e.candidate, dir:'r' }); };
+                        pc.ondatachannel=(ev)=>{ const ch=ev.channel; ch.binaryType='arraybuffer';
+                            ch.onmessage=(e)=>{ if(typeof e.data==='string'){ let m; try{ m=JSON.parse(e.data); }catch(_){ return; }
+                                    if(m.t==='hdr'){ st.total=m.size||st.total; st.name=m.name||st.name; st.mime=m.mime||st.mime; }
+                                    else if(m.t==='end'){ try{ const blob=new Blob(st.chunks,{type:st.mime||'application/octet-stream'}); window.__p2pIncoming[tid]={ blob, name:st.name, mime:st.mime, size:blob.size, from:st.from, at:Date.now() }; try{ ch.send(JSON.stringify({ t:'ack' })); }catch(_){} try{ _p2pOnReceived(tid); }catch(_){} }catch(_){} setTimeout(()=>{ try{ pc.close(); }catch(_){} delete _in[tid]; }, 1500); } }
+                                else { st.chunks.push(e.data); st.recv+=(e.data.byteLength||0); } };
+                        };
+                        await pc.setRemoteDescription(d.sdp); for(const c of st._pending){ try{ await pc.addIceCandidate(c); }catch(_){} } st._pending=[];
+                        const ans=await pc.createAnswer(); await pc.setLocalDescription(ans); _sig(from, { sub:'answer', tid, sdp:ans }); return;
+                    }
+                    if(sub==='answer'){ const st=_out[d.tid]; if(st&&st._apply) st._apply(d.sdp); return; }
+                    if(sub==='ice'){
+                        if(d.dir==='s'){ const st=_in[d.tid]; if(st){ if(st.pc.remoteDescription && st.pc.remoteDescription.type){ try{ await st.pc.addIceCandidate(d.cand); }catch(_){} } else st._pending.push(d.cand); } }
+                        else { const st=_out[d.tid]; if(st&&st._ice) st._ice(d.cand); }
+                        return;
+                    }
+                }catch(_){}
+            }
+            return { trySend, onSignal, probe };
+        })();
+        // 📎 P2P 휘발 파일 수신 알림 + 열린 방에 라이브 카드(이 세션에서만 열람·저장). 저장은 소스=PC전달 → 주 폴더.
+        function _p2pOnReceived(tid){
+            const inc=window.__p2pIncoming[tid]; if(!inc) return;
+            try{ playNotifySound(); }catch(_){}
+            try{ window._showInAppNotif('📎 '+inc.from, inc.name+' · 직접전송(휘발)', '', inc.from, '📎'); }catch(_){}
+            try{
+                const roomOpen=(typeof activeChatFriend!=='undefined' && activeChatFriend===inc.from);
+                const body=document.getElementById('main-chat-body');
+                if(body && roomOpen){ const url=URL.createObjectURL(inc.blob); const isImg=/^image\//.test(inc.mime)||/\.(png|jpe?g|gif|webp|bmp)$/i.test(inc.name);
+                    const nm=(inc.name||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                    body.insertAdjacentHTML('beforeend', '<div class="kt-msg-line" id="p2pc_'+tid+'"><div class="kt-bubble"><div class="kt-card-msg" style="max-width:280px;"><div class="kt-card-preview" '+(isImg?('style="cursor:pointer" onclick="window.open(\''+url+'\')"'):'style="background:#f1f5f9;"')+'>'+(isImg?('<img src="'+url+'" alt="">'):'<div class="icon">📎</div>')+'</div><div class="kt-card-meta"><div class="kt-card-name">'+nm+'</div><div class="kt-card-sub">'+((inc.size/1024).toFixed(0))+'KB · 🔗 직접전송(휘발)</div></div><div class="kt-card-actions"><button class="kt-card-btn primary" onclick="window._p2pSave(\''+tid+'\')">💾 저장</button></div></div></div></div>'); body.scrollTop=body.scrollHeight; }
+            }catch(_){}
+        }
+        // 💾 P2P 휘발 파일 저장 — 상대 PC 전달이므로 내 PC 주 폴더에 저장(주문방이면 환자귀속 best-effort).
+        window._p2pSave = async function(tid){
+            const inc=window.__p2pIncoming[tid]; if(!inc){ showToast('이미 만료된 직접전송입니다(이 세션에서만 저장 가능).'); return; }
+            const R=window.RCFolder;
+            if(!R || !R.supported){ try{ const a=document.createElement('a'); a.href=URL.createObjectURL(inc.blob); a.download=inc.name; document.body.appendChild(a); a.click(); a.remove(); }catch(_){} return; }
+            try{ const mid=await window._sfMainRootId(); if(!mid){ showToast('주 폴더가 없습니다. 먼저 폴더를 지정하세요.'); return; }
+                if(R.setActiveRoot) await R.setActiveRoot(mid); await R.writeFileAt([], inc.name, inc.blob);
+                showToast('✅ 내 PC 주 폴더에 저장됨: '+inc.name);
+                try{ if(R.scanPatients) R.scanPatients(); }catch(_){} try{ window.__sfLocalTotalBytes=null; if(window.__sfRender) window.__sfRender(); }catch(_){}
+                const roomId=String(window.currentChatRoomId||''); if(roomId.indexOf('room_ord_')===0 && window._rcAssignOrderPatient){ try{ await window._rcAssignOrderPatient(roomId, {rootId:mid, rpath:inc.name, rootName:'', fname:inc.name, mime:inc.mime, size:inc.size, cloud:false, studyDate:'', modality:''}); }catch(_){} }
+            }catch(e){ showToast('저장 실패: '+(e.message||e)); }
+        };
         // 📲 내 기기 프레즌스(온라인 확인) + '나에게 보내기' 수신 — rc_signal kind:'devq'/'selfsend'
         window.RCSelf = (function(){
             const myDev=()=> window.RCFolder.deviceId();
@@ -14088,6 +14190,7 @@
             if(!d || !d.kind) return;
             if(d.kind === 'rtc'){ if(window._vcOnSignal) window._vcOnSignal(d); return; }     // 화상 통화(WebRTC) 시그널
             if(d.kind === 'rtcsc'){ if(window._rcpOnSignal) window._rcpOnSignal(d); return; } // 원격제어 화면 송출(WebRTC) 시그널
+            if(d.kind === 'p2pfile'){ if(window.RCP2P) window.RCP2P.onSignal(d); return; }   // 🔗 친구 간 파일 P2P 직접전송(휘발)
             if(d.kind === 'fsync'){ if(window.RCSync) window.RCSync.onSignal(d); return; }    // 📁 2D: 기기 간 파일 P2P 자기동기화
             if(d.kind === 'devq' || d.kind === 'selfsend'){ if(window.RCSelf) window.RCSelf.onSignal(d); return; }   // 📲 내 기기 프레즌스 + 나에게 보내기
             if(d.kind === 'cap'){ // 🖥 원격제어 가능여부(상대가 화면공유 가능한 PC인지) 교환
