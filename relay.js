@@ -4929,6 +4929,19 @@ app.get('/api/orders/seller/:seller', (req, res) => {
     );
 });
 
+// 🛒 구매자가 자신이 보낸 모든 주문 보기(판매자용과 대칭) — 결제 전(pending/awaiting_payment) 주문도 각 건별로 포함. 주문 탭이 결제 전부터 건별 표시하도록.
+app.get('/api/orders/buyer/:buyer', (req, res) => {
+    if (!requireSelfOrAdmin(req, res, req.params.buyer)) return;   // 🔐 본인 구매 주문 목록만
+    const buyer = req.params.buyer;
+    db.all(
+        `SELECT po.*,
+                (SELECT name FROM products WHERE id = po.productId) as productName
+         FROM product_orders po WHERE buyer = ? ORDER BY id DESC LIMIT 200`,
+        [buyer],
+        (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json(rows || [])
+    );
+});
+
 // 🚀 [v7p3] 상품 리뷰 등록 (구매 완료 시)
 app.post('/api/review/submit', (req, res) => {
     const buyer = requireUser(req, res); if (!buyer) return;   // 🔐 신원=토큰(본문 buyer 무시)

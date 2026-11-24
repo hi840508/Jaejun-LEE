@@ -18334,9 +18334,11 @@ pdfjsScript,
             box.innerHTML='<div style="padding:24px;text-align:center;color:#94a3b8;font-size:13px;">불러오는 중…</div>';
             const esc=(t)=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
             // 🛒 구매(구매자) + 🏪 판매(판매자) 주문을 함께 로드 → 결제 완료 시 판매자에게도 주문이 보이게
-            let buys=[], sells=[];
+            let buys=[], sells=[], buyerOrders=[];
             try{ buys=await (await fetch(`${API_URL}/api/purchases/${encodeURIComponent(me)}`)).json()||[]; }catch(_){}
             try{ sells=await (await fetch(`${API_URL}/api/orders/seller/${encodeURIComponent(me)}`)).json()||[]; }catch(_){}
+            // 🛒 구매자 주문(product_orders) — 결제 전(pending/awaiting_payment) 주문도 건별로 보이게(거래내역 기반 purchases는 결제 전·동일 productId를 누락).
+            try{ buyerOrders=await (await fetch(`${API_URL}/api/orders/buyer/${encodeURIComponent(me)}`)).json()||[]; }catch(_){}
             // 🚫 메세지 목록 자동 제외: 환불완료·구매확정(거래완료)·거절·취소 — (계정 아이콘 '주문관리'에는 그대로 유지)
             const DONE=new Set(['refunded','confirmed','completed','done','rejected','cancelled','canceled','dismissed']);
             const norm=[];
@@ -18344,6 +18346,9 @@ pdfjsScript,
                 norm.push({ role:'buyer', id:o.orderId||o.id||'', productName:o.productName||'주문', counterparty:o.seller||'', amount:Number(o.amount||o.orderAmount||0), date:o.date||o.orderCreatedAt||o.rawDate||'', status:status, patientKey:o.patientKey||'', patient:o.patient||'' }); });
             (sells||[]).forEach(o=>{ const status=String(o.status||'').toLowerCase();
                 norm.push({ role:'seller', id:o.id||'', productName:o.productName||'주문', counterparty:o.buyer||'', amount:Number(o.amount||0), date:o.created_at||o.date||'', status:status, patientKey:o.patientKey||'', patient:o.patient||'' }); });
+            // 🛒 구매자 주문(결제 전 포함) — buys 뒤에 추가 → 중복은 dedup(role:id)으로 buys가 우선, 결제 전 신규 주문만 추가됨.
+            (buyerOrders||[]).forEach(o=>{ const status=String(o.status||'').toLowerCase();
+                norm.push({ role:'buyer', id:o.id||'', productName:o.productName||'주문', counterparty:o.seller||'', amount:Number(o.amount||0), date:o.created_at||o.date||'', status:status, patientKey:'', patient:'' }); });
             // 유효(주문id 있음) + 진행 중(종료상태 제외)
             let items=norm.filter(o=> o.id && !DONE.has(o.status));
             const seen=new Set(); items=items.filter(o=>{ const k=o.role+':'+o.id; if(seen.has(k)) return false; seen.add(k); return true; });
