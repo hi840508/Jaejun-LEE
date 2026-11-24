@@ -7008,7 +7008,9 @@
             };
             // 📨 공유받음 배너 — 클라우드 뷰 상단에 공유받은 파일 N건을 알리고 바로 열람/저장 패널로 이동.
             async function _sfSharedBanner(grid){
-                if(!grid) return;
+                // 🚫 [정책변경] 공유받은 파일은 '대화방'에만 표시 — 클라우드 뷰 배너/카드 제거. 기존 배너가 있으면 지우고 종료.
+                try{ if(grid){ const old=grid.querySelector('#_sf-sharedbanner'); if(old) old.remove(); } }catch(_){}
+                return;
                 let shares=[]; try{ shares=await window.RCMirror.sharedWithMe(); }catch(_){}
                 const old=grid.querySelector('#_sf-sharedbanner'); if(old) old.remove();
                 if(!shares.length) return;
@@ -7308,7 +7310,7 @@
                 grid.innerHTML='<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">클라우드 저장소 불러오는 중…</div>';
                 let items=[]; try{ items=await window.RCMirror.list(); }catch(_){}
                 // ☁️🤝 받은 공유(2주 열람권) — 내 클라우드 저장소에 함께 표시
-                try{ const shared=(window.RCMirror&&window.RCMirror.sharedWithMe)?await window.RCMirror.sharedWithMe():[]; (shared||[]).forEach(s=>{ items.push({ rpath:String(s.name||'file'), mtime:Number(s.createdAt)||Date.now(), mime:s.mime||'', size:Number(s.size)||0, __shared:true, shareId:s.id, from:s.owner, daysLeft:s.daysLeft }); }); }catch(_){}
+                // 🚫 [정책변경] 공유받은 파일은 '대화방'에만 표시 — 클라우드 뷰 목록에는 넣지 않는다(공유받음 카드 제거).
                 // 🧑‍⚕️ 환자 필터 — 이 환자의 '클라우드 동기화된' 영상만 표시(환자리스트 클릭 시)
                 let _ptName='';
                 if(window.__sfPatientFilter){
