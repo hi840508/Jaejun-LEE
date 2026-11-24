@@ -6925,9 +6925,10 @@
                 menu.querySelector('#_ca-share').onclick=()=>{ close(); if(typeof _sfShareCloudFile==='function') _sfShareCloudFile(rpath); };
                 menu.querySelector('#_ca-del').onclick=async()=>{
                     close();
-                    const ok=await (window._sfConfirm?window._sfConfirm('이 파일을 클라우드에서 완전히 삭제할까요?\n'+nm+'\n\n(복원할 수 없습니다)','삭제'):Promise.resolve(confirm('클라우드에서 삭제할까요?')));
+                    const _ser=/\.dcm$/i.test(String(rpath||''));
+                    const ok=await (window._sfConfirm?window._sfConfirm((_ser?'이 CT 시리즈를 클라우드에서 완전히 삭제할까요?\n(폴더 내 전체 슬라이스)\n':'이 파일을 클라우드에서 완전히 삭제할까요?\n')+nm+'\n\n(복원할 수 없습니다)','삭제'):Promise.resolve(confirm('클라우드에서 삭제할까요?')));
                     if(!ok) return;
-                    try{ await window.RCMirror.del(rpath); showToast('삭제했습니다.'); if(window.__sfCloudReload) window.__sfCloudReload(); }catch(err){ showToast('삭제 실패: '+((err&&err.message)||err)); }
+                    try{ const _n=await window._sfCloudDelSeries(rpath); showToast(_n>1?('🗑 시리즈 삭제 ('+_n+'장)'):'삭제했습니다.'); if(window.__sfCloudReload) window.__sfCloudReload(); }catch(err){ showToast('삭제 실패: '+((err&&err.message)||err)); }
                 };
             };
             // 📨 공유받음 배너 — 클라우드 뷰 상단에 공유받은 파일 N건을 알리고 바로 열람/저장 패널로 이동.
@@ -7651,7 +7652,20 @@
                 for(const rpc of cands){ try{ const dj=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:rpc})}).then(r=>r.json()); if(dj&&dj.url){ const resp=await fetch(dj.url); if(resp.ok){ const blob=await resp.blob(); return new File([blob], fn, {type:blob.type||'application/octet-stream'}); } } }catch(_){} }
                 return null;
             };
-            // 🗑 공용 물리삭제 — descs[{rootId,rpath,cloud}] : .dcm=폴더 내 전체 슬라이스, 일반=단일, 클라우드=미러.
+            // ☁️🗑 클라우드 삭제 헬퍼 — .dcm이면 같은 폴더(CT 시리즈)의 커밋 슬라이스 전체를 일괄 삭제, 아니면 단일. rpath가 상대형이면 목록과 대조해 rootId/상대로 보정. 반환=삭제 장수.
+            window._sfCloudDelSeries = async function(rpath, rootId){
+                let rp=String(rpath||''); if(!rp || !(window.RCMirror&&window.RCMirror.del)) return 0;
+                let list=null; try{ list=await window.RCMirror.list(); }catch(_){ list=[]; }
+                const has=(x)=>(list||[]).some(it=>String(it.rpath)===x);
+                if(rootId && !has(rp) && has(String(rootId)+'/'+rp)) rp=String(rootId)+'/'+rp;   // 상대→full 보정
+                if(!/\.dcm$/i.test(rp)){ try{ await window.RCMirror.del(rp); return 1; }catch(_){ return 0; } }
+                const dir=rp.replace(/\/[^/]*$/,'');   // 같은 폴더(시리즈) prefix
+                const sib=(list||[]).filter(it=>{ const r=String(it.rpath||''); return /\.dcm$/i.test(r) && r.replace(/\/[^/]*$/,'')===dir; }).map(it=>String(it.rpath));
+                const targets=sib.length?sib:[rp];
+                let n=0; for(const t of targets){ try{ await window.RCMirror.del(t); n++; }catch(_){} }
+                return n;
+            };
+            // 🗑 공용 물리삭제 — descs[{rootId,rpath,cloud}] : .dcm=폴더 내 전체 슬라이스, 일반=단일, 클라우드=미러(시리즈 일괄).
             //    opts.indexAlways=true면(환자그리드) 물리삭제 실패(원본 없음/고스트)여도 PMS 인덱스에서 제거 → 더미 카드 정리. {ok,fail,removed,lastErr}
             window._sfPhysicalDelete = async function(descs, opts){
                 opts=opts||{}; const R2=window.RCFolder; let ok=0, fail=0, removed=0, lastErr='';
@@ -7667,7 +7681,7 @@
                             try{ if(await R2.removeAtRoot(d.rootId, parts, fn, false)) deleted=true; else lastErr=window.__rcLastErr||lastErr; }catch(_){}
                         }
                     }
-                    if(d.cloud){ try{ if(window.RCMirror&&window.RCMirror.del){ await window.RCMirror.del(d.rpath); deleted=true; } }catch(e){ lastErr=(e&&e.message)||lastErr; } }
+                    if(d.cloud){ try{ const _n=await window._sfCloudDelSeries(d.rpath, d.rootId); if(_n>0) deleted=true; }catch(e){ lastErr=(e&&e.message)||lastErr; } }
                     if(deleted || opts.indexAlways){ try{ await fetch(API_URL+'/api/pms/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:d.rootId, rpath:d.rpath})}); removed++; }catch(_){} }
                     deleted?ok++:fail++;
                 }
