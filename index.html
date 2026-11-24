@@ -6928,7 +6928,7 @@
                     const _ser=/\.dcm$/i.test(String(rpath||''));
                     const ok=await (window._sfConfirm?window._sfConfirm((_ser?'이 CT 시리즈를 클라우드에서 완전히 삭제할까요?\n(폴더 내 전체 슬라이스)\n':'이 파일을 클라우드에서 완전히 삭제할까요?\n')+nm+'\n\n(복원할 수 없습니다)','삭제'):Promise.resolve(confirm('클라우드에서 삭제할까요?')));
                     if(!ok) return;
-                    try{ const _n=await window._sfCloudDelSeries(rpath); showToast(_n>1?('🗑 시리즈 삭제 ('+_n+'장)'):'삭제했습니다.'); if(window.__sfCloudReload) window.__sfCloudReload(); }catch(err){ showToast('삭제 실패: '+((err&&err.message)||err)); }
+                    try{ const _n=await window._sfCloudDelSeries(rpath); if(_n>0){ showToast(_n>1?('🗑 시리즈 삭제 ('+_n+'장)'):'삭제했습니다.'); if(window.__sfCloudReload) window.__sfCloudReload(); } else { showToast('삭제 실패: 클라우드에서 해당 파일을 찾지 못했습니다.'); } }catch(err){ showToast('삭제 실패: '+((err&&err.message)||err)); }
                 };
             };
             // 📨 공유받음 배너 — 클라우드 뷰 상단에 공유받은 파일 N건을 알리고 바로 열람/저장 패널로 이동.
@@ -7653,16 +7653,22 @@
                 return null;
             };
             // ☁️🗑 클라우드 삭제 헬퍼 — .dcm이면 같은 폴더(CT 시리즈)의 커밋 슬라이스 전체를 일괄 삭제, 아니면 단일. rpath가 상대형이면 목록과 대조해 rootId/상대로 보정. 반환=삭제 장수.
+            //    ⚠️ 서버 /api/mirror/delete는 없는 rpath도 ok를 주므로(허위성공), 반드시 '커밋 목록에 실제 존재하는 rpath'만 대상으로 삼고, 매칭 0건이면 0을 반환(카드 임의 제거 방지).
             window._sfCloudDelSeries = async function(rpath, rootId){
                 let rp=String(rpath||''); if(!rp || !(window.RCMirror&&window.RCMirror.del)) return 0;
-                let list=null; try{ list=await window.RCMirror.list(); }catch(_){ list=[]; }
-                const has=(x)=>(list||[]).some(it=>String(it.rpath)===x);
-                if(rootId && !has(rp) && has(String(rootId)+'/'+rp)) rp=String(rootId)+'/'+rp;   // 상대→full 보정
-                if(!/\.dcm$/i.test(rp)){ try{ await window.RCMirror.del(rp); return 1; }catch(_){ return 0; } }
-                const dir=rp.replace(/\/[^/]*$/,'');   // 같은 폴더(시리즈) prefix
-                const sib=(list||[]).filter(it=>{ const r=String(it.rpath||''); return /\.dcm$/i.test(r) && r.replace(/\/[^/]*$/,'')===dir; }).map(it=>String(it.rpath));
-                const targets=sib.length?sib:[rp];
-                let n=0; for(const t of targets){ try{ await window.RCMirror.del(t); n++; }catch(_){} }
+                let list=null; try{ list=await window.RCMirror.list(); }catch(_){ list=[]; } list=list||[];
+                // 대상의 '상대 폴더경로'(앞의 rootId 세그먼트가 있으면 제거) — rootId가 재연결로 바뀌어도 폴더 suffix로 매칭.
+                let key=rp; if(rootId && key.indexOf(String(rootId)+'/')===0) key=key.slice((String(rootId)+'/').length);
+                const relDir=key.replace(/\/[^/]*$/,'');
+                if(!/\.dcm$/i.test(rp)){
+                    // 단일 파일 — 실제 커밋 키 찾기(정확/ rootId+상대 / 상대 suffix). 없으면 0.
+                    let t=null; if(list.some(it=>String(it.rpath)===rp)) t=rp; else { const m=list.find(it=>{ const r=String(it.rpath); return r===key || r.endsWith('/'+key); }); t=m?String(m.rpath):null; }
+                    if(!t) return 0; try{ await window.RCMirror.del(t); return 1; }catch(_){ return 0; }
+                }
+                // CT 시리즈 — 같은 폴더(상대 suffix, rootId 무관)의 커밋 .dcm 전부. relDir 비어있으면(루트 직속) 매칭 안 함.
+                const sib=relDir ? list.filter(it=>{ const r=String(it.rpath||''); if(!/\.dcm$/i.test(r)) return false; const rdir=r.replace(/\/[^/]*$/,''); return rdir===relDir || rdir.endsWith('/'+relDir); }).map(it=>String(it.rpath)) : [];
+                if(!sib.length) return 0;
+                let n=0; for(const t of sib){ try{ await window.RCMirror.del(t); n++; }catch(_){} }
                 return n;
             };
             // 🗑 공용 물리삭제 — descs[{rootId,rpath,cloud}] : .dcm=폴더 내 전체 슬라이스, 일반=단일, 클라우드=미러(시리즈 일괄).
@@ -7682,7 +7688,8 @@
                         }
                     }
                     if(d.cloud){ try{ const _n=await window._sfCloudDelSeries(d.rpath, d.rootId); if(_n>0) deleted=true; }catch(e){ lastErr=(e&&e.message)||lastErr; } }
-                    if(deleted || opts.indexAlways){ try{ await fetch(API_URL+'/api/pms/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:d.rootId, rpath:d.rpath})}); removed++; }catch(_){} }
+                    // ☁️ 클라우드 파일이 실제로 안 지워졌으면(deleted=false) 인덱스(카드)도 지우지 않음 — 실 서버에 남았는데 카드만 사라지는 문제 방지. 고스트(비클라우드)만 indexAlways로 정리.
+                    if(deleted || (opts.indexAlways && !d.cloud)){ try{ await fetch(API_URL+'/api/pms/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rootId:d.rootId, rpath:d.rpath})}); removed++; }catch(_){} }
                     deleted?ok++:fail++;
                 }
                 return { ok, fail, removed, lastErr };
