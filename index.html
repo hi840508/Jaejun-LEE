@@ -5863,7 +5863,35 @@
             }catch(e){ showToast('동기화 실패: '+((e&&e.message)||e)); }
             finally{ window.__sfSyncBusy=false; const ic2=document.getElementById('sb-drive-ico'); if(ic2) ic2.style.opacity=''; }
         };
-        // ☁️ 클라우드 뷰 경로바 컨트롤 — '클라우드 저장소' 글씨 대신 [동기화 버튼 + 용량 프로그레스바 + 용량 구매]
+        // 📊 공용 용량 계산 — 연결된 폴더 전체 로컬 용량(local) + 클라우드 사용량(used)·용량(quota). 30초 캐시.
+        window._sfComputeCap = async function(){
+            let st=window.__sfCloudStatus||null; try{ st=await window.RCMirror.status(); window.__sfCloudStatus=st; }catch(_){}
+            const quota=st?Number(st.quota||st.freeBytes||104857600):104857600; const used=st?Number(st.used||0):0;
+            let local=window.__sfLocalTotalBytes;
+            if(local==null || (Date.now()-(window.__sfLocalTotalAt||0))>30000){
+                local=0; const R=window.RCFolder; let roots=[]; try{ roots=(R&&R.rootsStatus)?await R.rootsStatus():[]; }catch(_){}
+                for(const r of (roots||[]).filter(x=>x.connected)){ try{ const fs=(R&&R.walkRoot)?await R.walkRoot(r.id,{max:8000}):[]; (fs||[]).forEach(f=>{ local+=Number(f.size)||0; }); }catch(_){} }
+                window.__sfLocalTotalBytes=local; window.__sfLocalTotalAt=Date.now();
+            }
+            return { local:local, used:used, quota:quota };
+        };
+        window._sfCapFmt = function(b){ b=Number(b)||0; if(b>=1073741824) return (b/1073741824).toFixed(2)+'GB'; if(b>=1048576) return (b/1048576).toFixed(1)+'MB'; if(b>=1024) return (b/1024).toFixed(0)+'KB'; return b+'B'; };
+        // 📊 통합 용량 바 HTML — 바 전체=내 PC 전체 용량, 초록 채움=☁ 동기화된 양, 빨간 세로선=현재 용량 한계, 텍스트에 부족분.
+        window._sfCapBarHTML = function(cap){
+            cap=cap||{}; const fmt=window._sfCapFmt;
+            const local=Number(cap.local)||0, used=Number(cap.used)||0, quota=Number(cap.quota)||0;
+            const synced=Math.min(used, local||used);
+            const cover=local>0?Math.min(100,Math.round(synced/local*100)):(used>0?100:0);
+            const short=Math.max(0, local-quota);
+            const qpos=(local>0 && quota<local)?Math.min(99,Math.round(quota/local*100)):-1;   // 용량 한계선(로컬 스케일)
+            return '<div style="position:relative;height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;">'
+                +'<div style="height:100%;width:'+cover+'%;background:#16a34a;transition:width .3s;"></div>'
+                +(qpos>=0?'<div title="현재 용량 '+fmt(quota)+' — 여기까지만 동기화됩니다" style="position:absolute;top:-1px;bottom:-1px;left:'+qpos+'%;width:2px;background:#ef4444;"></div>':'')
+                +'</div>'
+                +'<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;">내 PC '+fmt(local)+' · <span style="color:#16a34a;font-weight:700;">☁ 동기화 '+fmt(synced)+'</span>'
+                +(short>0?' · <span style="color:#ef4444;font-weight:800;" title="연결 폴더 전체가 현재 용량을 초과 — 용량을 구매하면 모두 동기화됩니다">'+fmt(short)+' 부족</span>':'')+'</div>';
+        };
+        // ☁️ 클라우드 뷰 경로바 컨트롤 — '클라우드 저장소' 글씨 대신 [동기화 버튼 + 통합 용량바 + 용량 구매]
         window._sfRenderCloudCtl = async function(ov){
             const box=(ov||document).querySelector('#_sf-cloudctl'); if(!box) return;
             let st=window.__sfCloudStatus||null; try{ st=await window.RCMirror.status(); window.__sfCloudStatus=st; }catch(_){}
@@ -5873,18 +5901,13 @@
             const col=pct<=30?'#2563eb':(pct<=60?'#16a34a':(pct<=80?'#eab308':'#ef4444'));
             box.innerHTML=''
                 +'<button id="_sf-syncnow" title="내 컴퓨터 동기화" aria-label="내 컴퓨터 동기화" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:none;border-radius:9px;background:linear-gradient(135deg,#2563eb,#0b2b4b);color:#fff;cursor:pointer;box-shadow:0 2px 7px rgba(37,99,235,.4);"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></button>'
-                +'<div style="flex:1;min-width:90px;max-width:300px;"><div style="height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+col+';transition:width .3s,background .3s;"></div></div><div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;">'+fmt(used)+' / '+fmt(quota)+(over?' · <b style="color:#ef4444;">초과</b>':'')+'</div></div>'
-                +'<button id="_sf-buycap" title="용량 구매" aria-label="용량 구매" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #bcd0e6;border-radius:9px;background:#fff;color:#0f2f52;cursor:pointer;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 18a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.3 8.5 4.5 4.5 0 0 0 7 18"/><line x1="12" y1="11.5" x2="12" y2="16.5"/><line x1="9.5" y1="14" x2="14.5" y2="14"/></svg></button>'
-                +'<span id="_sf-cloudshort" style="flex:none;font-size:11.5px;font-weight:800;color:#ef4444;white-space:nowrap;"></span>';
+                +'<div id="_sf-cloudbar" style="flex:1;min-width:90px;max-width:300px;"><div style="height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;"></div><div style="font-size:11px;color:#94a3b8;margin-top:2px;white-space:nowrap;">용량 계산 중…</div></div>'
+                +'<button id="_sf-buycap" title="용량 구매" aria-label="용량 구매" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #bcd0e6;border-radius:9px;background:#fff;color:#0f2f52;cursor:pointer;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 18a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.3 8.5 4.5 4.5 0 0 0 7 18"/><line x1="12" y1="11.5" x2="12" y2="16.5"/><line x1="9.5" y1="14" x2="14.5" y2="14"/></svg></button>';
             const sb=box.querySelector('#_sf-syncnow'); if(sb) sb.onclick=async()=>{ if(window.__sfSyncBusy) return; sb.disabled=true; sb.style.opacity='.6'; try{ await window._sfCloudSyncNow(); }finally{ sb.disabled=false; sb.style.opacity=''; try{ window._sfRenderCloudCtl(ov); }catch(_){} } };
             const bc=box.querySelector('#_sf-buycap'); if(bc) bc.onclick=()=>{ try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} };
-            // 📊 부족 용량(= 연결 폴더 전체 로컬 데이터 − 현재 용량)을 ☁＋ 버튼 우측에 안내. 내 PC 바에는 표시하지 않음.
-            (async()=>{ let local=window.__sfLocalTotalBytes;
-                if(local==null || (Date.now()-(window.__sfLocalTotalAt||0))>30000){ local=0; const R=window.RCFolder; let roots=[]; try{ roots=(R&&R.rootsStatus)?await R.rootsStatus():[]; }catch(_){}
-                    for(const r of (roots||[]).filter(x=>x.connected)){ try{ const fs=(R&&R.walkRoot)?await R.walkRoot(r.id,{max:8000}):[]; (fs||[]).forEach(f=>{ local+=Number(f.size)||0; }); }catch(_){} }
-                    window.__sfLocalTotalBytes=local; window.__sfLocalTotalAt=Date.now(); }
-                const sh=(ov||document).querySelector('#_sf-cloudshort'); if(!sh) return; const short=Math.max(0,(Number(local)||0)-quota);
-                if(short>0){ sh.textContent=fmt(short)+' 부족'; sh.title='연결된 폴더 전체('+fmt(local)+')가 현재 용량('+fmt(quota)+')을 '+fmt(short)+' 초과 — ☁＋ 로 용량을 구매하면 모두 동기화됩니다.'; } else { sh.textContent=''; }
+            // 📊 통합 용량 바 — 내 PC 전체 중 ☁ 동기화된 양 + 부족분(내 PC 뷰와 동일한 공용 바)
+            (async()=>{ let cap; try{ cap=await window._sfComputeCap(); }catch(_){ cap={local:0,used:used,quota:quota}; }
+                const cb=(ov||document).querySelector('#_sf-cloudbar'); if(!cb) return; cb.innerHTML=window._sfCapBarHTML(cap);
             })();
         };
         // 📁 내 컴퓨터 뷰 경로바 컨트롤(클라우드와 동일 레이아웃) — [폴더 목록 ▾] + [로컬총용량 vs 클라우드용량 바] + [폴더 경로 추가 +]
@@ -5897,20 +5920,11 @@
                 +'<button id="_sf-folderadd" title="폴더 경로 추가" aria-label="폴더 경로 추가" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #e3cf9a;border-radius:9px;background:#fffdf5;cursor:pointer;"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M2.5 6.4c0-.8.7-1.5 1.5-1.5h4.3c.4 0 .8.17 1.08.46L11.7 6.9h7.8c.8 0 1.5.7 1.5 1.5v8.7c0 .8-.7 1.5-1.5 1.5H4c-.8 0-1.5-.7-1.5-1.5z" fill="#ffce5a" stroke="#e3a82f" stroke-width="0.8"/><circle cx="18" cy="17.2" r="4.4" fill="#22a95b" stroke="#fff" stroke-width="1.1"/><path d="M18 15v4.4M15.8 17.2h4.4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg></button>';
             const dd=box.querySelector('#_sf-folderdd'); if(dd) dd.onclick=(e)=>{ e.stopPropagation(); try{ window._sbFolderDropdown&&window._sbFolderDropdown(dd); }catch(_){} };
             const fa=box.querySelector('#_sf-folderadd'); if(fa) fa.onclick=async(e)=>{ e.stopPropagation(); try{ const R=window.RCFolder; if(R&&R.pick){ const ok=await R.pick(); if(ok){ window.__sfLocalTotalBytes=null; if(window._sbFolderPick) await window._sbFolderPick(null); else if(window.__sfRender) window.__sfRender(); } } }catch(_){ showToast('폴더 추가 실패'); } };
-            // 📊 연결된 폴더 전체 데이터 용량(=바 전체) 중 클라우드로 동기화된 용량(=채움). 부족 용량 안내는 '클라우드' 경로바에만 표시.
+            // 📊 통합 용량 바 — 내 PC 전체 중 ☁ 동기화된 양 + 부족분(클라우드 뷰와 동일한 공용 바)
             const barWrap=box.querySelector('#_sf-compbar'); if(!barWrap) return;
-            let st=window.__sfCloudStatus||null; try{ st=await window.RCMirror.status(); window.__sfCloudStatus=st; }catch(_){}
-            const quota=st?Number(st.quota||st.freeBytes||104857600):104857600; const used=st?Number(st.used||0):0;
-            let local=window.__sfLocalTotalBytes;
-            if(local==null || (Date.now()-(window.__sfLocalTotalAt||0))>30000){
-                local=0; const R=window.RCFolder; let roots=[]; try{ roots=(R&&R.rootsStatus)?await R.rootsStatus():[]; }catch(_){}
-                for(const r of (roots||[]).filter(x=>x.connected)){ try{ const fs=(R&&R.walkRoot)?await R.walkRoot(r.id,{max:8000}):[]; (fs||[]).forEach(f=>{ local+=Number(f.size)||0; }); }catch(_){} }
-                window.__sfLocalTotalBytes=local; window.__sfLocalTotalAt=Date.now();
-            }
+            let cap; try{ cap=await window._sfComputeCap(); }catch(_){ cap=null; }
             const bw=(ov||document).querySelector('#_sf-compbar'); if(!bw) return;   // 렌더 바뀌었으면 중단
-            const syncedShown=Math.min(used,local||used); const cover=local>0?Math.min(100,Math.round(syncedShown/local*100)):(used>0?100:0);
-            bw.innerHTML='<div style="height:9px;border-radius:5px;background:#ffffff;border:1px solid #d7dee9;overflow:hidden;"><div style="height:100%;width:'+cover+'%;background:#16a34a;transition:width .3s;"></div></div>'
-                +'<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;">전체 '+fmt(local)+' · <span style="color:#16a34a;font-weight:700;">☁ 동기화 '+fmt(syncedShown)+'</span></div>';
+            bw.innerHTML=window._sfCapBarHTML(cap||{local:0,used:0,quota:104857600});
         };
         window._sfDriveToggle = function(){
             // 🔁 드라이브 버튼 = 내 컴퓨터 ↔ 클라우드 전환(동기화는 경로바의 동기화 버튼으로 분리)
