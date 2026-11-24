@@ -3553,6 +3553,47 @@ app.get('/api/mirror/list', (req, res) => {
         res.json({ items: rows || [] });
     });
 });
+// ☁️🤲 공유받은 클라우드 파일을 '내 클라우드'로 복사(서버측 R2 copy — 클라이언트 파일IO 없음). 내 용량 차감·영구 보관. token(게스트공유) 또는 {owner,rpath}.
+app.post('/api/mirror/claim', (req, res) => {
+    const me = requireUser(req, res); if (!me) return;
+    if (!_r2) return res.status(400).json({ error: 'R2 미설정' });
+    const token = String(req.body.token || '');
+    const rpathIn = String(req.body.rpath || ''); const ownerIn = String(req.body.owner || '');
+    const _resolveSrc = (cb) => {
+        if (token) return db.get(`SELECT rpath, mirrorOwner, fileName FROM guest_shares WHERE token=?`, [token], (e, r) => {
+            if (e || !r || !r.rpath || !r.mirrorOwner) return cb(null);
+            cb({ owner: r.mirrorOwner, rpath: r.rpath, fileName: r.fileName });
+        });
+        if (rpathIn && ownerIn) return cb({ owner: ownerIn, rpath: rpathIn, fileName: String(rpathIn).split('/').pop() });
+        cb(null);
+    };
+    _resolveSrc((srcRef) => {
+        if (!srcRef) return res.status(404).json({ error: '클라우드 공유 원본을 찾을 수 없습니다(2주 만료되었거나 클라우드 공유가 아님).' });
+        db.get(`SELECT key, size, mime FROM mirror_files WHERE userName=? AND rpath=?`, [srcRef.owner, srcRef.rpath], (e2, src) => {
+            if (e2 || !src) return res.status(404).json({ error: '원본 파일이 클라우드에 없습니다.' });
+            _mirrorUsage(me, (qe, u) => {
+                const used = (u && Number(u.used)) || 0; const quota = (u && Number(u.quota)) || CLOUD_FREE_BYTES;
+                if (used + (Number(src.size) || 0) > quota) return res.status(402).json({ error: '내 클라우드 용량이 부족합니다. 용량을 추가해 주세요.' });
+                const base = String(srcRef.fileName || 'file').replace(/[\\/:*?"<>|]/g, '_');
+                const ext = (base.match(/\.[^.]+$/) || [''])[0];
+                const myRpath = 'shared/' + base;
+                const newKey = 'claim/' + me.replace(/[^\w.-]+/g, '_') + '/' + Date.now() + '_' + crypto.randomBytes(5).toString('hex') + ext;
+                try {
+                    const { CopyObjectCommand } = require('@aws-sdk/client-s3');
+                    _r2.client.send(new CopyObjectCommand({ Bucket: _r2.bucket, CopySource: _r2.bucket + '/' + src.key, Key: newKey }))
+                        .then(() => {
+                            db.run(`INSERT INTO mirror_files (userName, rpath, key, size, mime, mtime) VALUES (?,?,?,?,?,?) ON CONFLICT(userName, rpath) DO UPDATE SET key=excluded.key, size=excluded.size, mime=excluded.mime, mtime=excluded.mtime`,
+                                [me, myRpath, newKey, src.size || 0, src.mime || '', Date.now()], (ie) => {
+                                    if (ie) return res.status(500).json({ error: ie.message });
+                                    res.json({ ok: true, rpath: myRpath, size: src.size || 0 });
+                                });
+                        })
+                        .catch(err => res.status(500).json({ error: '복사 실패: ' + ((err && err.message) || err) }));
+                } catch (err) { res.status(500).json({ error: '복사 오류' }); }
+            });
+        });
+    });
+});
 // ☁️🤝 클라우드 공유 = 소유자 파일에 대한 "기간제(14일) 접근 권한" 부여(복사 아님, 받는 사람 용량 차감 없음).
 //    받는 사람은 만료일까지 열람·다운로드만 가능. 원본은 소유자 것이며, 소유자가 삭제하면 권한도 사라짐. (대화방/공유에서 호출)
 app.post('/api/mirror/share-to', (req, res) => {
