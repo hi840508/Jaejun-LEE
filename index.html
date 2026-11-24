@@ -5001,7 +5001,24 @@
                 });
             }catch(_){}
         };
-        (function(){ try{ const t=setInterval(function(){ const b=document.getElementById('main-chat-body'); if(b){ clearInterval(t); let _deb=null; const mo=new MutationObserver(function(){ if(_deb) return; _deb=setTimeout(function(){ _deb=null; window._gsFillExpiry(); }, 250); }); mo.observe(b,{childList:true,subtree:true}); window._gsFillExpiry(); } }, 1000); }catch(_){} })();
+        // 🩻 대화방 DICOM 카드 썸네일 — 앱 디코더로 원본 1장 디코딩(지연, 동시 2개). 공유폴더 미리보기와 동일 방식.
+        window._dcmFillThumbs = function(){
+            try{
+                const R = window.RCFolder; if(!R || !R.dicomImage) return;
+                const boxes = [].slice.call(document.querySelectorAll('._dcmthumb[data-dcmurl]:not([data-done])'));
+                if(!boxes.length) return;
+                let i=0; const CONC=2;
+                async function w(){ while(i<boxes.length){ const box=boxes[i++]; if(box.getAttribute('data-done')) continue; box.setAttribute('data-done','1');
+                    const url=box.getAttribute('data-dcmurl'); const nm=box.getAttribute('data-dcmname')||'file.dcm'; if(!url) continue;
+                    try{ if(R.csReady) await R.csReady(); const resp=await fetch(url); if(!resp.ok) continue; const blob=await resp.blob(); if(!blob||blob.size===0) continue;
+                        const file=new File([blob], nm, {type:'application/dicom'}); let t=null; try{ t=await R.dicomImage(file, 300); }catch(_){}
+                        if(t){ const ic=box.querySelector('._dcm-ic'); if(ic) ic.style.display='none'; box.insertAdjacentHTML('afterbegin','<img src="'+t+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;">'); }
+                    }catch(_){}
+                } }
+                const ws=[]; for(let k=0;k<CONC;k++) ws.push(w());
+            }catch(_){}
+        };
+        (function(){ try{ const t=setInterval(function(){ const b=document.getElementById('main-chat-body'); if(b){ clearInterval(t); let _deb=null; const mo=new MutationObserver(function(){ if(_deb) return; _deb=setTimeout(function(){ _deb=null; try{ window._gsFillExpiry(); }catch(_){} try{ window._dcmFillThumbs(); }catch(_){} }, 250); }); mo.observe(b,{childList:true,subtree:true}); try{ window._gsFillExpiry(); }catch(_){} try{ window._dcmFillThumbs(); }catch(_){} } }, 1000); }catch(_){} })();
         // 🖼 채팅 이미지 로드 실패 시 — 검은 박스/깨진아이콘 대신 깔끔한 클릭형 폴백(눌러서 원본 열기). 1차로 /s 랜딩↔/dl 반대형을 한번 더 시도.
         window._chatImgErr = function(img){
             try{
@@ -19670,7 +19687,8 @@ pdfjsScript,
                 const isHtml = /html/i.test(mime) || /\.html?$/.test(fnLower);
                 const is3d = /\.(obj|stl|ply|gltf|glb|fbx)$/.test(fnLower);
                 const isText = /\.(txt|md|json|csv)$/.test(fnLower);
-                const canPreview = isImage || isVideo || isAudio || isPdf || isHtml || is3d || isText;
+                const isDicom = /\.(dcm|dicom)$/i.test(fnLower) || /dicom/i.test(mime);   // 🩻 DICOM — 앱 디코더로 썸네일 생성
+                const canPreview = isImage || isVideo || isAudio || isPdf || isHtml || is3d || isText || isDicom;
                 // 🚀 글로벌 파일 등록 (모달에서 사용)
                 if(!window.__chatFileRegistry) window.__chatFileRegistry = {};
                 const fileKey = 'cf_' + Math.random().toString(36).substr(2, 10);
@@ -19691,6 +19709,10 @@ pdfjsScript,
                 } else if(isAudio) {
                     const _msrc = _isUrl ? window._rawShareMediaUrl(dataUrl) : dataUrl;
                     preview = `<div class="kt-card-preview" style="aspect-ratio:auto;padding:14px;background:#1e293b;cursor:default;flex-direction:column;gap:8px;"><div class="icon" style="color:#fbbf24;">🎵</div><audio src="${_msrc}" controls style="width:100%;max-width:240px;"></audio></div>`;
+                } else if(isDicom) {
+                    // 🩻 DICOM — 앱 디코더(RCFolder.dicomImage)로 썸네일 지연 생성. 생성 전엔 🩻 타일.
+                    const _dsrc = _isUrl ? window._rawShareMediaUrl(dataUrl) : dataUrl;
+                    preview = `<div class="kt-card-preview _dcmthumb" data-dcmurl="${_dsrc}" data-dcmname="${escFname}" style="background:#0b1220;" onclick="openChatFilePreview('${fileKey}')"><div class="_dcm-ic icon" style="color:#67e8f9;">🩻</div></div>`;
                 } else {
                     // 🗂 미리보기(썸네일) 안 되는 파일 = 공유폴더와 동일한 윈도우 탐색기식 아이콘(문서페이지+확장자 배지)으로 통일
                     const _winIcon = (window._sfDocIcon ? window._sfDocIcon(fname) : '<div class="icon">📎</div>');
