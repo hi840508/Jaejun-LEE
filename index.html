@@ -22213,7 +22213,10 @@ pdfjsScript,
                         try{ await fetch(`${API_URL}/api/friend/add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userName: currentUser.name, friendName: e.seller }) }); }catch(_){}
                         const r=await fetch(`${API_URL}/api/product/submit-order`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(e.body) });
                         const d=await r.json().catch(()=>({}));
-                        if(r.ok && d.orderId){ ok++; window.rxFormCart = window.rxFormCart.filter(x=>x.id!==e.id); }
+                        if(r.ok && d.orderId){ ok++; window.rxFormCart = window.rxFormCart.filter(x=>x.id!==e.id);
+                            // 💬 [중요] 구매자 쪽 주문 대화방 생성 — 단건 주문과 동일하게 주문카드(RX_DOC)를 방에 전송(구매자가 발신 → 방 생성). 이게 없으면 구매자에게 대화방이 안 보였음(판매자만 보이던 문제). 각 주문마다 고유 room_ord_<orderId>.
+                            try{ const roomId='room_ord_'+d.orderId; const okS=(typeof ensureSocket==='function')?await ensureSocket():!!(socket&&socket.connected); if(okS && socket && socket.connected){ const pic=((document.getElementById('my-profile-pic')||{}).src)||''; const rxLabel=String(e.title||('기공 의뢰서 · '+(e.patient||''))).replace(/\|/g,' '); socket.emit('join_room', roomId); socket.emit('send_message', { roomId, sender: currentUser.name, senderPic: pic, message: '[RX_DOC]'+d.orderId+'|'+(Number(e.amount)||0)+'|'+rxLabel }); await new Promise(_r=>setTimeout(_r,120)); } }catch(_){}
+                        }
                         else fail++;
                     }catch(_){ fail++; }
                 }
