@@ -4938,6 +4938,18 @@
             try{ u=String(u||''); const m=u.match(/^(https?:\/\/[^?#]*\/s\/[^/?#]+)(?:$|[?#])/); if(m && !/\/dl(?:[\/?#]|$)/.test(u)) return m[1]+'/dl'; }catch(_){}
             return u;
         };
+        // 🖼 채팅 이미지 로드 실패 시 — 검은 박스/깨진아이콘 대신 깔끔한 클릭형 폴백(눌러서 원본 열기). 1차로 /s 랜딩↔/dl 반대형을 한번 더 시도.
+        window._chatImgErr = function(img){
+            try{
+                const tried = img.getAttribute('data-try')||'';
+                if(!tried){ img.setAttribute('data-try','1'); const u=String(img.getAttribute('src')||''); let alt=u;
+                    if(/\/s\/[^/?#]+\/dl(?:[?#]|$)/.test(u)) alt=u.replace(/\/dl(?=[?#]|$)/,'');   // /dl 실패 → 랜딩 시도(최후)
+                    else { const m=u.match(/^(https?:\/\/[^?#]*\/s\/[^/?#]+)(?:$|[?#])/); if(m) alt=m[1]+'/dl'; }
+                    if(alt && alt!==u){ img.src=alt; return; } }
+                img.onerror=null; const p=img.parentNode;
+                if(p){ p.style.background='#1e293b'; p.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;min-height:120px;color:#cbd5e1;font-size:12px;gap:6px;padding:14px;text-align:center;line-height:1.5;"><div style="font-size:26px;">🖼️</div><div>미리보기를 불러올 수 없어요<br>눌러서 원본 열기</div></div>'; }
+            }catch(_){}
+        };
 
         // 🔓 수신자: 잠금 해제(암호/결제) → 실제 URL 받아 미리보기·공유폴더 저장
         window.openLockedFile = async function(token){
@@ -11037,10 +11049,11 @@
                             message.startsWith('[ORDER_CONFIRM]') ? '🛒 주문 확정 도착' :
                             message.startsWith('[META_QR]') ? '🎫 상품권 도착' :
                             message.length > 50 ? message.substring(0, 47) + '…' : message;
-            // 🔔 앱(Electron): 메인 프로세스 네이티브 알림이 가장 확실(렌더러 new Notification이 Windows에서 막혀도 뜬다).
+            // 🔔 우측 하단 클릭형 인앱 토스트 — 앱/브라우저 공통, 네이티브 알림 가능여부와 무관하게 항상 표시(단, 지금 보고 있는 방은 제외). 클릭=방 열기.
+            try{ if(!roomId || roomId!==window.currentChatRoomId) window._showInAppNotif('💬 '+sender, preview, roomId||'', sender, '💬'); }catch(_){}
+            // 🔔 앱(Electron): 메인 프로세스 네이티브 알림(최소화/트레이 대비). rayApp.notify가 없어도 위 인앱 토스트는 떴음.
             if(window.rayApp && window.rayApp.notify){
                 try{ window.rayApp.notify({ title: '💬 '+sender, body: preview, roomId: roomId||'' }); }catch(_){}
-                try{ window._showInAppNotif('💬 '+sender, preview, roomId||'', sender, '💬'); }catch(_){}   // 우측 하단 클릭형 토스트(클릭=방 열기)
                 return;
             }
             // 브라우저: 시스템 알림
@@ -19508,7 +19521,7 @@ pdfjsScript,
                     preview = `<div class="kt-card-preview" style="cursor:pointer" onclick="rcOpenShared('${dataUrl}','${escFname}','${mime||''}')"><img src="${_thumb}" alt=""></div>`;
                 } else if(isImage) {
                     const _msrc = _isUrl ? window._rawShareMediaUrl(dataUrl) : dataUrl;   // 공유 링크면 원본 바이트 URL(/dl)로 — 랜딩 HTML을 img에 넣어 깨지던 문제 해결
-                    preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><img src="${_msrc}" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${_isUrl?window._rawShareMediaUrl(dataUrl):dataUrl}';"></div>`;
+                    preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><img src="${_msrc}" alt="" loading="lazy" decoding="async" onerror="window._chatImgErr(this)"></div>`;
                 } else if(isVideo) {
                     const _msrc = _isUrl ? window._rawShareMediaUrl(dataUrl) : dataUrl;
                     preview = `<div class="kt-card-preview" onclick="openChatFilePreview('${fileKey}')"><video src="${_msrc}" muted preload="metadata"></video><div class="play-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);font-size:36px;color:#fff;pointer-events:none;">▶</div></div>`;
