@@ -7855,6 +7855,39 @@
                 if(ofm && ofm.style.display!=='none' && window.orderFormState){ addBuyerFiles(files); showToast('📎 '+files.length+'개 첨부됨'); return; }
                 showToast('첨부할 주문서가 열려있지 않습니다.');
             };
+            // 📎 첨부파일을 '점선 드롭존 안'에 작은 썸네일 파일카드로 표시(리스트 대신). 이미지/DICOM은 지연 썸네일.
+            //    dzId=드롭존 요소 id, files=File[](·__cloudLink), onRemove(i)=삭제 콜백.
+            window._sfRenderAttachThumbs = function(dzId, files, onRemove){
+                try{
+                    const dz=document.getElementById(dzId); if(!dz) return;
+                    let host=dz.querySelector('._dz-thumbs');
+                    if(!host){ host=document.createElement('div'); host.className='_dz-thumbs'; host.style.cssText='display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:12px;width:100%;'; host.addEventListener('click',(e)=>{ e.stopPropagation(); }); dz.appendChild(host); }
+                    files=files||[];
+                    if(!files.length){ host.innerHTML=''; host.style.display='none'; return; }
+                    host.style.display='flex';
+                    const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+                    const _tile=(nm)=>{ const l=String(nm||'').toLowerCase(); let ext=(l.indexOf('.')>=0?l.split('.').pop():'').toUpperCase().slice(0,4)||'FILE'; let bg='#64748b',label=ext; if(/\.(ply|stl|obj|glb|gltf)$/.test(l))bg='#4f46e5'; else if(/\.(dcm|dicom)$/.test(l)){bg='#0d9488';label='DCM';} else if(/\.pdf$/.test(l))bg='#dc2626'; else if(/\.(docx?|hwp|txt|rtf)$/.test(l))bg='#2563eb'; else if(/\.(xlsx?|csv)$/.test(l))bg='#16a34a'; else if(/\.pptx?$/.test(l))bg='#ea580c'; else if(/\.(mp4|mov|webm|avi|mkv)$/.test(l))bg='#7c3aed'; else if(/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(l))bg='#0ea5e9'; else if(/\.(zip|rar|7z)$/.test(l))bg='#b45309'; return '<div style="width:46px;height:46px;border-radius:10px;background:'+bg+';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:11px;letter-spacing:.3px;">'+label+'</div>'; };
+                    host.innerHTML=files.map((f,i)=>{ const nm=(f&&f.name)||'file'; const cloud=!!(f&&f.__cloudLink);
+                        return '<div class="_atc" data-i="'+i+'" title="'+esc(nm)+'" style="position:relative;width:80px;">'
+                            +'<div class="_atc-th" style="position:relative;width:80px;height:80px;border-radius:10px;overflow:hidden;background:#eef4f8;border:1px solid #d4dde8;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(16,34,54,.06);">'+_tile(nm)
+                            +(cloud?'<span style="position:absolute;bottom:3px;left:4px;font-size:12px;z-index:2;">☁️</span>':'')
+                            +'<button type="button" class="_atc-x" data-i="'+i+'" title="삭제" style="position:absolute;top:3px;right:3px;width:20px;height:20px;border:none;border-radius:50%;background:rgba(17,24,39,.72);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3;">✕</button>'
+                            +'</div>'
+                            +'<div style="font-size:10px;color:#475569;text-align:center;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;">'+esc(nm)+'</div>'
+                            +'</div>';
+                    }).join('');
+                    host.querySelectorAll('._atc-x').forEach(b=>{ b.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); const i=Number(b.getAttribute('data-i')); if(!isNaN(i)&&onRemove) onRemove(i); }); });
+                    // 🖼 지연 썸네일(이미지/DICOM) — 원본 File에서 디코딩. 클라우드 링크는 바이트 없음 → 타일 유지.
+                    (async()=>{ const R=window.RCFolder; const cards=[].slice.call(host.querySelectorAll('._atc'));
+                        const _put=(box,src)=>{ try{ const img=document.createElement('img'); img.src=src; img.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;'; box.insertBefore(img, box.firstChild); }catch(_){} };
+                        for(const c of cards){ const i=Number(c.getAttribute('data-i')); const f=files[i]; if(!f||f.__cloudLink) continue; const nm=(f.name||'').toLowerCase(); const box=c.querySelector('._atc-th'); if(!box||box.querySelector('img')) continue;
+                            try{ if(/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(nm)){ _put(box, URL.createObjectURL(f)); }
+                                else if(/\.dcm$/.test(nm) && R && R.dicomImage){ try{ if(R.csReady) await R.csReady(); const t=await R.dicomImage(f,160); if(t) _put(box,t); }catch(_){} }
+                            }catch(_){}
+                        }
+                    })();
+                }catch(_){}
+            };
             // 파일 카드(검색결과/환자)를 드래그 가능하게 + 드래그 참조 설정 (내컴퓨터 폴더카드와 동일 동작)
             window._sfWireFileCardAttach = function(el){ try{
                 if(!el || el.__sfWired) return; el.__sfWired = true;
@@ -17429,14 +17462,10 @@ pdfjsScript,
             renderBuyerFilesList();
         }
         function renderBuyerFilesList() {
-            const list = document.getElementById('order-buyer-files-list');
-            if(!list) return;
-            const files = window.orderFormState.buyerFiles;
-            if(files.length === 0) { list.innerHTML = ''; return; }
-            list.innerHTML = files.map((f, i) => `<div style="background:#fff; border:1px solid var(--border-color); padding:6px 10px; border-radius:6px; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:12px;">${f&&f.__cloudLink?'☁️':'📎'} ${f.name.replace(/</g,'&lt;')} <span style="color:var(--text-sub); font-size:10px;">${f&&f.__cloudLink?'(클라우드 링크·2주)':('('+(f.size/1024).toFixed(1)+'KB)')}</span></span>
-                <button style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:14px;" onclick="removeBuyerFile(${i})">✕</button>
-            </div>`).join('');
+            // 📎 리스트 대신 점선 드롭존 안에 작은 썸네일 파일카드로 표시
+            const old = document.getElementById('order-buyer-files-list'); if(old) old.innerHTML='';
+            const files = (window.orderFormState && window.orderFormState.buyerFiles) || [];
+            try{ if(window._sfRenderAttachThumbs) window._sfRenderAttachThumbs('order-buyer-dropzone', files, (i)=>removeBuyerFile(i)); }catch(_){}
         }
         window.removeBuyerFile = function(idx) {
             window.orderFormState.buyerFiles.splice(idx, 1);
@@ -21465,7 +21494,7 @@ pdfjsScript,
                 try{ const files = window._sfPickFiles ? await window._sfPickFiles() : []; if(files && files.length){ window.rxAddFiles(files); showToast('📎 공유폴더에서 '+files.length+'개 첨부됨'); } }catch(_){ }
             };
             window.rxRemoveFile = function(i){ const st=window.rxOrderState; if(!st) return; st.attachFiles.splice(i,1); _renderRxFileList(); };
-            function _renderRxFileList(){ const el=document.getElementById('rx-file-list'); const st=window.rxOrderState; if(!el||!st) return; el.innerHTML = st.attachFiles.map((f,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:5px 10px;margin-bottom:4px;font-size:12px;"><span>${f&&f.__cloudLink?'☁️':'📎'} ${esc(f.name)} <span style="color:#94a3b8;">${f&&f.__cloudLink?'(클라우드 링크·2주)':('('+(f.size/1024).toFixed(1)+'KB)')}</span></span><button type="button" onclick="rxRemoveFile(${i})" style="border:none;background:none;color:var(--danger);cursor:pointer;">✕</button></div>`).join(''); }
+            function _renderRxFileList(){ const st=window.rxOrderState; if(!st) return; const old=document.getElementById('rx-file-list'); if(old) old.innerHTML=''; try{ if(window._sfRenderAttachThumbs) window._sfRenderAttachThumbs('rx-dropzone', st.attachFiles||[], (i)=>rxRemoveFile(i)); }catch(_){} }
 
             function readOrderInfo(){
                 const g = id => (document.getElementById(id)||{}).value || '';
