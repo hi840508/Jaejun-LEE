@@ -7834,6 +7834,7 @@
                 items.push({label:(multi?('📤 공유 ('+sel.length+'개)'):'📤 공유'), fn:()=>window._sfShareDesc(sel)});
                 if(window.RCFolder && window.RCFolder.revealAtRoot && !d.cloud) items.push({label:'📂 파일 위치 열기(탐색기)', fn:()=>window._sfRevealFile(d)});
                 items.push({label:'💾 다른 이름으로 저장하기', fn:()=>window._sfDownloadDesc(d)});
+                items.push({label:(multi?('🗜 압축 ('+sel.length+'개 → zip)'):'🗜 압축(zip)'), fn:()=>window._sfZipDescs(sel)});
                 // 🧑‍⚕️ 환자에 연결(귀속) — 드래그가 어려운 환경(앱 네이티브 드래그 등)에서도 확실한 경로. 환자뷰 메뉴엔 '다른 환자로 이전'이 따로 있어 제외.
                 if(!ctx.patient){ const _pp=(typeof _sfPatientPicker==='function')?_sfPatientPicker:window._sfPatientPicker; if(_pp) items.push({label:(multi?('🧑‍⚕️ 환자에 연결 ('+sel.length+'개)'):'🧑‍⚕️ 환자에 연결'), fn:()=>_pp(async(toKey)=>{ if(!toKey) return; await window._sfAssignDraggedToPatient(toKey, sel); })}); }
                 if(!d.cloud && !multi) items.push({label:'✏️ 이름 변경', fn:()=>window._sfRenameDesc(d, onDone)});
@@ -7861,33 +7862,63 @@
                 try{
                     const dz=document.getElementById(dzId); if(!dz) return;
                     let host=dz.querySelector('._dz-thumbs');
-                    if(!host){ host=document.createElement('div'); host.className='_dz-thumbs'; host.style.cssText='display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:12px;width:100%;'; host.addEventListener('click',(e)=>{ e.stopPropagation(); }); dz.appendChild(host); }
+                    // ⬅️ 왼쪽부터 채움(flex-start). 카드 영역 클릭은 전파 차단(드롭존 파일선택기 오작동 방지).
+                    if(!host){ host=document.createElement('div'); host.className='_dz-thumbs'; host.style.cssText='display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-start;margin-top:12px;width:100%;'; host.addEventListener('click',(e)=>{ e.stopPropagation(); }); dz.appendChild(host); }
                     files=files||[];
                     if(!files.length){ host.innerHTML=''; host.style.display='none'; return; }
                     host.style.display='flex';
                     const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
                     const _tile=(nm)=>{ const l=String(nm||'').toLowerCase(); let ext=(l.indexOf('.')>=0?l.split('.').pop():'').toUpperCase().slice(0,4)||'FILE'; let bg='#64748b',label=ext; if(/\.(ply|stl|obj|glb|gltf)$/.test(l))bg='#4f46e5'; else if(/\.(dcm|dicom)$/.test(l)){bg='#0d9488';label='DCM';} else if(/\.pdf$/.test(l))bg='#dc2626'; else if(/\.(docx?|hwp|txt|rtf)$/.test(l))bg='#2563eb'; else if(/\.(xlsx?|csv)$/.test(l))bg='#16a34a'; else if(/\.pptx?$/.test(l))bg='#ea580c'; else if(/\.(mp4|mov|webm|avi|mkv)$/.test(l))bg='#7c3aed'; else if(/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(l))bg='#0ea5e9'; else if(/\.(zip|rar|7z)$/.test(l))bg='#b45309'; return '<div style="width:46px;height:46px;border-radius:10px;background:'+bg+';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:11px;letter-spacing:.3px;">'+label+'</div>'; };
-                    host.innerHTML=files.map((f,i)=>{ const nm=(f&&f.name)||'file'; const cloud=!!(f&&f.__cloudLink);
-                        return '<div class="_atc" data-i="'+i+'" title="'+esc(nm)+'" style="position:relative;width:80px;">'
+                    // 🩻 DICOM 시리즈는 '1장'으로 묶어 표시(슬라이스별 카드 방지). 같은 폴더(webkitRelativePath) 기준, 경로 없으면 하나로.
+                    const groups=[]; const dcmMap={};
+                    files.forEach((f,i)=>{ const nm=((f&&f.name)||'').toLowerCase();
+                        if(/\.dcm$/.test(nm) && !(f&&f.__cloudLink)){ let key='__DCM__'; try{ const rp=(f.webkitRelativePath||''); if(rp && rp.lastIndexOf('/')>0) key='dcm:'+rp.slice(0,rp.lastIndexOf('/')); }catch(_){}
+                            if(!dcmMap[key]){ dcmMap[key]={ idxs:[], series:true }; groups.push(dcmMap[key]); } dcmMap[key].idxs.push(i);
+                        } else { groups.push({ idxs:[i], series:false }); }
+                    });
+                    host.innerHTML=groups.map((g,gi)=>{ const series=g.series && g.idxs.length>1; const rep=series?g.idxs[Math.floor(g.idxs.length/2)]:g.idxs[0]; const f=files[rep]; const nm=(f&&f.name)||'file'; const cloud=!!(f&&f.__cloudLink); const label=series?('CT 시리즈 · '+g.idxs.length+'컷'):nm;
+                        return '<div class="_atc" data-g="'+gi+'" data-rep="'+rep+'" title="'+esc(series?(label):nm)+'" style="position:relative;width:80px;">'
                             +'<div class="_atc-th" style="position:relative;width:80px;height:80px;border-radius:10px;overflow:hidden;background:#eef4f8;border:1px solid #d4dde8;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(16,34,54,.06);">'+_tile(nm)
+                            +(series?'<span style="position:absolute;top:4px;left:4px;z-index:2;font-size:9px;font-weight:800;color:#fff;background:#0d9488;border-radius:5px;padding:1px 5px;">'+g.idxs.length+'컷</span>':'')
                             +(cloud?'<span style="position:absolute;bottom:3px;left:4px;font-size:12px;z-index:2;">☁️</span>':'')
-                            +'<button type="button" class="_atc-x" data-i="'+i+'" title="삭제" style="position:absolute;top:3px;right:3px;width:20px;height:20px;border:none;border-radius:50%;background:rgba(17,24,39,.72);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3;">✕</button>'
+                            +'<button type="button" class="_atc-x" data-g="'+gi+'" title="삭제" style="position:absolute;top:3px;right:3px;width:20px;height:20px;border:none;border-radius:50%;background:rgba(17,24,39,.72);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3;">✕</button>'
                             +'</div>'
-                            +'<div style="font-size:10px;color:#475569;text-align:center;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;">'+esc(nm)+'</div>'
+                            +'<div style="font-size:10px;color:#475569;text-align:center;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;">'+esc(label)+'</div>'
                             +'</div>';
                     }).join('');
-                    host.querySelectorAll('._atc-x').forEach(b=>{ b.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); const i=Number(b.getAttribute('data-i')); if(!isNaN(i)&&onRemove) onRemove(i); }); });
-                    // 🖼 지연 썸네일(이미지/DICOM) — 원본 File에서 디코딩. 클라우드 링크는 바이트 없음 → 타일 유지.
-                    (async()=>{ const R=window.RCFolder; const cards=[].slice.call(host.querySelectorAll('._atc'));
+                    host.querySelectorAll('._atc-x').forEach(b=>{ b.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); const gi=Number(b.getAttribute('data-g')); const g=groups[gi]; if(g&&onRemove) onRemove(g.idxs.slice()); }); });
+                    // 🖼 지연 썸네일(이미지/영상/DICOM/PLY·STL·OBJ) — RCFolder.getThumb로 전 타입 통일. 클라우드 링크는 바이트 없음 → 타일 유지.
+                    (async()=>{ const R=window.RCFolder; if(!R||!R.getThumb) return; const cards=[].slice.call(host.querySelectorAll('._atc')); let i=0; const CONC=2;
                         const _put=(box,src)=>{ try{ const img=document.createElement('img'); img.src=src; img.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;'; box.insertBefore(img, box.firstChild); }catch(_){} };
-                        for(const c of cards){ const i=Number(c.getAttribute('data-i')); const f=files[i]; if(!f||f.__cloudLink) continue; const nm=(f.name||'').toLowerCase(); const box=c.querySelector('._atc-th'); if(!box||box.querySelector('img')) continue;
-                            try{ if(/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(nm)){ _put(box, URL.createObjectURL(f)); }
-                                else if(/\.dcm$/.test(nm) && R && R.dicomImage){ try{ if(R.csReady) await R.csReady(); const t=await R.dicomImage(f,160); if(t) _put(box,t); }catch(_){} }
-                            }catch(_){}
-                        }
+                        async function w(){ while(i<cards.length){ const c=cards[i++]; const rep=Number(c.getAttribute('data-rep')); const f=files[rep]; if(!f||f.__cloudLink) continue; const box=c.querySelector('._atc-th'); if(!box||box.querySelector('img')) continue;
+                            try{ const t=await R.getThumb(f, f.type||'', f.name); if(t) _put(box,t); }catch(_){}
+                        } }
+                        const ws=[]; for(let k=0;k<CONC;k++) ws.push(w()); await Promise.all(ws);
                     })();
                 }catch(_){}
             };
+            // 🗜 선택 파일들을 zip으로 압축 — 파일검색(내 컴퓨터/클라우드/환자) 메뉴에서 호출. JSZip 지연 로드.
+            window.__ensureJSZip = function(){ if(window.__jszipP) return window.__jszipP; window.__jszipP=new Promise((res)=>{ try{ if(window.JSZip) return res(window.JSZip); const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.async=true; s.onload=()=>res(window.JSZip||null); s.onerror=()=>res(null); document.head.appendChild(s); }catch(_){ res(null); } }); return window.__jszipP; };
+            // 압축용 원본 바이트 로드(공유링크 생성 없이) — 로컬 우선, 없으면 미러 다운로드 URL.
+            window.__sfRawFileForZip = async function(d){ const R=window.RCFolder; const parts=String(d.rpath||'').split('/'); const fn=parts.pop()||'file';
+                try{ let f=(R&&R.getFileAtRoot)?await R.getFileAtRoot(d.rootId,parts,fn):null; if(!f&&R&&R.getFileAt){ try{ f=await R.getFileAt(parts,fn); }catch(_){} } if(f) return f; }catch(_){}
+                try{ const dj=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:d.rpath})}).then(r=>r.json()); if(dj&&dj.url){ const resp=await fetch(dj.url); if(resp.ok){ const blob=await resp.blob(); return new File([blob], fn, {type:blob.type||'application/octet-stream'}); } } }catch(_){}
+                return null; };
+            window._sfZipDescs = async function(sel){ try{
+                sel=(sel||[]).filter(Boolean); if(!sel.length){ showToast('압축할 파일을 선택하세요.'); return; }
+                showToast('🗜 압축 모듈 불러오는 중…'); const JS=await window.__ensureJSZip(); if(!JS){ showToast('압축 모듈 로드 실패(네트워크 확인)'); return; }
+                const zip=new JS(); showToast('🗜 파일 읽는 중… ('+sel.length+'개)'); const used={}; let n=0;
+                for(const d of sel){ const f=await window.__sfRawFileForZip(d); if(!f) continue; let nm=(f.name)||String(d.rpath||'file').split('/').pop()||'file';
+                    if(used[nm]){ used[nm]++; const dot=nm.lastIndexOf('.'); const base=dot>0?nm.slice(0,dot):nm; const ext=dot>0?nm.slice(dot):''; nm=base+'('+used[nm]+')'+ext; } else used[nm]=1;
+                    try{ zip.file(nm, f); n++; }catch(_){}
+                }
+                if(!n){ showToast('압축할 파일을 읽지 못했습니다.'); return; }
+                showToast('🗜 압축 생성 중… ('+n+'개)');
+                const blob=await zip.generateAsync({type:'blob', compression:'DEFLATE', compressionOptions:{level:6}});
+                const ts=new Date(); const pad=x=>String(x).padStart(2,'0'); const name='압축_'+ts.getFullYear()+pad(ts.getMonth()+1)+pad(ts.getDate())+'_'+pad(ts.getHours())+pad(ts.getMinutes())+'.zip';
+                if(window.showSaveFilePicker){ try{ const h=await window.showSaveFilePicker({ suggestedName:name, types:[{description:'ZIP 압축파일', accept:{'application/zip':['.zip']}}] }); const w=await h.createWritable(); await w.write(blob); await w.close(); showToast('✅ 압축 저장: '+name+' ('+n+'개)'); return; }catch(e){ if(e&&e.name==='AbortError') return; } }
+                const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(_){}} ,60000); showToast('🗜 압축 완료: '+name+' ('+n+'개)');
+            }catch(e){ showToast('압축 실패: '+((e&&e.message)||e)); } };
             // 파일 카드(검색결과/환자)를 드래그 가능하게 + 드래그 참조 설정 (내컴퓨터 폴더카드와 동일 동작)
             window._sfWireFileCardAttach = function(el){ try{
                 if(!el || el.__sfWired) return; el.__sfWired = true;
@@ -17465,7 +17496,7 @@ pdfjsScript,
             // 📎 리스트 대신 점선 드롭존 안에 작은 썸네일 파일카드로 표시
             const old = document.getElementById('order-buyer-files-list'); if(old) old.innerHTML='';
             const files = (window.orderFormState && window.orderFormState.buyerFiles) || [];
-            try{ if(window._sfRenderAttachThumbs) window._sfRenderAttachThumbs('order-buyer-dropzone', files, (i)=>removeBuyerFile(i)); }catch(_){}
+            try{ if(window._sfRenderAttachThumbs) window._sfRenderAttachThumbs('order-buyer-dropzone', files, (idxs)=>{ try{ const a=(Array.isArray(idxs)?idxs:[idxs]).slice().sort((x,y)=>y-x); a.forEach(i=>{ if(!isNaN(i)) window.orderFormState.buyerFiles.splice(i,1); }); renderBuyerFilesList(); }catch(_){} }); }catch(_){}
         }
         window.removeBuyerFile = function(idx) {
             window.orderFormState.buyerFiles.splice(idx, 1);
@@ -21494,7 +21525,7 @@ pdfjsScript,
                 try{ const files = window._sfPickFiles ? await window._sfPickFiles() : []; if(files && files.length){ window.rxAddFiles(files); showToast('📎 공유폴더에서 '+files.length+'개 첨부됨'); } }catch(_){ }
             };
             window.rxRemoveFile = function(i){ const st=window.rxOrderState; if(!st) return; st.attachFiles.splice(i,1); _renderRxFileList(); };
-            function _renderRxFileList(){ const st=window.rxOrderState; if(!st) return; const old=document.getElementById('rx-file-list'); if(old) old.innerHTML=''; try{ if(window._sfRenderAttachThumbs) window._sfRenderAttachThumbs('rx-dropzone', st.attachFiles||[], (i)=>rxRemoveFile(i)); }catch(_){} }
+            function _renderRxFileList(){ const st=window.rxOrderState; if(!st) return; const old=document.getElementById('rx-file-list'); if(old) old.innerHTML=''; try{ if(window._sfRenderAttachThumbs) window._sfRenderAttachThumbs('rx-dropzone', st.attachFiles||[], (idxs)=>{ try{ const a=(Array.isArray(idxs)?idxs:[idxs]).slice().sort((x,y)=>y-x); a.forEach(i=>{ if(!isNaN(i)) st.attachFiles.splice(i,1); }); _renderRxFileList(); }catch(_){} }); }catch(_){} }
 
             function readOrderInfo(){
                 const g = id => (document.getElementById(id)||{}).value || '';
