@@ -5018,7 +5018,11 @@
                 const ws=[]; for(let k=0;k<CONC;k++) ws.push(w());
             }catch(_){}
         };
-        (function(){ try{ const t=setInterval(function(){ const b=document.getElementById('main-chat-body'); if(b){ clearInterval(t); let _deb=null; const mo=new MutationObserver(function(){ if(_deb) return; _deb=setTimeout(function(){ _deb=null; try{ window._gsFillExpiry(); }catch(_){} try{ window._dcmFillThumbs(); }catch(_){} }, 250); }); mo.observe(b,{childList:true,subtree:true}); try{ window._gsFillExpiry(); }catch(_){} try{ window._dcmFillThumbs(); }catch(_){} } }, 1000); }catch(_){} })();
+        (function(){ try{ const t=setInterval(function(){ const b=document.getElementById('main-chat-body'); if(b){ clearInterval(t); let _deb=null;
+            // 🔇 '처리할 새 대상(:not([data-done]))'이 실제로 있을 때만 실행 — 우리가 삽입한 썸네일 img·만료 텍스트 변경이나
+            //    읽음표시/타이핑 같은 무관한 DOM 변화로 재실행되어 썸네일이 자주 갱신되는 듯 끊기던 현상 방지.
+            const _hasWork=function(){ try{ return !!b.querySelector('._dcmthumb[data-dcmurl]:not([data-done]), ._gs-exp:not([data-done])'); }catch(_){ return false; } };
+            const mo=new MutationObserver(function(){ if(_deb) return; if(!_hasWork()) return; _deb=setTimeout(function(){ _deb=null; try{ window._gsFillExpiry(); }catch(_){} try{ window._dcmFillThumbs(); }catch(_){} }, 300); }); mo.observe(b,{childList:true,subtree:true}); try{ window._gsFillExpiry(); }catch(_){} try{ window._dcmFillThumbs(); }catch(_){} } }, 1000); }catch(_){} })();
         // 🖼 채팅 이미지 로드 실패 시 — 검은 박스/깨진아이콘 대신 깔끔한 클릭형 폴백(눌러서 원본 열기). 1차로 /s 랜딩↔/dl 반대형을 한번 더 시도.
         window._chatImgErr = function(img){
             try{
@@ -19316,7 +19320,9 @@ pdfjsScript,
                 if(window.rayApp && window.rayApp.openFile){
                     try{ modal.style.display='none'; }catch(_){}
                     (async()=>{ try{ showToast('기본 프로그램으로 여는 중…');
-                        const r=await fetch(f.content); const buf=await r.arrayBuffer(); const bytes=new Uint8Array(buf);
+                        // ⚠️ 클라우드 공유(/s/<token>)는 HTML 랜딩 페이지 → 반드시 /dl(원본 바이트)로 변환 후 받아야 Word/문서가 정상 열림.
+                        const _rawU = (window._rawShareMediaUrl ? window._rawShareMediaUrl(f.content) : f.content);
+                        const r=await fetch(_rawU); const buf=await r.arrayBuffer(); const bytes=new Uint8Array(buf);
                         const res=await window.rayApp.openFile(f.filename||'file', bytes, false);
                         if(res&&res.ok) return;                                   // ✅ 기본 프로그램으로 바로 열림
                         if(res&&res.noAssoc){ const r2=await window.rayApp.openFile(f.filename||'file', bytes, true); if(!(r2&&r2.ok)&&window.rcDownloadShare) window.rcDownloadShare(f.content, f.filename); return; }
