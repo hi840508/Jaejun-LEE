@@ -5855,7 +5855,53 @@
             }
             // 📦 해당 인물의 주문을 메신저 '주문' 탭으로 팝업(최신순)
             try{ window._openPatientOrders(key); }catch(_){}
+            // 🖥 뷰어 독이 켜져 있으면, 환자 전환 시 하단 뷰어 위치도 즉시 재보정
+            try{ if(window.__rcViewerDock && window.__rcFitViewer) setTimeout(window.__rcFitViewer, 60); }catch(_){}
         };
+        // 🖥 [뷰어 독] 환자 파일카드(접이식 그리드) + 하단 3D 뷰어를 한 화면에 — 캡처 목업처럼 통합.
+        //    진입 = 환자 카드의 '뷰어' 버튼. 파일검색(그리드)을 그 환자로 열고, 하단에 실시간 뷰어를 임베드한다.
+        window._sbOpenPatientViewer = function(key){
+            try{
+                window.__rcViewerDock = true;
+                document.body.classList.add('rc-vdock');
+                // 그리드 패널 기본 펼침(마지막 접힘상태 유지하되 최초엔 펼침)
+                if(!document.documentElement.style.getPropertyValue('--rc-dock-grid-h')) document.documentElement.style.setProperty('--rc-dock-grid-h','300px');
+                window._rcEnsureDockToggle&&window._rcEnsureDockToggle();
+                window._rcDockStart&&window._rcDockStart();
+                // 1) 해당 환자로 파일검색 그리드 열기(선택 + 렌더)
+                try{ window._sbOpenPatient(key); }catch(_){}
+                // 2) 싱글톤 뷰어 표시(살아있으면 그대로, 없으면 생성) — 파일은 카드에서 열람
+                try{
+                    if(window.__rcLV && window.__rcLV.ov && document.body.contains(window.__rcLV.ov) && !window.__rcLV.ov.__lvDead){ window.__rcLV.show(); }
+                    else if(window.rcOpenInLiveViewer){ window.rcOpenInLiveViewer([], null); }
+                }catch(_){}
+                try{ if(window.__rcFitViewer) window.__rcFitViewer(); setTimeout(()=>{ try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} },300); setTimeout(()=>{ try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} },700); }catch(_){}
+            }catch(e){ showToast('뷰어를 열 수 없습니다.'); }
+        };
+        // 🧲 독 모드 ON 동안 하단 뷰어 위치를 주기적으로 재보정(그리드 접힘/환자전환/셀렉트바 등장에 대응). 값이 바뀔 때만 적용.
+        window._rcDockStart = function(){ if(window.__rcDockTimer) return; window.__rcDockTimer=setInterval(function(){ try{ if(!window.__rcViewerDock){ clearInterval(window.__rcDockTimer); window.__rcDockTimer=null; return; } if(window.__rcFitViewer) window.__rcFitViewer(); }catch(_){} }, 220); };
+        window._rcDockStop = function(){ try{ if(window.__rcDockTimer){ clearInterval(window.__rcDockTimer); window.__rcDockTimer=null; } }catch(_){} };
+        // 🖥 뷰어 독 해제 — 그리드를 전체 높이로 복원(일반 파일검색). 뷰어 싱글톤은 숨김(상태 유지).
+        window._rcExitViewerDock = function(hideViewer){
+            try{ window.__rcViewerDock=false; document.body.classList.remove('rc-vdock'); }catch(_){}
+            try{ window._rcDockStop&&window._rcDockStop(); }catch(_){}
+            try{ const t=document.getElementById('rc-dock-toggle'); if(t) t.style.display='none'; }catch(_){}
+            if(hideViewer!==false){ try{ window._lvClose&&window._lvClose(); }catch(_){} }
+            try{ if(window.__rcFitViewer) window.__rcFitViewer(); }catch(_){}
+        };
+        // ▲▼ 파일카드 그리드 접기/펼치기 토글(독 모드 전용). 뷰어 영역 상단 우측에 떠 있는 핀 버튼.
+        window._rcEnsureDockToggle = function(){
+            let t=document.getElementById('rc-dock-toggle');
+            if(!t){
+                t=document.createElement('button'); t.id='rc-dock-toggle'; t.type='button';
+                t.style.cssText='position:fixed;z-index:3902;display:none;align-items:center;gap:6px;height:30px;padding:0 13px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 5px 16px rgba(0,0,0,.35);white-space:nowrap;';
+                t.onclick=function(){ try{ const cur=document.documentElement.style.getPropertyValue('--rc-dock-grid-h')||'300px'; const collapsed=(parseInt(cur,10)||0)<=8; document.documentElement.style.setProperty('--rc-dock-grid-h', collapsed?'300px':'0px'); window._rcSyncDockToggle&&window._rcSyncDockToggle(); setTimeout(()=>{ try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} },30); setTimeout(()=>{ try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} },220); }catch(_){} };
+                document.body.appendChild(t);
+            }
+            window._rcSyncDockToggle&&window._rcSyncDockToggle();
+            return t;
+        };
+        window._rcSyncDockToggle = function(){ try{ const t=document.getElementById('rc-dock-toggle'); if(!t) return; const cur=document.documentElement.style.getPropertyValue('--rc-dock-grid-h')||'300px'; const collapsed=(parseInt(cur,10)||0)<=8; t.innerHTML=(collapsed?'▼ 파일 목록 펼치기':'▲ 파일 목록 접기'); }catch(_){} };
         // 📦 메신저 주문 탭 팝업 — 특정 인물에 '연결된 주문'이 있을 때만 띄움(없으면 메신저 안 띄움)
         window._openPatientOrders = async function(key){
             window.__msgrOrderPatient = key||null;
@@ -5905,7 +5951,7 @@
             const btn=document.getElementById('topbar-account-btn'); if(btn) btn.title = acc?'파일검색으로 나가기':'계정 · 구매/판매/설정';
         };
         // 🎨 선택된 환자 버튼 강조(다른 색) — 현재 어떤 환자가 선택됐는지 명확히
-        window._sbHighlightPatient = function(){ const k=window.__sfPatientFilter||''; document.querySelectorAll('#sb-pt-list ._sbpt').forEach(el=>{ const on=(el.getAttribute('data-key')===k && !!k); el.classList.toggle('sel', on); const eb=el.querySelector('._sbpt-edit'); if(eb) eb.style.display=on?'flex':'none'; }); };
+        window._sbHighlightPatient = function(){ const k=window.__sfPatientFilter||''; document.querySelectorAll('#sb-pt-list ._sbpt').forEach(el=>{ const on=(el.getAttribute('data-key')===k && !!k); el.classList.toggle('sel', on); const vb=el.querySelector('._sbpt-view'); if(vb) vb.style.display=on?'inline-flex':'none'; }); };
         // 🎨 좌측 로컬/클라우드 저장소 — 현재 선택된 쪽을 네이비로 채워 명확히 표시
         // 🖥/☁ 드라이브 버튼 아이콘(또렷한 SVG) — 내 컴퓨터 / 클라우드
         const _DRIVE_ICO_PC='<svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
@@ -6136,11 +6182,16 @@
                 return '<div class="_sbpt" data-key="'+E(p.patientKey)+'" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid #e6edf4;border-radius:11px;background:#fff;cursor:pointer;transition:background .12s,border-color .12s;">'
                     +'<div style="flex:none;width:34px;height:34px;border-radius:50%;background:'+bg+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">'+E(ini)+'</div>'
                     +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#e8edf5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+E(p.name||'(이름없음)')+(meta?(' <span style="font-size:10px;color:#9fb0c7;font-weight:600;">('+E(meta)+')</span>'):'')+'</div><div style="font-size:10.5px;color:#8ea2bd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(p.patientId?('ID '+E(p.patientId)):'')+'</div></div>'
-                    +'<button class="_sbpt-edit" title="환자 정보 수정·삭제" style="display:none;flex:none;border:1px solid #34415c;background:#222d42;color:#c6d2e2;border-radius:8px;width:28px;height:28px;cursor:pointer;line-height:1;font-size:13px;">✏️</button>'
+                    +'<button class="_sbpt-view" title="이 환자 뷰어로 열기 · (수정·삭제는 우클릭/길게눌러)" style="display:none;flex:none;align-items:center;gap:5px;border:1px solid #0b2b4b;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border-radius:8px;height:28px;padding:0 10px;cursor:pointer;line-height:1;font-size:11.5px;font-weight:800;white-space:nowrap;box-shadow:0 2px 7px rgba(11,43,75,.35);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>뷰어</button>'
                     +'</div>'; }).join('');
             list.querySelectorAll('._sbpt').forEach(el=>{ const key=el.getAttribute('data-key');
                 el.addEventListener('click',()=>{ window._sbOpenPatient(key); });
-                { const eb=el.querySelector('._sbpt-edit'); if(eb) eb.addEventListener('click',(e)=>{ e.stopPropagation(); const p=(window.__sbPatients||[]).find(x=>x.patientKey===key)||{patientKey:key}; if(window._sfCreatePatient) window._sfCreatePatient(p, ()=>{ if(window._sbLoadPatients) window._sbLoadPatients(); try{ if(window.__sfRender) window.__sfRender(); }catch(_){} }); else showToast('파일검색을 먼저 열어 주세요.'); }); }
+                // 🖥 뷰어 버튼 = 이 환자로 뷰어 독 진입(파일카드 그리드 + 하단 3D 뷰어)
+                { const vb=el.querySelector('._sbpt-view'); if(vb) vb.addEventListener('click',(e)=>{ e.stopPropagation(); try{ window._sbOpenPatientViewer&&window._sbOpenPatientViewer(key); }catch(_){ showToast('뷰어를 열 수 없습니다.'); } }); }
+                // ✏️ 환자 정보 수정·삭제 = 카드 우클릭(또는 길게 눌러). 뷰어 버튼이 편집 자리를 대신하므로 편집은 컨텍스트 메뉴로.
+                const _ptEdit=()=>{ const p=(window.__sbPatients||[]).find(x=>x.patientKey===key)||{patientKey:key}; if(window._sfCreatePatient) window._sfCreatePatient(p, ()=>{ if(window._sbLoadPatients) window._sbLoadPatients(); try{ if(window.__sfRender) window.__sfRender(); }catch(_){} }); else showToast('파일검색을 먼저 열어 주세요.'); };
+                el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); e.stopPropagation(); _ptEdit(); });
+                { let _lpT=null; el.addEventListener('touchstart',()=>{ _lpT=setTimeout(_ptEdit,620); },{passive:true}); const _lpc=()=>{ if(_lpT){ clearTimeout(_lpT); _lpT=null; } }; el.addEventListener('touchend',_lpc); el.addEventListener('touchmove',_lpc); }
                 el.addEventListener('dragover',(e)=>{ if(window.__sfDragFileRef&&window.__sfDragFileRef.length){ e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} el.classList.add('drop-hot'); } });
                 el.addEventListener('dragleave',(e)=>{ if(!el.contains(e.relatedTarget)) el.classList.remove('drop-hot'); });
                 el.addEventListener('drop',(e)=>{ e.preventDefault(); e.stopPropagation(); el.classList.remove('drop-hot'); if(window._sfAssignDraggedToPatient) window._sfAssignDraggedToPatient(key); });
@@ -6194,9 +6245,28 @@
             //    가로=.yt-main 좌표·폭(스크롤 무관), 세로=상단바(.yt-topbar, sticky) 아래~뷰포트 하단. 미발견/퇴화 시 전체화면 폴백.
             function _rcFitViewerToMain(){
                 try{
-                    const main=document.querySelector('main.yt-main')||document.querySelector('.yt-main');
                     const W=window.innerWidth||document.documentElement.clientWidth||0;
                     const Hh=window.innerHeight||document.documentElement.clientHeight||0;
+                    // 🖥 [독 모드] 파일검색 그리드(#_sf-grid) 바로 아래에 뷰어를 끼워 — 캡처 목업(필터→파일카드→뷰어)처럼.
+                    if(window.__rcViewerDock){
+                        const grid=document.querySelector('#rc-folder-page #_sf-grid');
+                        if(grid){
+                            const gr=grid.getBoundingClientRect();
+                            const top=Math.max(0, Math.round(gr.bottom));
+                            const left=Math.max(0, Math.round(gr.left));
+                            const width=Math.max(0, Math.min(W-left, Math.round(gr.width)));
+                            if(width>=1){
+                                ov.style.top=top+'px'; ov.style.left=left+'px';
+                                ov.style.width=width+'px'; ov.style.height=Math.max(0,Hh-top)+'px';
+                                // ▲▼ 접기 토글 — 그리드/뷰어 경계 우측에 걸쳐 띄움
+                                try{ const t=document.getElementById('rc-dock-toggle'); if(t){ t.style.display='inline-flex'; t.style.top=Math.max(2,top-15)+'px'; t.style.left=Math.max(0,left+width-150)+'px'; } }catch(_){}
+                                return;
+                            }
+                        }
+                        // 그리드 없음(파일검색 닫힘) → 토글 숨기고 일반(상단바 아래) 배치로 폴백
+                        try{ const t=document.getElementById('rc-dock-toggle'); if(t) t.style.display='none'; }catch(_){}
+                    }
+                    const main=document.querySelector('main.yt-main')||document.querySelector('.yt-main');
                     if(!main){ ov.style.top='0'; ov.style.left='0'; ov.style.width='100%'; ov.style.height='100%'; return; }
                     const r=main.getBoundingClientRect();
                     const tb=document.querySelector('.yt-topbar');
@@ -6224,6 +6294,8 @@
             //    (WebGL 컨텍스트가 단 1개로 유지되므로 과거의 '컨텍스트 누적' 문제도 없음. 완전 해제는 _lvDestroy.)
             const cleanup = ()=>{
                 try{ ov.style.display='none'; ov.style.pointerEvents='none'; ov.__lvHidden=true; }catch(_){}
+                // 🖥 닫으면 독 해제 → 파일검색 그리드를 전체 높이로 복원(일반 파일검색 복귀). 뷰어 상태는 유지(재진입 시 복구).
+                try{ if(window.__rcViewerDock){ window.__rcViewerDock=false; document.body.classList.remove('rc-vdock'); window._rcDockStop&&window._rcDockStop(); const t=document.getElementById('rc-dock-toggle'); if(t) t.style.display='none'; } }catch(_){}
                 try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){}
             };
             window._lvClose = cleanup;
@@ -6359,7 +6431,7 @@
             else { try{ setTimeout(()=>{ try{ stat.style.display='none'; }catch(_){} }, 900); }catch(_){} }
 
             // 🗂 이 폴더의 영상 목록을 뷰어 DATA 서랍으로 전송(날짜·폴더 포함). 로드는 서랍에서 클릭할 때 수행.
-            _rcSendManifest(R, pathArr, post).then(cnt=>{ if(!fname && cnt) post({ type:'RAYCLOUD_OPEN_DRAWER' }); }).catch(()=>{});
+            _rcSendManifest(R, pathArr, post).then(cnt=>{ if(!fname && cnt && !window.__rcViewerDock) post({ type:'RAYCLOUD_OPEN_DRAWER' }); }).catch(()=>{});   /* 독 모드=메인 그리드로 열람 → 뷰어 내부 서랍 자동열기 억제 */
 
             // 🗂 연결된 공유폴더(루트) 목록을 뷰어로 보내 서랍에서 전환 가능하게 한다.
             async function _rcSendRoots(){ try{ const roots=(R.listRoots? await R.listRoots():[])||[]; post({ type:'RAYCLOUD_ROOTS', roots: roots.map(r=>({ id:String(r.id), name:r.name, active:!!r.active })) }); }catch(_){} }
@@ -6508,21 +6580,8 @@
             ov.remove = function(){ try{ window.removeEventListener('message', onViewerMsg); }catch(_){} _origRemove2(); };
         };
 
-        // 🖥 [메신저식 FAB] 실시간 뷰어 상시 토글 버튼 — 메신저 말풍선처럼 언제든 열고/닫기(상태 유지). 로그인 후에만 표시.
-        (function(){
-            function _mk(){
-                if(document.getElementById('rc-viewer-fab')) return;
-                if(!document.getElementById('rc-viewer-fab-css')){ const st=document.createElement('style'); st.id='rc-viewer-fab-css'; st.textContent='body:not(.app-authed) #rc-viewer-fab{display:none!important}@media(max-width:768px){#rc-viewer-fab{bottom:150px!important;right:16px!important;width:50px!important;height:50px!important}}'; document.head.appendChild(st); }
-                const b=document.createElement('button'); b.id='rc-viewer-fab'; b.type='button'; b.title='실시간 뷰어 열기/닫기';
-                b.innerHTML='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>';
-                b.style.cssText='position:fixed;bottom:98px;right:26px;width:54px;height:54px;background:linear-gradient(135deg,#22446b,#0b2b4b);border-radius:18px 18px 6px 18px;display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;box-shadow:0 6px 18px rgba(11,43,75,.4);z-index:3999;border:none;transition:transform .16s,background .16s;';
-                b.onmouseenter=()=>{ b.style.transform='scale(1.06)'; }; b.onmouseleave=()=>{ b.style.transform=''; };
-                b.onclick=()=>{ try{ if(window.__rcLV && window.__rcLV.ov && document.body.contains(window.__rcLV.ov)) window.__rcLV.toggle(); else if(window.openLiveViewerFromSidebar) window.openLiveViewerFromSidebar(); else if(window.rcOpenInLiveViewer) window.rcOpenInLiveViewer([], null); }catch(_){} };
-                document.body.appendChild(b);
-                window.__rcUpdateViewerFab=function(){ try{ const open=!!(window.__rcLV&&window.__rcLV.isOpen&&window.__rcLV.isOpen()); b.style.background=open?'linear-gradient(135deg,#c81e74,#98105f)':'linear-gradient(135deg,#22446b,#0b2b4b)'; b.title=open?'실시간 뷰어 닫기':'실시간 뷰어 열기'; }catch(_){} };
-            }
-            if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', _mk); else _mk();
-        })();
+        // 🖥 [제거] 우하단 모니터 FAB — 진입을 '환자 카드 뷰어 버튼'으로 일원화(중복 제거). 호출부 호환용 no-op만 유지.
+        window.__rcUpdateViewerFab = window.__rcUpdateViewerFab || function(){};
 
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
@@ -6563,7 +6622,9 @@
  "#rc-folder-page .rc-gf-chk:checked::after,#rc-folder-page .rc-gfd-chk:checked::after{content:'✓';color:#fff;font-size:13px;font-weight:900;line-height:1;}",
  "#rc-folder-page ._sf-secgrid{gap:14px;}",
  "#rc-folder-page ._sf-sechead,#rc-folder-page ._sf-sechead-plain{font-size:13.5px;font-weight:700;color:#374151;}",
- "@media (max-width:640px){ #rc-folder-page ._sf-secgrid{grid-template-columns:repeat(auto-fill,minmax(44vw,1fr))!important;gap:12px!important;} }"
+ "@media (max-width:640px){ #rc-folder-page ._sf-secgrid{grid-template-columns:repeat(auto-fill,minmax(44vw,1fr))!important;gap:12px!important;} }",
+ /* 🖥 뷰어 독: 파일카드 그리드를 접이식 상단 패널로(높이=CSS 변수). 아래 공간은 하단 임베드 뷰어가 덮는다. */
+ "body.rc-vdock #rc-folder-page #_sf-grid{flex:0 0 auto!important;height:var(--rc-dock-grid-h,300px)!important;max-height:var(--rc-dock-grid-h,300px)!important;overflow:auto;transition:height .18s ease;border-bottom:1px solid #dbe3ec;box-shadow:inset 0 -8px 10px -8px rgba(16,34,54,.12);}"
 ].join(''); document.head.appendChild(st); }
             const ov=document.createElement('div'); ov.id='rc-folder-page';
             // 📎 선택 모드(의뢰서/첨부에서 호출)면 모달 위(최상위·전체화면)로 띄운다. 아니면 기본(상단바 아래, 낮은 z-index).
@@ -6641,8 +6702,7 @@
                     +'<button id="_sf-zin" class="_sf-ic" title="확대" style="flex:none;">'+_SFIC.plus+'</button>'
                     +(window.CLOUD_MIRROR_ENABLED?('<button id="_sf-mirror" class="_sf-txt'+(window.__sfCloudView?' active':'')+'" style="flex:none;" title="클라우드 — 파일검색 데이터를 클라우드에 복사·열람">'+_SFIC.cloud+' 클라우드'+(window.__sfCloudView?' ✓':'')+'</button>'):'')
                     +'<button id="_sf-kebab" class="_sf-ic" title="더보기" style="flex:none;">'+_SFIC.kebab+'</button>'
-                    +'<button id="_sf-viewerbtn" title="실시간 뷰어로 열기" style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:10px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;margin-left:4px;">🧊 Viewer</button>'
-                    +'</div>');
+                    +'</div>');   /* 🧊 필터줄 Viewer 버튼 제거 — 진입은 좌측 환자 카드의 '뷰어' 버튼으로 일원화 */
                 // 작업바(선택 시 표시) — 구글드라이브식: 액션 아이콘은 두지 않음(모든 액션은 카드 ⋯/우클릭 메뉴). 선택 개수 + 해제만 표시.
                 //   단, 파일 '선택 반환' 픽커(_sfPickFiles)로 열렸을 때만 '선택 완료' 버튼을 둔다. (의뢰서/선택 첨부 버튼 제거 — 주문 첨부는 드래그로)
                 const _pickMode = !!window.__sfPickResolve;
@@ -6738,8 +6798,7 @@
                 { const mb=ov.querySelector('#_sf-mcloud'); if(mb) mb.addEventListener('click',()=>{ window.__sfCloudView=!window.__sfCloudView; render(); }); }
                 // ✕ 파일검색 닫기(모바일 바) — 즉시 패널 종료
                 ov.querySelectorAll('#_sf-exit').forEach(function(xb){ xb.addEventListener('click', function(){ try{ window.__sfCloudView=false; }catch(_){} close(); }); });
-                // 🧊 Viewer — 실시간 뷰어 열기(DATA 서랍)
-                { const vb=ov.querySelector('#_sf-viewerbtn'); if(vb) vb.addEventListener('click', function(){ try{ window.openLiveViewerFromSidebar&&window.openLiveViewerFromSidebar(); }catch(_){ showToast('뷰어를 열 수 없습니다.'); } }); }
+                // 🧊 Viewer 진입은 좌측 환자 카드의 '뷰어' 버튼으로 일원화(필터줄 버튼 제거)
 
                 // 닫기·메뉴는 상단바(캡처 영역)의 표준 햄버거/로고로 통일 — X 버튼 제거. switchTab이 공유폴더를 닫고 전환.
                 const pk=ov.querySelector('#_sf-pick'); if(pk) pk.onclick=async()=>{ const ok=await R.pick(); if(ok){ path=[]; render(); } };
@@ -7165,6 +7224,14 @@
             async function _sfOpenPmsFile(f){
                 if(!f||!f.rpath){ return; }
                 const parts=String(f.rpath).split('/'); const fname=parts.pop(); const pathArr=parts; const low=String(fname||'').toLowerCase();
+                // 🖥 [뷰어 독] 독 모드 + 살아있는 임베드 뷰어 → 파일 카드 열기 = 하단 뷰어로 바로 로드(로컬·뷰어지원 형식).
+                //    그 외(문서/클라우드 전용 등)는 기존 열람 흐름으로 폴백.
+                if(window.__rcViewerDock && window.__rcLV && window.__rcLV.ov && document.body.contains(window.__rcLV.ov) && !window.__rcLV.ov.__lvDead){
+                    if(/\.(dcm|ply|stl|obj|glb|gltf|png|jpe?g|gif|webp|bmp|svg)$/.test(low)){
+                        let _okL=false; try{ if(f.rootId && window.RCFolder && window.RCFolder.setActiveRoot) await window.RCFolder.setActiveRoot(f.rootId); if(window.RCFolder && window.RCFolder.getFileAtRoot){ const _ff=await window.RCFolder.getFileAtRoot(f.rootId, pathArr, fname); _okL=!!_ff; } }catch(_){}
+                        if(_okL){ try{ window.__rcLV.show(); }catch(_){} try{ if(window.__rcFitViewer) window.__rcFitViewer(); }catch(_){} try{ await window.__rcLV.loadPath(pathArr, fname, null); }catch(_){} return; }
+                    }
+                }
                 // 🖥 내 PC 우선: 로컬 루트가 이 기기에 연결돼 있으면 로컬 원본으로 미리보기(빠름·egress 無). 로컬에 없을 때만 ☁ 클라우드 폴백.
                 let ok=false; try{ if(window.RCFolder && window.RCFolder.setActiveRoot) ok=await window.RCFolder.setActiveRoot(f.rootId); }catch(_){}
                 if(ok){
