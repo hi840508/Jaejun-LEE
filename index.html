@@ -6312,6 +6312,48 @@
                 isOpen:()=>!((ov.style.display==='none')||ov.__lvHidden),
                 loadPath:_lvLoadFile };
             try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){}
+            // 🖱 [드래그앤드롭] 메인페이지 파일카드(__sfDragFileRef) 또는 OS 파일을 뷰어에 떨궈 바로 열람.
+            //   ⚠️ iframe이 드롭을 가로채므로, 드래그 중에만 나타나는 드롭 오버레이 레이어로 받는다(자동 숨김 타이머).
+            (function(){
+                const dz=document.createElement('div'); dz.id='_lv-drop';
+                dz.style.cssText='position:absolute;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(11,43,75,.5);pointer-events:auto;';
+                dz.innerHTML='<div style="pointer-events:none;background:rgba(255,255,255,.96);color:#0b2b4b;border:2px dashed #e5468f;border-radius:16px;padding:20px 28px;font-weight:800;font-size:15px;box-shadow:0 10px 40px rgba(0,0,0,.4);">🖥 여기에 놓아 뷰어로 열기</div>';
+                ov.appendChild(dz);
+                let _hideT=null;
+                const _loadable=(e)=>{ const hasInt=(window.__sfDragFileRef&&window.__sfDragFileRef.length); let hasOs=false; try{ hasOs=!!(e.dataTransfer)&&Array.prototype.indexOf.call(e.dataTransfer.types||[],'Files')>=0; }catch(_){} return hasInt||hasOs; };
+                const _onWinOver=(e)=>{ try{ if(ov.__lvHidden||ov.style.display==='none') return; if(!_loadable(e)) return; dz.style.display='flex'; if(_hideT) clearTimeout(_hideT); _hideT=setTimeout(()=>{ dz.style.display='none'; }, 240); }catch(_){} };
+                window.addEventListener('dragover', _onWinOver, true);
+                window.addEventListener('dragend', ()=>{ try{ dz.style.display='none'; }catch(_){} }, true);
+                dz.addEventListener('dragover',(e)=>{ e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} if(_hideT){ clearTimeout(_hideT); _hideT=null; } });
+                dz.addEventListener('drop', async(e)=>{ e.preventDefault(); e.stopPropagation(); try{ dz.style.display='none'; }catch(_){}
+                    const refs=(window.__sfDragFileRef&&window.__sfDragFileRef.length)?window.__sfDragFileRef.slice():null;
+                    const files=(e.dataTransfer&&e.dataTransfer.files)?Array.prototype.slice.call(e.dataTransfer.files):[];
+                    try{ _lvShow(); }catch(_){}
+                    if(refs&&refs.length){ try{ await _lvLoadDescs(refs); }catch(_){} }
+                    else if(files.length){ try{ await _lvLoadOsFiles(files); }catch(_){} }
+                }, true);
+                // 📦 메인페이지 내부 파일카드 ref → 뷰어 로드(로컬 우선, 클라우드/실패는 기존 열기로 폴백)
+                async function _lvLoadDescs(refs){
+                    const r0=refs[0]; if(!r0) return;
+                    try{ if(r0.rootId && window.RCFolder && window.RCFolder.setActiveRoot) await window.RCFolder.setActiveRoot(r0.rootId); }catch(_){}
+                    const parts=String(r0.rpath||'').split('/'); const fn=parts.pop();
+                    if(!fn){ showToast('열 파일 정보가 없습니다.'); return; }
+                    let okLocal=false; try{ if(r0.rootId && window.RCFolder && window.RCFolder.getFileAtRoot){ const f=await window.RCFolder.getFileAtRoot(r0.rootId, parts, fn); okLocal=!!f; } }catch(_){}
+                    if(okLocal){ await _lvLoadFile(parts, fn, null); }
+                    else if(window._sfOpenPmsFile){ try{ await window._sfOpenPmsFile(r0); }catch(_){ showToast('열지 못했습니다.'); } }
+                    else { await _lvLoadFile(parts, fn, null); }
+                }
+                // 📦 OS에서 끌어온 파일(File) → 확장자별 payload로 뷰어 로드(DICOM 다중=시리즈)
+                async function _lvLoadOsFiles(files){
+                    const arr=Array.prototype.slice.call(files||[]); if(!arr.length) return;
+                    const dcms=arr.filter(f=>RC_DCM_RE.test(String(f.name||'').toLowerCase()));
+                    const others=arr.filter(f=>!RC_DCM_RE.test(String(f.name||'').toLowerCase()));
+                    try{ stat.style.display=''; }catch(_){}
+                    if(dcms.length){ const urls=dcms.map(f=>{ const u=URL.createObjectURL(f); (window.__rcViewerUrls=window.__rcViewerUrls||[]).push(u); return u; }); post({type:'RAYCLOUD_LOAD_DICOM', urls:urls, name:(dcms.length>1?('CT Series ('+dcms.length+')'):dcms[0].name)}); }
+                    for(const f of others){ const low=String(f.name||'').toLowerCase(); const u=URL.createObjectURL(f); (window.__rcViewerUrls=window.__rcViewerUrls||[]).push(u); let p; if(/\.(ply|stl|obj|glb|gltf)$/.test(low)) p={type:'RAYCLOUD_LOAD_MESH', urls:[u], names:[f.name]}; else if(RC_IMG_RE.test(low)) p={type:'RAYCLOUD_LOAD_2D', url:u, name:f.name}; else p={type:'RAYCLOUD_LOAD_IMAGE', url:u, name:f.name}; post(p); }
+                    try{ setTimeout(()=>{ try{ stat.style.display='none'; }catch(_){} }, 1500); }catch(_){}
+                }
+            })();
             // 🗂 특정 파일을 명시적으로 열도록 호출된 경우에만 자동 로드(더블클릭 등). Viewer 버튼(빈 호출)은 자동 로드 없음.
             if(fname){ try{ await _lvLoadFile(pathArr, fname, alsoNames); }catch(_){} }
             else { try{ setTimeout(()=>{ try{ stat.style.display='none'; }catch(_){} }, 900); }catch(_){} }
