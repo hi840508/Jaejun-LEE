@@ -6174,13 +6174,35 @@
             }
             ov = document.createElement('div'); ov.id = 'rc-live-viewer';
             // ⚠️ z-index 는 채팅 서랍(4001)보다 낮게 둔다. 높으면 뷰어가 채팅을 덮어 대화를 못 한다.
-            ov.style.cssText = 'position:fixed;inset:0;z-index:3900;background:#0b0b0f;display:flex;flex-direction:column;';
+            ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:3900;background:#0b0b0f;display:flex;flex-direction:column;overflow:hidden;';
             // 헤더 줄을 두지 않는다 — 파일명만 적힌 줄은 이 화면에서 쓸모가 없고 세로 공간만 먹는다.
             //   닫기 버튼은 뷰어 자체 툴바(저장하기가 있는 줄) 맨 오른쪽에 끼워 넣는다.
             ov.innerHTML =
                 '<iframe id="_lv-frame" src="/cbct_suite.html?v='+Date.now()+'" style="flex:1;border:0;width:100%;height:100%;background:#000;" allow="fullscreen"></iframe>'
               + '<div id="_lv-stat" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#e2e8f0;background:rgba(15,23,42,.92);padding:15px 22px;border-radius:12px;font-size:13px;font-weight:600;pointer-events:none;text-align:center;min-width:190px;box-shadow:0 10px 34px rgba(0,0,0,.5);"><style>@keyframes lvIndet{0%{transform:translateX(-120%)}100%{transform:translateX(300%)}}</style>🖥 실시간 뷰어 준비 중…<div style="margin-top:11px;height:6px;border-radius:6px;background:rgba(120,170,220,.22);overflow:hidden;position:relative;"><div style="position:absolute;top:0;left:0;height:100%;width:38%;border-radius:6px;background:linear-gradient(90deg,#7fb4ff,#36e0cc);animation:lvIndet 1.15s linear infinite;"></div></div></div>';
             document.body.appendChild(ov);
+            // 🧩 [통합] 뷰어를 '메인 콘텐츠 영역(.yt-main)' 범위에 맞춰 임베드 — 좌측 사이드바·상단바가 함께 보여 한 화면처럼.
+            //    가로=.yt-main 좌표·폭(스크롤 무관), 세로=상단바(.yt-topbar, sticky) 아래~뷰포트 하단. 미발견/퇴화 시 전체화면 폴백.
+            function _rcFitViewerToMain(){
+                try{
+                    const main=document.querySelector('main.yt-main')||document.querySelector('.yt-main');
+                    const W=window.innerWidth||document.documentElement.clientWidth||0;
+                    const Hh=window.innerHeight||document.documentElement.clientHeight||0;
+                    if(!main){ ov.style.top='0'; ov.style.left='0'; ov.style.width='100%'; ov.style.height='100%'; return; }
+                    const r=main.getBoundingClientRect();
+                    const tb=document.querySelector('.yt-topbar');
+                    const top=Math.max(0, tb?Math.round(tb.getBoundingClientRect().bottom):0);
+                    const left=Math.max(0, Math.round(r.left));
+                    const width=Math.max(0, Math.min(W-left, Math.round(r.width)));
+                    if(width<1 || r.width<1){ ov.style.top='0'; ov.style.left='0'; ov.style.width='100%'; ov.style.height='100%'; return; }
+                    ov.style.top=top+'px'; ov.style.left=left+'px';
+                    ov.style.width=width+'px'; ov.style.height=Math.max(0,Hh-top)+'px';
+                }catch(_){ ov.style.top='0'; ov.style.left='0'; ov.style.width='100%'; ov.style.height='100%'; }
+            }
+            const _rcFit=()=>{ try{ _rcFitViewerToMain(); }catch(_){} };
+            _rcFit(); window.addEventListener('resize', _rcFit);
+            setTimeout(_rcFit,120); setTimeout(_rcFit,450);   // 레이아웃 정착 후 재보정
+            window.__rcFitViewer=_rcFit;
             const fr = ov.querySelector('#_lv-frame');
             const stat = ov.querySelector('#_lv-stat');
             const title = { set textContent(v){}, get textContent(){ return ''; } };   // 옛 호출부 호환(제목 표시 없음)
@@ -6191,6 +6213,7 @@
             //    그게 화면에 그대로 보였다. 그래서 ① 화면에서 감추고 ② 컨텍스트를 반납하고 ③ 제거한다.
             const cleanup = ()=>{
                 if(ov.__lvClosing) return; ov.__lvClosing = true;
+                try{ window.removeEventListener('resize', _rcFit); }catch(_){}   // 🧩 임베드 리사이즈 보정 리스너 정리
                 // ① 화면을 '즉시' 감추고 상호작용을 끊는다(사용자 체감상 바로 닫힘)
                 try{ ov.style.display = 'none'; ov.style.pointerEvents = 'none'; }catch(_){}
                 // ②-먼저 뷰어에 정리 신호를 보내 애니메이션 루프·영상 재생을 멈추게 한다(언로드 부담 감소)
