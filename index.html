@@ -6249,7 +6249,8 @@
                     const Hh=window.innerHeight||document.documentElement.clientHeight||0;
                     // 🖥 [독 모드] 파일검색 그리드(#_sf-grid) 바로 아래에 뷰어를 끼워 — 캡처 목업(필터→파일카드→뷰어)처럼.
                     if(window.__rcViewerDock){
-                        const grid=document.querySelector('#rc-folder-page #_sf-grid');
+                        const page=document.getElementById('rc-folder-page');
+                        const grid=page?page.querySelector('#_sf-grid'):null;
                         if(grid){
                             const gr=grid.getBoundingClientRect();
                             const top=Math.max(0, Math.round(gr.bottom));
@@ -6258,13 +6259,15 @@
                             if(width>=1){
                                 ov.style.top=top+'px'; ov.style.left=left+'px';
                                 ov.style.width=width+'px'; ov.style.height=Math.max(0,Hh-top)+'px';
-                                // ▲▼ 접기 토글 — 그리드/뷰어 경계 우측에 걸쳐 띄움
+                                // ▲▼ 접기 토글 — 그리드/뷰어 경계 좌측에 걸쳐 띄움(우상단 닫기 X와 분리)
                                 try{ const t=document.getElementById('rc-dock-toggle'); if(t){ t.style.display='inline-flex'; t.style.top=Math.max(2,top-15)+'px'; t.style.left=(left+14)+'px'; } }catch(_){}
                                 return;
                             }
                         }
-                        // 그리드 없음(파일검색 닫힘) → 토글 숨기고 일반(상단바 아래) 배치로 폴백
-                        try{ const t=document.getElementById('rc-dock-toggle'); if(t) t.style.display='none'; }catch(_){}
+                        // 파일검색 패널 자체가 사라짐(계정/상점 등으로 전환) → 뷰어 숨김+독 해제(전체화면 튐 방지). cleanup이 독 상태·토글·타이머 정리.
+                        if(!page){ try{ const t=document.getElementById('rc-dock-toggle'); if(t) t.style.display='none'; }catch(_){} try{ window._lvClose&&window._lvClose(); }catch(_){} return; }
+                        // 패널은 있으나 그리드 재렌더 중(innerHTML 교체) — 위치 유지하고 다음 틱 대기(깜빡임 방지).
+                        return;
                     }
                     const main=document.querySelector('main.yt-main')||document.querySelector('.yt-main');
                     if(!main){ ov.style.top='0'; ov.style.left='0'; ov.style.width='100%'; ov.style.height='100%'; return; }
