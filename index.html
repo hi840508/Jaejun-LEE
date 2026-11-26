@@ -5866,7 +5866,7 @@
                 document.body.classList.add('rc-vdock');
                 // 그리드 패널 기본 펼침(마지막 접힘상태 유지하되 최초엔 펼침)
                 if(!document.documentElement.style.getPropertyValue('--rc-dock-grid-h')) document.documentElement.style.setProperty('--rc-dock-grid-h','300px');
-                window._rcEnsureDockToggle&&window._rcEnsureDockToggle();
+                window._rcEnsureDockSplitter&&window._rcEnsureDockSplitter();
                 window._rcDockStart&&window._rcDockStart();
                 // 1) 해당 환자로 파일검색 그리드 열기(선택 + 렌더)
                 try{ window._sbOpenPatient(key); }catch(_){}
@@ -5885,23 +5885,28 @@
         window._rcExitViewerDock = function(hideViewer){
             try{ window.__rcViewerDock=false; document.body.classList.remove('rc-vdock'); }catch(_){}
             try{ window._rcDockStop&&window._rcDockStop(); }catch(_){}
-            try{ const t=document.getElementById('rc-dock-toggle'); if(t) t.style.display='none'; }catch(_){}
+            try{ const t=document.getElementById('rc-dock-splitter'); if(t) t.style.display='none'; }catch(_){}
             if(hideViewer!==false){ try{ window._lvClose&&window._lvClose(); }catch(_){} }
             try{ if(window.__rcFitViewer) window.__rcFitViewer(); }catch(_){}
         };
-        // ▲▼ 파일카드 그리드 접기/펼치기 토글(독 모드 전용). 뷰어 영역 상단 우측에 떠 있는 핀 버튼.
-        window._rcEnsureDockToggle = function(){
-            let t=document.getElementById('rc-dock-toggle');
-            if(!t){
-                t=document.createElement('button'); t.id='rc-dock-toggle'; t.type='button';
-                t.style.cssText='position:fixed;z-index:3902;display:none;align-items:center;gap:6px;height:30px;padding:0 13px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 5px 16px rgba(0,0,0,.35);white-space:nowrap;';
-                t.onclick=function(){ try{ const cur=document.documentElement.style.getPropertyValue('--rc-dock-grid-h')||'300px'; const collapsed=(parseInt(cur,10)||0)<=8; document.documentElement.style.setProperty('--rc-dock-grid-h', collapsed?'300px':'0px'); window._rcSyncDockToggle&&window._rcSyncDockToggle(); setTimeout(()=>{ try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} },30); setTimeout(()=>{ try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} },220); }catch(_){} };
-                document.body.appendChild(t);
+        // ↕ 파일카드 그리드/뷰어 경계 스플리터 — 드래그로 영역 자유 조절(더블클릭=접기/펼치기). 탐색기식 경계선.
+        window._rcEnsureDockSplitter = function(){
+            let s=document.getElementById('rc-dock-splitter');
+            if(!s){
+                s=document.createElement('div'); s.id='rc-dock-splitter'; s.title='드래그하여 파일 목록/뷰어 크기 조절 · 더블클릭=접기/펼치기';
+                s.style.cssText='position:fixed;z-index:3902;display:none;height:11px;cursor:row-resize;background:linear-gradient(180deg,#f0f3f8,#e4eaf1);border-top:1px solid #eef2f7;border-bottom:1px solid #cfdae7;box-shadow:0 2px 6px rgba(16,34,54,.08);touch-action:none;align-items:center;justify-content:center;';
+                s.innerHTML='<div style="width:52px;height:4px;border-radius:3px;background:#8ea6c2;"></div>';
+                const setH=(y)=>{ try{ const grid=document.querySelector('#rc-folder-page #_sf-grid'); if(!grid) return; const gTop=grid.getBoundingClientRect().top; const Hh=window.innerHeight||0; let h=Math.round(y-gTop); h=Math.max(0, Math.min(Math.max(60,Hh-gTop-120), h)); document.documentElement.style.setProperty('--rc-dock-grid-h', h+'px'); window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} };
+                const mv=(ev)=>{ setH(ev.touches?ev.touches[0].clientY:ev.clientY); };
+                const up=()=>{ document.removeEventListener('pointermove',mv); document.removeEventListener('pointerup',up); try{ document.body.style.userSelect=''; }catch(_){} };
+                s.addEventListener('pointerdown',(e)=>{ e.preventDefault(); try{ document.body.style.userSelect='none'; }catch(_){} document.addEventListener('pointermove',mv); document.addEventListener('pointerup',up); });
+                s.addEventListener('mouseenter',()=>{ s.style.background='linear-gradient(180deg,#e9eef6,#d8e2ee)'; });
+                s.addEventListener('mouseleave',()=>{ s.style.background='linear-gradient(180deg,#f0f3f8,#e4eaf1)'; });
+                s.addEventListener('dblclick',()=>{ const cur=parseInt(document.documentElement.style.getPropertyValue('--rc-dock-grid-h')||'300',10)||300; document.documentElement.style.setProperty('--rc-dock-grid-h', cur<=8?'300px':'0px'); try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} });
+                document.body.appendChild(s);
             }
-            window._rcSyncDockToggle&&window._rcSyncDockToggle();
-            return t;
+            return s;
         };
-        window._rcSyncDockToggle = function(){ try{ const t=document.getElementById('rc-dock-toggle'); if(!t) return; const cur=document.documentElement.style.getPropertyValue('--rc-dock-grid-h')||'300px'; const collapsed=(parseInt(cur,10)||0)<=8; t.innerHTML=(collapsed?'▼ 파일 목록 펼치기':'▲ 파일 목록 접기'); }catch(_){} };
         // 📦 메신저 주문 탭 팝업 — 특정 인물에 '연결된 주문'이 있을 때만 띄움(없으면 메신저 안 띄움)
         window._openPatientOrders = async function(key){
             window.__msgrOrderPatient = key||null;
@@ -6238,7 +6243,18 @@
             // 헤더 줄을 두지 않는다 — 파일명만 적힌 줄은 이 화면에서 쓸모가 없고 세로 공간만 먹는다.
             //   닫기 버튼은 뷰어 자체 툴바(저장하기가 있는 줄) 맨 오른쪽에 끼워 넣는다.
             ov.innerHTML =
-                '<iframe id="_lv-frame" src="/cbct_suite.html?v='+Date.now()+'" style="flex:1;border:0;width:100%;height:100%;background:#000;" allow="fullscreen"></iframe>'
+                '<style>#rc-live-viewer ._lv-wbtn{width:46px;height:34px;border:0;background:transparent;color:#eaf1f8;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background .12s,color .12s;}#rc-live-viewer ._lv-wbtn:hover{background:rgba(255,255,255,.15);}#rc-live-viewer ._lv-wclose:hover{background:#e81123;color:#fff;}</style>'
+              + '<div id="_lv-titlebar" style="flex:0 0 34px;height:34px;display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#1b3350,#0b2748);color:#fff;padding:0 2px 0 13px;user-select:none;box-shadow:0 1px 0 rgba(255,255,255,.06) inset;">'
+                +'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9fd0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>'
+                +'<span style="font-size:12.5px;font-weight:800;letter-spacing:.02em;flex:none;">실시간 뷰어</span>'
+                +'<span id="_lv-title-name" style="font-size:11px;color:#9fb6d4;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;"></span>'
+                +'<div style="display:flex;align-items:center;height:100%;flex:none;">'
+                  +'<button id="_lv-wmin" title="최소화" class="_lv-wbtn"><svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>'
+                  +'<button id="_lv-wmax" title="최대화" class="_lv-wbtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"></rect></svg></button>'
+                  +'<button id="_lv-wclose" title="닫기" class="_lv-wbtn _lv-wclose"><svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg></button>'
+                +'</div>'
+              +'</div>'
+              + '<iframe id="_lv-frame" src="/cbct_suite.html?v='+Date.now()+'" style="flex:1 1 auto;min-height:0;border:0;width:100%;background:#000;" allow="fullscreen"></iframe>'
               + '<div id="_lv-stat" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#e2e8f0;background:rgba(15,23,42,.92);padding:15px 22px;border-radius:12px;font-size:13px;font-weight:600;pointer-events:none;text-align:center;min-width:190px;box-shadow:0 10px 34px rgba(0,0,0,.5);"><style>@keyframes lvIndet{0%{transform:translateX(-120%)}100%{transform:translateX(300%)}}</style>🖥 실시간 뷰어 준비 중…<div style="margin-top:11px;height:6px;border-radius:6px;background:rgba(120,170,220,.22);overflow:hidden;position:relative;"><div style="position:absolute;top:0;left:0;height:100%;width:38%;border-radius:6px;background:linear-gradient(90deg,#7fb4ff,#36e0cc);animation:lvIndet 1.15s linear infinite;"></div></div></div>';
             document.body.appendChild(ov);
             // 🧩 [통합] 뷰어를 '메인 콘텐츠 영역(.yt-main)' 범위에 맞춰 임베드 — 좌측 사이드바·상단바가 함께 보여 한 화면처럼.
@@ -6247,6 +6263,13 @@
                 try{
                     const W=window.innerWidth||document.documentElement.clientWidth||0;
                     const Hh=window.innerHeight||document.documentElement.clientHeight||0;
+                    // 🔳 [최대화] 상단바 아래 전체 영역으로 — 독보다 우선(최대화 버튼 토글).
+                    if(ov.__lvMaxed){
+                        const tb=document.querySelector('.yt-topbar'); const top=Math.max(0, tb?Math.round(tb.getBoundingClientRect().bottom):0);
+                        ov.style.top=top+'px'; ov.style.left='0'; ov.style.width=W+'px'; ov.style.height=Math.max(0,Hh-top)+'px';
+                        try{ const t=document.getElementById('rc-dock-splitter'); if(t) t.style.display='none'; }catch(_){}
+                        return;
+                    }
                     // 🖥 [독 모드] 파일검색 그리드(#_sf-grid) 바로 아래에 뷰어를 끼워 — 캡처 목업(필터→파일카드→뷰어)처럼.
                     if(window.__rcViewerDock){
                         const page=document.getElementById('rc-folder-page');
@@ -6259,13 +6282,13 @@
                             if(width>=1){
                                 ov.style.top=top+'px'; ov.style.left=left+'px';
                                 ov.style.width=width+'px'; ov.style.height=Math.max(0,Hh-top)+'px';
-                                // ▲▼ 접기 토글 — 그리드/뷰어 경계 좌측에 걸쳐 띄움(우상단 닫기 X와 분리)
-                                try{ const t=document.getElementById('rc-dock-toggle'); if(t){ t.style.display='inline-flex'; t.style.top=Math.max(2,top-15)+'px'; t.style.left=(left+14)+'px'; } }catch(_){}
+                                // ↕ 드래그 스플리터 — 그리드/뷰어 경계 전체폭에 걸쳐(드래그로 크기 조절)
+                                try{ const s=document.getElementById('rc-dock-splitter'); if(s){ s.style.display='flex'; s.style.top=(top-5)+'px'; s.style.left=left+'px'; s.style.width=width+'px'; } }catch(_){}
                                 return;
                             }
                         }
                         // 파일검색 패널 자체가 사라짐(계정/상점 등으로 전환) → 뷰어 숨김+독 해제(전체화면 튐 방지). cleanup이 독 상태·토글·타이머 정리.
-                        if(!page){ try{ const t=document.getElementById('rc-dock-toggle'); if(t) t.style.display='none'; }catch(_){} try{ window._lvClose&&window._lvClose(); }catch(_){} return; }
+                        if(!page){ try{ const t=document.getElementById('rc-dock-splitter'); if(t) t.style.display='none'; }catch(_){} try{ window._lvClose&&window._lvClose(); }catch(_){} return; }
                         // 패널은 있으나 그리드 재렌더 중(innerHTML 교체) — 위치 유지하고 다음 틱 대기(깜빡임 방지).
                         return;
                     }
@@ -6298,7 +6321,7 @@
             const cleanup = ()=>{
                 try{ ov.style.display='none'; ov.style.pointerEvents='none'; ov.__lvHidden=true; }catch(_){}
                 // 🖥 닫으면 독 해제 → 파일검색 그리드를 전체 높이로 복원(일반 파일검색 복귀). 뷰어 상태는 유지(재진입 시 복구).
-                try{ if(window.__rcViewerDock){ window.__rcViewerDock=false; document.body.classList.remove('rc-vdock'); window._rcDockStop&&window._rcDockStop(); const t=document.getElementById('rc-dock-toggle'); if(t) t.style.display='none'; } }catch(_){}
+                try{ if(window.__rcViewerDock){ window.__rcViewerDock=false; document.body.classList.remove('rc-vdock'); window._rcDockStop&&window._rcDockStop(); const t=document.getElementById('rc-dock-splitter'); if(t) t.style.display='none'; } }catch(_){}
                 try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){}
             };
             window._lvClose = cleanup;
@@ -6318,34 +6341,25 @@
                 if(window.requestAnimationFrame){ requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(heavy,0))); }
                 else setTimeout(heavy, 30);
             };
-            // 🔻 뷰어 툴바(저장하기 줄) 맨 오른쪽에 닫기 버튼을 끼워 넣는다.(보조)
-            //    같은 출처로 서빙하므로 iframe 내부 DOM 에 접근할 수 있다. 실패하면 떠 있는 닫기 버튼으로 대체.
-            function _lvInjectClose(){
-                try{
-                    const doc = fr.contentDocument; if(!doc) return false;
-                    if(doc.getElementById('_lv-close-in')) return true;
-                    const anchor = doc.getElementById('btn-save') || doc.getElementById('btn-report');
-                    if(!anchor || !anchor.parentElement) return false;
-                    const b = doc.createElement('button');
-                    b.id = '_lv-close-in'; b.title = 'Viewer 닫기';
-                    b.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg><span>Viewer 닫기</span>';
-                    b.style.cssText = 'margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#22446b,#0b2b4b);color:#fff;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,43,75,.3);';
-                    b.onclick = function(){ try{ window.parent._lvClose(); }catch(_){} };
-                    anchor.parentElement.appendChild(b);
-                    return true;
-                }catch(_){ return false; }
+            // 🪟 [탐색기식 타이틀바] 최소화/최대화/닫기 — 뷰어 상단 네이비 바 우측(윈도우 탐색기 배치).
+            //    최소화·닫기 = 숨김(상태·메모리 유지, 즉시 복구). 최대화 = 독↔전체화면 토글.
+            function _lvToggleMax(){
+                ov.__lvMaxed=!ov.__lvMaxed;
+                const mx=ov.querySelector('#_lv-wmax');
+                if(mx){ mx.innerHTML = ov.__lvMaxed
+                    ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="1.5"></rect><path d="M5 16V5.5A1.5 1.5 0 0 1 6.5 4H16"></path></svg>'
+                    : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"></rect></svg>';
+                    mx.title = ov.__lvMaxed?'이전 크기로':'최대화'; }
+                try{ _rcFit(); }catch(_){}
             }
-            // 🔻 항상 보이는 '닫기' 버튼 — 뷰어 어디서든 한 번에 빠져나갈 수 있게 상단 우측에 고정(안전영역 반영).
-            function _lvFallbackClose(){
-                if(ov.querySelector('#_lv-close-fb')) return;
-                const b = document.createElement('button');
-                b.id = '_lv-close-fb'; b.title = 'Viewer 닫기';
-                b.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
-                b.style.cssText = 'position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));z-index:31;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;background:rgba(23,43,67,.82);color:#fff;border:1px solid rgba(255,255,255,.22);border-radius:50%;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35);backdrop-filter:saturate(1.2) blur(3px);transition:background .14s,transform .14s;';
-                b.onmouseenter=()=>{ b.style.background='rgba(197,27,125,.95)'; b.style.transform='scale(1.08)'; }; b.onmouseleave=()=>{ b.style.background='rgba(23,43,67,.82)'; b.style.transform=''; };
-                b.onclick = cleanup; ov.appendChild(b);
+            function _lvWireTitle(){
+                const mn=ov.querySelector('#_lv-wmin'), mx=ov.querySelector('#_lv-wmax'), cl=ov.querySelector('#_lv-wclose');
+                if(mn) mn.onclick=()=>{ try{ cleanup(); }catch(_){} };
+                if(cl) cl.onclick=()=>{ try{ cleanup(); }catch(_){} };
+                if(mx) mx.onclick=()=>{ try{ _lvToggleMax(); }catch(_){} };
             }
-            _lvFallbackClose();   // ✅ 항상 즉시 표시(툴바 삽입 성공 여부와 무관하게 닫기 버튼 보장)
+            window._lvToggleMax=_lvToggleMax; window._lvMinimize=cleanup;
+            _lvWireTitle();   // ✅ 타이틀바 컨트롤 배선(부모 DOM이라 iframe 로드와 무관하게 항상 동작)
             // 💬 채팅은 우측 하단 말풍선 버튼으로 연다(뷰어 z-index 3900 < 채팅 4001 이라 위로 열림).
 
             // 뷰어 준비(CBCT_READY) 전에는 보내둔 payload 를 모아 두었다가 준비되면 한 번에 보낸다.
