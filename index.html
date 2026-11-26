@@ -6149,6 +6149,15 @@
             try{ window._sbHighlightPatient&&window._sbHighlightPatient(); }catch(_){}
         };
         window.rcOpenInLiveViewer = async function(pathArr, fname, alsoNames){
+            // 🧩 [메신저식 싱글톤] 이미 살아있는 뷰어가 있으면 재사용 — 표시 후 요청 파일만 로드(상태 유지, 재생성·상태 상실 없음).
+            {
+                const _ex=document.getElementById('rc-live-viewer');
+                if(_ex && window.__rcLV && window.__rcLV.ov===_ex && !_ex.__lvDead){
+                    try{ window.__rcLV.show(); }catch(_){}
+                    if(fname){ try{ await window.__rcLV.loadPath(pathArr, fname, alsoNames); }catch(_){} }
+                    return;
+                }
+            }
             // 📱 모바일/미지원 기기: RCFolder 없거나 비연결이어도 클라우드 데이터는 열람 가능하도록 안전 스텁 사용.
             let R = window.RCFolder;
             if(!R || !R.supported){ const _base=R||{}; R = Object.assign({ listAt:async()=>({files:[]}), listRoots:async()=>[], chosen:()=>false, supported:false }, _base); }
@@ -6211,24 +6220,29 @@
             // 컨텍스트가 쌓여 'WebGL 컨텍스트 손실'이 난다), 그 다음 blob 을 모두 회수한다.
             // ⚠️ 순서가 중요하다. iframe 을 먼저 비우면 뷰어가 'WebGL 컨텍스트 손실' 경고를 띄우는데,
             //    그게 화면에 그대로 보였다. 그래서 ① 화면에서 감추고 ② 컨텍스트를 반납하고 ③ 제거한다.
+            // 🧩 [메신저식] '닫기'=숨김(파괴하지 않음) — 불러둔 영상·상태를 그대로 유지하고, 다시 열면 즉시 복구.
+            //    (WebGL 컨텍스트가 단 1개로 유지되므로 과거의 '컨텍스트 누적' 문제도 없음. 완전 해제는 _lvDestroy.)
             const cleanup = ()=>{
-                if(ov.__lvClosing) return; ov.__lvClosing = true;
-                try{ window.removeEventListener('resize', _rcFit); }catch(_){}   // 🧩 임베드 리사이즈 보정 리스너 정리
-                // ① 화면을 '즉시' 감추고 상호작용을 끊는다(사용자 체감상 바로 닫힘)
-                try{ ov.style.display = 'none'; ov.style.pointerEvents = 'none'; }catch(_){}
-                // ②-먼저 뷰어에 정리 신호를 보내 애니메이션 루프·영상 재생을 멈추게 한다(언로드 부담 감소)
+                try{ ov.style.display='none'; ov.style.pointerEvents='none'; ov.__lvHidden=true; }catch(_){}
+                try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){}
+            };
+            window._lvClose = cleanup;
+            // 🗑 완전 해제(세션 종료/메모리 회수용) — 필요 시에만 호출. 평소 닫기는 숨김(cleanup).
+            window._lvDestroy = ()=>{
+                try{ window.removeEventListener('resize', _rcFit); }catch(_){}
+                try{ ov.style.display='none'; ov.style.pointerEvents='none'; }catch(_){}
                 try{ const f0 = ov.querySelector('#_lv-frame'); if(f0 && f0.contentWindow) f0.contentWindow.postMessage({ type:'lv_cleanup' }, '*'); }catch(_){}
-                // ③ 무거운 iframe 언로드(WebGL/대용량 메모리 해제)는 '화면이 먼저 다시 그려진 뒤' 다음 프레임에서 수행 → 멈춤 체감 제거
                 const heavy = ()=>{
                     try{ const f2 = ov.querySelector('#_lv-frame'); if(f2) f2.src = 'about:blank'; }catch(_){}
                     try{ (window.__rcViewerUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){} }); }catch(_){}
                     window.__rcViewerUrls=[]; window.__rcBlobCache=null;
+                    try{ ov.__lvDead=true; window.__rcLV=null; }catch(_){}
                     setTimeout(()=>{ try{ ov.remove(); }catch(_){} }, 50);
+                    try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){}
                 };
                 if(window.requestAnimationFrame){ requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(heavy,0))); }
                 else setTimeout(heavy, 30);
             };
-            window._lvClose = cleanup;
             // 🔻 뷰어 툴바(저장하기 줄) 맨 오른쪽에 닫기 버튼을 끼워 넣는다.(보조)
             //    같은 출처로 서빙하므로 iframe 내부 DOM 에 접근할 수 있다. 실패하면 떠 있는 닫기 버튼으로 대체.
             function _lvInjectClose(){
@@ -6276,23 +6290,31 @@
                 setTimeout(()=>{ if(!viewerReady){ viewerReady = true; try{ stat.style.display='none'; }catch(_){} while(queue.length){ try{ fr.contentWindow.postMessage(queue.shift(),'*'); }catch(_){} } } }, 2500);
             });
 
-            // 🗂 특정 파일을 명시적으로 열도록 호출된 경우에만 자동 로드(더블클릭 등). Viewer 버튼(빈 호출)은 아무 것도 자동 로드하지 않음.
-            if(fname){
-                try{ post(await _rcPayloadFor(R, pathArr, fname, siblings)); }
-                catch(e){ try{ stat.textContent = '열기 실패'; }catch(_){} showToast('열지 못했습니다: ' + (e.message||e)); }
-                if(Array.isArray(alsoNames) && alsoNames.length){
-                    const _seenDcm = RC_DCM_RE.test(String(fname||'').toLowerCase());
-                    for(const an of alsoNames){
-                        if(!an || an === fname) continue;
-                        const anl = String(an).toLowerCase();
-                        if(RC_DCM_RE.test(anl)){ if(_seenDcm) continue; }   // DICOM 슬라이스는 첫 파일에서 시리즈로 이미 로드됨
-                        try{ const p2 = await _rcPayloadFor(R, pathArr, an, siblings); post(p2); }catch(_){}
-                    }
+            // 🧩 [공통 로더] pathArr/파일명으로 payload 생성→post (최초 로드·재사용 로드·드롭 로드 공용). siblings는 그때그때 재계산.
+            async function _lvLoadFile(pa, fn, also){
+                if(!fn) return;
+                let R2 = window.RCFolder; if(!R2 || !R2.supported){ R2 = Object.assign({ listAt:async()=>({files:[]}) }, R2||{}); }
+                let sibs=[]; try{ const cur=await R2.listAt(pa)||{}; sibs=(cur.files||[]).map(ff=> typeof ff==='string'?ff:((ff&&ff.fname)||(ff&&ff.name)||'')).filter(Boolean); }catch(_){}
+                if(!sibs.length) sibs=[fn];
+                try{ stat.style.display=''; }catch(_){}
+                try{ post(await _rcPayloadFor(R2, pa, fn, sibs)); }
+                catch(e){ try{ stat.textContent='열기 실패'; }catch(_){} showToast('열지 못했습니다: '+((e&&e.message)||e)); }
+                if(Array.isArray(also) && also.length){
+                    const _seen=RC_DCM_RE.test(String(fn||'').toLowerCase());
+                    for(const an of also){ if(!an||an===fn) continue; const anl=String(an).toLowerCase(); if(RC_DCM_RE.test(anl)){ if(_seen) continue; } try{ post(await _rcPayloadFor(R2, pa, an, sibs)); }catch(_){} }
                 }
-            } else {
-                // 빈 상태로 열림 — 준비 표시만 감춘다(영상은 사용자가 DATA 서랍에서 선택).
-                try{ setTimeout(()=>{ try{ stat.style.display='none'; }catch(_){} }, 900); }catch(_){}
             }
+            // 🧩 [메신저식 컨트롤러] 표시/숨김/토글 — 외부(FAB·드롭·호출부)에서 재사용.
+            const _lvShow=()=>{ try{ ov.style.display='flex'; ov.style.pointerEvents=''; ov.__lvHidden=false; }catch(_){} try{ _rcFit(); }catch(_){} try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){} };
+            const _lvHide=()=>{ try{ window._lvClose&&window._lvClose(); }catch(_){} };
+            window.__rcLV = { ov:ov, post:post, show:_lvShow, hide:_lvHide,
+                toggle:()=>{ ((ov.style.display==='none')||ov.__lvHidden)?_lvShow():_lvHide(); },
+                isOpen:()=>!((ov.style.display==='none')||ov.__lvHidden),
+                loadPath:_lvLoadFile };
+            try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){}
+            // 🗂 특정 파일을 명시적으로 열도록 호출된 경우에만 자동 로드(더블클릭 등). Viewer 버튼(빈 호출)은 자동 로드 없음.
+            if(fname){ try{ await _lvLoadFile(pathArr, fname, alsoNames); }catch(_){} }
+            else { try{ setTimeout(()=>{ try{ stat.style.display='none'; }catch(_){} }, 900); }catch(_){} }
 
             // 🗂 이 폴더의 영상 목록을 뷰어 DATA 서랍으로 전송(날짜·폴더 포함). 로드는 서랍에서 클릭할 때 수행.
             _rcSendManifest(R, pathArr, post).then(cnt=>{ if(!fname && cnt) post({ type:'RAYCLOUD_OPEN_DRAWER' }); }).catch(()=>{});
@@ -6443,6 +6465,22 @@
             const _origRemove2 = ov.remove.bind(ov);
             ov.remove = function(){ try{ window.removeEventListener('message', onViewerMsg); }catch(_){} _origRemove2(); };
         };
+
+        // 🖥 [메신저식 FAB] 실시간 뷰어 상시 토글 버튼 — 메신저 말풍선처럼 언제든 열고/닫기(상태 유지). 로그인 후에만 표시.
+        (function(){
+            function _mk(){
+                if(document.getElementById('rc-viewer-fab')) return;
+                if(!document.getElementById('rc-viewer-fab-css')){ const st=document.createElement('style'); st.id='rc-viewer-fab-css'; st.textContent='body:not(.app-authed) #rc-viewer-fab{display:none!important}@media(max-width:768px){#rc-viewer-fab{bottom:150px!important;right:16px!important;width:50px!important;height:50px!important}}'; document.head.appendChild(st); }
+                const b=document.createElement('button'); b.id='rc-viewer-fab'; b.type='button'; b.title='실시간 뷰어 열기/닫기';
+                b.innerHTML='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>';
+                b.style.cssText='position:fixed;bottom:98px;right:26px;width:54px;height:54px;background:linear-gradient(135deg,#22446b,#0b2b4b);border-radius:18px 18px 6px 18px;display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;box-shadow:0 6px 18px rgba(11,43,75,.4);z-index:3999;border:none;transition:transform .16s,background .16s;';
+                b.onmouseenter=()=>{ b.style.transform='scale(1.06)'; }; b.onmouseleave=()=>{ b.style.transform=''; };
+                b.onclick=()=>{ try{ if(window.__rcLV && window.__rcLV.ov && document.body.contains(window.__rcLV.ov)) window.__rcLV.toggle(); else if(window.openLiveViewerFromSidebar) window.openLiveViewerFromSidebar(); else if(window.rcOpenInLiveViewer) window.rcOpenInLiveViewer([], null); }catch(_){} };
+                document.body.appendChild(b);
+                window.__rcUpdateViewerFab=function(){ try{ const open=!!(window.__rcLV&&window.__rcLV.isOpen&&window.__rcLV.isOpen()); b.style.background=open?'linear-gradient(135deg,#c81e74,#98105f)':'linear-gradient(135deg,#22446b,#0b2b4b)'; b.title=open?'실시간 뷰어 닫기':'실시간 뷰어 열기'; }catch(_){} };
+            }
+            if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', _mk); else _mk();
+        })();
 
         async function openSharedFolderPanel(){
             const R=window.RCFolder;
