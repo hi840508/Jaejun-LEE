@@ -7449,6 +7449,14 @@
                     if(window.__sfPatientFilter!==key) return;
                     // 접근 가능 = 현재 연결된 내 컴퓨터 로컬 폴더 or 클라우드. 그 외(유령)는 숨김. 클라우드로 판정되면 f.cloud=true(링크 첨부 경로).
                     files=files.filter(f=>{ const base=String(f.rpath||'').split('/').pop(); const full=String(f.rootId||'')+'/'+String(f.rpath||''); const isC=!!f.cloud||(_crp&&(_crp.has(String(f.rpath))||_crp.has(full)))||(_cbn&&_cbn.has(base)); if(isC) f.cloud=true; return _rids.has(String(f.rootId))||isC; });
+                    // 🔁 [병합/중복제거] 내 PC·클라우드에 동기화된 동일 파일은 카드 1개만 — 내 PC(연결된 로컬 루트) 접근 가능분을 우선 표시, 클라우드에만 있으면 클라우드 카드.
+                    try{
+                        const _localOk=f=>_rids.has(String(f.rootId));
+                        const _dkey=f=>String(f.fname||String(f.rpath||'').split('/').pop()||'').toLowerCase()+'|'+(Number(f.size)||0)+'|'+String(f.studyDate||'')+'|'+String(f.modality||'');
+                        const _seen=new Map();
+                        files.forEach(f=>{ const k=_dkey(f); const prev=_seen.get(k); if(!prev){ _seen.set(k,f); } else if(!_localOk(prev) && _localOk(f)){ _seen.set(k,f); } });   // 중복이면 로컬 접근 가능분으로 교체(내 PC 우선)
+                        files=[..._seen.values()];
+                    }catch(_){}
                 }catch(_){}
                 try{ window.__sfCurPatientCard=c; }catch(_){}
                 // 🧹 메인 페이지 상단의 환자 헤더(선택됨/수정/삭제/안내) 제거 — 수정·삭제는 좌측 환자버튼의 연필 → 팝업에서
