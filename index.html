@@ -1391,10 +1391,8 @@
                     </div>
                     <!-- 📁 파일검색 좌측: 이름·ID·생년월일 검색(+좌측) + 리스트 -->
                     <div class="yt-sb-section sb-file-grp" id="sb-patient-panel" style="flex:1;min-height:0;flex-direction:column;padding:8px;">
-                        <!-- 📁 내 컴퓨터(저장소 전환) 버튼 — 좌측 사이드바 상단 -->
-                        <div style="display:flex;align-items:stretch;margin-bottom:8px;">
-                            <button onclick="window._sfDriveToggle&&window._sfDriveToggle()" title="드라이브 전환 — 내 PC ↔ 클라우드" style="flex:1;display:flex;align-items:center;justify-content:center;gap:9px;padding:11px 12px;border:1px solid #34415c;border-radius:10px;background:#222d42;color:#e8edf5;font-weight:800;font-size:14px;cursor:pointer;"><span id="sb-drive-ico" style="display:inline-flex;align-items:center;color:#4db8e8;"><svg width="46" height="22" viewBox="0 0 46 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="9.5" rx="1.3"/><path d="M5 15h6M8 12v3"/><path d="M18 8.5h9"/><path d="M24 5.5l3 3-3 3"/><path d="M28 14.5h-9"/><path d="M22 11.5l-3 3 3 3"/><path d="M39.5 16a3.3 3.3 0 0 0 .3-6.6 4.3 4.3 0 0 0-8.2-.9A3.3 3.3 0 0 0 32 16z"/></svg></span><span id="sb-drive-lbl">내 PC</span></button>
-                        </div>
+                        <!-- 📁 내 PC/클라우드 토글 제거 — 파일카드를 병합(내 PC·클라우드 동시표시, 카드 뱃지로 소스 구분)하여 전환 불필요 -->
+                        <div id="sb-drive-ico" style="display:none;"></div><span id="sb-drive-lbl" style="display:none;"></span>
                         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
                             <input id="sb-pt-q" oninput="_sbPatientFilter(this.value)" placeholder="이름·ID·생년월일 검색" autocomplete="off" style="flex:1;min-width:0;padding:8px 10px;border:1px solid #34415c;border-radius:9px;font-size:12.5px;background:#222d42;color:#e2e8f2;">
                             <button onclick="_sbPatientAdd()" title="추가" style="flex:none;width:34px;height:34px;border:1px solid #34415c;background:#222d42;border-radius:8px;cursor:pointer;font-size:17px;line-height:1;color:#c6d2e2;">＋</button>
@@ -6729,7 +6727,7 @@
                     +'<button id="_sf-sort" class="_sf-txt" style="flex:none;">'+(flt.sort==='old'?'오래된순':flt.sort==='name'?'이름순':'최신순')+' '+_SFIC.chev+'</button>'
                     +'<button id="_sf-zout" class="_sf-ic" title="축소" style="flex:none;">'+_SFIC.minus+'</button>'
                     +'<button id="_sf-zin" class="_sf-ic" title="확대" style="flex:none;">'+_SFIC.plus+'</button>'
-                    +(window.CLOUD_MIRROR_ENABLED?('<button id="_sf-mirror" class="_sf-txt'+(window.__sfCloudView?' active':'')+'" style="flex:none;" title="클라우드 — 파일검색 데이터를 클라우드에 복사·열람">'+_SFIC.cloud+' 클라우드'+(window.__sfCloudView?' ✓':'')+'</button>'):'')
+                    +''   /* 🔀 내PC/클라우드 토글(클라우드 버튼) 제거 — 병합뷰로 일원화(파일카드 뱃지로 소스 표시) */
                     +'<button id="_sf-kebab" class="_sf-ic" title="더보기" style="flex:none;">'+_SFIC.kebab+'</button>'
                     +'</div>');   /* 🧊 필터줄 Viewer 버튼 제거 — 진입은 좌측 환자 카드의 '뷰어' 버튼으로 일원화 */
                 // 작업바(선택 시 표시) — 구글드라이브식: 액션 아이콘은 두지 않음(모든 액션은 카드 ⋯/우클릭 메뉴). 선택 개수 + 해제만 표시.
@@ -7448,7 +7446,7 @@
                     }catch(_){}
                     if(window.__sfPatientFilter!==key) return;
                     // 접근 가능 = 현재 연결된 내 컴퓨터 로컬 폴더 or 클라우드. 그 외(유령)는 숨김. 클라우드로 판정되면 f.cloud=true(링크 첨부 경로).
-                    files=files.filter(f=>{ const base=String(f.rpath||'').split('/').pop(); const full=String(f.rootId||'')+'/'+String(f.rpath||''); const isC=!!f.cloud||(_crp&&(_crp.has(String(f.rpath))||_crp.has(full)))||(_cbn&&_cbn.has(base)); if(isC) f.cloud=true; return _rids.has(String(f.rootId))||isC; });
+                    files=files.filter(f=>{ const base=String(f.rpath||'').split('/').pop(); const full=String(f.rootId||'')+'/'+String(f.rpath||''); const isC=!!f.cloud||(_crp&&(_crp.has(String(f.rpath))||_crp.has(full)))||(_cbn&&_cbn.has(base)); if(isC) f.cloud=true; f.local=_rids.has(String(f.rootId)); return f.local||isC; });   // 🖥 f.local=이 PC(연결된 로컬 루트) 접근 가능
                     // 🔁 [병합/중복제거] 내 PC·클라우드에 동기화된 동일 파일은 카드 1개만 — 내 PC(연결된 로컬 루트) 접근 가능분을 우선 표시, 클라우드에만 있으면 클라우드 카드.
                     try{
                         const _localOk=f=>_rids.has(String(f.rootId));
@@ -7467,12 +7465,17 @@
                 const gmap={}; const order=[];
                 files.forEach(f=>{ const k=_ptDobFmt(f.studyDate)||'날짜 미상'; if(!gmap[k]){ gmap[k]=[]; order.push(k); } gmap[k].push(f); });
                 const card=(f,seriesN)=>{ const nm=f.fname||''; const manual=(f.source==='manual'); const isSeries=(seriesN>1); const label=isSeries?('CT 시리즈 · '+seriesN+'컷'):nm; const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):'';
+                    // 🏷 소스 뱃지: 내 PC(연결 로컬)=네이비, 클라우드=청록, 둘 다 동기화면 둘 다. 클라우드에만 있으면 카드 반투명(이 PC에 없음).
+                    const _srcL='<span style="display:inline-flex;align-items:center;gap:2px;font-size:8.5px;font-weight:800;color:#fff;background:#0f2f52;border-radius:5px;padding:1px 5px;line-height:1.5;">🖥 내 PC</span>';
+                    const _srcC='<span style="display:inline-flex;align-items:center;gap:2px;font-size:8.5px;font-weight:800;color:#fff;background:#0e7490;border-radius:5px;padding:1px 5px;line-height:1.5;">☁ 클라우드</span>';
+                    const srcBadge='<div style="position:absolute;left:6px;bottom:6px;z-index:4;display:flex;gap:3px;flex-wrap:wrap;">'+(f.local?_srcL:'')+(f.cloud?_srcC:'')+'</div>';
+                    const _ptOpacity=(f.cloud&&!f.local)?'opacity:.72;':'';
                     // 🏷 유형 필터용 data-type: 시리즈/DICOM(모달리티 있거나 .dcm)=dicom(=CT/DICOM 칩), 그 외는 _sfType 분류. (파노라마 PX도 dicom)
                     const ftype=isSeries?'dicom':(function(){ let t='other'; try{ t=_sfType(f.mime,nm); }catch(_){} if(t==='other'&&f.modality) t='dicom'; return t; })();
-                    return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" data-cloud="'+(f.cloud?'1':'')+'" data-mime="'+ESC(f.mime||'')+'" data-size="'+(Number(f.size)||0)+'" data-series="'+(isSeries?seriesN:'')+'" data-type="'+ESC(ftype)+'" data-fname="'+ESC(nm)+'" data-mtime="'+(Number(f.mtime)||Date.parse(f.studyDate||'')||0)+'" title="'+ESC(label)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
+                    return '<div class="_pt-file" data-rootid="'+ESC(f.rootId)+'" data-rpath="'+ESC(f.rpath)+'" data-manual="'+(manual?'1':'')+'" data-cloud="'+(f.cloud?'1':'')+'" data-mime="'+ESC(f.mime||'')+'" data-size="'+(Number(f.size)||0)+'" data-series="'+(isSeries?seriesN:'')+'" data-type="'+ESC(ftype)+'" data-fname="'+ESC(nm)+'" data-mtime="'+(Number(f.mtime)||Date.parse(f.studyDate||'')||0)+'" title="'+ESC(label)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;'+_ptOpacity+'box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
                         +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;">'+(isSeries?('<span style="position:absolute;top:6px;right:6px;z-index:3;font-size:9px;font-weight:800;color:#fff;background:#0d9488;border-radius:5px;padding:1px 6px;">'+seriesN+'컷</span>'):'')+'<div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+tile+'</div>'
                         +((f.modality&&!isSeries)?('<span style="position:absolute;top:6px;left:34px;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border:1px solid #a5f3fc;border-radius:5px;padding:1px 6px;z-index:2;">'+ESC(f.modality)+'</span>'):'')
-                        +'<button class="_pt-menu" title="더보기" style="position:absolute;bottom:6px;right:6px;width:26px;height:26px;padding:0;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;font-size:15px;font-weight:800;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+((typeof _SFIC!=='undefined'&&_SFIC.dots)?_SFIC.dots:'⋯')+'</button></div>'
+                        +'<button class="_pt-menu" title="더보기" style="position:absolute;bottom:6px;right:6px;width:26px;height:26px;padding:0;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;font-size:15px;font-weight:800;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+((typeof _SFIC!=='undefined'&&_SFIC.dots)?_SFIC.dots:'⋯')+'</button>'+srcBadge+'</div>'
                         +'<div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
                         +'<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(String(f.rootName||'').replace(/\s*\(주\s*폴더\)\s*$/,''))+(manual?' · 🔗연결':'')+'</div>'
                         +'</div>'; };
