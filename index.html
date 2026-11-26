@@ -6371,16 +6371,19 @@
                 let R2 = window.RCFolder; if(!R2 || !R2.supported){ R2 = Object.assign({ listAt:async()=>({files:[]}) }, R2||{}); }
                 let sibs=[]; try{ const cur=await R2.listAt(pa)||{}; sibs=(cur.files||[]).map(ff=> typeof ff==='string'?ff:((ff&&ff.fname)||(ff&&ff.name)||'')).filter(Boolean); }catch(_){}
                 if(!sibs.length) sibs=[fn];
-                try{ stat.style.display=''; }catch(_){}
+                // 뷰어가 아직 준비 전일 때만 '준비 중' 표시(이미 떠 있으면 로드마다 깜빡이지 않게). 로드 후엔 항상 자동 숨김.
+                let _showedStat=false; try{ if(!viewerReady){ stat.style.display=''; _showedStat=true; } }catch(_){}
                 try{ post(await _rcPayloadFor(R2, pa, fn, sibs)); }
                 catch(e){ try{ stat.textContent='열기 실패'; }catch(_){} showToast('열지 못했습니다: '+((e&&e.message)||e)); }
                 if(Array.isArray(also) && also.length){
                     const _seen=RC_DCM_RE.test(String(fn||'').toLowerCase());
                     for(const an of also){ if(!an||an===fn) continue; const anl=String(an).toLowerCase(); if(RC_DCM_RE.test(anl)){ if(_seen) continue; } try{ post(await _rcPayloadFor(R2, pa, an, sibs)); }catch(_){} }
                 }
+                // ⏳ 로드 신호(완료 메시지)가 없으므로 일정 시간 뒤 '준비 중' 바를 반드시 숨긴다(무한 표시 버그 방지).
+                try{ setTimeout(()=>{ try{ stat.style.display='none'; }catch(_){} }, _showedStat?1600:200); }catch(_){}
             }
             // 🧩 [메신저식 컨트롤러] 표시/숨김/토글 — 외부(FAB·드롭·호출부)에서 재사용.
-            const _lvShow=()=>{ try{ ov.style.display='flex'; ov.style.pointerEvents=''; ov.__lvHidden=false; }catch(_){} try{ _rcFit(); }catch(_){} try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){} };
+            const _lvShow=()=>{ try{ ov.style.display='flex'; ov.style.pointerEvents=''; ov.__lvHidden=false; }catch(_){} try{ if(viewerReady) stat.style.display='none'; }catch(_){} try{ _rcFit(); }catch(_){} try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){} };
             const _lvHide=()=>{ try{ window._lvClose&&window._lvClose(); }catch(_){} };
             window.__rcLV = { ov:ov, post:post, show:_lvShow, hide:_lvHide,
                 toggle:()=>{ ((ov.style.display==='none')||ov.__lvHidden)?_lvShow():_lvHide(); },
@@ -18858,13 +18861,21 @@ pdfjsScript,
         window.msgrGlobalSearch = function(q){
             q=String(q||'').toLowerCase().trim();
             const active=document.querySelector('.messenger-view.active'); const id=active?active.id:'';
+            const _flt=(sel)=>{ document.querySelectorAll(sel).forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.includes(q))?'':'none'; }); };
             if(id==='view-friend-list'){
-                document.querySelectorAll('#friend-list-container .friend-item').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.includes(q))?'':'none'; });
+                _flt('#friend-list-container .friend-item');
                 try{ const fi=document.getElementById('friend-search-input'); if(fi){ fi.value=q; if(window.searchUsersForFriend) searchUsersForFriend(); } }catch(_){}
-            } else if(id==='view-chat-list'){
-                document.querySelectorAll('#chat-list-container > *').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.includes(q))?'':'none'; });
-            } else if(id==='view-order-list'){
-                document.querySelectorAll('#order-list-container ._ord-item').forEach(el=>{ const t=(el.textContent||'').toLowerCase(); el.style.display=(!q||t.includes(q))?'':'none'; });
+            } else if(id==='view-messages'){
+                // 📨 메세지 탭 = 주문 목록 + 채팅 목록 둘 다 필터
+                _flt('#order-list-container ._ord-item');
+                _flt('#chat-list-container > *');
+            } else if(id==='view-store'){
+                // 🏪 상점 탭 = 상점 카드/상품 카드 필터(목록·상품 공통)
+                _flt('#msgr-store-container > *');
+            } else if(id==='view-chat-list'){   /* 하위호환(옛 id) */
+                _flt('#chat-list-container > *');
+            } else if(id==='view-order-list'){  /* 하위호환(옛 id) */
+                _flt('#order-list-container ._ord-item');
             }
         };
         // 🤝 받은/보낸 친구 신청 — 친구 목록 맨 위에 표시하고 수락·거절·취소를 처리한다.
