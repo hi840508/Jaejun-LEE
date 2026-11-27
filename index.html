@@ -6250,10 +6250,10 @@
             // 뷰어가 서버에 배포돼 있는지 먼저 확인
             let ready = false;
             try{ const r = await fetch(API_URL + '/api/viewer/status', { cache:'no-store' }); const j = await r.json(); ready = !!(j && j.ready); }catch(_){}
-            if(!ready){ showToast('실시간 뷰어가 아직 서버에 배포되지 않았습니다.'); return; }
+            if(!ready){ showToast('Viewer가 아직 서버에 배포되지 않았습니다.'); return; }
 
             const lower = String(fname||'').toLowerCase();
-            if(fname && !_rcCatOf(lower)){ showToast('실시간 뷰어로 열 수 없는 형식입니다.'); return; }
+            if(fname && !_rcCatOf(lower)){ showToast('Viewer로 열 수 없는 형식입니다.'); return; }
             window.__rcBlobCache = new Map();   // 이번 세션의 blob 캐시(파일당 1개)
             // 같은 폴더 파일 목록(서랍용) + 날짜(mtime) 메타
             let siblings = [], sibMeta = [];
@@ -6276,7 +6276,7 @@
                 '<style>#rc-live-viewer ._lv-wbtn{width:46px;height:34px;border:0;background:transparent;color:#eaf1f8;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background .12s,color .12s;}#rc-live-viewer ._lv-wbtn:hover{background:rgba(255,255,255,.15);}#rc-live-viewer ._lv-wclose:hover{background:#e81123;color:#fff;}</style>'
               + '<div id="_lv-titlebar" style="flex:0 0 34px;height:34px;display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#1b3350,#0b2748);color:#fff;padding:0 2px 0 13px;user-select:none;box-shadow:0 1px 0 rgba(255,255,255,.06) inset;">'
                 +'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9fd0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>'
-                +'<span style="font-size:12.5px;font-weight:800;letter-spacing:.02em;flex:none;">실시간 뷰어</span>'
+                +'<span style="font-size:12.5px;font-weight:800;letter-spacing:.02em;flex:none;">Viewer</span>'
                 +'<span id="_lv-title-name" style="font-size:11px;color:#9fb6d4;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;"></span>'
                 +'<div style="display:flex;align-items:center;height:100%;flex:none;">'
                   +'<button id="_lv-wmin" title="최소화" class="_lv-wbtn"><svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>'
@@ -6454,7 +6454,10 @@
                     const refs=(window.__sfDragFileRef&&window.__sfDragFileRef.length)?window.__sfDragFileRef.slice():null;
                     const files=(e.dataTransfer&&e.dataTransfer.files)?Array.prototype.slice.call(e.dataTransfer.files):[];
                     try{ _lvShow(); }catch(_){}
-                    if(refs&&refs.length){ try{ await _lvLoadDescs(refs); }catch(_){} }
+                    if(refs&&refs.length){ try{ await _lvLoadDescs(refs); }catch(_){}
+                        // 🧑‍⚕️ 이 뷰어가 특정 환자로 열려 있으면, 드롭한 파일카드를 그 환자 데이터에 자동 종속(이후 이 환자 파일로 표시)
+                        try{ var _pk=window.__selectedPatientKey; if(_pk && window._sfAssignDraggedToPatient){ var _ds=refs.map(function(r){ return {rootId:r.rootId, rpath:r.rpath, cloud:r.cloud, mime:r.mime, size:r.size}; }); window._sfAssignDraggedToPatient(_pk, _ds).then(function(n){ if(n){ showToast('🧑‍⚕️ '+n+'개 파일을 이 환자에 연결했습니다.'); try{ if(window.__sfPatientFilter===_pk && window.__sfRender) window.__sfRender(); }catch(_){} } }).catch(function(){}); } }catch(_){}
+                    }
                     else if(files.length){ try{ await _lvLoadOsFiles(files); }catch(_){} }
                 }, true);
                 // 📦 메인페이지 내부 파일카드 ref → 뷰어 로드(로컬 우선, 클라우드/실패는 기존 열기로 폴백)
@@ -6727,7 +6730,18 @@
                 const crumb = (path.length
                         ? ('<span class="_sf-crumb" data-i="-1" style="cursor:pointer;color:#0f2f52;font-weight:700;">'+_rootLbl+'</span>'+path.map((seg,i)=>' <span style="color:#c4c9d0;font-weight:500;">›</span> <span class="_sf-crumb" data-i="'+i+'" style="cursor:pointer;'+(i===path.length-1?'font-weight:800;color:#0f172a;':'color:#334155;')+'">'+_sfEsc(seg)+'</span>').join(''))
                         : (window.__sfPatientFilter
-                            ? ('<span class="_sf-crumb" data-i="-1" style="cursor:pointer;color:#0f2f52;font-weight:700;">'+_rootLbl+'</span> <span style="color:#c4c9d0;font-weight:500;">›</span> <span style="font-weight:800;color:#0f172a;">🧑‍⚕️ '+_sfEsc((window.__selectedPatient&&window.__selectedPatient.name)||'환자')+'</span>')
+                            ? (function(){ var p=window.__selectedPatient||{}; var sx=String(p.sex||'').toUpperCase(); var bg=sx==='M'?'#3b82f6':(sx==='F'?'#ec4899':'#64748b'); var ini=(String(p.name||'·').trim()[0]||'·');
+                                var dd=String(p.dob||'').replace(/[^0-9]/g,''); var dobF=dd.length>=8?(dd.slice(0,4)+'.'+dd.slice(4,6)+'.'+dd.slice(6,8)):'';
+                                var sexL=({M:'남',F:'여'})[sx]||''; var age=''; if(dd.length>=8){ var y=+dd.slice(0,4),mo=+dd.slice(4,6),da=+dd.slice(6,8); var n=new Date(); var a=n.getFullYear()-y; if(n.getMonth()+1<mo||(n.getMonth()+1===mo&&n.getDate()<da))a--; if(a>=0&&a<150)age=a+'세'; }
+                                var meta=[sexL,age].filter(Boolean).join(' · ');
+                                return '<button id="_sf-ptback" title="전체 카드 보기로 돌아가기" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:10px;cursor:pointer;margin-right:4px;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></button>'
+                                  +'<div style="flex:none;display:inline-flex;align-items:center;gap:11px;background:linear-gradient(135deg,#ffffff,#f3f7fb);border:1px solid #d4dde8;border-radius:13px;padding:5px 16px 5px 6px;box-shadow:0 1px 3px rgba(16,34,54,.08);">'
+                                    +'<span style="flex:none;width:38px;height:38px;border-radius:50%;background:'+bg+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;">'+_sfEsc(ini)+'</span>'
+                                    +'<span style="display:inline-flex;flex-direction:column;line-height:1.3;">'
+                                      +'<span style="font-weight:800;font-size:16px;color:#0f172a;white-space:nowrap;">'+_sfEsc(p.name||'환자')+(meta?(' <span style="font-size:12px;font-weight:700;color:#64748b;">'+_sfEsc(meta)+'</span>'):'')+'</span>'
+                                      +'<span style="font-size:11.5px;color:#8a99ab;font-weight:600;white-space:nowrap;">'+(p.patientId?('ID '+_sfEsc(p.patientId)):'')+(dobF?((p.patientId?'  ·  ':'')+'생 '+_sfEsc(dobF)):'')+'</span>'
+                                    +'</span></div>';
+                              })()
                             : (_cloudSel
                                 ? '<div id="_sf-cloudctl" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;"></div>'   // ☁ 클라우드: 글씨 대신 [동기화·용량바·구매]
                                 : (window.__sfStoreView
@@ -6878,6 +6892,8 @@
                 ov.querySelectorAll('._sf-crumb').forEach(c=>c.addEventListener('click',()=>{ const i=Number(c.getAttribute('data-i')); if(i<0 && (window.__sfPatientFilter||window.__sfDeepQuery)){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} } path = i<0?[]:path.slice(0,i+1); render(); }));
                 if(_cloudSel){ try{ window._sfRenderCloudCtl&&window._sfRenderCloudCtl(ov); }catch(_){} }   // ☁ 경로바에 동기화·용량바·구매 채우기
                 else if(!window.__sfStoreView && !window.__sfPatientFilter && !window.__sfDeepQuery && !path.length){ try{ window._sfRenderCompCtl&&window._sfRenderCompCtl(ov); }catch(_){} }   // 📁 경로바에 폴더목록·로컬vs클라우드바·폴더추가 채우기
+                // ⬅ 환자 정보 헤더의 뒤로가기 — 환자 종속 해제하고 전체 카드 보기로
+                { const pb=ov.querySelector('#_sf-ptback'); if(pb) pb.onclick=()=>{ window.__sfPatientFilter=null; window.__sfDeepQuery=null; window.__selectedPatient=null; window.__selectedPatientKey=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); }; }
                 const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else if(window.__sfPatientFilter||window.__sfDeepQuery){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); } else { close(); } };
                     bk.addEventListener('dragover',(e)=>{ if(window.__rcDragFile && path.length){ e.preventDefault(); e.dataTransfer.dropEffect='move'; bk.style.outline='2px solid #0f2f52'; } });
                     bk.addEventListener('dragleave',()=>{ bk.style.outline=''; });
@@ -7039,7 +7055,7 @@
                         const sel=(selected.has(fnm)&&selected.size>1)?Array.from(selected):[fnm]; const multi=sel.length>1;
                         if(here){
                             items.push({label:'👁 미리보기',fn:()=>window.rcPreviewFolderFile(fnm,mim)});
-                            items.push({label:'🖥 실시간 뷰어로 열기',fn:()=>{ try{ window.rcOpenInLiveViewer(path, fnm); }catch(_){ showToast('뷰어 열기 실패'); } }});
+                            items.push({label:'🖥 Viewer로 열기',fn:()=>{ try{ window.rcOpenInLiveViewer(path, fnm); }catch(_){ showToast('뷰어 열기 실패'); } }});
                             items.push({label:(multi?('💾 다른 이름으로 저장하기 ('+sel.length+'개)'):'💾 다른 이름으로 저장하기'),fn:async()=>{ let ok=0; for(const nm of sel){ try{ const f=await R.getFileAt(path, nm); if(!f) continue; if(!multi && window.showSaveFilePicker){ try{ const handle=await window.showSaveFilePicker({ suggestedName: nm }); const w=await handle.createWritable(); await w.write(f); await w.close(); showToast('✅ 저장했습니다: '+nm); return; }catch(e){ if(e && e.name==='AbortError') return; } } const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=nm; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} }, 60000); ok++; }catch(_){} } showToast(multi?('저장 '+ok+'개'):'저장됨'); }});
                             items.push({label:(multi?('📤 공유 / 나에게 보내기 ('+sel.length+'개)'):'📤 공유 / 나에게 보내기'),fn:()=>openShareRecipientPicker(sel)});
                             items.push({label:'🔗 외부 공유(비회원 · QR/링크)',fn:()=>window.guestShareLocalFile(path, fnm, mim, 0)});
