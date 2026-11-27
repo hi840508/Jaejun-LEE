@@ -8171,7 +8171,9 @@
             window._sfMainRootId = async function(){ try{ const R=window.RCFolder; const rs=(R&&R.listRoots)?await R.listRoots():[]; if(!rs||!rs.length) return ''; let s=''; try{ s=localStorage.getItem('rc_main_root')||''; }catch(_){} if(s && rs.some(r=>String(r.id)===String(s))) return s; const m=rs.find(r=>r.main); if(m) return m.id; return rs[0].id; }catch(_){ return ''; } };
             window._sfMainRootInfo = async function(){ try{ const R=window.RCFolder; const rs=(R&&R.listRoots)?await R.listRoots():[]; const id=await window._sfMainRootId(); return (rs||[]).find(r=>String(r.id)===String(id))||null; }catch(_){ return null; } };
             // 📤 파일 카드 → OS 탐색기로 네이티브 드래그 내보내기(앱 전용, 로컬 파일만). 성공 시 true.
-            window._sfStartNativeDrag = function(descs, e){ try{ if(!(window.rayApp&&window.rayApp.fs&&window.rayApp.fs.startDrag)) return false; const items=[]; for(const d of (descs||[])){ if(!d||d.cloud||!d.rootId) continue; let rel=String(d.rpath||''); if(!rel) continue; if(/\.dcm$/i.test(rel) && Number(d.series)>1){ rel=rel.split('/').slice(0,-1).join('/'); } items.push({rootId:d.rootId, relPath:rel}); } if(!items.length) return false; window.rayApp.fs.startDrag(items); try{ if(e) e.preventDefault(); }catch(_){} return true; }catch(_){ return false; } };
+            window._sfStartNativeDrag = function(descs, e){ try{ if(!(window.rayApp&&window.rayApp.fs&&window.rayApp.fs.startDrag)) return false; const items=[]; for(const d of (descs||[])){ if(!d||d.cloud||!d.rootId) continue; let rel=String(d.rpath||''); if(!rel) continue; if(/\.dcm$/i.test(rel) && Number(d.series)>1){ rel=rel.split('/').slice(0,-1).join('/'); } items.push({rootId:d.rootId, relPath:rel}); } if(!items.length) return false;
+                let icon=null; try{ const t=e&&e.target; const card=(t&&t.closest)?t.closest('._sr-file,._pt-file,.rc-gf,.rc-serf,.rc-clview,.rc-gfd'):null; const im=card&&card.querySelector('img'); if(im&&im.src&&String(im.src).slice(0,5)==='data:') icon=im.src; }catch(_){}
+                window.rayApp.fs.startDrag(items, icon); try{ if(e) e.preventDefault(); }catch(_){} return true; }catch(_){ return false; } };
             // 📥 OS 파일 드롭 → 주 폴더에 저장(등록). 드래그로 추가되는 파일은 항상 주 폴더 경로로.
             window._sfWriteFilesToMain = async function(fileList){ const files=[].slice.call(fileList||[]); if(!files.length) return; const R=window.RCFolder; if(!R){ showToast('폴더가 연결되지 않았습니다.'); return; } const mid=await window._sfMainRootId(); if(!mid){ showToast('주 폴더가 없습니다. 먼저 폴더를 지정하세요.'); return; } showToast('주 폴더에 추가 중… ('+files.length+'개)'); let ok=0; try{ if(R.setActiveRoot) await R.setActiveRoot(mid); }catch(_){} for(const f of files){ try{ if(R.writeFileAt){ await R.writeFileAt([], f.name, f); ok++; } }catch(_){} } showToast(ok?('📥 주 폴더에 추가: '+ok+'개'):'추가 실패'); try{ if(R.scanPatients) R.scanPatients(); }catch(_){} try{ if(window.__sfRender) window.__sfRender(); }catch(_){} try{ if(ok && window.syncAllFolders) window.syncAllFolders('drop'); }catch(_){} };
             // 💾 다른 이름으로 저장하기 — 탐색기 저장 위치/이름 선택(showSaveFilePicker). 미지원 시 기본 다운로드 폴백. 클라우드·로컬 공통.
@@ -8623,6 +8625,10 @@
                 }catch(e){ _dl(); }
                 return;
             }
+            // 🌐 브라우저: PDF·HTML·이미지·텍스트·미디어는 새 탭에서 열기(브라우저 기본 뷰어), 그 외 형식은 다운로드 폴백
+            const _low=String(name||'').toLowerCase();
+            const _viewable=/\.(pdf|html?|txt|text|md|csv|log|json|xml|svg|png|jpe?g|gif|webp|bmp|mp4|webm|mov|m4v|mp3|wav|ogg|m4a)$/.test(_low) || /^(application\/pdf|text\/|image\/|video\/|audio\/)/.test(String(f.type||''));
+            if(_viewable){ try{ const u=URL.createObjectURL(f); const w=window.open(u,'_blank','noopener'); if(w){ setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} }, 60000); showToast('새 탭에서 열었습니다.'); return; } try{ URL.revokeObjectURL(u); }catch(_){} showToast('팝업이 차단되어 다운로드합니다.'); }catch(_){} }
             _dl();
         };
         // 📤 폴더 파일 간편 공유(친구 선택 후 전송)
