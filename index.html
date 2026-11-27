@@ -6289,6 +6289,10 @@
             document.body.appendChild(ov);
             // 🧩 [통합] 뷰어를 '메인 콘텐츠 영역(.yt-main)' 범위에 맞춰 임베드 — 좌측 사이드바·상단바가 함께 보여 한 화면처럼.
             //    가로=.yt-main 좌표·폭(스크롤 무관), 세로=상단바(.yt-topbar, sticky) 아래~뷰포트 하단. 미발견/퇴화 시 전체화면 폴백.
+            // ⚡ 값이 바뀔 때만 스타일을 쓰는 캐시 헬퍼 — 220ms 폴링마다 동일 값 재기록으로 생기던 리플로우/깜빡임(버벅임) 감소.
+            const _lvApBox=(t,l,w,h)=>{ const c=ov.__lvBox||(ov.__lvBox={}); if(c.t!==t){ov.style.top=t+'px';c.t=t;} if(c.l!==l){ov.style.left=l+'px';c.l=l;} if(c.w!==w){ov.style.width=w+'px';c.w=w;} if(c.h!==h){ov.style.height=h+'px';c.h=h;} };
+            const _lvApPct=()=>{ ov.__lvBox=null; ov.style.top='0'; ov.style.left='0'; ov.style.width='100%'; ov.style.height='100%'; };
+            const _lvApSplit=(disp,t,l,w)=>{ try{ const s=document.getElementById('rc-dock-splitter'); if(!s) return; const c=ov.__lvSp||(ov.__lvSp={}); if(c.d!==disp){s.style.display=disp;c.d=disp;} if(disp!=='none'){ if(c.t!==t){s.style.top=t+'px';c.t=t;} if(c.l!==l){s.style.left=l+'px';c.l=l;} if(c.w!==w){s.style.width=w+'px';c.w=w;} } }catch(_){} };
             function _rcFitViewerToMain(){
                 try{
                     const W=window.innerWidth||document.documentElement.clientWidth||0;
@@ -6296,8 +6300,7 @@
                     // 🔳 [최대화] 상단바 아래 전체 영역으로 — 독보다 우선(최대화 버튼 토글).
                     if(ov.__lvMaxed){
                         const tb=document.querySelector('.yt-topbar'); const top=Math.max(0, tb?Math.round(tb.getBoundingClientRect().bottom):0);
-                        ov.style.top=top+'px'; ov.style.left='0'; ov.style.width=W+'px'; ov.style.height=Math.max(0,Hh-top)+'px';
-                        try{ const t=document.getElementById('rc-dock-splitter'); if(t) t.style.display='none'; }catch(_){}
+                        _lvApBox(top,0,W,Math.max(0,Hh-top)); _lvApSplit('none');
                         return;
                     }
                     // 🖥 [독 모드] 파일검색 그리드(#_sf-grid) 바로 아래에 뷰어를 끼워 — 캡처 목업(필터→파일카드→뷰어)처럼.
@@ -6310,29 +6313,27 @@
                             const left=Math.max(0, Math.round(gr.left));
                             const width=Math.max(0, Math.min(W-left, Math.round(gr.width)));
                             if(width>=1){
-                                ov.style.top=top+'px'; ov.style.left=left+'px';
-                                ov.style.width=width+'px'; ov.style.height=Math.max(0,Hh-top)+'px';
+                                _lvApBox(top,left,width,Math.max(0,Hh-top));
                                 // ↕ 드래그 스플리터 — 그리드/뷰어 경계 전체폭에 걸쳐(드래그로 크기 조절)
-                                try{ const s=document.getElementById('rc-dock-splitter'); if(s){ s.style.display='flex'; s.style.top=(top-5)+'px'; s.style.left=left+'px'; s.style.width=width+'px'; } }catch(_){}
+                                _lvApSplit('flex', top-5, left, width);
                                 return;
                             }
                         }
                         // 파일검색 패널 자체가 사라짐(계정/상점 등으로 전환) → 뷰어 숨김+독 해제(전체화면 튐 방지). cleanup이 독 상태·토글·타이머 정리.
-                        if(!page){ try{ const t=document.getElementById('rc-dock-splitter'); if(t) t.style.display='none'; }catch(_){} try{ window._lvClose&&window._lvClose(); }catch(_){} return; }
+                        if(!page){ _lvApSplit('none'); try{ window._lvClose&&window._lvClose(); }catch(_){} return; }
                         // 패널은 있으나 그리드 재렌더 중(innerHTML 교체) — 위치 유지하고 다음 틱 대기(깜빡임 방지).
                         return;
                     }
                     const main=document.querySelector('main.yt-main')||document.querySelector('.yt-main');
-                    if(!main){ ov.style.top='0'; ov.style.left='0'; ov.style.width='100%'; ov.style.height='100%'; return; }
+                    if(!main){ _lvApPct(); return; }
                     const r=main.getBoundingClientRect();
                     const tb=document.querySelector('.yt-topbar');
                     const top=Math.max(0, tb?Math.round(tb.getBoundingClientRect().bottom):0);
                     const left=Math.max(0, Math.round(r.left));
                     const width=Math.max(0, Math.min(W-left, Math.round(r.width)));
-                    if(width<1 || r.width<1){ ov.style.top='0'; ov.style.left='0'; ov.style.width='100%'; ov.style.height='100%'; return; }
-                    ov.style.top=top+'px'; ov.style.left=left+'px';
-                    ov.style.width=width+'px'; ov.style.height=Math.max(0,Hh-top)+'px';
-                }catch(_){ ov.style.top='0'; ov.style.left='0'; ov.style.width='100%'; ov.style.height='100%'; }
+                    if(width<1 || r.width<1){ _lvApPct(); return; }
+                    _lvApBox(top,left,width,Math.max(0,Hh-top));
+                }catch(_){ _lvApPct(); }
             }
             const _rcFit=()=>{ try{ _rcFitViewerToMain(); }catch(_){} };
             _rcFit(); window.addEventListener('resize', _rcFit);
