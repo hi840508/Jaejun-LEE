@@ -6439,12 +6439,14 @@
             (function(){
                 const dz=document.createElement('div'); dz.id='_lv-drop';
                 dz.style.cssText='position:absolute;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(11,43,75,.5);pointer-events:auto;';
-                dz.innerHTML='<div style="pointer-events:none;background:rgba(255,255,255,.96);color:#0b2b4b;border:2px dashed #e5468f;border-radius:16px;padding:20px 28px;font-weight:800;font-size:15px;box-shadow:0 10px 40px rgba(0,0,0,.4);">🖥 여기에 놓아 뷰어로 열기</div>';
+                dz.innerHTML='<div style="pointer-events:none;background:rgba(255,255,255,.96);color:#0b2b4b;border:2px dashed #e5468f;border-radius:16px;padding:20px 28px;font-weight:800;font-size:15px;box-shadow:0 10px 40px rgba(0,0,0,.4);">🖥 뷰어 아무 곳에나 놓으면 열립니다</div>';
                 ov.appendChild(dz);
                 let _hideT=null;
                 const _loadable=(e)=>{ const hasInt=(window.__sfDragFileRef&&window.__sfDragFileRef.length); let hasOs=false; try{ hasOs=!!(e.dataTransfer)&&Array.prototype.indexOf.call(e.dataTransfer.types||[],'Files')>=0; }catch(_){} return hasInt||hasOs; };
-                const _onWinOver=(e)=>{ try{ if(ov.__lvHidden||ov.style.display==='none') return; if(!_loadable(e)) return; dz.style.display='flex'; if(_hideT) clearTimeout(_hideT); _hideT=setTimeout(()=>{ dz.style.display='none'; }, 240); }catch(_){} };
+                const _onWinOver=(e)=>{ try{ if(ov.__lvHidden||ov.style.display==='none') return; if(!_loadable(e)) return; dz.style.display='flex'; if(_hideT) clearTimeout(_hideT); _hideT=setTimeout(()=>{ dz.style.display='none'; }, 900); }catch(_){} };
                 window.addEventListener('dragover', _onWinOver, true);
+                // 🖱 메인페이지 파일카드 드래그 '시작' 즉시 드롭존 표시 → 뷰어 '전체 영역'이 드롭 타깃(점선 상자 조준 불필요). 드롭/종료 시 숨김.
+                window.addEventListener('dragstart',()=>{ setTimeout(()=>{ try{ if((window.__sfDragFileRef&&window.__sfDragFileRef.length) && !(ov.__lvHidden||ov.style.display==='none')) dz.style.display='flex'; }catch(_){} },0); }, true);
                 window.addEventListener('dragend', ()=>{ try{ dz.style.display='none'; }catch(_){} }, true);
                 dz.addEventListener('dragover',(e)=>{ e.preventDefault(); try{ e.dataTransfer.dropEffect='copy'; }catch(_){} if(_hideT){ clearTimeout(_hideT); _hideT=null; } });
                 dz.addEventListener('drop', async(e)=>{ e.preventDefault(); e.stopPropagation(); try{ dz.style.display='none'; }catch(_){}
