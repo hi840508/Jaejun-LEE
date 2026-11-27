@@ -5921,10 +5921,12 @@
                 s=document.createElement('div'); s.id='rc-dock-splitter'; s.title='드래그하여 파일 목록/뷰어 크기 조절 · 더블클릭=접기/펼치기';
                 s.style.cssText='position:fixed;z-index:3902;display:none;height:11px;cursor:row-resize;background:linear-gradient(180deg,#f0f3f8,#e4eaf1);border-top:1px solid #eef2f7;border-bottom:1px solid #cfdae7;box-shadow:0 2px 6px rgba(16,34,54,.08);touch-action:none;align-items:center;justify-content:center;';
                 s.innerHTML='<div style="width:52px;height:4px;border-radius:3px;background:#8ea6c2;"></div>';
-                const setH=(y)=>{ try{ const grid=document.querySelector('#rc-folder-page #_sf-grid'); if(!grid) return; const gTop=grid.getBoundingClientRect().top; const Hh=window.innerHeight||0; let h=Math.round(y-gTop); h=Math.max(0, Math.min(Math.max(60,Hh-gTop-120), h)); document.documentElement.style.setProperty('--rc-dock-grid-h', h+'px'); window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} };
+                // ⚡ 드래그 중엔 그리드 높이 transition을 끄고(body.rc-splitting), fit은 rAF로 프레임당 1회만 — 리사이즈 버벅임 제거
+                const _fitRAF=()=>{ if(window._rcFitRAF) return; window._rcFitRAF=requestAnimationFrame(()=>{ window._rcFitRAF=0; try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} }); };
+                const setH=(y)=>{ try{ const grid=document.querySelector('#rc-folder-page #_sf-grid'); if(!grid) return; const gTop=grid.getBoundingClientRect().top; const Hh=window.innerHeight||0; let h=Math.round(y-gTop); h=Math.max(0, Math.min(Math.max(60,Hh-gTop-120), h)); document.documentElement.style.setProperty('--rc-dock-grid-h', h+'px'); _fitRAF(); }catch(_){} };
                 const mv=(ev)=>{ setH(ev.touches?ev.touches[0].clientY:ev.clientY); };
-                const up=()=>{ document.removeEventListener('pointermove',mv); document.removeEventListener('pointerup',up); try{ document.body.style.userSelect=''; }catch(_){} };
-                s.addEventListener('pointerdown',(e)=>{ e.preventDefault(); try{ document.body.style.userSelect='none'; }catch(_){} document.addEventListener('pointermove',mv); document.addEventListener('pointerup',up); });
+                const up=()=>{ document.removeEventListener('pointermove',mv); document.removeEventListener('pointerup',up); try{ document.body.style.userSelect=''; }catch(_){} try{ document.body.classList.remove('rc-splitting'); }catch(_){} try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} };
+                s.addEventListener('pointerdown',(e)=>{ e.preventDefault(); try{ document.body.style.userSelect='none'; }catch(_){} try{ document.body.classList.add('rc-splitting'); }catch(_){} document.addEventListener('pointermove',mv); document.addEventListener('pointerup',up); });
                 s.addEventListener('mouseenter',()=>{ s.style.background='linear-gradient(180deg,#e9eef6,#d8e2ee)'; });
                 s.addEventListener('mouseleave',()=>{ s.style.background='linear-gradient(180deg,#f0f3f8,#e4eaf1)'; });
                 s.addEventListener('dblclick',()=>{ const cur=parseInt(document.documentElement.style.getPropertyValue('--rc-dock-grid-h')||'300',10)||300; document.documentElement.style.setProperty('--rc-dock-grid-h', cur<=8?'300px':'0px'); try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} });
@@ -6460,7 +6462,7 @@
                     try{ _lvShow(); }catch(_){}
                     if(refs&&refs.length){ try{ await _lvLoadDescs(refs); }catch(_){}
                         // 🧑‍⚕️ 이 뷰어가 특정 환자로 열려 있으면, 드롭한 파일카드를 그 환자 데이터에 자동 종속(이후 이 환자 파일로 표시)
-                        try{ var _pk=window.__selectedPatientKey||window.__sfPatientFilter; if(_pk && window._sfAssignDraggedToPatient){ var _ds=refs.map(function(r){ return {rootId:r.rootId, rpath:r.rpath, rootName:r.rootName||'', fname:r.fname||'', modality:r.modality||'', studyDate:r.studyDate||'', mtime:Number(r.mtime)||0, cloud:r.cloud, mime:r.mime, size:r.size}; }); window._sfAssignDraggedToPatient(_pk, _ds, {silent:false}).then(function(n){ try{ if(n && window.__sfPatientFilter===_pk && window.__sfRender) window.__sfRender(); }catch(_){} }).catch(function(){}); } }catch(_){}
+                        try{ var _pk=window.__rcViewerPatientKey||window.__selectedPatientKey||window.__sfPatientFilter; if(_pk && window._sfAssignDraggedToPatient){ var _ds=refs.map(function(r){ return {rootId:r.rootId, rpath:r.rpath, rootName:r.rootName||'', fname:r.fname||'', modality:r.modality||'', studyDate:r.studyDate||'', mtime:Number(r.mtime)||0, cloud:r.cloud, mime:r.mime, size:r.size}; }); window._sfAssignDraggedToPatient(_pk, _ds, {silent:false}).then(function(n){ try{ if(n && window.__sfPatientFilter===_pk && window.__sfRender) window.__sfRender(); }catch(_){} }).catch(function(){}); } }catch(_){}
                     }
                     else if(files.length){ try{ await _lvLoadOsFiles(files); }catch(_){} }
                 }, true);
@@ -6700,7 +6702,8 @@
  "#rc-folder-page ._sf-sechead,#rc-folder-page ._sf-sechead-plain{font-size:13.5px;font-weight:700;color:#374151;}",
  "@media (max-width:640px){ #rc-folder-page ._sf-secgrid{grid-template-columns:repeat(auto-fill,minmax(44vw,1fr))!important;gap:12px!important;} }",
  /* 🖥 뷰어 독: 파일카드 그리드를 접이식 상단 패널로(높이=CSS 변수). 아래 공간은 하단 임베드 뷰어가 덮는다. */
- "body.rc-vdock #rc-folder-page #_sf-grid{flex:0 0 auto!important;height:var(--rc-dock-grid-h,300px)!important;max-height:var(--rc-dock-grid-h,300px)!important;overflow:auto;transition:height .18s ease;border-bottom:1px solid #dbe3ec;box-shadow:inset 0 -8px 10px -8px rgba(16,34,54,.12);}"
+ "body.rc-vdock #rc-folder-page #_sf-grid{flex:0 0 auto!important;height:var(--rc-dock-grid-h,300px)!important;max-height:var(--rc-dock-grid-h,300px)!important;overflow:auto;transition:height .18s ease;border-bottom:1px solid #dbe3ec;box-shadow:inset 0 -8px 10px -8px rgba(16,34,54,.12);}",
+ "body.rc-splitting #rc-folder-page #_sf-grid{transition:none!important;}"
 ].join(''); document.head.appendChild(st); }
             const ov=document.createElement('div'); ov.id='rc-folder-page';
             // 📎 선택 모드(의뢰서/첨부에서 호출)면 모달 위(최상위·전체화면)로 띄운다. 아니면 기본(상단바 아래, 낮은 z-index).
