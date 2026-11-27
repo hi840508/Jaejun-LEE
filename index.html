@@ -5297,24 +5297,38 @@
             ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:520px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:88vh;display:flex;flex-direction:column;">'
                 +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="font-weight:800;font-size:16px;">클라우드 저장 파일 관리</div><button id="_cfm-x" style="margin-left:auto;border:0;background:#f1f5f9;border-radius:8px;width:30px;height:30px;cursor:pointer;">✕</button></div>'
                 +'<div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.6;">클라우드에 저장된 파일입니다. <b>로컬에서 지워도 여기엔 백업본이 남습니다.</b> 완전히 지우려면 아래에서 삭제하세요. (삭제 시 용량이 즉시 회수됩니다)</div>'
-                +'<div id="_cfm-bar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span id="_cfm-cnt" style="font-size:12px;color:#475569;font-weight:700;">불러오는 중…</span><button id="_cfm-all" style="margin-left:auto;padding:7px 12px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;display:none;">전체 삭제</button></div>'
+                +'<div id="_cfm-bar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><span id="_cfm-cnt" style="font-size:12px;color:#475569;font-weight:700;">불러오는 중…</span>'
+                +'<button id="_cfm-orphan" title="로컬(내 PC 연결 폴더)에 없는 클라우드 전용 파일만 보기" style="margin-left:auto;padding:7px 12px;border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;display:none;">로컬에 없음만</button>'
+                +'<button id="_cfm-delorph" title="로컬에 없는 항목(고아) 일괄 삭제" style="padding:7px 12px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;display:none;">로컬에 없는 항목 삭제</button>'
+                +'<button id="_cfm-all" style="padding:7px 12px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;display:none;">전체 삭제</button></div>'
                 +'<div id="_cfm-list" style="flex:1;overflow:auto;border:1px solid #eef2f7;border-radius:12px;"></div>'
                 +'</div>';
             document.body.appendChild(ov); ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
             ov.querySelector('#_cfm-x').onclick=()=>ov.remove();
             const listEl=ov.querySelector('#_cfm-list'); const cntEl=ov.querySelector('#_cfm-cnt'); const allBtn=ov.querySelector('#_cfm-all');
+            const orphanBtn=ov.querySelector('#_cfm-orphan'); const delorphBtn=ov.querySelector('#_cfm-delorph');
+            window.__cfmOrphanOnly=false;   // 열 때마다 전체 보기로 시작
             let changed=false;
             const close=()=>{ ov.remove(); if(changed && onDone) onDone(); };
             ov.querySelector('#_cfm-x').onclick=close;
+            // 📁 로컬(연결된 내 PC 폴더) 파일명 집합 — '로컬에 없는(고아)' 판정용. 30초 캐시.
+            async function _localBasenames(){ try{ const now=Date.now(); const c=window.__cfmLocSet; if(c&&(now-c.t)<30000) return c.set; const R=window.RCFolder; const set=new Set(); let roots=[]; try{ roots=(R&&R.rootsStatus)?await R.rootsStatus():((R&&R.listRoots)?await R.listRoots():[]); }catch(_){} for(const r of (roots||[]).filter(x=>x&&x.connected!==false)){ try{ const fsList=(R&&R.walkRoot)?await R.walkRoot(r.id,{max:20000}):[]; (fsList||[]).forEach(f=>{ const nm=String(f.name||f.fname||'').toLowerCase(); if(nm) set.add(nm); }); }catch(_){} } window.__cfmLocSet={t:Date.now(),set:set}; return set; }catch(_){ return new Set(); } }
+            let _orphanList=[];
             async function load(){
                 let items=[]; try{ items=await window.RCMirror.list(); }catch(_){}
-                cntEl.textContent=items.length?('파일 '+items.length+'개 · 합계 '+fmt(items.reduce((s,x)=>s+(Number(x.size)||0),0))):'';
+                let locSet=null; try{ locSet=await _localBasenames(); }catch(_){}
+                const isOrphan=it=>{ if(!locSet) return false; const b=_b(it.rpath).toLowerCase(); return !!(b && !locSet.has(b)); };   // 로컬(연결 폴더)에 같은 파일명이 없으면 '클라우드 전용(고아)'
+                _orphanList=items.filter(isOrphan); const orphBytes=_orphanList.reduce((s,x)=>s+(Number(x.size)||0),0); const total=items.reduce((s,x)=>s+(Number(x.size)||0),0);
+                const only=!!window.__cfmOrphanOnly; const shown=only?_orphanList:items;
+                cntEl.innerHTML= items.length?('파일 '+items.length+'개 · 합계 '+fmt(total)+(_orphanList.length?(' · <b style="color:#dc2626;">로컬에 없음 '+_orphanList.length+'개('+fmt(orphBytes)+')</b>'):'')):'';
                 allBtn.style.display=items.length?'':'none';
-                if(!items.length){ listEl.innerHTML='<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:13px;">클라우드에 저장된 파일이 없습니다.</div>'; return; }
-                listEl.innerHTML=items.map(it=>{ const nm=_b(it.rpath); const dir=(it.rpath||'').split('/').slice(0,-1).join(' / ');
+                orphanBtn.style.display=_orphanList.length?'':'none'; orphanBtn.textContent=only?'전체 보기':'로컬에 없음만'; orphanBtn.style.background=only?'#0b2b4b':'#fff'; orphanBtn.style.color=only?'#fff':'#334155'; orphanBtn.style.borderColor=only?'#0b2b4b':'#cbd5e1';
+                delorphBtn.style.display=_orphanList.length?'':'none';
+                if(!shown.length){ listEl.innerHTML='<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:13px;">'+(only?'로컬에 없는 항목이 없습니다.':'클라우드에 저장된 파일이 없습니다.')+'</div>'; return; }
+                listEl.innerHTML=shown.map(it=>{ const nm=_b(it.rpath); const dir=(it.rpath||'').split('/').slice(0,-1).join(' / '); const orph=isOrphan(it);
                     return '<div class="_cfm-row" data-rpath="'+ESC(it.rpath)+'" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #f1f5f9;">'
                         +'<span style="font-size:22px;flex:none;">'+ic(nm)+'</span>'
-                        +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(nm)+'</div>'+(dir?('<div style="font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(dir)+'</div>'):'')+'</div>'
+                        +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(nm)+(orph?' <span style="font-size:10px;font-weight:800;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:0 5px;vertical-align:middle;">로컬에 없음</span>':'')+'</div>'+(dir?('<div style="font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(dir)+'</div>'):'')+'</div>'
                         +'<span style="font-size:11px;color:#64748b;flex:none;">'+fmt(it.size)+'</span>'
                         +'<button class="_cfm-open" style="flex:none;padding:6px 12px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;">열기</button>'
                         +'<button class="_cfm-del" style="flex:none;padding:6px 12px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;">삭제</button>'
@@ -5323,14 +5337,16 @@
                 listEl.querySelectorAll('._cfm-del').forEach(b=>b.onclick=async()=>{ const row=b.closest('._cfm-row'); const rp=row.getAttribute('data-rpath');
                     const ok=await (window._sfConfirm?window._sfConfirm('이 파일을 클라우드에서 완전히 삭제할까요?\n'+_b(rp)+'\n\n(복원할 수 없습니다)','삭제'):Promise.resolve(confirm('이 파일을 클라우드에서 완전히 삭제할까요?')));
                     if(!ok) return; b.disabled=true; b.textContent='…';
-                    try{ await window.RCMirror.del(rp); changed=true; row.remove(); showToast('삭제했습니다.'); const left=listEl.querySelectorAll('._cfm-row').length; if(!left) load(); else { try{ const items=await window.RCMirror.list(); cntEl.textContent='파일 '+items.length+'개 · 합계 '+fmt(items.reduce((s,x)=>s+(Number(x.size)||0),0)); }catch(_){} } }
+                    try{ await window.RCMirror.del(rp); changed=true; window.__cfmLocSet=null; load(); }
                     catch(e){ b.disabled=false; b.textContent='🗑'; showToast('삭제 실패: '+(e.message||e)); } });
             }
+            orphanBtn.onclick=()=>{ window.__cfmOrphanOnly=!window.__cfmOrphanOnly; load(); };
+            delorphBtn.onclick=async()=>{ if(!_orphanList.length){ showToast('로컬에 없는 항목이 없습니다.'); return; } const cnt=_orphanList.length; const ok=await (window._sfConfirm?window._sfConfirm('로컬(내 PC 연결 폴더)에 없는 클라우드 전용 파일 '+cnt+'개를 삭제할까요?\n\n(클라우드에만 있는 백업본이 모두 삭제되며 복원할 수 없습니다)','삭제'):Promise.resolve(confirm('로컬에 없는 항목 '+cnt+'개를 삭제할까요?'))); if(!ok) return; delorphBtn.disabled=true; delorphBtn.textContent='삭제 중…'; let done=0; for(const it of _orphanList.slice()){ try{ await window.RCMirror.del(it.rpath); changed=true; done++; }catch(_){} } delorphBtn.disabled=false; delorphBtn.textContent='로컬에 없는 항목 삭제'; showToast('🗑 로컬에 없는 항목 '+done+'개 삭제'); window.__cfmLocSet=null; load(); };
             allBtn.onclick=async()=>{ const ok=await (window._sfConfirm?window._sfConfirm('클라우드에 저장된 모든 파일을 삭제할까요?\n\n이 작업은 되돌릴 수 없습니다.','전체 삭제'):Promise.resolve(confirm('모든 파일을 삭제할까요? 되돌릴 수 없습니다.')));
                 if(!ok) return; allBtn.disabled=true; allBtn.textContent='삭제 중…';
                 let items=[]; try{ items=await window.RCMirror.list(); }catch(_){}
                 for(const it of items){ try{ await window.RCMirror.del(it.rpath); changed=true; }catch(_){} }
-                allBtn.disabled=false; allBtn.textContent='전체 삭제'; showToast('🗑 전체 삭제 완료'); load(); };
+                allBtn.disabled=false; allBtn.textContent='전체 삭제'; showToast('🗑 전체 삭제 완료'); window.__cfmLocSet=null; load(); };
             load();
         };
         window.openMirrorPanel = async function(){
@@ -6061,7 +6077,7 @@
             let cap; try{ cap=await window._sfComputeCap(); }catch(_){ cap=null; } cap=cap||{local:0,used:0,quota:104857600};
             const cb=(ov||document).querySelector('#_sf-capbar'); if(!cb) return; cb.innerHTML=window._sfCapBarHTML(cap);
             // 🖱 용량 바 클릭 → 클라우드 저장소 관리창(파일 목록·크기·삭제·용량) — '가득 참'이 아니어도 항상 열람/정리 가능하게.
-            try{ cb.style.cursor='pointer'; cb.title='클라우드 저장소 관리 — 파일 목록·크기·삭제·용량'; cb.onclick=()=>{ try{ if(window.openCloudBackup) window.openCloudBackup(); else if(window.openMirrorPanel) window.openMirrorPanel(); }catch(_){} }; }catch(_){}
+            try{ cb.style.cursor='pointer'; cb.title='클라우드 저장 파일 관리 — 목록·크기·삭제(로컬에 없는 항목 정리)'; cb.onclick=()=>{ try{ if(window._openCloudFileManager) window._openCloudFileManager(function(){ try{ window.__sfCloudStatus=null; if(window._sfRefreshCapBar) window._sfRefreshCapBar(); }catch(_){} }); else if(window.openMirrorPanel) window.openMirrorPanel(); }catch(_){} }; }catch(_){}
             const local=Number(cap.local)||0, used=Number(cap.used)||0, quota=Number(cap.quota)||0;
             const short=Math.max(0, local-quota); const full = short>0 || used>=quota;   // 용량 가득참 = 초과 or 사용량≥용량
             const btn=(ov||document).querySelector('#_sf-capbtn'); const sh=(ov||document).querySelector('#_sf-capshort');
