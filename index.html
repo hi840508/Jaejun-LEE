@@ -5904,7 +5904,14 @@
             }catch(e){ showToast('뷰어를 열 수 없습니다.'); }
         };
         // 🧲 독 모드 ON 동안 하단 뷰어 위치를 주기적으로 재보정(그리드 접힘/환자전환/셀렉트바 등장에 대응). 값이 바뀔 때만 적용.
-        window._rcDockStart = function(){ if(window.__rcDockTimer) return; window.__rcDockTimer=setInterval(function(){ try{ if(!window.__rcViewerDock){ clearInterval(window.__rcDockTimer); window.__rcDockTimer=null; return; } if(window.__rcFitViewer) window.__rcFitViewer(); }catch(_){} }, 220); };
+        // ⚡ fit 호출을 rAF로 합쳐(프레임당 1회) 강제 레이아웃(getBoundingClientRect) 폭주 방지 — 반응성 개선
+        window._rcFitSoon = function(){ if(window._rcFitRAF) return; window._rcFitRAF=requestAnimationFrame(function(){ window._rcFitRAF=0; try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} }); };
+        window._rcDockStart = function(){
+            // 🪟 리사이즈/스크롤 시 즉시(rAF) 보정 — 폴링은 느슨하게(백업용)해 유휴 시 강제 리플로우 최소화
+            if(!window.__rcDockResizeHook){ window.__rcDockResizeHook=1; window.addEventListener('resize', function(){ if(window.__rcViewerDock) window._rcFitSoon(); }, {passive:true}); }
+            if(window.__rcDockTimer) return;
+            window.__rcDockTimer=setInterval(function(){ try{ if(!window.__rcViewerDock){ clearInterval(window.__rcDockTimer); window.__rcDockTimer=null; return; } window._rcFitSoon(); }catch(_){} }, 600);   // 220→600ms (리사이즈/스플리터는 이벤트·rAF로 즉시 처리)
+        };
         window._rcDockStop = function(){ try{ if(window.__rcDockTimer){ clearInterval(window.__rcDockTimer); window.__rcDockTimer=null; } }catch(_){} };
         // 🖥 뷰어 독 해제 — 그리드를 전체 높이로 복원(일반 파일검색). 뷰어 싱글톤은 숨김(상태 유지).
         window._rcExitViewerDock = function(hideViewer){
