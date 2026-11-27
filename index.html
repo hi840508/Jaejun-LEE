@@ -7755,7 +7755,7 @@
                 try{ const now=Date.now(); if(window.__sfPtMap && (now-(window.__sfPtMapAt||0))<60000) return window.__sfPtMap;
                     const byKey={}, byName={}; let pts=[]; try{ pts=(await (await fetch(API_URL+'/api/pms/patients')).json()).items||[]; }catch(_){}
                     for(const p of pts){ let files=[]; try{ files=((await (await fetch(API_URL+'/api/pms/patients/'+encodeURIComponent(p.patientKey)+'/files')).json()).files)||[]; }catch(_){}
-                        const sx=String(p.sex||'').toUpperCase(); const info={key:p.patientKey, name:p.name||'', bg:(sx==='M'?'#3b82f6':(sx==='F'?'#ec4899':'#64748b'))};
+                        const sx=String(p.sex||'').toUpperCase(); const info={key:p.patientKey, name:p.name||'', bg:(sx==='M'?'#3b82f6':(sx==='F'?'#ec4899':'#64748b')), patientId:p.patientId||'', dob:p.dob||'', sex:p.sex||''};
                         for(const f of files){ const rp=String(f.rpath||''); if(rp) byKey[String(f.rootId||'')+'|'+rp]=info; const bn=(rp||String(f.fname||'')).split('/').pop(); if(bn){ byName[bn.toLowerCase()+'|'+(Number(f.size)||0)]=info; if(byName[bn.toLowerCase()]===undefined) byName[bn.toLowerCase()]=info; } } }
                     window.__sfPtMap={byKey:byKey, byName:byName}; window.__sfPtMapAt=Date.now(); return window.__sfPtMap;
                 }catch(_){ return {byKey:{},byName:{}}; }
@@ -7814,17 +7814,31 @@
                     const _srcL='<span style="display:inline-flex;align-items:center;font-size:8.5px;font-weight:800;color:#fff;background:#0f2f52;border-radius:5px;padding:1px 5px;line-height:1.5;">🖥 내 PC</span>';
                     const _srcC='<span style="display:inline-flex;align-items:center;font-size:8.5px;font-weight:800;color:#fff;background:#0e7490;border-radius:5px;padding:1px 5px;line-height:1.5;">☁ 클라우드</span>';
                     const _srcBadge='<div style="position:absolute;left:6px;bottom:6px;z-index:4;display:flex;gap:3px;flex-wrap:wrap;">'+(_loc?_srcL:'')+(_cld?_srcC:'')+'</div>';
-                    // 🧑‍⚕️ 푸터: 환자 지정 파일 → 환자정보(아바타·이름, 무테), 미지정 → 출처(루트/경로)
+                    // 🧑‍⚕️ 환자 지정 파일 → 파일명 숨기고 환자정보(이름·성별/나이·ID·생년월일) 예쁘게. 미지정 → 파일명 + 출처.
                     const _pinfo=_pm?(_pm.byKey[(it.rootId||'')+'|'+rpath]||_pm.byName[String(nm||'').toLowerCase()+'|'+(Number(it.size)||0)]||_pm.byName[String(nm||'').toLowerCase()]):null;
-                    const _footer=(_pinfo&&_pinfo.name)
-                        ? ('<div style="padding:3px 9px 7px;display:flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;overflow:hidden;"><span style="flex:none;width:16px;height:16px;border-radius:50%;background:'+_pinfo.bg+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;">'+ESC((String(_pinfo.name).trim()[0])||'·')+'</span><span style="font-size:11px;font-weight:700;color:#0f2f52;overflow:hidden;text-overflow:ellipsis;">'+ESC(_pinfo.name)+'</span></div>')
-                        : ('<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub||' ')+'</div>');
+                    let _body;
+                    if(_pinfo&&_pinfo.name){
+                        const _dd=String(_pinfo.dob||'').replace(/[^0-9]/g,''); const _dobF=_dd.length>=8?(_dd.slice(0,4)+'.'+_dd.slice(4,6)+'.'+_dd.slice(6,8)):'';
+                        const _sxL=({M:'남',F:'여'})[String(_pinfo.sex||'').toUpperCase()]||''; let _age=''; if(_dd.length>=8){ const _y=+_dd.slice(0,4),_mo=+_dd.slice(4,6),_da=+_dd.slice(6,8); const _n=new Date(); let _a=_n.getFullYear()-_y; if(_n.getMonth()+1<_mo||(_n.getMonth()+1===_mo&&_n.getDate()<_da))_a--; if(_a>=0&&_a<150)_age=_a+'세'; }
+                        const _meta=[_sxL,_age].filter(Boolean).join(' · ');
+                        const _l2=[_meta,(_pinfo.patientId?('ID '+_pinfo.patientId):'')].filter(Boolean).join('   ·   ');
+                        _body='<div style="padding:9px 9px 10px;text-align:center;">'
+                            +'<div style="display:flex;align-items:center;justify-content:center;gap:6px;">'
+                                +'<span style="flex:none;width:19px;height:19px;border-radius:50%;background:'+_pinfo.bg+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">'+ESC((String(_pinfo.name).trim()[0])||'·')+'</span>'
+                                +'<span style="font-size:13px;font-weight:800;color:#0f2f52;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+ESC(_pinfo.name)+'</span>'
+                            +'</div>'
+                            +(_l2?('<div style="font-size:10px;color:#5b6b7f;font-weight:600;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(_l2)+'</div>'):'')
+                            +(_dobF?('<div style="font-size:9.5px;color:#9fb0c7;font-weight:600;margin-top:2px;">'+ESC(_dobF)+'</div>'):'')
+                        +'</div>';
+                    } else {
+                        _body='<div style="padding:7px 9px 2px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
+                            +'<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub||' ')+'</div>';
+                    }
                     return '<div class="_sr-file" draggable="true" data-rootid="'+ESC(it.rootId)+'" data-rpath="'+ESC(rpath)+'" data-cloud="'+(_cld&&!_loc?'1':'')+'" data-cloudrp="'+ESC(it.cloudRpath||'')+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'" data-type="'+ESC(isSeries?'dicom':(function(){ try{ return _sfType(it.mime,nm); }catch(_){ return 'other'; } })())+'" data-mtime="'+(Number(it.mtime)||0)+'" data-fname="'+ESC(nm)+'" title="'+ESC(sub+'/'+nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;'+_op+'box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
                         +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;">'+(isSeries?('<span style="position:absolute;top:6px;right:6px;z-index:3;font-size:9px;font-weight:800;color:#fff;background:#0d9488;border-radius:5px;padding:1px 6px;">'+it.series+'컷</span>'):'')+'<div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+(typeof _sfFileTile==='function'?_sfFileTile(nm):'')+'</div>'
                         +'<div class="_sr-chk" style="position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);"></div>'
                         +'<button class="_sr-menu" title="더보기" style="position:absolute;bottom:6px;right:6px;width:26px;height:26px;padding:0;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;font-size:15px;font-weight:800;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+((typeof _SFIC!=='undefined'&&_SFIC.dots)?_SFIC.dots:'⋯')+'</button>'+_srcBadge+'</div>'
-                        +'<div style="padding:7px 9px 2px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
-                        +_footer
+                        +_body
                         +'</div>'; };
                 const secStyle='display:grid;grid-template-columns:repeat(auto-fill,minmax('+zoom+'px,1fr));gap:12px;';
                 let body='';
