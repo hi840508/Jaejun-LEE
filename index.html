@@ -7833,11 +7833,11 @@
                 // 🧑‍⚕️ [#7/#4] 렌더 전에 파일→환자 역인덱스를 받아(깜빡임 방지) 카드 푸터에 '출처 vs 환자정보'를 동기 표시
                 let _pm=null; try{ _pm=await _sfPatientFileMap(); }catch(_){}
                 const card=(it)=>{ const nm=it.fname; const isSeries=(it.series>1); const label=isSeries?('CT 시리즈 · '+it.series+'컷'):nm; const pth=(it.pathArr||[]).join('/'); const rpath=(pth?pth+'/':'')+nm; const sub=String(it.rootName||'').replace(/\s*\(주\s*폴더\)\s*$/,'')+(pth?(' / '+pth):'');
-                    // ☁ 우상단 뱃지: 클라우드에 있으면 구름 뱃지(표시만), 없으면 '클라우드 올리기' 버튼.
+                    // ☁ 우상단 뱃지: 동기화(내PC+클라우드)=뱃지 없음 / 클라우드 전용=다운로드(구름↓) 버튼 / 로컬 전용=올리기(구름↑) 버튼
                     const _loc=it.local!==false, _cld=!!it.cloud; const _op=(_cld&&!_loc)?'opacity:.72;':'';
-                    const _cldBadge=_cld
-                        ? '<span title="클라우드에 있음" style="position:absolute;top:7px;right:7px;z-index:5;width:22px;height:22px;border-radius:50%;background:rgba(14,116,144,.95);color:#fff;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span>'
-                        : '<button class="_sr-upcloud" title="이 파일을 클라우드에 올리기" style="position:absolute;top:7px;right:7px;z-index:6;width:22px;height:22px;border-radius:50%;border:none;background:rgba(255,255,255,.94);color:#0e7490;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.22);padding:0;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><path d="M12 17v-6M9.5 13.5l2.5-2.5 2.5 2.5"/></svg></button>';
+                    let _cldBadge='';
+                    if(_cld && !_loc){ _cldBadge='<button class="_sr-dlcloud" title="클라우드에서 로컬로 다운로드" style="position:absolute;top:7px;right:7px;z-index:6;width:22px;height:22px;border-radius:50%;border:none;background:rgba(14,116,144,.95);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28);padding:0;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><path d="M12 10v6.5M9.3 14l2.7 2.6 2.7-2.6"/></svg></button>'; }
+                    else if(!_cld){ _cldBadge='<button class="_sr-upcloud" title="이 파일을 클라우드에 올리기" style="position:absolute;top:7px;right:7px;z-index:6;width:22px;height:22px;border-radius:50%;border:none;background:rgba(255,255,255,.94);color:#0e7490;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.22);padding:0;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><path d="M12 17v-6M9.5 13.5l2.5-2.5 2.5 2.5"/></svg></button>'; }
                     // 🧑‍⚕️ 환자 지정 파일 → 파일명 숨기고 환자정보(이름·성별/나이·ID·생년월일) 예쁘게. 미지정 → 파일명 + 출처.
                     const _pinfo=_pm?(_pm.byKey[(it.rootId||'')+'|'+rpath]||_pm.byName[String(nm||'').toLowerCase()+'|'+(Number(it.size)||0)]||_pm.byName[String(nm||'').toLowerCase()]):null;
                     let _body;
@@ -7880,6 +7880,10 @@
                     }
                     if(/\.dcm$/i.test(low) && window.rcOpenInLiveViewer){ try{ if(R.setActiveRoot) await R.setActiveRoot(o.rid); }catch(_){}; try{ window.rcOpenInLiveViewer(o.parts, o.fn); }catch(_){}; return; }
                     let f=null; try{ f=await R.getFileAtRoot(o.rid, o.parts, o.fn); }catch(_){}
+                    if(!f){ try{ if(R.setActiveRoot) await R.setActiveRoot(o.rid); if(R.getFileAt) f=await R.getFileAt(o.parts, o.fn); }catch(_){} }   // 🔁 루트 핸들/권한 폴백
+                    if(!f){ // ☁ 로컬에서 못 읽으면 클라우드 원본으로 폴백(브라우저·미연결 루트에서 PDF/문서 열기 실패 방지)
+                        try{ const rp=el.getAttribute('data-cloudrp')||((o.parts.length?o.parts.join('/')+'/':'')+o.fn); if(window._sfResolveFileToFile){ const rf=await window._sfResolveFileToFile({ rootId:o.rid, rpath:rp, cloud:true }); if(rf){ if(rf.__cloudLink){ try{ window.open(rf.url,'_blank','noopener'); }catch(_){} return; } f=rf; } } }catch(_){}
+                    }
                     if(!f){ showToast('파일을 읽지 못했습니다.'); return; }
                     if(/\.(ply|stl|obj|glb|gltf)$/.test(low) && window._model3DViewer){ try{ window._model3DViewer(f, o.fn); }catch(_){ showToast('3D 미리보기 실패'); } return; }
                     const isMedia=/\.(png|jpe?g|gif|webp|bmp|svg|mp4|webm|mov|m4v|avi|mkv|mp3|wav|ogg|m4a)$/.test(low);
@@ -7906,6 +7910,7 @@
                     el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); e.stopPropagation(); _mMenu(el, e.clientX, e.clientY); });
                     const mb=el.querySelector('._sr-menu'); if(mb) mb.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); _mMenu(el); });
                     const ub=el.querySelector('._sr-upcloud'); if(ub) ub.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); _sfUploadCardToCloud(el.getAttribute('data-rootid'), el.getAttribute('data-rpath'), ub); });
+                    const db=el.querySelector('._sr-dlcloud'); if(db) db.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); const rp=el.getAttribute('data-cloudrp')||el.getAttribute('data-rpath'); try{ window._sfDownloadDesc({ rootId:el.getAttribute('data-rootid')||'', rpath:rp, cloud:true }); }catch(_){ showToast('다운로드 실패'); } });
                 });
                 // 🔁 재렌더 시 선택 보존 — 직전 선택키 복원(스캔/인덱스 완료로 그리드가 다시 그려져도 선택이 날아가지 않게)
                 try{ if(ov.__mlSelKeys && ov.__mlSelKeys.size){ grid.querySelectorAll('._sr-file').forEach(function(el){ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); if(ov.__mlSelKeys.has(k) && !_mSel.has(k)) _mToggle(el); }); } }catch(_){}
