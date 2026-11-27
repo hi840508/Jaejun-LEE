@@ -7868,7 +7868,8 @@
                 // (환자 정보는 카드 푸터에 동기 표시 — 깜빡이던 오버레이 뱃지 제거)
                 // 📎 폴더뷰와 '동일 동작'으로 통일(루트-인식): 클릭=선택 · 더블클릭=미리보기 · ⋯=메뉴 · 드래그=첨부
                 const _mSel=new Map();
-                const _mDesc=(el)=>({ rootId:el.getAttribute('data-rootid'), rpath:el.getAttribute('data-rpath'), mime:el.getAttribute('data-mime')||'', size:Number(el.getAttribute('data-size'))||0 });
+                // 🗑 삭제 대상 식별 — 클라우드 전용 카드는 cloud=true+클라우드 경로(그럼 _sfPhysicalDelete가 클라우드 삭제). 동기화(양쪽) 카드는 cloud=false → 로컬만 삭제(1단계), 지운 뒤 클라우드 전용이 되면 다음 삭제가 클라우드까지(2단계).
+                const _mDesc=(el)=>{ const _c=el.getAttribute('data-cloud')==='1'; return { rootId:el.getAttribute('data-rootid'), rpath:(_c?(el.getAttribute('data-cloudrp')||el.getAttribute('data-rpath')):el.getAttribute('data-rpath')), cloud:_c, mime:el.getAttribute('data-mime')||'', size:Number(el.getAttribute('data-size'))||0 }; };
                 const _mParts=(el)=>{ const p=String(el.getAttribute('data-rpath')||'').split('/'); const fn=p.pop(); return { rid:el.getAttribute('data-rootid'), parts:p, fn:fn, mime:el.getAttribute('data-mime')||'' }; };
                 const _mPreview=async(el)=>{ const o=_mParts(el); const low=String(o.fn||'').toLowerCase();
                     if(el.getAttribute('data-cloud')==='1'){ try{ const rp=el.getAttribute('data-cloudrp')||el.getAttribute('data-rpath'); if(window._sfOpenPmsFile){ await window._sfOpenPmsFile({ rootId:el.getAttribute('data-rootid')||'', rpath:rp, fname:o.fn, cloud:true }); return; } if(window._sfOpenCloudFile){ window._sfOpenCloudFile(rp); return; } }catch(_){} }   // ☁ 클라우드 전용 카드 → 클라우드 원본으로 열람(로컬 접근 불가)
