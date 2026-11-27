@@ -6438,8 +6438,8 @@
             //   ⚠️ iframe이 드롭을 가로채므로, 드래그 중에만 나타나는 드롭 오버레이 레이어로 받는다(자동 숨김 타이머).
             (function(){
                 const dz=document.createElement('div'); dz.id='_lv-drop';
-                dz.style.cssText='position:absolute;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(11,43,75,.5);pointer-events:auto;';
-                dz.innerHTML='<div style="pointer-events:none;background:rgba(255,255,255,.96);color:#0b2b4b;border:2px dashed #e5468f;border-radius:16px;padding:20px 28px;font-weight:800;font-size:15px;box-shadow:0 10px 40px rgba(0,0,0,.4);">🖥 뷰어 아무 곳에나 놓으면 열립니다</div>';
+                dz.style.cssText='position:absolute;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(11,43,75,.20);pointer-events:auto;box-sizing:border-box;border:3px dashed #e5468f;border-radius:4px;';
+                dz.innerHTML='<div style="pointer-events:none;color:#fff;font-weight:800;font-size:15px;letter-spacing:.02em;text-shadow:0 2px 10px rgba(0,0,0,.7);">🖥 뷰어 아무 곳에나 놓으면 열립니다</div>';
                 ov.appendChild(dz);
                 let _hideT=null;
                 const _loadable=(e)=>{ const hasInt=(window.__sfDragFileRef&&window.__sfDragFileRef.length); let hasOs=false; try{ hasOs=!!(e.dataTransfer)&&Array.prototype.indexOf.call(e.dataTransfer.types||[],'Files')>=0; }catch(_){} return hasInt||hasOs; };
@@ -6463,9 +6463,25 @@
                     const parts=String(r0.rpath||'').split('/'); const fn=parts.pop();
                     if(!fn){ showToast('열 파일 정보가 없습니다.'); return; }
                     let okLocal=false; try{ if(r0.rootId && window.RCFolder && window.RCFolder.getFileAtRoot){ const f=await window.RCFolder.getFileAtRoot(r0.rootId, parts, fn); okLocal=!!f; } }catch(_){}
-                    if(okLocal){ await _lvLoadFile(parts, fn, null); }
-                    else if(window._sfOpenPmsFile){ try{ await window._sfOpenPmsFile(r0); }catch(_){ showToast('열지 못했습니다.'); } }
+                    if(okLocal){ await _lvLoadFile(parts, fn, null); return; }
+                    // ☁️ 로컬에 없으면 클라우드에서 다운로드 URL을 받아 뷰어로 직접 로드(드롭=반드시 뷰어에서 열람)
+                    try{ if(await _lvCloudLoad(r0, fn)) return; }catch(_){}
+                    if(window._sfOpenPmsFile){ try{ await window._sfOpenPmsFile(r0); }catch(_){ showToast('열지 못했습니다.'); } }
                     else { await _lvLoadFile(parts, fn, null); }
+                }
+                // ☁️ 클라우드 전용 파일 → mirror download-url → 확장자별 payload로 뷰어에 직접 로드
+                async function _lvCloudLoad(ref, fn){
+                    const name=fn||String(ref.rpath||'').split('/').pop()||'file'; const low=String(name).toLowerCase();
+                    const cands=[String(ref.rootId||'')+'/'+ref.rpath, String(ref.rpath)].filter((v,i,a)=>v&&a.indexOf(v)===i);
+                    let url=null; for(const rp of cands){ try{ const d=await fetch(API_URL+'/api/mirror/download-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rpath:rp})}).then(r=>r.json()); if(d&&d.url){ url=d.url; break; } }catch(_){} }
+                    if(!url) return false;
+                    try{ _lvShow(); }catch(_){} try{ stat.style.display=''; }catch(_){}
+                    if(RC_DCM_RE.test(low)) post({type:'RAYCLOUD_LOAD_DICOM', urls:[url], name:name});
+                    else if(/\.(ply|stl|obj|glb|gltf)$/.test(low)) post({type:'RAYCLOUD_LOAD_MESH', urls:[url], names:[name]});
+                    else if(RC_IMG_RE.test(low)) post({type:'RAYCLOUD_LOAD_2D', url:url, name:name});
+                    else post({type:'RAYCLOUD_LOAD_IMAGE', url:url, name:name});
+                    try{ setTimeout(()=>{ try{ stat.style.display='none'; }catch(_){} }, 1500); }catch(_){}
+                    return true;
                 }
                 // 📦 OS에서 끌어온 파일(File) → 확장자별 payload로 뷰어 로드(DICOM 다중=시리즈)
                 async function _lvLoadOsFiles(files){
