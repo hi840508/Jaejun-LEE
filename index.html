@@ -6909,7 +6909,7 @@
                 if(_cloudSel){ try{ window._sfRenderCloudCtl&&window._sfRenderCloudCtl(ov); }catch(_){} }   // ☁ 경로바에 동기화·용량바·구매 채우기
                 else if(!window.__sfStoreView && !window.__sfPatientFilter && !window.__sfDeepQuery && !path.length){ try{ window._sfRenderCompCtl&&window._sfRenderCompCtl(ov); }catch(_){} }   // 📁 경로바에 폴더목록·로컬vs클라우드바·폴더추가 채우기
                 // ⬅ 환자 정보 헤더의 뒤로가기 — 환자 종속 해제하고 전체 카드 보기로
-                { const pb=ov.querySelector('#_sf-ptback'); if(pb) pb.onclick=()=>{ window.__sfPatientFilter=null; window.__sfDeepQuery=null; window.__selectedPatient=null; window.__selectedPatientKey=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); }; }
+                { const pb=ov.querySelector('#_sf-ptback'); if(pb) pb.onclick=()=>{ window.__sfPatientFilter=null; window.__sfDeepQuery=null; window.__selectedPatient=null; window.__selectedPatientKey=null; window.__sfCloudView=false; window.__sfStoreView=false; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); }; }   /* ☁ 해제: 환자 진입 시 켜진 __sfCloudView를 꺼야 전체 병합뷰(환자 푸터)로 복귀 */
                 const bk=ov.querySelector('#_sf-back'); if(bk){ bk.onclick=()=>{ if(path.length){ path=path.slice(0,-1); render(); } else if(window.__sfPatientFilter||window.__sfDeepQuery){ window.__sfPatientFilter=null; window.__sfDeepQuery=null; flt.q=''; try{ _sbHighlightPatient(); }catch(_){} render(); } else { close(); } };
                     bk.addEventListener('dragover',(e)=>{ if(window.__rcDragFile && path.length){ e.preventDefault(); e.dataTransfer.dropEffect='move'; bk.style.outline='2px solid #0f2f52'; } });
                     bk.addEventListener('dragleave',()=>{ bk.style.outline=''; });
@@ -7824,11 +7824,17 @@
                     if(_pinfo&&_pinfo.name){
                         const _dd=String(_pinfo.dob||'').replace(/[^0-9]/g,''); const _dobF=_dd.length>=8?(_dd.slice(0,4)+'.'+_dd.slice(4,6)+'.'+_dd.slice(6,8)):'';
                         const _sxL=({M:'남',F:'여'})[String(_pinfo.sex||'').toUpperCase()]||''; let _age=''; if(_dd.length>=8){ const _y=+_dd.slice(0,4),_mo=+_dd.slice(4,6),_da=+_dd.slice(6,8); const _n=new Date(); let _a=_n.getFullYear()-_y; if(_n.getMonth()+1<_mo||(_n.getMonth()+1===_mo&&_n.getDate()<_da))_a--; if(_a>=0&&_a<150)_age=_a+'세'; }
-                        const _l2=[_dobF,[_sxL,_age].filter(Boolean).join(' ')].filter(Boolean).join('  ·  ');
-                        // 2줄: ① 이름(굵게) + ID  ② 생년월일 · 성별/나이
-                        _body='<div style="padding:9px 10px 10px;text-align:center;">'
-                            +'<div style="font-size:13px;font-weight:800;color:#0f2f52;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+_pinfo.bg+';margin-right:6px;vertical-align:middle;"></span>'+ESC(_pinfo.name)+(_pinfo.patientId?('<span style="font-size:11px;font-weight:600;color:#90a0b3;">   ·   ID '+ESC(_pinfo.patientId)+'</span>'):'')+'</div>'
-                            +(_l2?('<div style="font-size:11px;color:#8a99ab;font-weight:600;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(_l2)+'</div>'):'')
+                        const _sa=[_sxL,_age].filter(Boolean).join(' · ');
+                        // 🧑‍⚕️ 완성도 높인 미니 환자 카드 — 상단: 아바타+이름(·성별/나이), 구분선, 하단: ID · 생년월일 (여백·크기↑)
+                        _body='<div style="padding:11px 12px 13px;">'
+                            +'<div style="display:flex;align-items:center;gap:9px;justify-content:center;">'
+                                +'<span style="flex:none;width:30px;height:30px;border-radius:50%;background:'+_pinfo.bg+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;box-shadow:0 1px 3px rgba(16,34,54,.18);">'+ESC((String(_pinfo.name).trim()[0])||'·')+'</span>'
+                                +'<span style="min-width:0;text-align:left;">'
+                                    +'<span style="display:block;font-size:15px;font-weight:800;color:#0f2f52;letter-spacing:-.01em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(_pinfo.name)+'</span>'
+                                    +(_sa?('<span style="display:block;font-size:11px;color:#90a0b3;font-weight:600;margin-top:2px;">'+ESC(_sa)+'</span>'):'')
+                                +'</span>'
+                            +'</div>'
+                            +((_pinfo.patientId||_dobF)?('<div style="display:flex;align-items:center;justify-content:center;gap:9px;margin-top:9px;padding-top:9px;border-top:1px solid #eef2f7;font-size:11.5px;color:#64748b;font-weight:600;white-space:nowrap;overflow:hidden;">'+(_pinfo.patientId?('<span>ID <b style="color:#334155;font-weight:700;">'+ESC(_pinfo.patientId)+'</b></span>'):'')+((_pinfo.patientId&&_dobF)?'<span style="color:#cbd5e1;">·</span>':'')+(_dobF?('<span>'+ESC(_dobF)+'</span>'):'')+'</div>'):'')
                         +'</div>';
                     } else {
                         _body='<div style="padding:7px 9px 2px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
