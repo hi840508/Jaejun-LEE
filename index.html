@@ -5932,8 +5932,8 @@
                 const _fitRAF=()=>{ if(window._rcFitRAF) return; window._rcFitRAF=requestAnimationFrame(()=>{ window._rcFitRAF=0; try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} }); };
                 const setH=(y)=>{ try{ const grid=document.querySelector('#rc-folder-page #_sf-grid'); if(!grid) return; const gTop=grid.getBoundingClientRect().top; const Hh=window.innerHeight||0; let h=Math.round(y-gTop); h=Math.max(0, Math.min(Math.max(60,Hh-gTop-120), h)); document.documentElement.style.setProperty('--rc-dock-grid-h', h+'px'); _fitRAF(); }catch(_){} };
                 const mv=(ev)=>{ setH(ev.touches?ev.touches[0].clientY:ev.clientY); };
-                const up=()=>{ document.removeEventListener('pointermove',mv); document.removeEventListener('pointerup',up); try{ document.body.style.userSelect=''; }catch(_){} try{ document.body.classList.remove('rc-splitting'); }catch(_){} try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} };
-                s.addEventListener('pointerdown',(e)=>{ e.preventDefault(); try{ document.body.style.userSelect='none'; }catch(_){} try{ document.body.classList.add('rc-splitting'); }catch(_){} document.addEventListener('pointermove',mv); document.addEventListener('pointerup',up); });
+                const up=()=>{ document.removeEventListener('pointermove',mv); document.removeEventListener('pointerup',up); try{ document.body.style.userSelect=''; }catch(_){} try{ document.body.classList.remove('rc-splitting'); }catch(_){} try{ window.__rcSplitterDragging=false; }catch(_){} try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} };   // 놓을 때만 실제 크기 맞춤(iframe 리사이즈 1회)
+                s.addEventListener('pointerdown',(e)=>{ e.preventDefault(); try{ document.body.style.userSelect='none'; }catch(_){} try{ document.body.classList.add('rc-splitting'); }catch(_){} try{ window.__rcSplitterDragging=true; }catch(_){} document.addEventListener('pointermove',mv); document.addEventListener('pointerup',up); });
                 s.addEventListener('mouseenter',()=>{ s.style.background='linear-gradient(180deg,#e9eef6,#d8e2ee)'; });
                 s.addEventListener('mouseleave',()=>{ s.style.background='linear-gradient(180deg,#f0f3f8,#e4eaf1)'; });
                 s.addEventListener('dblclick',()=>{ const cur=parseInt(document.documentElement.style.getPropertyValue('--rc-dock-grid-h')||'300',10)||300; document.documentElement.style.setProperty('--rc-dock-grid-h', cur<=8?'300px':'0px'); try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} });
@@ -6324,7 +6324,9 @@
                             const left=Math.max(0, Math.round(gr.left));
                             const width=Math.max(0, Math.min(W-left, Math.round(gr.width)));
                             if(width>=1){
-                                _lvApBox(top,left,width,Math.max(0,Hh-top));
+                                // 🧊 스플리터 드래그 중엔 뷰어 height를 '고정'해 iframe 리사이즈(=WebGL 렌더타깃 재할당·볼륨 재렌더)를 아예 막고 위치만 따라가게 → 놓을 때 1회만 실제 크기 적용(리사이즈 버벅임 제거)
+                                const _h=window.__rcSplitterDragging ? ((ov.__lvBox&&ov.__lvBox.h!=null)?ov.__lvBox.h:Math.max(0,Hh-top)) : Math.max(0,Hh-top);
+                                _lvApBox(top,left,width,_h);
                                 // ↕ 드래그 스플리터 — 그리드/뷰어 경계 전체폭에 걸쳐(드래그로 크기 조절)
                                 _lvApSplit('flex', top-5, left, width);
                                 return;
@@ -6748,13 +6750,14 @@
                                 var dd=String(p.dob||'').replace(/[^0-9]/g,''); var dobF=dd.length>=8?(dd.slice(0,4)+'.'+dd.slice(4,6)+'.'+dd.slice(6,8)):'';
                                 var sexL=({M:'남',F:'여'})[sx]||''; var age=''; if(dd.length>=8){ var y=+dd.slice(0,4),mo=+dd.slice(4,6),da=+dd.slice(6,8); var n=new Date(); var a=n.getFullYear()-y; if(n.getMonth()+1<mo||(n.getMonth()+1===mo&&n.getDate()<da))a--; if(a>=0&&a<150)age=a+'세'; }
                                 var meta=[sexL,age].filter(Boolean).join(' · ');
-                                return '<button id="_sf-ptback" title="전체 카드 보기로 돌아가기" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #cbd5e1;background:#fff;color:#0f2f52;border-radius:10px;cursor:pointer;margin-right:4px;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></button>'
-                                  +'<div style="flex:none;display:inline-flex;align-items:center;gap:11px;background:linear-gradient(135deg,#ffffff,#f3f7fb);border:1px solid #d4dde8;border-radius:13px;padding:5px 16px 5px 6px;box-shadow:0 1px 3px rgba(16,34,54,.08);">'
-                                    +'<span style="flex:none;width:38px;height:38px;border-radius:50%;background:'+bg+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;">'+_sfEsc(ini)+'</span>'
-                                    +'<span style="display:inline-flex;flex-direction:column;line-height:1.3;">'
-                                      +'<span style="font-weight:800;font-size:16px;color:#0f172a;white-space:nowrap;">'+_sfEsc(p.name||'환자')+(meta?(' <span style="font-size:12px;font-weight:700;color:#64748b;">'+_sfEsc(meta)+'</span>'):'')+'</span>'
-                                      +'<span style="font-size:11.5px;color:#8a99ab;font-weight:600;white-space:nowrap;">'+(p.patientId?('ID '+_sfEsc(p.patientId)):'')+(dobF?((p.patientId?'  ·  ':'')+'생 '+_sfEsc(dobF)):'')+'</span>'
-                                    +'</span></div>';
+                                var _sep='<span style="color:#d7deea;font-weight:400;">│</span>';
+                                var _extra=[]; if(meta)_extra.push('<span style="color:#5b6b7f;font-weight:600;">'+_sfEsc(meta)+'</span>'); if(p.patientId)_extra.push('<span style="color:#8a99ab;font-weight:600;">ID <b style="color:#334155;font-weight:700;">'+_sfEsc(p.patientId)+'</b></span>'); if(dobF)_extra.push('<span style="color:#8a99ab;font-weight:600;">'+_sfEsc(dobF)+'</span>');
+                                return '<button id="_sf-ptback" title="전체 카드 보기로 돌아가기" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border:1px solid #dbe3ee;background:#fff;color:#334155;border-radius:50%;cursor:pointer;margin-right:11px;transition:background .12s,border-color .12s;" onmouseover="this.style.background=\'#f1f5fa\';this.style.borderColor=\'#c3d0e0\';" onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#dbe3ee\';"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></button>'
+                                  +'<div style="flex:none;display:inline-flex;align-items:center;gap:13px;height:42px;padding:0 20px 0 7px;background:#ffffff;border:1px solid #e5ebf3;border-radius:21px;box-shadow:0 1px 2px rgba(16,34,54,.05);font-size:13.5px;white-space:nowrap;">'
+                                    +'<span style="flex:none;width:32px;height:32px;border-radius:50%;background:'+bg+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;letter-spacing:-.02em;">'+_sfEsc(ini)+'</span>'
+                                    +'<span style="font-weight:800;font-size:15.5px;color:#0f172a;letter-spacing:-.01em;">'+_sfEsc(p.name||'환자')+'</span>'
+                                    +(_extra.length?(_sep+_extra.join(_sep)):'')
+                                  +'</div>';
                               })()
                             : (_cloudSel
                                 ? '<div id="_sf-cloudctl" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;"></div>'   // ☁ 클라우드: 글씨 대신 [동기화·용량바·구매]
