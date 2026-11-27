@@ -7539,10 +7539,10 @@
                 const gmap={}; const order=[];
                 files.forEach(f=>{ const k=_ptDobFmt(f.studyDate)||'날짜 미상'; if(!gmap[k]){ gmap[k]=[]; order.push(k); } gmap[k].push(f); });
                 const card=(f,seriesN)=>{ const nm=f.fname||''; const manual=(f.source==='manual'); const isSeries=(seriesN>1); const label=isSeries?('CT 시리즈 · '+seriesN+'컷'):nm; const tile=(typeof _sfFileTile==='function')?_sfFileTile(nm):'';
-                    // 🏷 소스 뱃지: 내 PC(연결 로컬)=네이비, 클라우드=청록, 둘 다 동기화면 둘 다. 클라우드에만 있으면 카드 반투명(이 PC에 없음).
-                    const _srcL='<span style="display:inline-flex;align-items:center;gap:2px;font-size:8.5px;font-weight:800;color:#fff;background:#0f2f52;border-radius:5px;padding:1px 5px;line-height:1.5;">🖥 내 PC</span>';
-                    const _srcC='<span style="display:inline-flex;align-items:center;gap:2px;font-size:8.5px;font-weight:800;color:#fff;background:#0e7490;border-radius:5px;padding:1px 5px;line-height:1.5;">☁ 클라우드</span>';
-                    const srcBadge='<div style="position:absolute;left:6px;bottom:6px;z-index:4;display:flex;gap:3px;flex-wrap:wrap;">'+(f.local?_srcL:'')+(f.cloud?_srcC:'')+'</div>';
+                    // ☁ 우상단 뱃지 — 전체취합과 통일: 동기화(양쪽)=없음 / 클라우드 전용=다운로드(구름↓) / 로컬 전용=올리기(구름↑)
+                    let srcBadge='';
+                    if(f.cloud && !f.local){ srcBadge='<button class="_pt-dlcloud" title="클라우드에서 로컬로 다운로드" style="position:absolute;top:7px;right:7px;z-index:6;width:22px;height:22px;border-radius:50%;border:none;background:rgba(14,116,144,.95);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28);padding:0;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><path d="M12 10v6.5M9.3 14l2.7 2.6 2.7-2.6"/></svg></button>'; }
+                    else if(!f.cloud){ srcBadge='<button class="_pt-upcloud" title="이 파일을 클라우드에 올리기" style="position:absolute;top:7px;right:7px;z-index:6;width:22px;height:22px;border-radius:50%;border:none;background:rgba(255,255,255,.94);color:#0e7490;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.22);padding:0;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><path d="M12 17v-6M9.5 13.5l2.5-2.5 2.5 2.5"/></svg></button>'; }
                     const _ptOpacity=(f.cloud&&!f.local)?'opacity:.72;':'';
                     // 🏷 유형 필터용 data-type: 시리즈/DICOM(모달리티 있거나 .dcm)=dicom(=CT/DICOM 칩), 그 외는 _sfType 분류. (파노라마 PX도 dicom)
                     const ftype=isSeries?'dicom':(function(){ let t='other'; try{ t=_sfType(f.mime,nm); }catch(_){} if(t==='other'&&f.modality) t='dicom'; return t; })();
@@ -7592,9 +7592,12 @@
                     const chk=document.createElement('div'); chk.className='_pt-chk'; chk.style.cssText='position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);'; el.appendChild(chk);
                     chk.addEventListener('click',(e)=>{ e.stopPropagation(); _toggle(el,f); });
                     // 🖱 구글드라이브식: 단일클릭=선택 · 더블클릭=열기 · 우클릭=메뉴
-                    el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')) return; _toggle(el,f); });
-                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._pt-chk')||e.target.closest('._pt-menu')) return; e.preventDefault(); e.stopPropagation(); _sfOpenPmsFile(f); });
+                    el.addEventListener('click',(e)=>{ if(e.target.closest('._pt-menu')||e.target.closest('._pt-chk')||e.target.closest('._pt-dlcloud')||e.target.closest('._pt-upcloud')) return; _toggle(el,f); });
+                    el.addEventListener('dblclick',(e)=>{ if(e.target.closest('._pt-chk')||e.target.closest('._pt-menu')||e.target.closest('._pt-dlcloud')||e.target.closest('._pt-upcloud')) return; e.preventDefault(); e.stopPropagation(); _sfOpenPmsFile(f); });
                     el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); e.stopPropagation(); _ptMenu(el, e.clientX, e.clientY); });
+                    // ☁ 클라우드 다운로드 / 올리기 버튼(전체취합과 동일)
+                    { const db=el.querySelector('._pt-dlcloud'); if(db) db.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); try{ window._sfDownloadDesc({ rootId:f.rootId, rpath:f.rpath, cloud:true }); }catch(_){ showToast('다운로드 실패'); } }); }
+                    { const ub=el.querySelector('._pt-upcloud'); if(ub) ub.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); _sfUploadCardToCloud(f.rootId, f.rpath, ub); }); }
                 });
                 if(_paBtn) _paBtn.onclick=()=>_attachNow([..._ptSel.values()]);
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _ptSel.clear(); grid.querySelectorAll('._pt-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._pt-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _updBar(); }; }
@@ -7778,8 +7781,8 @@
                     await window.RCMirror.uploadOne(String(rootId||'')+'/'+rpath, blob, blob.type||'', blob.lastModified||Date.now());
                     showToast('✅ 클라우드에 올렸습니다: '+fn);
                     try{ window.__sfCloudListCache=null; }catch(_){}
-                    // 🔁 전체 재렌더 대신 '이 카드만' 갱신 — 올리기 버튼을 구름 뱃지로 교체
-                    try{ if(btn && btn.parentNode){ btn.outerHTML='<span title="클라우드에 있음" style="position:absolute;top:7px;right:7px;z-index:5;width:22px;height:22px;border-radius:50%;background:rgba(14,116,144,.95);color:#fff;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span>'; } }catch(_){}
+                    // 🔁 전체 재렌더 대신 '이 카드만' 갱신 — 올린 뒤엔 로컬+클라우드(동기화)이므로 뱃지 제거(통일 규칙)
+                    try{ if(btn && btn.parentNode) btn.remove(); }catch(_){}
                 }catch(e){ if(btn){ btn.__busy=false; btn.style.opacity=''; btn.style.cursor='pointer'; }
                     if(String((e&&e.message)||'').indexOf('용량')>=0){ showToast('무료 용량을 초과했습니다 — 용량 구독 화면을 엽니다.'); try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} }
                     else showToast('올리기 실패: '+((e&&e.message)||e)); }
@@ -7897,8 +7900,23 @@
                 const _mBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); if(sb) sb.style.display=_mSel.size?'flex':'none'; if(cn) cn.textContent=_mSel.size+'개 선택'; };
                 const _mToggle=(el)=>{ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); const on=!_mSel.has(k); const chk=el.querySelector('._sr-chk'); if(on) _mSel.set(k,_mDesc(el)); else _mSel.delete(k); if(chk){ chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; try{ ov.__mlSelKeys=ov.__mlSelKeys||new Set(); if(on) ov.__mlSelKeys.add(k); else ov.__mlSelKeys.delete(k); }catch(_){} _mBar(); };
                 const _mRerender=()=>{ _mSel.clear(); try{ ov.__mlSelKeys=new Set(); }catch(_){} try{ _sfRenderMergedLocal(ov); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} };
+                // 🗑 삭제 후 '제자리 갱신'(전체 재렌더 없이 — 화면/스크롤 유지): 전용 파일은 카드 제거, 동기화 파일은 클라우드 전용(다운로드 뱃지)으로 전환(로컬만 지워진 1단계)
+                const _mCardByKey=(k)=>{ try{ const i=k.indexOf('|'); const rid=k.slice(0,i), rp=k.slice(i+1); const esc=(s)=>((window.CSS&&CSS.escape)?CSS.escape(String(s)):String(s).replace(/["\\]/g,'\\$&')); return grid.querySelector('._sr-file[data-rootid="'+esc(rid)+'"][data-rpath="'+esc(rp)+'"]'); }catch(_){ return null; } };
+                const _mSelCards=()=>[..._mSel.keys()].map(_mCardByKey).filter(Boolean);
+                function _mAfterDelete(cards){
+                    (cards||[]).forEach(function(el){ if(!el||!el.parentNode) return;
+                        if(el.querySelector('._sr-dlcloud')||el.querySelector('._sr-upcloud')){ el.remove(); return; }   // 클라우드 전용/로컬 전용 → 카드 제거
+                        try{ const rid=el.getAttribute('data-rootid')||'', rp=el.getAttribute('data-rpath')||'';   // 동기화 → 로컬만 삭제됨 → 클라우드 전용으로 전환
+                            el.setAttribute('data-cloud','1'); el.setAttribute('data-cloudrp', rid+'/'+rp); el.style.opacity='.72';
+                            const th=el.querySelector('._pt-thumb');
+                            if(th && !th.querySelector('._sr-dlcloud')){ const nb=document.createElement('button'); nb.className='_sr-dlcloud'; nb.title='클라우드에서 로컬로 다운로드'; nb.style.cssText='position:absolute;top:7px;right:7px;z-index:6;width:22px;height:22px;border-radius:50%;border:none;background:rgba(14,116,144,.95);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28);padding:0;'; nb.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><path d="M12 10v6.5M9.3 14l2.7 2.6 2.7-2.6"/></svg>'; nb.addEventListener('click',function(e){ e.stopPropagation(); e.preventDefault(); const r2=el.getAttribute('data-cloudrp')||el.getAttribute('data-rpath'); try{ window._sfDownloadDesc({ rootId:el.getAttribute('data-rootid')||'', rpath:r2, cloud:true }); }catch(_){} }); th.appendChild(nb); }
+                            el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; }
+                        }catch(_){}
+                    });
+                    _mSel.clear(); try{ ov.__mlSelKeys=new Set(); }catch(_){} _mBar(); try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){}
+                }
                 // 🖱 구글드라이브식 카드 메뉴 — ⋯ 또는 우클릭. 선택 여러 개면 전체에 적용.
-                const _mMenu=(el, x, y)=>{ const d=_mDesc(el); d.series=Number(el.getAttribute('data-series'))||0; const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); const sel=(_mSel.has(k)&&_mSel.size>1)?[..._mSel.values()]:[d]; const items=window._sfBuildFileMenu(d, { sel:sel, onDone:_mRerender }); if(x!=null){ ctxMenu(x, y, items); } else { const mb=el.querySelector('._sr-menu'); const r=(mb||el).getBoundingClientRect(); ctxMenu(r.right-160, r.bottom+4, items); } };
+                const _mMenu=(el, x, y)=>{ const d=_mDesc(el); d.series=Number(el.getAttribute('data-series'))||0; const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); const sel=(_mSel.has(k)&&_mSel.size>1)?[..._mSel.values()]:[d]; const _cards=(sel&&sel.length>1)?_mSelCards():[el]; const items=window._sfBuildFileMenu(d, { sel:sel, onDone:_mRerender, onDelete:()=>{ _mAfterDelete(_cards); } }); if(x!=null){ ctxMenu(x, y, items); } else { const mb=el.querySelector('._sr-menu'); const r=(mb||el).getBoundingClientRect(); ctxMenu(r.right-160, r.bottom+4, items); } };
                 // 🖱 러버밴드(범위선택)가 전체취합 선택계(_mSel)를 구동하도록 훅 노출 — 폴더뷰와 동일 UX
                 ov.__mlSelHook={ cards:()=>[].slice.call(grid.querySelectorAll('._sr-file')), isOn:(el)=>_mSel.has(el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath')), toggle:(el)=>_mToggle(el), clear:()=>{ _mSel.clear(); try{ ov.__mlSelKeys=new Set(); }catch(_){} grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); } };
                 grid.querySelectorAll('._sr-file').forEach(el=>{
@@ -7918,7 +7936,7 @@
                 { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_mSel.size){ showToast('선택된 파일이 없습니다.'); return; } window._sfAttachDescs([..._mSel.values()]); }; }
                 { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _mSel.clear(); try{ ov.__mlSelKeys=new Set(); }catch(_){} grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); }; }
                 // ⌨ Delete 키 삭제 지원(구글드라이브식) — 선택계가 _mSel이므로 오버라이드로 라우팅
-                window.__sfActOverride={ delete: async()=>{ if(!_mSel.size) return; await window._sfDeleteDescsUI([..._mSel.values()], {}, _mRerender); } };
+                window.__sfActOverride={ delete: async()=>{ if(!_mSel.size) return; const _cards=_mSelCards(); await window._sfDeleteDescsUI([..._mSel.values()], {}, ()=>{ _mAfterDelete(_cards); }); } };
                 // 🔎 렌더 직후 현재 칩(유형/기간/검색) 상태를 제자리 반영
                 try{ if(window.__sfApplyFilter) window.__sfApplyFilter(); }catch(_){}
                 // 🖼 썸네일 지연 로드(루트별 getFileAtRoot → getThumb/dicomImage)
@@ -8204,7 +8222,7 @@
                 if(!ctx.patient){ const _pp=(typeof _sfPatientPicker==='function')?_sfPatientPicker:window._sfPatientPicker; if(_pp) items.push({label:(multi?('🧑‍⚕️ 환자에 연결 ('+sel.length+'개)'):'🧑‍⚕️ 환자에 연결'), fn:()=>_pp(async(toKey)=>{ if(!toKey) return; await window._sfAssignDraggedToPatient(toKey, sel); })}); }
                 if(!d.cloud && !multi) items.push({label:'✏️ 이름 변경', fn:()=>window._sfRenameDesc(d, onDone)});
                 (ctx.extras||[]).forEach(x=>items.push(x));
-                items.push({label:(multi?('🗑 삭제 ('+sel.length+'개)'):(series>1?'🗑 시리즈 삭제':'🗑 삭제')), danger:true, fn:()=>window._sfDeleteDescsUI(sel, {indexAlways:!!ctx.patient}, onDone)});
+                items.push({label:(multi?('🗑 삭제 ('+sel.length+'개)'):(series>1?'🗑 시리즈 삭제':'🗑 삭제')), danger:true, fn:()=>window._sfDeleteDescsUI(sel, {indexAlways:!!ctx.patient}, ctx.onDelete||onDone)});
                 return items;
             };
             // 📎 파일 설명(rootId/rpath)들을 File 객체로 읽어 열려있는 주문서에 첨부
