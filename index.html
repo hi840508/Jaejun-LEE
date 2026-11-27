@@ -7872,6 +7872,12 @@
                 const _mParts=(el)=>{ const p=String(el.getAttribute('data-rpath')||'').split('/'); const fn=p.pop(); return { rid:el.getAttribute('data-rootid'), parts:p, fn:fn, mime:el.getAttribute('data-mime')||'' }; };
                 const _mPreview=async(el)=>{ const o=_mParts(el); const low=String(o.fn||'').toLowerCase();
                     if(el.getAttribute('data-cloud')==='1'){ try{ const rp=el.getAttribute('data-cloudrp')||el.getAttribute('data-rpath'); if(window._sfOpenPmsFile){ await window._sfOpenPmsFile({ rootId:el.getAttribute('data-rootid')||'', rpath:rp, fname:o.fn, cloud:true }); return; } if(window._sfOpenCloudFile){ window._sfOpenCloudFile(rp); return; } }catch(_){} }   // ☁ 클라우드 전용 카드 → 클라우드 원본으로 열람(로컬 접근 불가)
+                    // 🖥 뷰어 독이 열려 있으면 이미지/DICOM/3D를 뷰어(아래 프레임)로 — 전체화면 라이트박스로 뒷배경(3D)을 덮지 않게
+                    if(window.__rcViewerDock && window.__rcLV && window.__rcLV.ov && document.body.contains(window.__rcLV.ov) && !window.__rcLV.ov.__lvDead && /\.(dcm|ply|stl|obj|glb|gltf|png|jpe?g|gif|webp|bmp|svg)$/.test(low)){
+                        try{ if(o.rid && R && R.setActiveRoot) await R.setActiveRoot(o.rid); }catch(_){}
+                        try{ window.__rcLV.show(); }catch(_){}
+                        try{ await window.__rcLV.loadPath(o.parts, o.fn, null); return; }catch(_){}
+                    }
                     if(/\.dcm$/i.test(low) && window.rcOpenInLiveViewer){ try{ if(R.setActiveRoot) await R.setActiveRoot(o.rid); }catch(_){}; try{ window.rcOpenInLiveViewer(o.parts, o.fn); }catch(_){}; return; }
                     let f=null; try{ f=await R.getFileAtRoot(o.rid, o.parts, o.fn); }catch(_){}
                     if(!f){ showToast('파일을 읽지 못했습니다.'); return; }
