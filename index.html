@@ -5930,7 +5930,7 @@
                 s.innerHTML='<div style="width:60px;height:5px;border-radius:3px;background:#8ea6c2;"></div>';
                 // ⚡ 드래그 중엔 getBoundingClientRect/fit 호출 없이 '계산만'으로 위치를 직접 갱신 → 강제 레이아웃·WebGL 리사이즈 0(매끄러운 리사이즈). 놓을 때만 캐시 무효화 후 1회 fit.
                 let _gTop=0,_Hh=0,_pendY=0,_dragRAF=0;
-                const _apply=()=>{ _dragRAF=0; try{ let h=Math.round(_pendY-_gTop); h=Math.max(0, Math.min(Math.max(60,_Hh-_gTop-120), h)); document.documentElement.style.setProperty('--rc-dock-grid-h', h+'px'); const top=_gTop+h; s.style.top=(top-7)+'px'; const ovx=window.__rcLV&&window.__rcLV.ov; if(ovx) ovx.style.top=top+'px'; }catch(_){} };
+                const _apply=()=>{ _dragRAF=0; try{ let h=Math.round(_pendY-_gTop); h=Math.max(0, Math.min(Math.max(60,_Hh-_gTop-120), h)); document.documentElement.style.setProperty('--rc-dock-grid-h', h+'px'); const top=_gTop+h; s.style.top=(top-14)+'px'; const ovx=window.__rcLV&&window.__rcLV.ov; if(ovx) ovx.style.top=top+'px'; }catch(_){} };
                 const mv=(ev)=>{ _pendY=ev.touches?ev.touches[0].clientY:ev.clientY; if(!_dragRAF) _dragRAF=requestAnimationFrame(_apply); };
                 const up=()=>{ document.removeEventListener('pointermove',mv); document.removeEventListener('pointerup',up); window.removeEventListener('pointercancel',up); window.removeEventListener('blur',up); try{ document.body.style.userSelect=''; }catch(_){} try{ document.body.classList.remove('rc-splitting'); }catch(_){} try{ window.__rcSplitterDragging=false; }catch(_){} try{ const ovx=window.__rcLV&&window.__rcLV.ov; if(ovx){ ovx.__lvBox=null; ovx.__lvSp=null; const _fr=ovx.querySelector('#_lv-frame'); if(_fr) _fr.style.pointerEvents=''; } }catch(_){} try{ window.__rcFitViewer&&window.__rcFitViewer(); }catch(_){} };
                 const mvDoc=mv; const upDoc=up;
@@ -6329,7 +6329,7 @@
                                 const _h=window.__rcSplitterDragging ? ((ov.__lvBox&&ov.__lvBox.h!=null)?ov.__lvBox.h:Math.max(0,Hh-top)) : Math.max(0,Hh-top);
                                 _lvApBox(top,left,width,_h);
                                 // ↕ 드래그 스플리터 — 그리드/뷰어 경계 전체폭에 걸쳐(드래그로 크기 조절)
-                                _lvApSplit('flex', top-5, left, width);
+                                _lvApSplit('flex', top-14, left, width);
                                 return;
                             }
                         }
@@ -7753,12 +7753,16 @@
             // 🧑‍⚕️ [#7] 파일→환자 역인덱스(60초 캐시) — 전체취합 카드의 '소속 환자' 표시용. 환자별 파일목록을 모아 (rootId|rpath)·(파일명|크기)로 인덱싱.
             async function _sfPatientFileMap(){
                 try{ const now=Date.now(); if(window.__sfPtMap && (now-(window.__sfPtMapAt||0))<60000) return window.__sfPtMap;
-                    const byKey={}, byName={}; let pts=[]; try{ pts=(await (await fetch(API_URL+'/api/pms/patients')).json()).items||[]; }catch(_){}
-                    for(const p of pts){ let files=[]; try{ files=((await (await fetch(API_URL+'/api/pms/patients/'+encodeURIComponent(p.patientKey)+'/files')).json()).files)||[]; }catch(_){}
-                        const sx=String(p.sex||'').toUpperCase(); const info={key:p.patientKey, name:p.name||'', bg:(sx==='M'?'#3b82f6':(sx==='F'?'#ec4899':'#64748b')), patientId:p.patientId||'', dob:p.dob||'', sex:p.sex||''};
-                        for(const f of files){ const rp=String(f.rpath||''); if(rp) byKey[String(f.rootId||'')+'|'+rp]=info; const bn=(rp||String(f.fname||'')).split('/').pop(); if(bn){ byName[bn.toLowerCase()+'|'+(Number(f.size)||0)]=info; if(byName[bn.toLowerCase()]===undefined) byName[bn.toLowerCase()]=info; } } }
-                    window.__sfPtMap={byKey:byKey, byName:byName}; window.__sfPtMapAt=Date.now(); return window.__sfPtMap;
-                }catch(_){ return {byKey:{},byName:{}}; }
+                    if(window.__sfPtMapPromise) return window.__sfPtMapPromise;   // 동시 호출은 한 번만 수행(중복 N+1 방지)
+                    window.__sfPtMapPromise=(async()=>{
+                        const byKey={}, byName={}; let pts=[]; try{ pts=(await (await fetch(API_URL+'/api/pms/patients')).json()).items||[]; }catch(_){}
+                        const results=await Promise.all((pts||[]).map(p=>fetch(API_URL+'/api/pms/patients/'+encodeURIComponent(p.patientKey)+'/files').then(r=>r.json()).then(d=>({p, files:(d&&d.files)||[]})).catch(()=>({p, files:[]}))));   // ⚡ 병렬 조회
+                        for(const it of results){ const p=it.p, files=it.files; const sx=String(p.sex||'').toUpperCase(); const info={key:p.patientKey, name:p.name||'', bg:(sx==='M'?'#3b82f6':(sx==='F'?'#ec4899':'#64748b')), patientId:p.patientId||'', dob:p.dob||'', sex:p.sex||''};
+                            for(const f of files){ const rp=String(f.rpath||''); if(rp) byKey[String(f.rootId||'')+'|'+rp]=info; const bn=(rp||String(f.fname||'')).split('/').pop(); if(bn){ byName[bn.toLowerCase()+'|'+(Number(f.size)||0)]=info; if(byName[bn.toLowerCase()]===undefined) byName[bn.toLowerCase()]=info; } } }
+                        window.__sfPtMap={byKey:byKey, byName:byName}; window.__sfPtMapAt=Date.now(); window.__sfPtMapPromise=null; return window.__sfPtMap;
+                    })();
+                    return window.__sfPtMapPromise;
+                }catch(_){ window.__sfPtMapPromise=null; return (window.__sfPtMap||{byKey:{},byName:{}}); }
             }
             async function _sfRenderMergedLocal(ov){
                 const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
@@ -7820,15 +7824,11 @@
                     if(_pinfo&&_pinfo.name){
                         const _dd=String(_pinfo.dob||'').replace(/[^0-9]/g,''); const _dobF=_dd.length>=8?(_dd.slice(0,4)+'.'+_dd.slice(4,6)+'.'+_dd.slice(6,8)):'';
                         const _sxL=({M:'남',F:'여'})[String(_pinfo.sex||'').toUpperCase()]||''; let _age=''; if(_dd.length>=8){ const _y=+_dd.slice(0,4),_mo=+_dd.slice(4,6),_da=+_dd.slice(6,8); const _n=new Date(); let _a=_n.getFullYear()-_y; if(_n.getMonth()+1<_mo||(_n.getMonth()+1===_mo&&_n.getDate()<_da))_a--; if(_a>=0&&_a<150)_age=_a+'세'; }
-                        const _meta=[_sxL,_age].filter(Boolean).join(' · ');
-                        const _l2=[_meta,(_pinfo.patientId?('ID '+_pinfo.patientId):'')].filter(Boolean).join('   ·   ');
-                        _body='<div style="padding:9px 9px 10px;text-align:center;">'
-                            +'<div style="display:flex;align-items:center;justify-content:center;gap:6px;">'
-                                +'<span style="flex:none;width:19px;height:19px;border-radius:50%;background:'+_pinfo.bg+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">'+ESC((String(_pinfo.name).trim()[0])||'·')+'</span>'
-                                +'<span style="font-size:13px;font-weight:800;color:#0f2f52;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+ESC(_pinfo.name)+'</span>'
-                            +'</div>'
-                            +(_l2?('<div style="font-size:10px;color:#5b6b7f;font-weight:600;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(_l2)+'</div>'):'')
-                            +(_dobF?('<div style="font-size:9.5px;color:#9fb0c7;font-weight:600;margin-top:2px;">'+ESC(_dobF)+'</div>'):'')
+                        const _l2=[_dobF,[_sxL,_age].filter(Boolean).join(' ')].filter(Boolean).join('  ·  ');
+                        // 2줄: ① 이름(굵게) + ID  ② 생년월일 · 성별/나이
+                        _body='<div style="padding:9px 10px 10px;text-align:center;">'
+                            +'<div style="font-size:13px;font-weight:800;color:#0f2f52;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+_pinfo.bg+';margin-right:6px;vertical-align:middle;"></span>'+ESC(_pinfo.name)+(_pinfo.patientId?('<span style="font-size:11px;font-weight:600;color:#90a0b3;">   ·   ID '+ESC(_pinfo.patientId)+'</span>'):'')+'</div>'
+                            +(_l2?('<div style="font-size:11px;color:#8a99ab;font-weight:600;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+ESC(_l2)+'</div>'):'')
                         +'</div>';
                     } else {
                         _body='<div style="padding:7px 9px 2px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
@@ -7866,12 +7866,12 @@
                     }catch(_){ showToast('열기 실패'); } };
                 const _mDownload=async(el)=>{ const o=_mParts(el); try{ const f=await R.getFileAtRoot(o.rid, o.parts, o.fn); if(!f){ showToast('파일을 읽지 못했습니다.'); return; } const u=URL.createObjectURL(f); const a=document.createElement('a'); a.href=u; a.download=o.fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{ URL.revokeObjectURL(u); }catch(_){} },60000); showToast('💾 다운로드됨: '+o.fn); }catch(_){ showToast('다운로드 실패'); } };
                 const _mBar=()=>{ const sb=ov.querySelector('#_sf-selbar'); const cn=ov.querySelector('#_sf-cnt'); if(sb) sb.style.display=_mSel.size?'flex':'none'; if(cn) cn.textContent=_mSel.size+'개 선택'; };
-                const _mToggle=(el)=>{ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); const on=!_mSel.has(k); const chk=el.querySelector('._sr-chk'); if(on) _mSel.set(k,_mDesc(el)); else _mSel.delete(k); if(chk){ chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; _mBar(); };
-                const _mRerender=()=>{ _mSel.clear(); try{ _sfRenderMergedLocal(ov); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} };
+                const _mToggle=(el)=>{ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); const on=!_mSel.has(k); const chk=el.querySelector('._sr-chk'); if(on) _mSel.set(k,_mDesc(el)); else _mSel.delete(k); if(chk){ chk.style.background=on?'#0f2f52':'rgba(17,24,39,.3)'; chk.textContent=on?'✓':''; } el.style.outline=on?'3px solid #0b2b4b':''; el.style.outlineOffset='-3px'; try{ ov.__mlSelKeys=ov.__mlSelKeys||new Set(); if(on) ov.__mlSelKeys.add(k); else ov.__mlSelKeys.delete(k); }catch(_){} _mBar(); };
+                const _mRerender=()=>{ _mSel.clear(); try{ ov.__mlSelKeys=new Set(); }catch(_){} try{ _sfRenderMergedLocal(ov); }catch(_){} try{ if(window._sbLoadPatients) window._sbLoadPatients(); }catch(_){} };
                 // 🖱 구글드라이브식 카드 메뉴 — ⋯ 또는 우클릭. 선택 여러 개면 전체에 적용.
                 const _mMenu=(el, x, y)=>{ const d=_mDesc(el); d.series=Number(el.getAttribute('data-series'))||0; const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); const sel=(_mSel.has(k)&&_mSel.size>1)?[..._mSel.values()]:[d]; const items=window._sfBuildFileMenu(d, { sel:sel, onDone:_mRerender }); if(x!=null){ ctxMenu(x, y, items); } else { const mb=el.querySelector('._sr-menu'); const r=(mb||el).getBoundingClientRect(); ctxMenu(r.right-160, r.bottom+4, items); } };
                 // 🖱 러버밴드(범위선택)가 전체취합 선택계(_mSel)를 구동하도록 훅 노출 — 폴더뷰와 동일 UX
-                ov.__mlSelHook={ cards:()=>[].slice.call(grid.querySelectorAll('._sr-file')), isOn:(el)=>_mSel.has(el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath')), toggle:(el)=>_mToggle(el), clear:()=>{ _mSel.clear(); grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); } };
+                ov.__mlSelHook={ cards:()=>[].slice.call(grid.querySelectorAll('._sr-file')), isOn:(el)=>_mSel.has(el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath')), toggle:(el)=>_mToggle(el), clear:()=>{ _mSel.clear(); try{ ov.__mlSelKeys=new Set(); }catch(_){} grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); } };
                 grid.querySelectorAll('._sr-file').forEach(el=>{
                     // 🖱 드래그: 통합검색과 동일한 '검증된' 배선(단일) + 선택 다중은 dragstart에서 선택셋으로 확장
                     try{ if(window._sfWireFileCardAttach) window._sfWireFileCardAttach(el); }catch(_){}
@@ -7882,8 +7882,10 @@
                     el.addEventListener('contextmenu',(e)=>{ e.preventDefault(); e.stopPropagation(); _mMenu(el, e.clientX, e.clientY); });
                     const mb=el.querySelector('._sr-menu'); if(mb) mb.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault(); _mMenu(el); });
                 });
+                // 🔁 재렌더 시 선택 보존 — 직전 선택키 복원(스캔/인덱스 완료로 그리드가 다시 그려져도 선택이 날아가지 않게)
+                try{ if(ov.__mlSelKeys && ov.__mlSelKeys.size){ grid.querySelectorAll('._sr-file').forEach(function(el){ const k=el.getAttribute('data-rootid')+'|'+el.getAttribute('data-rpath'); if(ov.__mlSelKeys.has(k) && !_mSel.has(k)) _mToggle(el); }); } }catch(_){}
                 { const pa=ov.querySelector('#_sf-pickattach'); if(pa) pa.onclick=()=>{ if(!_mSel.size){ showToast('선택된 파일이 없습니다.'); return; } window._sfAttachDescs([..._mSel.values()]); }; }
-                { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _mSel.clear(); grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); }; }
+                { const sc=ov.querySelector('#_sf-selclear'); if(sc) sc.onclick=()=>{ _mSel.clear(); try{ ov.__mlSelKeys=new Set(); }catch(_){} grid.querySelectorAll('._sr-file').forEach(el=>{ el.style.outline=''; const c=el.querySelector('._sr-chk'); if(c){ c.style.background='rgba(17,24,39,.3)'; c.textContent=''; } }); _mBar(); }; }
                 // ⌨ Delete 키 삭제 지원(구글드라이브식) — 선택계가 _mSel이므로 오버라이드로 라우팅
                 window.__sfActOverride={ delete: async()=>{ if(!_mSel.size) return; await window._sfDeleteDescsUI([..._mSel.values()], {}, _mRerender); } };
                 // 🔎 렌더 직후 현재 칩(유형/기간/검색) 상태를 제자리 반영
