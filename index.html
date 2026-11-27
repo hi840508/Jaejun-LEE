@@ -2997,7 +2997,7 @@
     <div id="chat-file-preview-modal" class="cfp-dock" onclick="if(event.target===this)closeChatFilePreview()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:4400; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px);">
         <div id="cfp-titlebar" style="position:fixed; top:14px; left:24px; right:82px; display:flex; align-items:center; gap:10px; z-index:4300;">
             <span id="cfp-title" style="flex:1; min-width:0; color:#fff; font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(17,24,39,0.55); padding:9px 16px; border-radius:10px; border:1px solid rgba(255,255,255,.14); backdrop-filter:blur(4px);">파일</span>
-            <a id="cfp-download" download="" href="#" onclick="return _cfpSaveAs(this.href, this.getAttribute('download'), event)" title="내 컴퓨터의 원하는 위치에 저장(탐색기)" style="flex:none; display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg,#22446b,#0b2b4b); color:#fff; padding:9px 16px; border-radius:10px; text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.32); transition:all .15s ease;">💾 다른 이름으로 저장하기</a>
+            <a id="cfp-download" download="" href="#" onclick="return _cfpSaveAs(this.href, this.getAttribute('download'), event)" title="내 컴퓨터의 원하는 위치에 저장(탐색기)" style="flex:none; display:none; align-items:center; gap:6px; background:linear-gradient(135deg,#22446b,#0b2b4b); color:#fff; padding:9px 16px; border-radius:10px; text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.32); transition:all .15s ease;">💾 다른 이름으로 저장하기</a>
         </div>
         <button id="cfp-close-btn" onclick="closeChatFilePreview()" title="닫기 (ESC)" style="position:fixed; top:14px; right:16px; background:rgba(17,24,39,0.55); border:1px solid rgba(255,255,255,.25); color:#fff; font-size:22px; line-height:1; cursor:pointer; width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; z-index:4300; box-shadow:0 4px 14px rgba(0,0,0,.32); transition:all .15s ease; backdrop-filter:blur(4px);">&times;</button>
         <div id="cfp-content" style="max-width:min(1400px,96vw); max-height:90vh; width:100%; height:auto; display:flex; align-items:center; justify-content:center;"></div>
@@ -7777,8 +7777,9 @@
                     if(!blob) throw new Error('파일을 읽지 못했습니다.');
                     await window.RCMirror.uploadOne(String(rootId||'')+'/'+rpath, blob, blob.type||'', blob.lastModified||Date.now());
                     showToast('✅ 클라우드에 올렸습니다: '+fn);
-                    try{ window.__sfPtMap=null; window.__sfCloudListCache=null; }catch(_){}
-                    try{ if(window.__sfRender) window.__sfRender(); }catch(_){}
+                    try{ window.__sfCloudListCache=null; }catch(_){}
+                    // 🔁 전체 재렌더 대신 '이 카드만' 갱신 — 올리기 버튼을 구름 뱃지로 교체
+                    try{ if(btn && btn.parentNode){ btn.outerHTML='<span title="클라우드에 있음" style="position:absolute;top:7px;right:7px;z-index:5;width:22px;height:22px;border-radius:50%;background:rgba(14,116,144,.95);color:#fff;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span>'; } }catch(_){}
                 }catch(e){ if(btn){ btn.__busy=false; btn.style.opacity=''; btn.style.cursor='pointer'; }
                     if(String((e&&e.message)||'').indexOf('용량')>=0){ showToast('무료 용량을 초과했습니다 — 용량 구독 화면을 엽니다.'); try{ if(window.openCloudBackup) openCloudBackup(); else if(window.openMirrorPanel) openMirrorPanel(); }catch(_){} }
                     else showToast('올리기 실패: '+((e&&e.message)||e)); }
