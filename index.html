@@ -6750,14 +6750,12 @@
                                 var dd=String(p.dob||'').replace(/[^0-9]/g,''); var dobF=dd.length>=8?(dd.slice(0,4)+'.'+dd.slice(4,6)+'.'+dd.slice(6,8)):'';
                                 var sexL=({M:'남',F:'여'})[sx]||''; var age=''; if(dd.length>=8){ var y=+dd.slice(0,4),mo=+dd.slice(4,6),da=+dd.slice(6,8); var n=new Date(); var a=n.getFullYear()-y; if(n.getMonth()+1<mo||(n.getMonth()+1===mo&&n.getDate()<da))a--; if(a>=0&&a<150)age=a+'세'; }
                                 var meta=[sexL,age].filter(Boolean).join(' · ');
-                                var _sep='<span style="color:#d7deea;font-weight:400;">│</span>';
-                                var _extra=[]; if(meta)_extra.push('<span style="color:#5b6b7f;font-weight:600;">'+_sfEsc(meta)+'</span>'); if(p.patientId)_extra.push('<span style="color:#8a99ab;font-weight:600;">ID <b style="color:#334155;font-weight:700;">'+_sfEsc(p.patientId)+'</b></span>'); if(dobF)_extra.push('<span style="color:#8a99ab;font-weight:600;">'+_sfEsc(dobF)+'</span>');
-                                return '<button id="_sf-ptback" title="전체 카드 보기로 돌아가기" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border:1px solid #dbe3ee;background:#fff;color:#334155;border-radius:50%;cursor:pointer;margin-right:11px;transition:background .12s,border-color .12s;" onmouseover="this.style.background=\'#f1f5fa\';this.style.borderColor=\'#c3d0e0\';" onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#dbe3ee\';"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></button>'
-                                  +'<div style="flex:none;display:inline-flex;align-items:center;gap:13px;height:42px;padding:0 20px 0 7px;background:#ffffff;border:1px solid #e5ebf3;border-radius:21px;box-shadow:0 1px 2px rgba(16,34,54,.05);font-size:13.5px;white-space:nowrap;">'
-                                    +'<span style="flex:none;width:32px;height:32px;border-radius:50%;background:'+bg+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;letter-spacing:-.02em;">'+_sfEsc(ini)+'</span>'
-                                    +'<span style="font-weight:800;font-size:15.5px;color:#0f172a;letter-spacing:-.01em;">'+_sfEsc(p.name||'환자')+'</span>'
-                                    +(_extra.length?(_sep+_extra.join(_sep)):'')
-                                  +'</div>';
+                                var _sep='<span style="color:#cbd5e1;font-weight:400;margin:0 9px;">·</span>';
+                                var _extra=[]; if(meta)_extra.push('<span style="color:#5b6b7f;">'+_sfEsc(meta)+'</span>'); if(p.patientId)_extra.push('<span style="color:#90a0b3;">ID <b style="color:#475569;font-weight:700;">'+_sfEsc(p.patientId)+'</b></span>'); if(dobF)_extra.push('<span style="color:#90a0b3;">'+_sfEsc(dobF)+'</span>');
+                                return '<button id="_sf-ptback" title="전체 카드 보기로 돌아가기" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:none;background:transparent;color:#64748b;border-radius:50%;cursor:pointer;margin-right:9px;transition:background .12s,color .12s;" onmouseover="this.style.background=\'#eef2f7\';this.style.color=\'#0f2f52\';" onmouseout="this.style.background=\'transparent\';this.style.color=\'#64748b\';"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></button>'
+                                  +'<span style="flex:none;width:30px;height:30px;border-radius:50%;background:'+bg+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:13.5px;letter-spacing:-.02em;margin-right:11px;">'+_sfEsc(ini)+'</span>'
+                                  +'<span style="font-weight:800;font-size:18px;color:#0f172a;letter-spacing:-.015em;">'+_sfEsc(p.name||'환자')+'</span>'
+                                  +(_extra.length?('<span style="font-size:13px;font-weight:600;margin-left:14px;">'+_extra.join(_sep)+'</span>'):'');
                               })()
                             : (_cloudSel
                                 ? '<div id="_sf-cloudctl" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;"></div>'   // ☁ 클라우드: 글씨 대신 [동기화·용량바·구매]
@@ -7751,6 +7749,16 @@
             // 🖥 내 컴퓨터(병합) — 등록된 '모든' 폴더의 파일을 한 그리드에 취합(폴더 구분 없음). '사용중' 개념 없음.
             //   상단에 폴더별 연결됨/연결불가 상태만 표시. 단일클릭=선택, 더블클릭=미리보기, ⋯=미리보기/다운로드/첨부.
             window.__sfMergedActive=false;
+            // 🧑‍⚕️ [#7] 파일→환자 역인덱스(60초 캐시) — 전체취합 카드의 '소속 환자' 표시용. 환자별 파일목록을 모아 (rootId|rpath)·(파일명|크기)로 인덱싱.
+            async function _sfPatientFileMap(){
+                try{ const now=Date.now(); if(window.__sfPtMap && (now-(window.__sfPtMapAt||0))<60000) return window.__sfPtMap;
+                    const byKey={}, byName={}; let pts=[]; try{ pts=(await (await fetch(API_URL+'/api/pms/patients')).json()).items||[]; }catch(_){}
+                    for(const p of pts){ let files=[]; try{ files=((await (await fetch(API_URL+'/api/pms/patients/'+encodeURIComponent(p.patientKey)+'/files')).json()).files)||[]; }catch(_){}
+                        const sx=String(p.sex||'').toUpperCase(); const info={key:p.patientKey, name:p.name||'', bg:(sx==='M'?'#3b82f6':(sx==='F'?'#ec4899':'#64748b'))};
+                        for(const f of files){ const rp=String(f.rpath||''); if(rp) byKey[String(f.rootId||'')+'|'+rp]=info; const bn=(rp||String(f.fname||'')).split('/').pop(); if(bn){ byName[bn.toLowerCase()+'|'+(Number(f.size)||0)]=info; if(byName[bn.toLowerCase()]===undefined) byName[bn.toLowerCase()]=info; } } }
+                    window.__sfPtMap={byKey:byKey, byName:byName}; window.__sfPtMapAt=Date.now(); return window.__sfPtMap;
+                }catch(_){ return {byKey:{},byName:{}}; }
+            }
             async function _sfRenderMergedLocal(ov){
                 const grid=ov.querySelector('#_sf-grid'); if(!grid) return;
                 window.__sfMergedActive=true;
@@ -7783,6 +7791,14 @@
                 //    → 렌더 시 사전필터하지 않으므로 칩으로 좁히기/넓히기 모두 정상 동작(이전엔 사전필터로 다른 유형 카드가 DOM에 없어 안 보였음).
                 // 🩻 같은 폴더(루트+경로)의 DICOM 2장↑ → 1개 CT 시리즈로 묶음(566장 개별표시 방지·대표 썸네일 1개)
                 (function(){ const byDir={}; const rest=[]; all.forEach(it=>{ if(/\.dcm$/i.test(String(it.fname||''))){ const kk=it.rootId+'|'+((it.pathArr||[]).join('/')); (byDir[kk]=byDir[kk]||[]).push(it); } else rest.push(it); }); const mg=[]; Object.keys(byDir).forEach(kk=>{ const L=byDir[kk].sort((a,b)=>String(a.fname).localeCompare(String(b.fname),undefined,{numeric:true})); if(L.length>=2){ const rep=Object.assign({},L[Math.floor(L.length/2)]); rep.series=L.length; mg.push(rep); } else mg.push(L[0]); }); all=rest.concat(mg); })();
+                // ☁ [#6] 클라우드 전용 파일 병합 — 내 PC(로컬)에 없는 클라우드 파일도 같은 플랫 카드로(내 PC 우선·중복제거). 동기화된 로컬 파일엔 클라우드 뱃지도 부여.
+                all.forEach(it=>{ it.local=true; });
+                try{ const cl=(window.RCMirror&&window.RCMirror.list)?await window.RCMirror.list():[];
+                    const _cbn=new Set((cl||[]).map(c=>String(c.rpath||'').split('/').pop().toLowerCase()).filter(Boolean));
+                    all.forEach(it=>{ if(_cbn.has(String(it.fname||'').toLowerCase())) it.cloud=true; });
+                    const _lbn=new Set(all.map(it=>String(it.fname||'').toLowerCase()));
+                    (cl||[]).forEach(c=>{ const rp=String(c.rpath||''); if(!rp) return; const bn=rp.split('/').pop()||''; const low=bn.toLowerCase(); if(!bn||_lbn.has(low)) return; const seg=rp.split('/'); all.push({ rootId:seg.length>1?seg[0]:'', rootName:'클라우드', pathArr:seg.slice(1,-1), fname:bn, mime:'', size:Number(c.size)||0, mtime:Number(c.mtime)||0, cloud:true, local:false, cloudRpath:rp }); _lbn.add(low); });
+                }catch(_){}
                 if(!all.length){ grid.innerHTML=bar+'<div style="padding:40px 20px;text-align:center;color:#94a3b8;font-size:14px;line-height:1.7;">'+(connRoots.length?'조건에 맞는 파일이 없습니다.':'연결된 폴더가 없습니다. 위 폴더의 <b>[재연결]</b>을 누르거나 폴더를 추가하세요.')+'</div>'; wireBar(); return; }
                 all.sort((a,b)=> flt.sort==='name' ? String(a.fname).localeCompare(String(b.fname)) : flt.sort==='old' ? (Number(a.mtime)||0)-(Number(b.mtime)||0) : (Number(b.mtime)||0)-(Number(a.mtime)||0));
                 // 날짜별 그룹(최신순 기본)
@@ -7790,10 +7806,15 @@
                 const _key=(ts)=>{ const d=new Date(Number(ts)||0); if(!ts||isNaN(d.getTime())) return '0000-00-00'; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
                 const useDate=(flt.sort!=='name');
                 const card=(it)=>{ const nm=it.fname; const isSeries=(it.series>1); const label=isSeries?('CT 시리즈 · '+it.series+'컷'):nm; const pth=(it.pathArr||[]).join('/'); const rpath=(pth?pth+'/':'')+nm; const sub=String(it.rootName||'').replace(/\s*\(주\s*폴더\)\s*$/,'')+(pth?(' / '+pth):'');
-                    return '<div class="_sr-file" draggable="true" data-rootid="'+ESC(it.rootId)+'" data-rpath="'+ESC(rpath)+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'" data-type="'+ESC(isSeries?'dicom':(function(){ try{ return _sfType(it.mime,nm); }catch(_){ return 'other'; } })())+'" data-mtime="'+(Number(it.mtime)||0)+'" data-fname="'+ESC(nm)+'" title="'+ESC(sub+'/'+nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
+                    // 🏷 소스 뱃지(#6): 내 PC=네이비·클라우드=청록·둘 다. 클라우드 전용은 반투명.
+                    const _loc=it.local!==false, _cld=!!it.cloud; const _op=(_cld&&!_loc)?'opacity:.72;':'';
+                    const _srcL='<span style="display:inline-flex;align-items:center;font-size:8.5px;font-weight:800;color:#fff;background:#0f2f52;border-radius:5px;padding:1px 5px;line-height:1.5;">🖥 내 PC</span>';
+                    const _srcC='<span style="display:inline-flex;align-items:center;font-size:8.5px;font-weight:800;color:#fff;background:#0e7490;border-radius:5px;padding:1px 5px;line-height:1.5;">☁ 클라우드</span>';
+                    const _srcBadge='<div style="position:absolute;left:6px;bottom:6px;z-index:4;display:flex;gap:3px;flex-wrap:wrap;">'+(_loc?_srcL:'')+(_cld?_srcC:'')+'</div>';
+                    return '<div class="_sr-file" draggable="true" data-rootid="'+ESC(it.rootId)+'" data-rpath="'+ESC(rpath)+'" data-cloud="'+(_cld&&!_loc?'1':'')+'" data-cloudrp="'+ESC(it.cloudRpath||'')+'" data-mime="'+ESC(it.mime||'')+'" data-size="'+(Number(it.size)||0)+'" data-type="'+ESC(isSeries?'dicom':(function(){ try{ return _sfType(it.mime,nm); }catch(_){ return 'other'; } })())+'" data-mtime="'+(Number(it.mtime)||0)+'" data-fname="'+ESC(nm)+'" title="'+ESC(sub+'/'+nm)+'" style="position:relative;overflow:hidden;background:#fff;border:1px solid #d4dde8;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;'+_op+'box-shadow:0 1px 2px rgba(16,34,54,.05),0 5px 16px rgba(16,34,54,.08);">'
                         +'<div class="_pt-thumb" style="position:relative;width:100%;padding-top:100%;background:#eef4f8;">'+(isSeries?('<span style="position:absolute;top:6px;right:6px;z-index:3;font-size:9px;font-weight:800;color:#fff;background:#0d9488;border-radius:5px;padding:1px 6px;">'+it.series+'컷</span>'):'')+'<div class="_pt-ic" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">'+(typeof _sfFileTile==='function'?_sfFileTile(nm):'')+'</div>'
                         +'<div class="_sr-chk" style="position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(17,24,39,.3);color:#fff;font-weight:900;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:6;cursor:pointer;box-shadow:0 0 0 1px rgba(17,24,39,.18);"></div>'
-                        +'<button class="_sr-menu" title="더보기" style="position:absolute;bottom:6px;right:6px;width:26px;height:26px;padding:0;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;font-size:15px;font-weight:800;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+((typeof _SFIC!=='undefined'&&_SFIC.dots)?_SFIC.dots:'⋯')+'</button></div>'
+                        +'<button class="_sr-menu" title="더보기" style="position:absolute;bottom:6px;right:6px;width:26px;height:26px;padding:0;border:none;border-radius:50%;background:rgba(255,255,255,.92);color:#374151;font-size:15px;font-weight:800;cursor:pointer;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;">'+((typeof _SFIC!=='undefined'&&_SFIC.dots)?_SFIC.dots:'⋯')+'</button>'+_srcBadge+'</div>'
                         +'<div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(label)+'</div>'
                         +'<div style="padding:0 9px 7px;font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;">'+ESC(sub||' ')+'</div>'
                         +'</div>'; };
@@ -7804,11 +7825,23 @@
                 } else { body='<div class="_sf-secgrid" style="'+secStyle+'">'+all.map(card).join('')+'</div>'; }
                 grid.innerHTML=bar+(all.length>=3000*Math.max(1,connRoots.length)?'<div style="font-size:12px;color:#94a3b8;margin:0 2px 8px;">일부 항목이 생략되었습니다.</div>':'')+body;
                 wireBar();
+                // 🧑‍⚕️ [#7] 소속 환자 뱃지 — 역인덱스로 각 카드에 환자명 표시(비동기, 그리드 비차단)
+                (async()=>{ var pm; try{ pm=await _sfPatientFileMap(); }catch(_){ pm=null; } if(!pm||window.__sfOv!==ov) return;
+                    grid.querySelectorAll('._sr-file').forEach(function(el){ if(el.querySelector('._sr-ptb')) return; var rid=el.getAttribute('data-rootid')||'', rp=el.getAttribute('data-rpath')||''; var fn=(el.getAttribute('data-fname')||rp.split('/').pop()||'').toLowerCase(); var sz=el.getAttribute('data-size')||'0';
+                        var info=pm.byKey[rid+'|'+rp]||pm.byName[fn+'|'+sz]||pm.byName[fn]; if(!info||!info.name) return;
+                        var th=el.querySelector('._pt-thumb'); if(!th) return;
+                        var b=document.createElement('div'); b.className='_sr-ptb'; b.title='환자: '+info.name;
+                        b.style.cssText='position:absolute;top:6px;left:32px;max-width:calc(100% - 40px);z-index:5;display:inline-flex;align-items:center;gap:4px;background:rgba(15,23,42,.84);color:#fff;border-radius:11px;padding:2px 8px 2px 3px;font-size:10px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.25);';
+                        b.innerHTML='<span style="flex:none;width:15px;height:15px;border-radius:50%;background:'+info.bg+';display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;">'+_sfEsc((info.name.trim()[0])||'·')+'</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+_sfEsc(info.name)+'</span>';
+                        th.appendChild(b);
+                    });
+                })();
                 // 📎 폴더뷰와 '동일 동작'으로 통일(루트-인식): 클릭=선택 · 더블클릭=미리보기 · ⋯=메뉴 · 드래그=첨부
                 const _mSel=new Map();
                 const _mDesc=(el)=>({ rootId:el.getAttribute('data-rootid'), rpath:el.getAttribute('data-rpath'), mime:el.getAttribute('data-mime')||'', size:Number(el.getAttribute('data-size'))||0 });
                 const _mParts=(el)=>{ const p=String(el.getAttribute('data-rpath')||'').split('/'); const fn=p.pop(); return { rid:el.getAttribute('data-rootid'), parts:p, fn:fn, mime:el.getAttribute('data-mime')||'' }; };
                 const _mPreview=async(el)=>{ const o=_mParts(el); const low=String(o.fn||'').toLowerCase();
+                    if(el.getAttribute('data-cloud')==='1'){ try{ const rp=el.getAttribute('data-cloudrp')||el.getAttribute('data-rpath'); if(window._sfOpenPmsFile){ await window._sfOpenPmsFile({ rootId:el.getAttribute('data-rootid')||'', rpath:rp, fname:o.fn, cloud:true }); return; } if(window._sfOpenCloudFile){ window._sfOpenCloudFile(rp); return; } }catch(_){} }   // ☁ 클라우드 전용 카드 → 클라우드 원본으로 열람(로컬 접근 불가)
                     if(/\.dcm$/i.test(low) && window.rcOpenInLiveViewer){ try{ if(R.setActiveRoot) await R.setActiveRoot(o.rid); }catch(_){}; try{ window.rcOpenInLiveViewer(o.parts, o.fn); }catch(_){}; return; }
                     let f=null; try{ f=await R.getFileAtRoot(o.rid, o.parts, o.fn); }catch(_){}
                     if(!f){ showToast('파일을 읽지 못했습니다.'); return; }
