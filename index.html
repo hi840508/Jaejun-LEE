@@ -5866,6 +5866,8 @@
         window._sbOpenPatient = function(key){
             window.__accountMode=false;
             try{ window.__selectedPatientKey=key; window.__selectedPatient=(window.__sbPatients||[]).find(p=>p.patientKey===key)||{patientKey:key}; }catch(_){}
+            // 🔄 뷰어가 '다른 환자'로 떠 있으면 환자 전환 시 뷰어를 새로 시작(이전 환자 3D 데이터 잔존 방지)
+            try{ if(window.__rcViewerDock && window.__rcLV && window.__rcLV.ov && document.body.contains(window.__rcLV.ov) && !window.__rcLV.ov.__lvDead && window.__rcViewerPatientKey && window.__rcViewerPatientKey!==key && window.__rcLV.reset){ window.__rcLV.reset(); } window.__rcViewerPatientKey=key; }catch(_){}
             // 📋 의뢰서(우측 패널)가 열려 있으면 선택 환자로 주문 정보 자동 재입력
             try{ if(document.getElementById('rx-form-modal') && window.rxAutofillSelectedPatient){ setTimeout(()=>{ try{ window.rxAutofillSelectedPatient(); }catch(_){} }, 60); } }catch(_){}
             // ☁️ 클라우드 보기 중이어도 환자 클릭 시 해당 환자 파일로 전환(클릭 먹통 수정). _sfShowPatient가 클라우드→환자뷰 전환.
@@ -6433,6 +6435,8 @@
             window.__rcLV = { ov:ov, post:post, show:_lvShow, hide:_lvHide,
                 toggle:()=>{ ((ov.style.display==='none')||ov.__lvHidden)?_lvShow():_lvHide(); },
                 isOpen:()=>!((ov.style.display==='none')||ov.__lvHidden),
+                // 🔄 뷰어 새로 시작 — iframe 리로드 + 준비상태/큐 초기화(환자 전환 시 이전 3D 데이터 잔존 방지)
+                reset:()=>{ try{ viewerReady=false; queue.length=0; ov.__lvMaxed=false; try{ window.__rcApplied=[]; }catch(_){} const _f=ov.querySelector('#_lv-frame')||fr; if(_f) _f.src='/cbct_suite.html?v='+Date.now(); try{ stat.style.display=''; }catch(_){} }catch(_){} },
                 loadPath:_lvLoadFile };
             try{ if(window.__rcUpdateViewerFab) window.__rcUpdateViewerFab(); }catch(_){}
             // 🖱 [드래그앤드롭] 메인페이지 파일카드(__sfDragFileRef) 또는 OS 파일을 뷰어에 떨궈 바로 열람.
@@ -6456,7 +6460,7 @@
                     try{ _lvShow(); }catch(_){}
                     if(refs&&refs.length){ try{ await _lvLoadDescs(refs); }catch(_){}
                         // 🧑‍⚕️ 이 뷰어가 특정 환자로 열려 있으면, 드롭한 파일카드를 그 환자 데이터에 자동 종속(이후 이 환자 파일로 표시)
-                        try{ var _pk=window.__selectedPatientKey; if(_pk && window._sfAssignDraggedToPatient){ var _ds=refs.map(function(r){ return {rootId:r.rootId, rpath:r.rpath, cloud:r.cloud, mime:r.mime, size:r.size}; }); window._sfAssignDraggedToPatient(_pk, _ds).then(function(n){ if(n){ showToast('🧑‍⚕️ '+n+'개 파일을 이 환자에 연결했습니다.'); try{ if(window.__sfPatientFilter===_pk && window.__sfRender) window.__sfRender(); }catch(_){} } }).catch(function(){}); } }catch(_){}
+                        try{ var _pk=window.__selectedPatientKey||window.__sfPatientFilter; if(_pk && window._sfAssignDraggedToPatient){ var _ds=refs.map(function(r){ return {rootId:r.rootId, rpath:r.rpath, rootName:r.rootName||'', fname:r.fname||'', modality:r.modality||'', studyDate:r.studyDate||'', mtime:Number(r.mtime)||0, cloud:r.cloud, mime:r.mime, size:r.size}; }); window._sfAssignDraggedToPatient(_pk, _ds, {silent:false}).then(function(n){ try{ if(n && window.__sfPatientFilter===_pk && window.__sfRender) window.__sfRender(); }catch(_){} }).catch(function(){}); } }catch(_){}
                     }
                     else if(files.length){ try{ await _lvLoadOsFiles(files); }catch(_){} }
                 }, true);
